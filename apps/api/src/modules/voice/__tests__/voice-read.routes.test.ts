@@ -1,14 +1,16 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockDb } = vi.hoisted(() => ({
+const { mockDb, mockReadStoredReport } = vi.hoisted(() => ({
   mockDb: {
-    call: { findMany: vi.fn(), findUnique: vi.fn() },
+    call: { findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
     voiceTurnTelemetry: { findMany: vi.fn() },
     voiceDebugTurn: { findMany: vi.fn() },
   },
+  mockReadStoredReport: vi.fn(),
 }));
 vi.mock('../../../shared/db/client', () => ({ db: mockDb }));
+vi.mock('../call-report/report-store', () => ({ readStoredReport: mockReadStoredReport }));
 
 import { voiceReadRoutes } from '../voice-read.routes';
 
@@ -67,6 +69,10 @@ describe('voiceReadRoutes', () => {
     process.env.VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS = 'rest-test';
     mockDb.call.findMany.mockResolvedValue([call]);
     mockDb.call.findUnique.mockResolvedValue(call);
+    mockDb.call.findFirst.mockResolvedValue({ id: call.id, restaurantId: call.restaurantId });
+    mockReadStoredReport.mockResolvedValue(
+      JSON.stringify({ reportVersion: 1, call: { id: call.id } }),
+    );
     mockDb.voiceTurnTelemetry.findMany.mockResolvedValue([turn]);
     mockDb.voiceDebugTurn.findMany.mockResolvedValue([dialogue]);
     app = Fastify();
@@ -152,5 +158,31 @@ describe('voiceReadRoutes', () => {
   it('répond 404 pour un appel inconnu', async () => {
     mockDb.call.findUnique.mockResolvedValue(null);
     expect((await get('/api/internal/voice/calls/inconnu')).statusCode).toBe(404);
+  });
+
+  it('renvoie le rapport stocké d’un appel à partir du début de son id', async () => {
+    const res = await get('/api/internal/voice/calls/call/report');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ reportVersion: 1, call: { id: 'call-1' } });
+    expect(mockDb.call.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { startsWith: 'call' } } }),
+    );
+    expect(mockReadStoredReport).toHaveBeenCalledWith('call-1', 'json');
+  });
+
+  it('refuse le rapport sans jeton', async () => {
+    expect((await get('/api/internal/voice/calls/call-1/report', null)).statusCode).toBe(401);
+    expect(mockReadStoredReport).not.toHaveBeenCalled();
+  });
+
+  it('ne lit pas le rapport hors de la liste de debug', async () => {
+    process.env.VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS = 'autre-restaurant';
+    expect((await get('/api/internal/voice/calls/call-1/report')).statusCode).toBe(404);
+    expect(mockReadStoredReport).not.toHaveBeenCalled();
+  });
+
+  it('répond 404 quand aucun rapport n’est stocké', async () => {
+    mockReadStoredReport.mockResolvedValue(null);
+    expect((await get('/api/internal/voice/calls/call-1/report')).statusCode).toBe(404);
   });
 });

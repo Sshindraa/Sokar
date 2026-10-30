@@ -3,6 +3,11 @@ import { closeApp, getApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { buildCheckoutIdempotencyKey } from '../billing.service';
 
+const clerkOrganization = vi.hoisted(() => vi.fn());
+vi.mock('@clerk/fastify', () => ({
+  clerkClient: { organizations: { getOrganization: clerkOrganization } },
+}));
+
 const originalEnv = {
   secret: process.env.STRIPE_SECRET_KEY,
   price: process.env.STRIPE_PRICE_PRO_MONTHLY,
@@ -140,6 +145,46 @@ describe('billing.routes - checkout, portail et statut', () => {
       error: 'BILLING_OWNER_REQUIRED',
       message: 'Seul le propriétaire du compte peut gérer la facturation.',
     });
+  });
+
+  it('refuse les actions de facturation à un membre historique non vérifié', async () => {
+    clerkOrganization.mockResolvedValue({ createdBy: 'another-user' });
+    const app = await getApp();
+    for (const [url, payload] of [
+      ['/billing/checkout-session', { plan: 'pro', billing: 'monthly' }],
+      ['/billing/trial', {}],
+      ['/billing/portal-session', {}],
+    ] as const) {
+      const response = await app.inject({
+        method: 'POST',
+        url,
+        payload,
+        headers: {
+          authorization: 'Bearer test',
+          'x-test-legacy': '1',
+          'x-test-site-role': 'ORG_MEMBER',
+        },
+      });
+      expect(response.statusCode).toBe(403);
+      expect(response.json().error).toBe('BILLING_OWNER_REQUIRED');
+    }
+  });
+
+  it('permet au créateur vérifié d’accéder à la facturation historique', async () => {
+    clerkOrganization.mockResolvedValue({ createdBy: 'test-user-1' });
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/billing/trial',
+      payload: {},
+      headers: {
+        authorization: 'Bearer test',
+        'x-test-legacy': '1',
+        'x-test-site-role': 'ORG_MEMBER',
+      },
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error).toBe('BILLING_NOT_CONFIGURED');
   });
 
   it('ouvre le portail Stripe pour le propriétaire', async () => {
@@ -657,6 +702,15 @@ describe('billing.routes - checkout, portail et statut', () => {
   });
 
   it('réutilise la session Checkout lors d’un retry avec la même clé d’idempotence', async () => {
+    const sessionList = (
+      globalThis as unknown as {
+        __sokarStripeCheckoutSessionList: ReturnType<typeof vi.fn>;
+      }
+    ).__sokarStripeCheckoutSessionList;
+    sessionList.mockResolvedValueOnce({ data: [], has_more: false }).mockResolvedValueOnce({
+      data: [{ id: 'cs_test', mode: 'subscription', url: 'https://checkout.stripe.test/cs_test' }],
+      has_more: false,
+    });
     process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       id: 'test-rest-1',

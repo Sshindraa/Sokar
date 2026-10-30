@@ -1,8 +1,13 @@
 # Entretiens restaurateurs : fiche de qualification et guide
 
-Mise à jour : 15 octobre 2026. Statut : **préparé et vérifié localement, non commité, non déployé**.
+Mise à jour : 29 octobre 2026. Statut : **guide de travail ; textes non envoyés**.
 Aucun entretien constaté par ce lot ; aucun message envoyé. Les coordonnées et fiches réelles
 restent dans l'outil restreint choisi par le responsable commercial.
+
+Ce guide teste un premier pilote Essential ciblé sur les réservations ; il ne définit pas à lui seul
+le périmètre de Sokar. La plateforme couvre aussi l'organisation du service et la relation client ;
+voir la [carte produit](../PROJECT_MAP.md#ce-quest-sokar) pour les capacités développées et leurs
+limites d'activation.
 
 Référence de cadrage : [seo-acquisition-execution-plan.md](seo-acquisition-execution-plan.md), sections 3.1,
 10 et 11. Pilote : [essential-pilot-7-day.md](essential-pilot-7-day.md).
@@ -94,10 +99,16 @@ prochaine action 3 min. Proposer un autre rendez-vous si une démonstration dema
 **Relances utiles** : « Qu'est-ce qui s'est passé ensuite ? », « Combien de fois cela arrive-t-il par
 semaine, à peu près, et comment le savez-vous ? », « Qu'avez-vous fait la dernière fois ? ».
 
-**Présentation de Sokar** (seulement après les questions 1 à 6, et en restant factuel) :
+**Présentation de Sokar** (après les questions 1 à 6, adaptée aux besoins exprimés) :
 
-> Sokar répond aux appels transférés de votre restaurant, consulte vos disponibilités et enregistre
-> les réservations. Vous gardez votre numéro existant.
+> Sokar est une plateforme pour gérer les réservations et préparer le service de votre restaurant.
+> Elle réunit les réservations prises en salle et en ligne dans un même planning, avec un plan de
+> salle et un fichier client. Elle comprend aussi un assistant vocal conçu pour répondre aux appels
+> transférés et prendre des réservations selon vos disponibilités. Vous gardez votre numéro existant.
+
+Le CRM avancé, les campagnes, les cartes cadeaux, les expériences et les autres modules développés
+ne sont pas automatiquement inclus ni ouverts dans ce pilote : vérifier leur disponibilité avant
+de les proposer. La recette vocale reste une condition avant activation client.
 
 Limites à dire explicitement, sans attendre d'être interrogé :
 
@@ -144,10 +155,20 @@ Conserver aussi les refus et les absences de réponse.
 
 ## 7. Message de prospection (brouillon, non envoyé)
 
-> Bonjour, je vous contacte pour Sokar, un outil de gestion des appels et des réservations pour
-> les restaurants. Quand votre équipe est en salle, comment gérez-vous les appels et les réservations ?
-> Je cherche à comprendre des situations concrètes pour voir si Sokar peut être adapté, sans vous
-> promettre de gain. Seriez-vous disponible pour un échange de 20 minutes, à votre convenance ?
+**Pitch fondateur, environ 30 secondes** :
+
+> Bonjour, je suis Hamza, le fondateur de Sokar. Nous développons une plateforme pour aider les
+> restaurants à gérer leurs réservations, préparer le service et mieux connaître leurs clients.
+> Elle réunit les réservations en salle et en ligne dans un même planning, et comprend un assistant
+> vocal conçu pour prendre les appels transférés. Aujourd'hui, comment vous organisez vos
+> réservations dans votre restaurant ?
+
+**Message écrit** :
+
+> Bonjour, je suis Hamza, fondateur de Sokar, une plateforme pour aider les restaurants à gérer
+> leurs réservations et préparer leur service. Comment votre équipe organise-t-elle les réservations
+> prises en salle, en ligne et par téléphone ? Je cherche à comprendre votre fonctionnement pour voir
+> si Sokar peut vous être utile. Seriez-vous disponible pour un échange de 20 minutes, à votre convenance ?
 > Si le sujet ne vous concerne pas ou si vous préférez ne pas être recontacté, dites-le-moi.
 > Hamza — Sokar
 

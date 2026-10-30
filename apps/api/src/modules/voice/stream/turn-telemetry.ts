@@ -42,6 +42,7 @@ export type VoiceTurnEvent =
   | 'classified'
   | 'llm_started'
   | 'llm_first_token'
+  | 'llm_say_started'
   | 'llm_first_phrase'
   | 'llm_phrase_generated'
   | 'llm_completed'
@@ -70,6 +71,7 @@ export type VoiceTurnEvent =
   | 'tts_completed'
   | 'tts_interrupted'
   | 'barge_in'
+  | 'caller_backchannel'
   | 'goodbye_filler_hit';
 
 export type VoiceTurnEventFields = Record<string, boolean | number | string | null | undefined>;
@@ -166,6 +168,7 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
       return 'transcription';
     case 'llm_started':
     case 'llm_first_token':
+    case 'llm_say_started':
     case 'llm_first_phrase':
     case 'llm_phrase_generated':
     case 'llm_completed':
@@ -198,6 +201,7 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
       return 'audio';
     case 'tts_interrupted':
     case 'barge_in':
+    case 'caller_backchannel':
     case 'fast_barge_in':
       return 'interruption';
   }
@@ -246,6 +250,7 @@ export function completeVoiceTurnInput(
   words: SttWord[] = [],
   timing?: Pick<
     Extract<SttEvent, { type: 'UtteranceEnd' }>,
+    | 'transcriptProvider'
     | 'speechEndAt'
     | 'sttFinalAt'
     | 'turnDispatchedAt'
@@ -262,6 +267,7 @@ export function completeVoiceTurnInput(
   const turn = session.currentTurn;
   if (!turn) return;
 
+  if (timing?.transcriptProvider) turn.sttProvider = timing.transcriptProvider;
   const completedAt = timing?.sttFinalAt ?? Date.now();
   const dispatchedAt = timing?.turnDispatchedAt ?? Date.now();
   recordDebugCallerText(session, transcript);
@@ -291,6 +297,7 @@ export function completeVoiceTurnInput(
     }
   }
   recordVoiceTurnEvent(session, 'stt_final', {
+    transcriptProvider: turn.sttProvider,
     sttFinalMs: session.latencyTrace?.sttFinalMs ?? 0,
     endOfSpeechToSttFinalMs: session.latencyTrace?.endOfSpeechToSttFinalMs,
     holdMs: session.latencyTrace?.holdMs,

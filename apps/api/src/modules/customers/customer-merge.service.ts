@@ -7,6 +7,7 @@ import {
 } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { redisCache } from '../../shared/redis/client';
+import { loadCustomerVisitStats } from './customer-lifecycle';
 import {
   CUSTOMER_PREFERENCE_KEYS,
   normalizeCustomerEmail,
@@ -76,14 +77,14 @@ const mergeCustomerSelect = {
   restaurantId: true,
   phone: true,
   emailNormalized: true,
+  feedbackEmailOptOutAt: true,
+  feedbackEmailRequestedAt: true,
   birthMonth: true,
   birthDay: true,
   preferredLocale: true,
   mergedIntoId: true,
   archivedAt: true,
   name: true,
-  visitCount: true,
-  loyaltyScore: true,
   isVip: true,
   notes: true,
   specialOccasion: true,
@@ -198,7 +199,8 @@ export type DuplicateCustomerSummary = {
   name: string | null;
   phone: string;
   emailNormalized: string | null;
-  visitCount: number;
+  /** Honoured visits from the reservations; set on the duplicate list. */
+  visits?: number;
   isVip: boolean;
   archivedAt: Date | null;
 };
@@ -316,10 +318,6 @@ function isSerializationFailure(error: unknown): boolean {
   return error.code === 'P2010' && (meta?.code === '40001' || error.message.includes('40001'));
 }
 
-function numberOrZero(value: number | null | undefined): number {
-  return value ?? 0;
-}
-
 function maxDate(values: Array<Date | null | undefined>): Date | null {
   return values.reduce<Date | null>((current, value) => {
     if (!value) return current;
@@ -383,7 +381,6 @@ function duplicateSummary(customer: {
   name: string | null;
   phone: string;
   emailNormalized: string | null;
-  visitCount: number;
   isVip: boolean;
   archivedAt: Date | null;
 }): DuplicateCustomerSummary {
@@ -392,7 +389,6 @@ function duplicateSummary(customer: {
     name: customer.name,
     phone: customer.phone,
     emailNormalized: customer.emailNormalized,
-    visitCount: customer.visitCount,
     isVip: customer.isVip,
     archivedAt: customer.archivedAt,
   };
@@ -408,7 +404,6 @@ export function buildDuplicateCandidates(
     name: string | null;
     phone: string;
     emailNormalized: string | null;
-    visitCount: number;
     isVip: boolean;
     archivedAt: Date | null;
     identities?: Array<Pick<CustomerIdentity, 'type' | 'normalizedValue'>>;
@@ -1437,10 +1432,6 @@ async function applyMerge(
     now,
   );
 
-  const visitCount = [target, ...sources].reduce(
-    (sum, customer) => sum + numberOrZero(customer.visitCount),
-    0,
-  );
   const targetPartySize = target.partySizeTypical ? Number(target.partySizeTypical) : null;
   const sourcePartySizes = sources
     .map((source) => (source.partySizeTypical ? Number(source.partySizeTypical) : null))
@@ -1460,6 +1451,14 @@ async function applyMerge(
         target.emailNormalized ??
         sources.find((source) => source.emailNormalized)?.emailNormalized ??
         null,
+      feedbackEmailOptOutAt: maxDate([
+        target.feedbackEmailOptOutAt,
+        ...sources.map((source) => source.feedbackEmailOptOutAt),
+      ]),
+      feedbackEmailRequestedAt: maxDate([
+        target.feedbackEmailRequestedAt,
+        ...sources.map((source) => source.feedbackEmailRequestedAt),
+      ]),
       birthMonth:
         target.birthMonth ??
         sources.find((source) => source.birthMonth !== null)?.birthMonth ??
@@ -1470,12 +1469,6 @@ async function applyMerge(
         target.preferredLocale ??
         sources.find((source) => source.preferredLocale)?.preferredLocale ??
         null,
-      visitCount,
-      loyaltyScore: [target, ...sources].reduce(
-        (highest, customer) =>
-          customer.loyaltyScore.gt(highest) ? customer.loyaltyScore : highest,
-        new Prisma.Decimal(0),
-      ),
       isVip: [target, ...sources].some((customer) => customer.isVip),
       notes: mergeNotes(
         target.notes,
@@ -1600,7 +1593,6 @@ export async function listCustomerDuplicates(args: {
       name: true,
       phone: true,
       emailNormalized: true,
-      visitCount: true,
       isVip: true,
       archivedAt: true,
       identities: { select: { type: true, normalizedValue: true } },
@@ -1615,8 +1607,23 @@ export async function listCustomerDuplicates(args: {
     : 0;
   const limit = Math.min(Math.max(args.limit ?? 50, 1), 100);
   const page = all.slice(start, start + limit);
+  // Same visit count as the lists and the profile: honoured visits, not the legacy counter.
+  const now = new Date();
+  const stats = await loadCustomerVisitStats(
+    args.restaurantId,
+    page.flatMap((candidate) => [candidate.left.id, candidate.right.id]),
+    now,
+  );
+  const withVisits = (summary: DuplicateCustomerSummary): DuplicateCustomerSummary => ({
+    ...summary,
+    visits: stats.get(summary.id)?.visitDates.length ?? 0,
+  });
   return {
-    data: page,
+    data: page.map((candidate) => ({
+      ...candidate,
+      left: withVisits(candidate.left),
+      right: withVisits(candidate.right),
+    })),
     nextCursor: start + limit < all.length ? (page.at(-1)?.id ?? null) : null,
   };
 }

@@ -178,14 +178,40 @@ Module : `apps/api/src/modules/customers/customer.routes.ts`
 
 ### GET /customers / POST /customers
 
-Liste et upsert tenant-scoped. La liste masque `notes` pour les rôles absents de la politique CRM
+Liste et upsert tenant-scoped. La liste masque `notes` et `specialOccasion` pour les rôles absents de la politique CRM
 effective du site. L'upsert conserve les champs opérationnels pour l'équipe, mais la modification
-de `notes` est réservée à Owner/Manager (`CUSTOMER_NOTES_WRITE_ROLE_REQUIRED`).
+de `notes` ou de `specialOccasion` est réservée aux rôles autorisés à lire les notes (même politique que la lecture, jamais READ_ONLY ; `CUSTOMER_NOTES_WRITE_ROLE_REQUIRED`).
+Le numéro est stocké en E.164 (« 06… » → « +33… ») et un client connu est retrouvé sous l'une ou
+l'autre forme ; l'upsert n'écrit que les champs envoyés (`isVip` absent = VIP conservé).
+Chaque client porte `lifecycle` et `visitSummary` (visites honorées, 365 j, no-show, dernière
+visite réelle), calculés sur les réservations. Les colonnes `visitCount` et `loyaltyScore` n'existent plus
+(migration `20261027150000`) ; `lastSeenAt` bouge à chaque appel et ne doit pas être affiché
+comme dernière visite. Recherche commune avec CRM Pro : nom, email, numéro saisi à la
+française. Tri : dernier contact. Filtres : `isVip` (toutes les formules) ; `lifecycle` et
+`minHonored365d` (visites honorées sur 365 j) exigent `customers.advanced` (offre Pro, 403
+`CAPABILITY_NOT_INCLUDED` sinon ; offre Essential = CRM de base) et portent sur les 5 000 premiers
+clients. Pagination `limit`/`offset`, `total` = résultats filtrés. `sort` : `recent` (défaut,
+dernier contact), `visits365d` ou `lastVisit` (décroissant, calculés, `customers.advanced`).
 
-### PATCH /customers/:id / DELETE /customers/:id
+### GET /customers/segment-counts
 
-Mise à jour / suppression. Comme pour l'upsert, une modification de `notes` exige Owner/Manager ;
-les autres champs restent soumis à l'authentification du site.
+Effectifs des onglets de la liste (`customers.advanced`) : `{ data: { all, vip, new, active,
+regular, at_risk, dormant } }`, avec la même `search` et le même périmètre que la liste. `all` et
+`vip` sont exacts ; les statuts portent sur les 5 000 premiers clients.
+
+### Admin : recalcul des chiffres d'un client
+
+`GET /admin/restaurants/:restaurantId/customers/:customerId/projection-repair-preview` et
+`POST …/projection-repair` (en-tête `Idempotency-Key`), opérateurs Sokar uniquement
+(`requireSokarOperator`). Même calcul que `/crm/customers/:id/projection-repair*`, conservées
+côté restaurant pour compatibilité mais sans écran ; l'outil vit dans l'admin « Santé du restaurant ».
+
+### PATCH /customers/:id
+
+Mise à jour. Comme pour l'upsert, une modification de `notes` ou `specialOccasion` suit la même règle ;
+les autres champs restent soumis à l'authentification du site. Aucune suppression définitive
+(`DELETE /customers/:id` retiré le 27/10/2026) : elle effaçait en cascade les refus marketing et
+les preuves de consentement. L'effacement passe par l'anonymisation RGPD.
 
 ### POST /customers/:id/vip
 
@@ -195,23 +221,23 @@ Passe un client en VIP (notification gérée côté worker BullMQ).
 
 Module : `apps/api/src/modules/customers/customer-crm.routes.ts`
 
-| Méthode     | Route                                                                                  | Description                                                             |
-| ----------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| GET         | `/crm/customers`                                                                       | Liste CRM Pro tenant-scoped avec recherche, VIP, récence et pagination. |
-| GET         | `/crm/customers/:id`                                                                   | Profil, métriques, préférences, tags et 50 événements récents.          |
-| GET         | `/crm/customers/:id/timeline`                                                          | Chronologie cursor-paginée.                                             |
-| GET         | `/crm/tags`                                                                            | Tags du site courant.                                                   |
-| POST/DELETE | `/crm/customers/:id/tags[/:tagId]`                                                     | Ajout ou retrait idempotent d'un tag (Owner/Manager).                   |
-| PUT/DELETE  | `/crm/customers/:id/preferences/:key`                                                  | Préférence structurée allow-listée (Owner/Manager).                     |
-| GET         | `/crm/duplicates`, `/crm/merges`                                                       | Détection et audit des fusions (Owner/Manager).                         |
-| POST        | `/crm/customers/:id/merge-preview`                                                     | Preview d'une fusion sans mutation (Owner/Manager).                     |
-| POST        | `/crm/customers/:id/merge`                                                             | Fusion auditée et idempotente (Owner uniquement).                       |
-| GET/POST    | `/crm/customers/:id/projection-repair-preview`, `/crm/customers/:id/projection-repair` | Vérification puis réparation de projection (Owner pour la mutation).    |
+| Méthode     | Route                                                                                  | Description                                                                                                                     |
+| ----------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| GET         | `/crm/customers`                                                                       | Liste CRM Pro : recherche commune, VIP, `lifecycle`, `minHonored365d` (calculés sur les réservations), tri stable par création. |
+| GET         | `/crm/customers/:id`                                                                   | Profil, métriques, préférences, tags et 50 événements récents.                                                                  |
+| GET         | `/crm/customers/:id/timeline`                                                          | Chronologie cursor-paginée.                                                                                                     |
+| GET         | `/crm/tags`                                                                            | Tags du site courant.                                                                                                           |
+| POST/DELETE | `/crm/customers/:id/tags[/:tagId]`                                                     | Ajout ou retrait idempotent d'un tag (Owner/Manager).                                                                           |
+| PUT/DELETE  | `/crm/customers/:id/preferences/:key`                                                  | Préférence structurée allow-listée (Owner/Manager).                                                                             |
+| GET         | `/crm/duplicates`, `/crm/merges`                                                       | Détection et audit des fusions (Owner/Manager).                                                                                 |
+| POST        | `/crm/customers/:id/merge-preview`                                                     | Preview d'une fusion sans mutation (Owner/Manager).                                                                             |
+| POST        | `/crm/customers/:id/merge`                                                             | Fusion auditée et idempotente (Owner uniquement).                                                                               |
+| GET/POST    | `/crm/customers/:id/projection-repair-preview`, `/crm/customers/:id/projection-repair` | Vérification puis réparation de projection (Owner pour la mutation).                                                            |
 
 | GET | `/crm/privacy` | Politique effective de visibilité des notes du site (Owner). |
 | PATCH | `/crm/privacy` | Définit `sensitiveNoteRoles` pour le site ou `null` pour revenir au fallback environnement (Owner). |
 
-Les deux routes de lecture du profil et de la chronologie masquent `notes` et `metadata` pour les
+Les deux routes de lecture du profil et de la chronologie masquent `notes`, `specialOccasion` (profil) et `metadata` pour les
 rôles absents de la politique effective du site. Sans surcharge, `CRM_SENSITIVE_NOTE_ROLES` est
 utilisé ; la valeur par défaut est `OWNER,MANAGER`. Le masquage est fait dans la réponse et ne
 modifie pas les données persistées.
@@ -262,7 +288,7 @@ Module : `apps/api/src/modules/loyalty/`
 
 La capability `reputation.loyalty` est incluse dans Pro/Multi-site et refusée par Essential. Toutes
 les routes utilisent l'établissement actif de `requireOrg`, les rôles Owner/Manager/Staff selon
-l'opération et `LOYALTY_ENABLED=false` dans les environnements suivis. Aucun provider, point,
+l'opération. Aucun provider, point,
 paiement ou POS n'est appelé.
 
 | Méthode | Route                                 | Description                                                                                  |
@@ -523,24 +549,6 @@ Retrait consentement marketing.
 ### GET /api/rgpd/privacy-policy
 
 Page privacy policy publique (RGPD Article 13).
-
----
-
-## Integrations (Google Calendar)
-
-Module : `apps/api/src/modules/integrations/google.routes.ts`
-
-### GET /integrations/google-calendar/auth
-
-Initie OAuth Google.
-
-### GET /integrations/google-calendar/callback
-
-Callback OAuth.
-
-### POST /integrations/google-calendar/disconnect
-
-Déconnecte le calendrier Google du restaurant.
 
 ---
 

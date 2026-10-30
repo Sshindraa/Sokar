@@ -2,14 +2,36 @@
 
 Carte d'orientation haut niveau. Ce n'est pas une source de vérité absolue. Pour le détail, voir `docs/runbooks/` et `docs/architecture/`.
 
-> **Statut : ACTIF — vérifié le 2 octobre 2026.**
+> **Statut : ACTIF — présentation produit actualisée le 29 octobre 2026.**
 > Le statut de chaque document produit et opérationnel est centralisé dans
 > [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md), avec la réconciliation des audits dans
 > [`audits/2026-09-15-current-state.md`](./audits/2026-09-15-current-state.md).
 
 ## Ce qu'est Sokar
 
-Sokar est un SaaS français de gestion de réservations et d'appels pour restaurants, avec une IA vocale.
+Sokar est une plateforme française pour aider les restaurants à gérer leurs réservations, organiser
+leur service et entretenir la relation avec leurs clients. L'assistant téléphonique vocal est une
+fonction de cette plateforme, pas sa définition à lui seul.
+
+Le produit couvre plusieurs usages, à des niveaux de disponibilité différents :
+
+| Usage                     | Capacités développées                                                                                  | État et limites connus                                                                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Réservations et accueil   | Carnet et planning, réservations en salle, page Connect et widget, disponibilités, liste d'attente     | Parcours présents dans le code ; vérifier les conditions de mise en service et les preuves par canal avant une proposition.                                |
+| Service                   | Plan de salle, tables, allocation et Service Copilot                                                   | Fonctions développées ; la qualification terrain du Copilot reste à faire.                                                                                 |
+| Téléphone                 | Assistant vocal, appels transférés, consultation des disponibilités et prise de réservation            | Recette vocale et installation à vérifier avant activation client ; ne pas garantir une disponibilité continue.                                            |
+| Clients et fidélisation   | Fichier client, historique, préférences ; CRM avancé, segments, campagnes, retours privés et avantages | Socle et modules développés ; CRM avancé et envois marketing soumis aux portes de release. Fournisseurs et pilotes à qualifier avant promesse commerciale. |
+| Cartes cadeaux            | Cartes, packs, utilisation et parcours Stripe                                                          | Parcours développés ; compte Stripe sandbox de démonstration et notifications à qualifier avant ouverture commerciale.                                     |
+| Expériences et événements | Catalogues, sessions, capacités, réservations ou billets et contrôle d'accès                           | Fondations développées sous flags ; paiement et ouverture publique des expériences à qualifier ; paiement et distribution des événements non actifs.       |
+| Plusieurs établissements  | Comptes, sélection de site, rôles et facturation                                                       | Socle développé ; isolation avec identités réelles et partage client inter-sites à qualifier.                                                              |
+| Canaux et intégrations    | Réservation agentique/MCP, fondations de distribution et de connexion caisse                           | Présence dans le code ne vaut pas ouverture partenaire ; accord OpenAI Reserve non confirmé, aucun connecteur caisse ou distribution partenaire actif.     |
+
+Cette liste décrit le produit développé, pas une liste d'inclusions disponibles pour chaque client.
+Avant de vendre ou d'activer une fonction, consulter les flags et portes de
+[`product-gates.json`](./release/product-gates.json), les runbooks concernés et les TODOs actifs de
+[`Context.md`](./obsidian/Context.md). Les prix et droits d'une formule ne prouvent pas à eux seuls
+qu'un parcours est qualifié. Les SMS de réservation et WhatsApp restent désactivés en production
+selon le suivi courant.
 
 - **Dashboard** : espace privé restaurateur (Next.js + Clerk).
 - **Sokar Connect** : site public et widget de réservation (Next.js).
@@ -41,7 +63,7 @@ packages/
 | `customers`            | CRM avancé local : identité, timeline, RFM, préférences, tags et segments bornés.                                                                                                                |
 | `pos`                  | Fondation caisse provider-neutral : connexions, tickets normalisés, import idempotent et matcher réservation-ticket.                                                                             |
 | `marketing`            | Permissions par canal, audiences, campagnes, automations bornées, worker, désinscription et attribution locale.                                                                                  |
-| `reputation`           | Feedback post-visite tokenisé, scores bornés, tâches de récupération et expiration périodique ; providers désactivés.                                                                            |
+| `reputation`           | Feedback privé post-visite par e-mail, scores bornés, tâches de récupération et expiration périodique.                                                                                           |
 | `loyalty`              | Catalogue d'avantages Pro, règles explicables, grants à code hashé, consommation atomique et expiration ; providers désactivés.                                                                  |
 | `experiences`          | Catalogue d'expériences Pro, sessions datées, capacité atomique, snapshot prix, réservations/annulations idempotentes et expiration ; paiement/canaux externes désactivés.                       |
 | `events`               | Catalogue événementiel Pro, sessions/tarifs, jauge atomique, commandes et billets hashés, check-in, liste d'attente et traces locales ; paiement/distribution désactivés.                        |
@@ -64,7 +86,7 @@ packages/
 ## Points d'entrée publics
 
 - **Dashboard** : `https://sokar.tech` (Next.js App Router, Clerk).
-- **Connect** : `https://sokar.tech/restaurant/<slug>`, `/restaurants/<city>`, `/widget/<slug>`.
+- **Connect** : `https://sokar.tech/restaurant/<slug>`, `/restaurants/<city>`, `/widget/<slug>/gift-card`. Le formulaire `/widget/<slug>` et `/book/<slug>` vient du dashboard.
 - **Widget** : `apps/widget/src/app/restaurant-reservation/`.
 - **API** : `https://api.sokar.tech`.
 - **Versioning API public** : `main.ts` réécrit `/public/v1/*` vers `/public/*` (transition progressive). Les routes publiques sont dans `connect.routes.ts`.
@@ -84,16 +106,10 @@ qualifiés. Les projections `Customer` restent attachées à leur établissement
 `CustomerGroupMembership` explicite et unique par compte/client fait le lien, et les réponses ne
 retournent que les quatre derniers chiffres du téléphone.
 
-La fondation réputation est authentifiée par organisation via `requireOrg`, la capability
-`reputation.feedback`, un rôle Owner/Manager et `REPUTATION_ENABLED=false` par défaut. Une demande
-ne peut viser qu'une réservation `HONORED` avec un client actif. Le endpoint public reçoit un token
-opaque expirant dont seul le hash est conservé ; une note ≤ 2 crée une tâche de récupération dans
-la même transaction. Aucun SMS, email, WhatsApp ou fournisseur d'avis n'est appelé par cette
-fondation.
+La réputation est réservée à Pro/Multi-site et aux rôles Owner/Manager. Après une visite honorée, un e-mail de retour privé part à J+1, au plus une fois par client et restaurant en 90 jours, avec désinscription et plafond de 10 tentatives par jour UTC. Une note ≤ 2 crée une tâche de récupération. Aucun lien vers une plateforme d'avis n'est envoyé.
 
 La fidélité opérationnelle est authentifiée par organisation via `requireOrg`, la capability
-`reputation.loyalty`, un rôle Owner/Manager/Staff selon l'opération et `LOYALTY_ENABLED=false` par
-défaut. Les avantages sont limités à une règle, un coût estimé en EUR et une validité ; un grant
+`reputation.loyalty` (Pro/Multi-site) et un rôle Owner/Manager/Staff selon l'opération. Les avantages sont limités à une règle, un coût estimé en EUR et une validité ; un grant
 conserve uniquement le hash d'un code à usage unique. Le redeem est atomique et le worker
 `loyalty-grant-expiry` expire les grants toutes les 15 minutes. Aucun point, canal d'envoi, POS ou
 débit n'est appelé.
@@ -165,11 +181,9 @@ rollback reste possible.
   dashboard ne les présente avant la qualification d'un fournisseur d'identité et d'un pilote
   multi-site.
 - La page réputation (`/dashboard/reputation`) lit les retours et les tâches via l'API et permet les
-  transitions `OPEN → IN_PROGRESS → RESOLVED`. Elle reste verrouillée par `REPUTATION_ENABLED=false`
-  tant que les providers d'envoi, les sources d'avis et le pilote ne sont pas qualifiés.
+  transitions `OPEN → IN_PROGRESS → RESOLVED` pour Pro/Multi-site.
 - La page fidélité (`/dashboard/loyalty`) lit les avantages et grants via l'API et expose les
-  transitions d'émission/consommation. Elle reste verrouillée par `LOYALTY_ENABLED=false` tant que
-  les règles, les canaux, le POS éventuel et le pilote ne sont pas qualifiés.
+  transitions d'émission/consommation pour Pro et Multi-site, en version manuelle.
 - La page expériences (`/dashboard/experiences`) lit le catalogue, ouvre des dates et annule les
   réservations via l'API. Elle affiche l'état réel de l'ouverture publique ; le checkout Connect
   reste désactivé par `EXPERIENCE_BOOKING_ENABLED=false` jusqu'à qualification staging.
@@ -212,7 +226,7 @@ rollback reste possible.
 ### Connect / widget
 
 - Page publique → `connect.service.ts` (agrégateur) ; disponibilités via `CapacityAwareAvailabilityService` (floor-plan).
-- Widget : `apps/connect/src/components/booking-widget.tsx` et `apps/widget/src/app/restaurant-reservation/`.
+- Widget de réservation : `apps/dashboard/src/components/reservation/reservation-widget.tsx`, servi par le dashboard sur `/widget/<slug>` et `/book/<slug>` (sokar.tech, sous-domaines et domaines personnalisés). Écran ChatGPT : `apps/widget/src/app/restaurant-reservation/` (non publié).
 - Cartes cadeaux : `widget/[slug]/gift-card/` et `gift-card-*` components.
 
 ### CRM / marketing
@@ -280,8 +294,7 @@ rollback reste possible.
 - `reputation.service.ts` vérifie `HONORED`, hache les tokens, borne score/commentaire, rend la
   soumission idempotente et crée une tâche pour les scores faibles dans la même transaction.
 - `reputation-feedback-expiry.worker.ts` expire les demandes `PENDING`/`SENT` toutes les 15 minutes.
-  `REPUTATION_ENABLED=false` bloque les routes tant que l'envoi, les sources d'avis et le pilote
-  n'ont pas été qualifiés.
+  L’envoi privé utilise Resend et le budget transactionnel, avec un plafond de 10 tentatives quotidiennes.
 
 ### Fidélité opérationnelle
 
@@ -290,7 +303,7 @@ rollback reste possible.
 - `loyalty.service.ts` borne les règles et les montants, vérifie l'éligibilité CRM, hache le code,
   protège la limite d'utilisation par advisory lock et rend le redeem idempotent.
 - `loyalty-grant-expiry.worker.ts` traite la queue `loyalty-grant-expiry` toutes les 15 minutes.
-  `LOYALTY_ENABLED=false` reste le défaut ; points, envoi et POS sont hors périmètre.
+  Les points, l'envoi et le POS sont hors périmètre.
 
 ### Expériences et sessions
 

@@ -25,10 +25,11 @@ export default function PwaInstallBanner() {
       /iPad|iPhone|iPod/.test(navigator.userAgent) &&
       !(window as unknown as { MSStream?: unknown }).MSStream;
 
-    // Detect if app is already running in standalone mode (PWA installed)
+    // Detect if app is already running in standalone mode (PWA installed or the iOS app shell)
     const isStandalone =
       (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
-      window.matchMedia('(display-mode: standalone)').matches;
+      window.matchMedia('(display-mode: standalone)').matches ||
+      navigator.userAgent.includes('SokarIOS');
 
     // Check localStorage to respect dismissal
     const isDismissed = localStorage.getItem('sokar_pwa_dismissed') === 'true';

@@ -1,0 +1,206 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		C948C3456A72C4FD558E7E11 /* SokarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DAD5ABA9A8A94FD2EFE5A61 /* SokarApp.swift */; };
+		A67EE83E3CD60BEC484F58A0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 516BD92ED53A7C944C57B86B /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		9DAD5ABA9A8A94FD2EFE5A61 /* SokarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SokarApp.swift; sourceTree = "<group>"; };
+		1BB9ED97A6FDBBE832B5094C /* Sokar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sokar.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		516BD92ED53A7C944C57B86B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		5EC217B81978CD56E49E92BE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		2A41ECABA6F6A5B0850AA229 = {
+			isa = PBXGroup;
+			children = (
+				7870BF8B6C4F61A877AF36A7 /* Sokar */,
+				6EC87A5B3145FC976A1A724E /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		7870BF8B6C4F61A877AF36A7 /* Sokar */ = {
+			isa = PBXGroup;
+			children = (
+				516BD92ED53A7C944C57B86B /* Assets.xcassets */,
+				9DAD5ABA9A8A94FD2EFE5A61 /* SokarApp.swift */,
+			);
+			path = Sokar;
+			sourceTree = "<group>";
+		};
+		6EC87A5B3145FC976A1A724E /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1BB9ED97A6FDBBE832B5094C /* Sokar.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E48279BF6BD7173E4CC1DA24 /* Sokar */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A5A851691A47D24E5CE59E98 /* Build configuration list for PBXNativeTarget "Sokar" */;
+			buildPhases = (
+				00DD1F46BFBB89AEFEE754C2 /* Sources */,
+				21A30B761091F7CBBB8D1E0A /* Resources */,
+				5EC217B81978CD56E49E92BE /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Sokar;
+			productName = Sokar;
+			productReference = 1BB9ED97A6FDBBE832B5094C /* Sokar.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C12B4F2E08BA023942EC3DBD /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = 3B1C339C6E4A9D11BDAAB3E3 /* Build configuration list for PBXProject "Sokar" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = fr;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				fr,
+				Base,
+			);
+			mainGroup = 2A41ECABA6F6A5B0850AA229;
+			productRefGroup = 6EC87A5B3145FC976A1A724E /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E48279BF6BD7173E4CC1DA24 /* Sokar */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		21A30B761091F7CBBB8D1E0A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A67EE83E3CD60BEC484F58A0 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		00DD1F46BFBB89AEFEE754C2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C948C3456A72C4FD558E7E11 /* SokarApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		9F639A41E8B77FCC4E0C28D5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		7A7869079E77A9D47AD1D798 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		40AB9DC923F39EA74687DD30 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Sokar/Info.plist;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = tech.sokar.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		5C3EFDB781943616A8B10DEA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Sokar/Info.plist;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = tech.sokar.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3B1C339C6E4A9D11BDAAB3E3 /* Build configuration list for PBXProject "Sokar" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9F639A41E8B77FCC4E0C28D5 /* Debug */,
+				7A7869079E77A9D47AD1D798 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A5A851691A47D24E5CE59E98 /* Build configuration list for PBXNativeTarget "Sokar" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				40AB9DC923F39EA74687DD30 /* Debug */,
+				5C3EFDB781943616A8B10DEA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = C12B4F2E08BA023942EC3DBD /* Project object */;
+}

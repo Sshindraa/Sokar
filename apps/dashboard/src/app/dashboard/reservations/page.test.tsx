@@ -11,7 +11,11 @@ const mocks = vi.hoisted(() => ({
   patch: vi.fn(),
   del: vi.fn(),
   isMobile: false,
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
 }));
+
+vi.mock('sonner', () => ({ toast: { success: mocks.toastSuccess, error: mocks.toastError } }));
 
 vi.mock('@/lib/api', () => ({
   useApi: () => mocks,
@@ -88,7 +92,263 @@ describe('ReservationsPage', () => {
     mocks.get.mockResolvedValue([]);
     render(<ReservationsPage />);
     await waitFor(() => {
-      expect(screen.getByText('Aucune réservation pour cette date')).toBeInTheDocument();
+      expect(screen.getByText(/Aucune réservation le /)).toBeInTheDocument();
+    });
+  });
+
+  describe('création par l’équipe', () => {
+    beforeEach(() => {
+      mocks.get.mockImplementation((path: string) => {
+        if (path.startsWith('reservations/staff-availability'))
+          return Promise.resolve({
+            slots: [
+              { time: '19:00', available: true },
+              { time: '19:30', available: false },
+            ],
+          });
+        if (path === 'restaurants/org_test') return Promise.resolve({ timezone: 'Europe/Paris' });
+        if (path.startsWith('customers/suggestions?'))
+          return Promise.resolve({
+            data: [
+              {
+                id: 'c1',
+                name: 'Alice Martin',
+                phone: '+33612345678',
+                email: 'alice@example.com',
+                visitCount: 5,
+                lastVisitAt: '2026-10-12T12:00:00Z',
+                badges: [
+                  { kind: 'allergy', label: 'Allergie', detail: 'Arachides' },
+                  {
+                    kind: 'no_show_risk',
+                    label: '1 absence',
+                    detail: 'Absent une fois en 12 mois',
+                  },
+                ],
+              },
+            ],
+          });
+        return Promise.resolve([]);
+      });
+    });
+    async function openForm() {
+      render(<ReservationsPage />);
+      fireEvent.click(await screen.findByRole('button', { name: '+ Réservation' }));
+      await screen.findByRole('button', { name: '19:00' });
+      fireEvent.click(screen.getByRole('button', { name: '19:00' }));
+      fireEvent.change(screen.getByLabelText('Téléphone'), { target: { value: '06 12 34 56 78' } });
+      fireEvent.change(screen.getByLabelText('Nom'), { target: { value: 'Alice' } });
+    }
+    it('valide les champs, retrouve un client et enregistre', async () => {
+      mocks.post.mockResolvedValue({ reservationId: 'new-id' });
+      await openForm();
+      expect(await screen.findByText('6e visite · dernière le 12/10')).toBeInTheDocument();
+      expect(screen.getAllByText('Allergie').some((node) => node.closest('li'))).toBe(true);
+      expect(screen.getByText('1 absence')).toBeInTheDocument();
+      fireEvent.click(await screen.findByRole('button', { name: /Alice Martin/ }));
+      expect(screen.getByLabelText('Téléphone')).toHaveValue('+33 6 12 34 56 78');
+      expect(screen.getByLabelText('E-mail (facultatif)')).toHaveValue('alice@example.com');
+      expect(screen.getAllByText('Allergie').some((node) => node.closest('li'))).toBe(true);
+      expect(screen.getByText('1 absence')).toBeInTheDocument();
+      expect(mocks.get).toHaveBeenCalledWith('customers/suggestions?search=Alice&limit=5');
+      fireEvent.click(screen.getByRole('button', { name: 'Anniversaire' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
+      await waitFor(() =>
+        expect(mocks.post).toHaveBeenCalledWith(
+          'reservations/staff',
+          expect.objectContaining({
+            customerName: 'Alice Martin',
+            specialRequests: 'Anniversaire',
+            idempotencyKey: expect.any(String),
+          }),
+        ),
+      );
+      const startsAt = new Date(mocks.post.mock.calls[0][1].startsAt);
+      expect(
+        new Intl.DateTimeFormat('fr-FR', {
+          timeZone: 'Europe/Paris',
+          hour: '2-digit',
+          minute: '2-digit',
+          hourCycle: 'h23',
+        }).format(startsAt),
+      ).toBe('19:00');
+      expect(mocks.toastSuccess).toHaveBeenCalledWith('Réservation créée.');
+    });
+    it('conserve la clé après une erreur réseau et la renouvelle après un 409', async () => {
+      mocks.post
+        .mockRejectedValueOnce(new Error('Réseau indisponible'))
+        .mockRejectedValueOnce(toApiError(409, { error: 'Ce créneau est complet.' }))
+        .mockResolvedValueOnce({ reservationId: 'new-id' });
+      await openForm();
+      const save = screen.getByRole('button', { name: 'Enregistrer' });
+      fireEvent.click(save);
+      expect(await screen.findByRole('alert')).toHaveTextContent('Réseau indisponible');
+      const first = mocks.post.mock.calls[0][1].idempotencyKey;
+      fireEvent.click(save);
+      expect(await screen.findByRole('alert')).toHaveTextContent('Ce créneau est complet.');
+      expect(mocks.post.mock.calls[1][1].idempotencyKey).toBe(first);
+      fireEvent.click(save);
+      await waitFor(() => expect(mocks.post).toHaveBeenCalledTimes(3));
+      expect(mocks.post.mock.calls[2][1].idempotencyKey).not.toBe(first);
+    });
+    it('ignore un deuxième clic pendant la requête', async () => {
+      let resolve!: (result: { reservationId: string }) => void;
+      mocks.post.mockReturnValue(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      await openForm();
+      const save = screen.getByRole('button', { name: 'Enregistrer' });
+      fireEvent.click(save);
+      fireEvent.click(save);
+      expect(mocks.post).toHaveBeenCalledTimes(1);
+      resolve({ reservationId: 'new-id' });
+      await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalled());
+    });
+    it('demande confirmation pour un créneau complet et crée en surbooking', async () => {
+      mocks.post.mockResolvedValue({ reservationId: 'new-id' });
+      await openForm();
+      fireEvent.click(screen.getByRole('button', { name: '19:30 — complet' }));
+      expect(mocks.post).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Forcer la réservation' }));
+      await waitFor(() =>
+        expect(mocks.post).toHaveBeenCalledWith(
+          'reservations/staff',
+          expect.objectContaining({ overbook: true, idempotencyKey: expect.any(String) }),
+        ),
+      );
+    });
+    it('cache les heures passées et montre un message si elles sont toutes passées', async () => {
+      mocks.get.mockImplementation((path: string) =>
+        path.startsWith('reservations/staff-availability')
+          ? Promise.resolve({
+              slots: [
+                { time: '12:00', available: false, past: true },
+                { time: '19:00', available: false, past: false },
+              ],
+            })
+          : path === 'restaurants/org_test'
+            ? Promise.resolve({ timezone: 'Europe/Paris' })
+            : Promise.resolve([]),
+      );
+      render(<ReservationsPage />);
+      fireEvent.click(await screen.findByRole('button', { name: '+ Réservation' }));
+      await screen.findByRole('button', { name: '19:00 — complet' });
+      expect(screen.queryByRole('button', { name: /12:00/ })).not.toBeInTheDocument();
+      mocks.get.mockImplementation((path: string) =>
+        path.startsWith('reservations/staff-availability')
+          ? Promise.resolve({ slots: [{ time: '12:00', available: false, past: true }] })
+          : path === 'restaurants/org_test'
+            ? Promise.resolve({ timezone: 'Europe/Paris' })
+            : Promise.resolve([]),
+      );
+      fireEvent.click(screen.getByRole('button', { name: '3' }));
+      expect(await screen.findByText('Aucun créneau restant aujourd’hui')).toBeInTheDocument();
+    });
+    it('indique le surbooking sélectionné avant enregistrement', async () => {
+      render(<ReservationsPage />);
+      fireEvent.click(await screen.findByRole('button', { name: '+ Réservation' }));
+      fireEvent.click(await screen.findByRole('button', { name: '19:30 — complet' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Forcer la réservation' }));
+      expect(
+        screen.getByText('Surbooking : la réservation sera créée sans table.'),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '19:30 — complet' })).not.toHaveClass(
+        'text-muted-foreground',
+      );
+    });
+    it('place les suggestions en superposition sous le champ recherché', async () => {
+      await openForm();
+      const suggestion = await screen.findByRole('button', { name: /Alice Martin/ });
+      expect(suggestion.parentElement).toHaveClass('absolute', 'top-full');
+      expect(suggestion.parentElement?.parentElement).toContainElement(
+        screen.getByLabelText('Nom'),
+      );
+    });
+    it('masque les visites non disponibles et retire les badges si l’identité est modifiée', async () => {
+      mocks.get.mockImplementation((path: string) => {
+        if (path.startsWith('customers/suggestions?'))
+          return Promise.resolve({
+            data: [
+              {
+                id: 'c1',
+                name: 'Alice Martin',
+                phone: '+33612345678',
+                email: null,
+                visitCount: null,
+                lastVisitAt: null,
+                badges: [{ kind: 'allergy', label: 'Allergie', detail: 'Arachides' }],
+              },
+            ],
+          });
+        if (path.startsWith('reservations/staff-availability'))
+          return Promise.resolve({ slots: [{ time: '19:00', available: true, past: false }] });
+        if (path === 'restaurants/org_test') return Promise.resolve({ timezone: 'Europe/Paris' });
+        return Promise.resolve([]);
+      });
+      await openForm();
+      const suggestion = await screen.findByRole('button', { name: /Alice Martin/ });
+      expect(suggestion).not.toHaveTextContent('visite');
+      fireEvent.click(suggestion);
+      expect(screen.getAllByText('Allergie').some((node) => node.closest('li'))).toBe(true);
+      fireEvent.change(screen.getByLabelText('Nom'), { target: { value: 'Autre' } });
+      expect(screen.getAllByText('Allergie').some((node) => node.closest('li'))).toBe(false);
+    });
+    it('affiche une erreur de recherche sous le champ téléphone sans déplacer le formulaire', async () => {
+      mocks.get.mockImplementation((path: string) =>
+        path.startsWith('customers/suggestions?')
+          ? Promise.reject(new Error('CRM indisponible'))
+          : path.startsWith('reservations/staff-availability')
+            ? Promise.resolve({ slots: [{ time: '19:00', available: true, past: false }] })
+            : path === 'restaurants/org_test'
+              ? Promise.resolve({ timezone: 'Europe/Paris' })
+              : Promise.resolve([]),
+      );
+      render(<ReservationsPage />);
+      fireEvent.click(await screen.findByRole('button', { name: '+ Réservation' }));
+      fireEvent.change(screen.getByLabelText('Téléphone'), { target: { value: '0612' } });
+      const message = await screen.findByText('Recherche client indisponible.');
+      expect(message.parentElement).toHaveClass('absolute', 'top-full');
+      expect(message.parentElement?.parentElement).toContainElement(
+        screen.getByLabelText('Téléphone'),
+      );
+    });
+    it('affiche le jour fermé ou une erreur de chargement', async () => {
+      mocks.get.mockImplementation((path: string) =>
+        path.startsWith('reservations/staff-availability')
+          ? Promise.resolve({ slots: [] })
+          : path === 'restaurants/org_test'
+            ? Promise.resolve({ timezone: 'Europe/Paris' })
+            : Promise.resolve([]),
+      );
+      render(<ReservationsPage />);
+      fireEvent.click(await screen.findByRole('button', { name: '+ Réservation' }));
+      expect(await screen.findByText('Aucun créneau ce jour')).toBeInTheDocument();
+    });
+    it('propose de réessayer si les créneaux sont indisponibles', async () => {
+      mocks.get.mockImplementation((path: string) =>
+        path.startsWith('reservations/staff-availability')
+          ? Promise.reject(new Error('Réseau indisponible'))
+          : path === 'restaurants/org_test'
+            ? Promise.resolve({ timezone: 'Europe/Paris' })
+            : Promise.resolve([]),
+      );
+      render(<ReservationsPage />);
+      fireEvent.click(await screen.findByRole('button', { name: '+ Réservation' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Réseau indisponible');
+      expect(screen.getByRole('button', { name: 'Réessayer' })).toBeInTheDocument();
+    });
+    it('ouvre avec N sans intercepter la saisie', async () => {
+      render(<ReservationsPage />);
+      await screen.findByRole('button', { name: '+ Réservation' });
+      fireEvent.keyDown(window, { key: 'n' });
+      expect(
+        await screen.findByRole('dialog', { name: 'Nouvelle réservation' }),
+      ).toBeInTheDocument();
+      const name = screen.getByLabelText('Nom');
+      fireEvent.keyDown(name, { key: 'n' });
+      expect(screen.getAllByRole('dialog', { name: 'Nouvelle réservation' })).toHaveLength(1);
     });
   });
 
@@ -98,7 +358,177 @@ describe('ReservationsPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Sans table')).toBeInTheDocument();
     });
-    expect(screen.getByRole('button', { name: 'Allouer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Attribuer une table' })).toBeInTheDocument();
+  });
+  it('montre le badge surbooking en liste et dans le panneau', async () => {
+    mocks.get.mockResolvedValue([makeReservation({ overbooked: true })]);
+    render(<ReservationsPage />);
+    expect(await screen.findByText('Surbooking')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Alice'));
+    expect(screen.getAllByText('Surbooking')).toHaveLength(2);
+  });
+  it('affiche le surbooking sur la carte mobile', async () => {
+    mocks.isMobile = true;
+    mocks.get.mockResolvedValue([makeReservation({ overbooked: true })]);
+    render(<ReservationsPage />);
+    expect(await screen.findByText('Surbooking')).toBeInTheDocument();
+  });
+  it('ouvre la création avec N depuis une ligne et accorde le compteur', async () => {
+    mocks.get.mockResolvedValue([makeReservation()]);
+    render(<ReservationsPage />);
+    const row = (await screen.findByText('Alice')).closest('tr')!;
+    expect(screen.getByText('1 réservation · 2 couverts')).toBeInTheDocument();
+    fireEvent.keyDown(row, { key: 'n' });
+    expect(screen.getByRole('dialog', { name: 'Nouvelle réservation' })).toBeInTheDocument();
+  });
+
+  it('exclut les réservations annulées et absentes du nombre de couverts', async () => {
+    mocks.get.mockResolvedValue([
+      makeReservation({ partySize: 2 }),
+      makeReservation({ id: 'r2', state: 'CANCELLED', partySize: 4 }),
+      makeReservation({ id: 'r3', state: 'NO_SHOW', partySize: 3 }),
+      makeReservation({ id: 'r4', state: 'HONORED', partySize: 5 }),
+    ]);
+    render(<ReservationsPage />);
+    expect(await screen.findByText(/2 réservations · 7 couverts/)).toBeInTheDocument();
+  });
+
+  it('masque le revenu sans données et le montre dès qu’une valeur existe, même zéro', async () => {
+    mocks.get.mockResolvedValue([makeReservation({ estimatedRevenue: null })]);
+    const { unmount } = render(<ReservationsPage />);
+    await screen.findByText('Alice');
+    expect(screen.queryByRole('columnheader', { name: 'Revenu estimé' })).not.toBeInTheDocument();
+    unmount();
+    mocks.get.mockResolvedValue([makeReservation({ estimatedRevenue: 0 })]);
+    render(<ReservationsPage />);
+    expect(await screen.findByRole('columnheader', { name: 'Revenu estimé' })).toBeInTheDocument();
+  });
+
+  it('garde les informations mobiles dans l’ordre et affiche la note sur deux lignes', async () => {
+    mocks.isMobile = true;
+    mocks.get.mockImplementation((path: string) =>
+      path.startsWith('customers/service-cards')
+        ? Promise.resolve({
+            data: [{ reservationId: 'r1', badges: [{ kind: 'regular', label: 'Habitué' }] }],
+          })
+        : Promise.resolve([
+            makeReservation({
+              specialRequests: 'Une longue note pour la réservation',
+              estimatedRevenue: null,
+            }),
+          ]),
+    );
+    render(<ReservationsPage />);
+    const note = await screen.findByText('Une longue note pour la réservation');
+    expect(note).toHaveClass('line-clamp-2', 'whitespace-normal');
+    expect(note.closest('[data-state]')).toBeNull();
+    await screen.findByText('Fiche');
+    const grid = screen.getByText('Heure').parentElement?.parentElement;
+    expect(Array.from(grid!.children).map((item) => item.firstElementChild?.textContent)).toEqual([
+      'Heure',
+      'Couverts',
+      'Table',
+      'Notes',
+      'Fiche',
+    ]);
+    expect(screen.queryByText('Revenu estimé')).not.toBeInTheDocument();
+  });
+
+  it('affiche les notes dans la cellule client', async () => {
+    mocks.get.mockResolvedValue([makeReservation({ specialRequests: 'Terrasse au calme' })]);
+    render(<ReservationsPage />);
+    const note = await screen.findByText('Terrasse au calme');
+    expect(note.closest('td')).toHaveTextContent('Alice');
+    expect(note).toHaveClass('truncate');
+    expect(screen.queryByRole('columnheader', { name: 'Notes' })).not.toBeInTheDocument();
+  });
+
+  it('bloque les couverts invalides sans afficher NaN', async () => {
+    mocks.get.mockResolvedValue([makeReservation()]);
+    render(<ReservationsPage />);
+    fireEvent.click(await screen.findByText('Alice'));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier' }));
+    fireEvent.change(screen.getByLabelText('Nom'), { target: { value: 'Bob' } });
+    for (const value of ['', '0', '21', '1.5']) {
+      fireEvent.change(screen.getByLabelText('Couverts'), { target: { value } });
+      expect(screen.getByRole('button', { name: 'Enregistrer' })).toBeDisabled();
+      expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+    }
+    fireEvent.change(screen.getByLabelText('Couverts'), { target: { value: '4' } });
+    expect(screen.getByRole('button', { name: 'Enregistrer' })).toBeEnabled();
+  });
+
+  it('annonce le déplacement avec la date et l’heure', async () => {
+    mocks.get.mockResolvedValue([makeReservation()]);
+    render(<ReservationsPage />);
+    fireEvent.click(await screen.findByText('Alice'));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier' }));
+    fireEvent.change(screen.getByLabelText('Heure'), { target: { value: '18:15' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() =>
+      expect(mocks.toastSuccess).toHaveBeenCalledWith('Réservation déplacée au 05/06 à 18:15'),
+    );
+  });
+
+  it('affiche les détails et conserve la saisie après un conflit', async () => {
+    mocks.get.mockResolvedValue([
+      makeReservation({ channel: 'WEB', specialRequests: 'Fenêtre', customerPhone: '0102030405' }),
+    ]);
+    mocks.post.mockRejectedValueOnce(
+      toApiError(409, { error: 'Ce créneau est complet pour 3 couverts.' }),
+    );
+    render(<ReservationsPage />);
+    fireEvent.click(await screen.findByText('Alice'));
+    expect(screen.getByRole('dialog', { name: 'Détail de la réservation' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier' }));
+    fireEvent.change(screen.getByLabelText('Couverts'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'Terrasse' } });
+    expect(screen.getByText('Couverts : 2 → 3')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Ce créneau est complet pour 3 couverts.',
+    );
+    expect(screen.getByLabelText('Notes')).toHaveValue('Terrasse');
+    expect(mocks.post).toHaveBeenCalledWith('reservations/r1/staff-modification', {
+      partySize: 3,
+      specialRequests: 'Terrasse',
+    });
+  });
+
+  it('enregistre puis recharge les réservations', async () => {
+    mocks.get.mockResolvedValue([makeReservation()]);
+    mocks.post.mockResolvedValue({ changed: true });
+    render(<ReservationsPage />);
+    fireEvent.click(await screen.findByText('Alice'));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier' }));
+    fireEvent.change(screen.getByLabelText('Nom'), { target: { value: 'Alice Martin' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith('reservations/r1/staff-modification', {
+        customerName: 'Alice Martin',
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Détail de la réservation' }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      mocks.get.mock.calls.filter(([path]) => String(path).startsWith('reservations?')),
+    ).toHaveLength(2);
+  });
+
+  it('ouvre le panneau depuis une carte mobile sans déclencher son action', async () => {
+    mocks.isMobile = true;
+    mocks.get.mockResolvedValue([makeReservation()]);
+    render(<ReservationsPage />);
+    fireEvent.click(await screen.findByText('Alice'));
+    expect(screen.getByRole('dialog', { name: 'Détail de la réservation' })).toBeInTheDocument();
+    expect(document.querySelector('.fixed.inset-0')).toHaveClass(
+      'bg-black/40',
+      'backdrop-blur-none',
+    );
+    expect(mocks.post).not.toHaveBeenCalled();
   });
 
   it('affiche le nom de la table quand tableId est renseigné', async () => {
@@ -110,7 +540,7 @@ describe('ReservationsPage', () => {
       expect(screen.getByText('Terrasse 1')).toBeInTheDocument();
     });
     expect(screen.queryByText('Sans table')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Allouer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Attribuer une table' })).not.toBeInTheDocument();
   });
 
   it('cliquer sur Allouer appelle le endpoint et met à jour la ligne', async () => {
@@ -120,17 +550,17 @@ describe('ReservationsPage', () => {
     render(<ReservationsPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Allouer' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Attribuer une table' })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Allouer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Attribuer une table' }));
 
     await waitFor(() => {
       expect(screen.getByText('Terrasse 1')).toBeInTheDocument();
     });
     expect(mocks.post).toHaveBeenCalledWith('reservations/r1/allocate-table');
     expect(screen.queryByText('Sans table')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Allouer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Attribuer une table' })).not.toBeInTheDocument();
   });
 
   it("n'affiche pas le badge Sans table ni le bouton Allouer quand le statut n'est pas actif", async () => {
@@ -140,7 +570,7 @@ describe('ReservationsPage', () => {
       expect(screen.getByText('Annulée')).toBeInTheDocument();
     });
     expect(screen.queryByText('Sans table')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Allouer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Attribuer une table' })).not.toBeInTheDocument();
   });
 
   it('annule une réservation via le contrat status du dashboard', async () => {
@@ -149,13 +579,14 @@ describe('ReservationsPage', () => {
     render(<ReservationsPage />);
 
     await waitFor(() => {
-      expect(
-        screen.getByRole('combobox', { name: 'Autres actions pour Alice' }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Autres actions pour Alice' })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('combobox', { name: 'Autres actions pour Alice' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Annuler' }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Autres actions pour Alice' }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Annuler' }));
     fireEvent.click(screen.getByRole('button', { name: 'Annuler la réservation' }));
 
     await waitFor(() => {
@@ -168,9 +599,9 @@ describe('ReservationsPage', () => {
     mocks.get.mockResolvedValue([makeReservation({ state: 'HONORED', status: 'SEATED' })]);
     render(<ReservationsPage />);
     await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: 'Terminer le service' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Terminer' })).not.toBeInTheDocument();
     expect(
-      screen.queryByRole('combobox', { name: 'Autres actions pour Alice' }),
+      screen.queryByRole('button', { name: 'Autres actions pour Alice' }),
     ).not.toBeInTheDocument();
   });
 
@@ -183,7 +614,7 @@ describe('ReservationsPage', () => {
       ]);
     mocks.patch.mockResolvedValue(undefined);
     render(<ReservationsPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Terminer le service' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Terminer' }));
     await waitFor(() =>
       expect(mocks.patch).toHaveBeenCalledWith(
         'restaurants/org_test/floor-plan/reservations/r1/state',
@@ -191,7 +622,7 @@ describe('ReservationsPage', () => {
       ),
     );
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: 'Terminer le service' })).not.toBeInTheDocument(),
+      expect(screen.queryByRole('button', { name: 'Terminer' })).not.toBeInTheDocument(),
     );
   });
 
@@ -208,7 +639,7 @@ describe('ReservationsPage', () => {
     fireEvent.click(confirm);
     expect(screen.getByRole('button', { name: 'En cours…' })).toBeDisabled();
     rejectMutation(new Error('Service indisponible'));
-    expect(await screen.findByText('Service indisponible')).toBeInTheDocument();
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith('Service indisponible'));
     expect(screen.getByText('En attente')).toBeInTheDocument();
     expect(mocks.patch).toHaveBeenCalledTimes(1);
   });
@@ -224,11 +655,11 @@ describe('ReservationsPage', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Installer' }));
 
-    expect(
-      await screen.findByText(
+    await waitFor(() =>
+      expect(mocks.toastError).toHaveBeenCalledWith(
         'Cette réservation a changé entre-temps ou son créneau est terminé. Liste actualisée.',
       ),
-    ).toBeInTheDocument();
+    );
     expect(screen.queryByText(/Cannot seat/)).toBeNull();
     // Chargement initial + rafraîchissement après le conflit.
     expect(
@@ -257,7 +688,7 @@ describe('ReservationsPage', () => {
     render(<ReservationsPage />);
     await waitFor(() => expect(screen.getByText('Charles')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Confirmer' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Terminer le service' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Terminer' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Afficher les actions' })).toHaveLength(2);
   });
 
@@ -267,17 +698,17 @@ describe('ReservationsPage', () => {
       render(<ReservationsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Aucune réservation pour cette date')).toBeInTheDocument();
+        expect(screen.getByText(/Aucune réservation le /)).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByRole('button', { name: /File d'attente/i }));
+      fireEvent.mouseDown(screen.getByRole('tab', { name: /File d'attente/i }), { button: 0 });
 
       await waitFor(() => {
-        expect(
-          screen.getByText("Aucune entrée en file d'attente pour cette date"),
-        ).toBeInTheDocument();
+        expect(screen.getByText(/Aucune demande en attente le /)).toBeInTheDocument();
       });
-      expect(screen.getByLabelText('Date')).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Choisir une date dans le calendrier' }),
+      ).toBeInTheDocument();
     });
 
     it('affiche les entrées et permet de proposer une table', async () => {
@@ -291,10 +722,10 @@ describe('ReservationsPage', () => {
       render(<ReservationsPage />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /File d'attente/i })).toBeInTheDocument();
+        expect(screen.getByRole('tab', { name: /File d'attente/i })).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByRole('button', { name: /File d'attente/i }));
+      fireEvent.mouseDown(screen.getByRole('tab', { name: /File d'attente/i }), { button: 0 });
 
       await waitFor(() => {
         expect(screen.getByText('Bob Dylan')).toBeInTheDocument();
@@ -303,7 +734,7 @@ describe('ReservationsPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Proposer une table' }));
 
       await waitFor(() => {
-        expect(screen.getByText('Table proposée avec succès')).toBeInTheDocument();
+        expect(mocks.toastSuccess).toHaveBeenCalledWith('Table proposée');
       });
       expect(mocks.post).toHaveBeenCalledWith('restaurants/org_test/waiting-list/wl1/promote');
     });
@@ -319,10 +750,10 @@ describe('ReservationsPage', () => {
       render(<ReservationsPage />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /File d'attente/i })).toBeInTheDocument();
+        expect(screen.getByRole('tab', { name: /File d'attente/i })).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByRole('button', { name: /File d'attente/i }));
+      fireEvent.mouseDown(screen.getByRole('tab', { name: /File d'attente/i }), { button: 0 });
 
       await waitFor(() => {
         expect(screen.getByText('Bob Dylan')).toBeInTheDocument();
@@ -331,7 +762,7 @@ describe('ReservationsPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Proposer une table' }));
 
       await waitFor(() => {
-        expect(screen.getByText('Aucune table compatible')).toBeInTheDocument();
+        expect(mocks.toastError).toHaveBeenCalledWith('Aucune table compatible');
       });
     });
 
@@ -343,11 +774,15 @@ describe('ReservationsPage', () => {
       mocks.post.mockRejectedValue(new Error('already_promoted'));
 
       render(<ReservationsPage />);
-      fireEvent.click(await screen.findByRole('button', { name: /File d'attente/i }));
+      fireEvent.mouseDown(await screen.findByRole('tab', { name: /File d'attente/i }), {
+        button: 0,
+      });
       await screen.findByText('Bob Dylan');
       fireEvent.click(screen.getByRole('button', { name: 'Proposer une table' }));
 
-      expect(await screen.findByText('Cette demande a déjà reçu une table')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(mocks.toastError).toHaveBeenCalledWith('Cette demande a déjà reçu une table'),
+      );
       expect(screen.queryByText(/already_promoted/)).toBeNull();
     });
 
@@ -362,9 +797,11 @@ describe('ReservationsPage', () => {
       );
       render(<ReservationsPage />);
 
-      fireEvent.click(await screen.findByRole('button', { name: /File d'attente/i }));
+      fireEvent.mouseDown(await screen.findByRole('tab', { name: /File d'attente/i }), {
+        button: 0,
+      });
 
-      expect(await screen.findByText('2 en attente')).toBeInTheDocument();
+      expect(await screen.findByRole('tab', { name: /File d'attente 2/i })).toBeInTheDocument();
       expect(screen.queryByText(/en attentes/)).not.toBeInTheDocument();
       expect(screen.queryByRole('table')).not.toBeInTheDocument();
       const proposer = screen.getAllByRole('button', { name: 'Proposer une table' });
@@ -386,16 +823,21 @@ describe('ReservationsPage', () => {
       render(<ReservationsPage />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /File d'attente/i })).toBeInTheDocument();
+        expect(screen.getByRole('tab', { name: /File d'attente/i })).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByRole('button', { name: /File d'attente/i }));
+      fireEvent.mouseDown(screen.getByRole('tab', { name: /File d'attente/i }), { button: 0 });
 
       await waitFor(() => {
         expect(screen.getByText('Bob Dylan')).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByRole('button', { name: 'Retirer' }));
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Autres actions pour Bob Dylan' }), {
+        button: 0,
+        ctrlKey: false,
+      });
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Retirer' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmer le retrait' }));
 
       await waitFor(() => {
         expect(screen.queryByText('Bob Dylan')).not.toBeInTheDocument();
@@ -425,37 +867,55 @@ describe('ReservationsPage — jour affiché', () => {
       expect(mocks.get).toHaveBeenCalledWith('reservations?date=2026-10-17');
     });
     expect(mocks.get).not.toHaveBeenCalledWith(expect.stringContaining('limit=100'));
-    expect(await screen.findByText(/samedi 17 octobre 2026/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Aucune réservation le samedi 17 octobre/i)).toBeInTheDocument();
   });
 
   it('passe au jour suivant en gardant la barre de dates à l’écran', async () => {
     render(<ReservationsPage />);
-    await screen.findByText(/samedi 17 octobre 2026/i);
+    await screen.findByText(/Aucune réservation le samedi 17 octobre/i);
 
     fireEvent.click(screen.getByRole('button', { name: 'Jour suivant' }));
 
     await waitFor(() => {
       expect(mocks.get).toHaveBeenCalledWith('reservations?date=2026-10-18');
     });
-    expect(await screen.findByText(/dimanche 18 octobre 2026/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Aucune réservation le dimanche 18 octobre/i),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Jour précédent' })).toBeInTheDocument();
   });
 
-  it('garde la date affichée quand le champ est vidé', async () => {
+  it('change la date depuis le calendrier', async () => {
     render(<ReservationsPage />);
-    const input = (await screen.findByLabelText('Date')) as HTMLInputElement;
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Choisir une date dans le calendrier' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /dimanche 18 octobre 2026/i }));
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('reservations?date=2026-10-18'));
+  });
 
-    fireEvent.change(input, { target: { value: '' } });
-
-    expect(input.value).toBe('2026-10-17');
-    expect(screen.getByText(/samedi 17 octobre 2026/i)).toBeInTheDocument();
+  it('actualise le compteur de la file dès le chargement et au changement de jour', async () => {
+    mocks.get.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.includes('waiting-list') && path.includes('2026-10-17')
+          ? [makeWaitingListEntry()]
+          : [],
+      ),
+    );
+    render(<ReservationsPage />);
+    expect(await screen.findByRole('tab', { name: /File d'attente 1/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Jour suivant' }));
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /File d'attente 0/i })).toBeInTheDocument(),
+    );
+    expect(mocks.get).toHaveBeenCalledWith('restaurants/org_test/waiting-list?date=2026-10-18');
   });
 
   it('partage le jour avec la file d’attente', async () => {
     render(<ReservationsPage />);
-    await screen.findByText(/samedi 17 octobre 2026/i);
+    await screen.findByText(/Aucune réservation le samedi 17 octobre/i);
 
-    fireEvent.click(screen.getByRole('button', { name: /file d.attente/i }));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /file d.attente/i }), { button: 0 });
 
     await waitFor(() => {
       expect(mocks.get).toHaveBeenCalledWith('restaurants/org_test/waiting-list?date=2026-10-17');

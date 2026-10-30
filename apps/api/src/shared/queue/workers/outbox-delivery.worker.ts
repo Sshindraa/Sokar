@@ -10,6 +10,8 @@ import {
   recordPricedUsageEvent,
   type RecordPricedUsageInput,
 } from '../../../modules/usage/usage-tariff.service';
+import { processReservationConfirmationEmail } from '../../../modules/reservations/reservation-confirmation-email';
+import { sendReputationFeedbackEmail } from '../../../modules/reputation/reputation-email.service';
 
 export interface OutboxDeliveryJobData {
   readonly outboxEventId: string;
@@ -84,6 +86,53 @@ export async function processOutboxDeliveryJob(job: Job<OutboxDeliveryJobData>):
         jobId: buildReservationNotificationJobId('confirmation', payload.reservationId),
       },
     );
+    return;
+  }
+
+  if (event.topic === 'reservation-confirmation-email') {
+    const payload = event.payload as { reservationId?: unknown };
+    if (
+      typeof payload.reservationId !== 'string' ||
+      !payload.reservationId ||
+      !event.restaurantId ||
+      payload.reservationId !== event.aggregateId
+    ) {
+      throw new Error('INVALID_RESERVATION_CONFIRMATION_EMAIL_PAYLOAD');
+    }
+    await processReservationConfirmationEmail({
+      reservationId: payload.reservationId,
+      restaurantId: event.restaurantId,
+    });
+    return;
+  }
+
+  if (event.topic === 'reputation-feedback-email') {
+    const payload = event.payload as { reservationId?: unknown };
+    if (
+      typeof payload.reservationId !== 'string' ||
+      !event.restaurantId ||
+      payload.reservationId !== event.aggregateId
+    ) {
+      throw new Error('INVALID_REPUTATION_EMAIL_PAYLOAD');
+    }
+    const result = await sendReputationFeedbackEmail({
+      reservationId: payload.reservationId,
+      restaurantId: event.restaurantId,
+    });
+    if (result === 'defer') {
+      const now = new Date();
+      const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+      await queues.outboxDelivery.add(
+        'deliver',
+        { outboxEventId: event.id },
+        {
+          jobId: `feedback_${event.id}_${next}`,
+          delay: Math.max(1000, next - now.getTime()),
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 5000 },
+        },
+      );
+    }
     return;
   }
 

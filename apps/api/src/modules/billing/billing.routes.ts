@@ -1,4 +1,5 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { clerkClient } from '@clerk/fastify';
 import { z } from 'zod';
 import { requireOrg } from '../../plugins/clerk';
 import {
@@ -45,6 +46,28 @@ const PortalSchema = z
   .strict();
 
 export async function billingRoutes(app: FastifyInstance) {
+  async function requireBillingOwner(req: FastifyRequest, reply: FastifyReply): Promise<boolean> {
+    if (req.siteRole === 'OWNER') return true;
+    if (!req.accountId && req.siteRole === 'ORG_MEMBER' && req.userId && req.clerkOrganizationId) {
+      try {
+        const organization = await clerkClient.organizations.getOrganization({
+          organizationId: req.clerkOrganizationId,
+        });
+        if (organization.createdBy === req.userId) return true;
+      } catch {
+        reply.status(503).send({
+          error: 'OWNER_VERIFICATION_UNAVAILABLE',
+          message: 'Impossible de vérifier le propriétaire pour le moment.',
+        });
+        return false;
+      }
+    }
+    reply.status(403).send({
+      error: 'BILLING_OWNER_REQUIRED',
+      message: 'Seul le propriétaire du compte peut gérer la facturation.',
+    });
+    return false;
+  }
   app.get('/billing/status', { preHandler: requireOrg() }, async (req, reply) => {
     try {
       return reply.send(
@@ -74,12 +97,7 @@ export async function billingRoutes(app: FastifyInstance) {
 
   app.get('/billing/details', { preHandler: requireOrg() }, async (req, reply) => {
     reply.header('Cache-Control', 'no-store');
-    if (req.siteRole !== 'OWNER') {
-      return reply.status(403).send({
-        error: 'BILLING_OWNER_REQUIRED',
-        message: 'Seul le propriétaire du compte peut consulter la facturation.',
-      });
-    }
+    if (!(await requireBillingOwner(req, reply))) return;
     try {
       return reply.send(
         await getBillingDetails({ restaurantId: req.restaurantId!, accountId: req.accountId }),
@@ -98,12 +116,7 @@ export async function billingRoutes(app: FastifyInstance) {
   });
 
   app.post('/billing/checkout-session', { preHandler: requireOrg() }, async (req, reply) => {
-    if (req.accountId && req.siteRole !== 'OWNER') {
-      return reply.status(403).send({
-        error: 'BILLING_OWNER_REQUIRED',
-        message: 'Seul le propriétaire du compte peut gérer la facturation.',
-      });
-    }
+    if (!(await requireBillingOwner(req, reply))) return;
     const input = CheckoutSchema.parse(req.body);
     const idempotencyHeader = req.headers['idempotency-key'];
     const idempotencyKey = Array.isArray(idempotencyHeader)
@@ -165,12 +178,7 @@ export async function billingRoutes(app: FastifyInstance) {
 
   // Onboarding : essai gratuit sur la formule choisie, sans passer par Stripe Checkout.
   app.post('/billing/trial', { preHandler: requireOrg() }, async (req, reply) => {
-    if (req.accountId && req.siteRole !== 'OWNER') {
-      return reply.status(403).send({
-        error: 'BILLING_OWNER_REQUIRED',
-        message: 'Seul le propriétaire du compte peut gérer la facturation.',
-      });
-    }
+    if (!(await requireBillingOwner(req, reply))) return;
     try {
       return reply.send(
         await startTrial({
@@ -221,12 +229,7 @@ export async function billingRoutes(app: FastifyInstance) {
   });
 
   app.post('/billing/portal-session', { preHandler: requireOrg() }, async (req, reply) => {
-    if (req.accountId && req.siteRole !== 'OWNER') {
-      return reply.status(403).send({
-        error: 'BILLING_OWNER_REQUIRED',
-        message: 'Seul le propriétaire du compte peut gérer la facturation.',
-      });
-    }
+    if (!(await requireBillingOwner(req, reply))) return;
 
     const input = PortalSchema.parse(req.body ?? {});
     reply.header('Cache-Control', 'no-store');

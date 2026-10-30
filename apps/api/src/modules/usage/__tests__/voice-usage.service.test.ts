@@ -32,7 +32,8 @@ describe('voice usage counters', () => {
 
   it('aggregates STT, Cartesia and per-provider/per-turn LLM usage once', async () => {
     const session = makeSession();
-    addSttAudioSamples(session, 16_000);
+    addSttAudioSamples(session, 16_000, 'deepgram');
+    addSttAudioSamples(session, 8_000, 'cartesia');
     addCartesiaTtsCharacters(session, 120);
     addLlmUsage(session, 'cerebras', 'turn-1', 40, 12, true);
     addLlmUsage(session, 'cerebras', 'turn-1', 10, 3, false);
@@ -41,19 +42,29 @@ describe('voice usage counters', () => {
     await finalizeVoiceUsage(session);
 
     const events = vi.mocked(db.outboxEvent.create).mock.calls.map(([call]) => call.data);
-    expect(events).toHaveLength(4);
+    expect(events).toHaveLength(5);
     expect(events.map((event) => event.idempotencyKey)).toEqual(
       expect.arrayContaining([
-        'elevenlabs:stt:leg-1:final',
+        'deepgram:stt:leg-1:final',
+        'cartesia:stt:leg-1:final',
         'cartesia:tts:leg-1:final',
         'cerebras:llm:leg-1:turn-1:input',
         'cerebras:llm:leg-1:turn-1:output',
       ]),
     );
     expect(
-      events.find((event) => event.idempotencyKey === 'elevenlabs:stt:leg-1:final')?.payload,
+      events.find((event) => event.idempotencyKey === 'deepgram:stt:leg-1:final')?.payload,
     ).toMatchObject({
       quantity: 2,
+      provider: 'deepgram',
+      unit: 'seconds',
+    });
+    expect(
+      events.find((event) => event.idempotencyKey === 'cartesia:stt:leg-1:final')?.payload,
+    ).toMatchObject({
+      quantity: 1,
+      provider: 'cartesia',
+      metadata: { model: 'ink-2', countMethod: 'audio_samples' },
       unit: 'seconds',
     });
     expect(ensureVoiceUsage(session).finalization).toBeDefined();
@@ -75,6 +86,26 @@ describe('voice usage counters', () => {
         quantity: 42,
         unit: 'characters',
       }),
+    });
+  });
+
+  it('attributes a legacy aggregate STT counter to the provider used by that call', async () => {
+    const session = makeSession();
+    session.sttProviderUsed = 'cartesia-ink-2';
+    session.voiceUsage = {
+      sttAudioSamples: 8_000,
+      cartesiaTtsCharacters: 0,
+      elevenLabsTtsCharacters: 0,
+      llmByProvider: {},
+    };
+
+    await finalizeVoiceUsage(session);
+
+    const events = vi.mocked(db.outboxEvent.create).mock.calls.map(([call]) => call.data);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      idempotencyKey: 'cartesia:stt:leg-1:final',
+      payload: expect.objectContaining({ provider: 'cartesia', quantity: 1 }),
     });
   });
 });

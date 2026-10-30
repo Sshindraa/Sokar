@@ -15,7 +15,7 @@ import type { PrismaClient } from '@prisma/client';
 import { createHash, timingSafeEqual } from 'crypto';
 import { env } from '../../../env';
 import { redisCache } from '../../../shared/redis/client';
-import { verifyApiKeyHash } from '../../../shared/crypto/api-key-hash';
+import { verifyApiKeyHashAsync } from '../../../shared/crypto/api-key-hash';
 
 // Origins par défaut. Surchargeable via MCP_ALLOWED_ORIGINS
 // (comma-separated, ex: "https://claude.ai,https://chatgpt.com")
@@ -162,7 +162,7 @@ export async function validateApiKey(
 
   let client: (typeof candidates)[number] | null = null;
   for (const c of candidates) {
-    if (verifyApiKeyHash(key, c.keyHash)) {
+    if (await verifyApiKeyHashAsync(key, c.keyHash)) {
       client = c;
       break;
     }

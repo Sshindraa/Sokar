@@ -7,6 +7,7 @@
 import { normalizeOpeningHours } from '@sokar/shared';
 import { readbackInstruction } from './name-readback';
 import type { StructuredTurnDraft, StructuredTurnOutput } from './schema';
+import type { ReplyScope } from './reply-scope';
 
 export type DraftField = keyof StructuredTurnDraft;
 
@@ -16,6 +17,8 @@ export interface StructuredTurnState {
   lastAwaiting: StructuredTurnOutput['awaiting'];
   /** Brouillon lu au récapitulatif du tour précédent, s'il attendait un accord. */
   recapKey: string | null;
+  /** Récapitulatif entendu et inchangé, conservé pendant une question annexe. */
+  resumableRecapKey: string | null;
   /** Dernier résultat réel du moteur de disponibilité. */
   availability: { date: string; partySize: number; slots: string[] } | null;
   /**
@@ -70,6 +73,7 @@ export function createStructuredTurnState(): StructuredTurnState {
     draft: { date: '', time: '', partySize: 0, customerName: '' },
     lastAwaiting: 'none',
     recapKey: null,
+    resumableRecapKey: null,
     availability: null,
     dayAvailability: null,
     reservationCreated: false,
@@ -685,12 +689,59 @@ export function wordCount(text: string): number {
   return text.split(/\s+/u).filter(Boolean).length;
 }
 
+/** La reprise courte ne vaut que pour un récapitulatif complet déjà entendu. */
+export function canResumeConfirmation(state: StructuredTurnState, recapHeard = true): boolean {
+  if (state.reservationCreated || !isBookingComplete(state.draft)) return false;
+  const key = bookingKey(state.draft);
+  if (state.lastAwaiting === 'confirmation') return recapHeard && state.recapKey === key;
+  return (
+    state.resumableRecapKey === key && (state.lastAwaiting !== 'confirmationResume' || recapHeard)
+  );
+}
+
+/** Conserver les faits lus ne signifie pas conserver un consentement à réserver. */
+export function updateConfirmationState(
+  state: StructuredTurnState,
+  output: StructuredTurnOutput,
+  recapHeard: boolean,
+): void {
+  const key = isBookingComplete(state.draft) ? bookingKey(state.draft) : null;
+  let resumable = canResumeConfirmation(state, recapHeard) ? key : null;
+  const decliningBooking =
+    output.interpretation === 'decline' &&
+    (state.lastAwaiting === 'confirmation' || state.lastAwaiting === 'confirmationResume');
+  if (
+    state.reservationCreated ||
+    decliningBooking ||
+    output.interpretation === 'new_request' ||
+    output.action === 'end_call' ||
+    output.action === 'transfer'
+  )
+    resumable = null;
+  state.resumableRecapKey = output.awaiting === 'confirmation' ? null : resumable;
+  state.lastAwaiting = output.awaiting;
+  state.recapKey = output.awaiting === 'confirmation' ? key : null;
+}
+
 export function authorizeStructuredAction(
   state: StructuredTurnState,
   output: StructuredTurnOutput,
   draft: StructuredTurnDraft,
-  context: { maxPartySize: number; recapHeard?: boolean; transcriptWords?: number },
+  context: {
+    maxPartySize: number;
+    recapHeard?: boolean;
+    transcriptWords?: number;
+    replyScope?: ReplyScope;
+  },
 ): ActionDecision {
+  if (
+    context.replyScope &&
+    (output.action !== 'none' ||
+      output.awaiting === 'none' ||
+      bookingKey(output.draft) !== bookingKey(state.draft))
+  ) {
+    return { allowed: false, reason: 'reply_scope_required' };
+  }
   // Une fois la réservation créée, rien n'est en jeu : un énoncé COURT que le modèle ne comprend pas est un au
   // revoir mal transcrit (appel 6a70dff9 : « Bisous » transcrit « dix-nous »). Un long reste un doute.
   // Et seulement si la phrase précédente de l'agent n'attendait rien : après une question (« Autre chose ? »),
@@ -736,7 +787,11 @@ export function authorizeStructuredAction(
         return { allowed: false, reason: 'group_above_threshold' };
       }
       if (!isSlotVerified(state, draft)) return { allowed: false, reason: 'slot_not_verified' };
-      if (state.lastAwaiting !== 'confirmation' || state.recapKey !== bookingKey(draft)) {
+      const recapAccepted =
+        (state.lastAwaiting === 'confirmation' && state.recapKey === bookingKey(draft)) ||
+        (state.lastAwaiting === 'confirmationResume' &&
+          state.resumableRecapKey === bookingKey(draft));
+      if (!recapAccepted) {
         return { allowed: false, reason: 'recap_not_read' };
       }
       if (output.interpretation !== 'affirmation') {

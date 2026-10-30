@@ -1,27 +1,19 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, type ReactNode } from 'react';
 import Link from 'next/link';
+import { ArrowRight, CheckCircle2, ExternalLink, Info } from 'lucide-react';
+import { toast } from 'sonner';
 import { useApi } from '@/lib/api';
 import { ApiError } from '@/lib/api-error';
 import { DataFetchError } from '@/components/DataFetchError';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
+import { StatusBadge } from '@/components/StatusBadge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
-import {
-  AlertCircle,
-  CheckCircle2,
-  ExternalLink,
-  Eye,
-  Zap,
-  Bot,
-  Sparkles,
-  TrendingUp,
-  ArrowRight,
-  Gauge,
-} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CustomDomainCard, type Props as CustomDomainCardProps } from './custom-domain-card';
 import { SubdomainCard } from './subdomain-card';
@@ -59,54 +51,33 @@ type ConnectScore = {
   total: number;
 };
 
-// ── Score circle (SVG) ─────────────────────────────────
+// ── Petits composants ──────────────────────────────────
 
-function ScoreCircle({ score, level }: { score: number; level: ConnectScore['level'] }) {
-  const radius = 28;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (score / 100) * circumference;
-  const colorClass =
-    level === 'premium'
-      ? 'text-success'
-      : level === 'almost'
-        ? 'text-warning'
-        : level === 'progress'
-          ? 'text-warning'
-          : 'text-muted-foreground';
+const percentFormat = new Intl.NumberFormat('fr-FR', { style: 'percent' });
 
-  return (
-    <div className="relative flex h-20 w-20 items-center justify-center">
-      <svg className="h-20 w-20 -rotate-90" viewBox="0 0 64 64">
-        <circle
-          cx="32"
-          cy="32"
-          r={radius}
-          fill="none"
-          strokeWidth="5"
-          className="text-muted/30"
-          stroke="currentColor"
-        />
-        <circle
-          cx="32"
-          cy="32"
-          r={radius}
-          fill="none"
-          strokeWidth="5"
-          strokeLinecap="round"
-          className={cn('transition-all duration-700 ease-out', colorClass)}
-          stroke="currentColor"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-        />
-      </svg>
-      <div className="absolute flex flex-col items-center">
-        <span className={cn('text-xl font-bold tabular-nums', colorClass)}>{score}%</span>
-      </div>
-    </div>
-  );
+// « 45 % » : format français, espace fine insécable comprise.
+function formatPercent(value: number): string {
+  return percentFormat.format(value / 100);
 }
 
-// ── Stat card ──────────────────────────────────────────
+function InfoTip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={label}
+            className="inline-flex text-muted-foreground transition-all duration-200 hover:text-foreground"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">{children}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 // ── Page principale ────────────────────────────────────
 
@@ -116,8 +87,7 @@ export default function ConnectDashboardPage() {
   const [score, setScore] = useState<ConnectScore | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<'connectPublished' | 'connectAgentic' | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   // La page des KPIs du pilote est réservée à l'équipe Sokar : le lien n'existe que pour elle.
   const [isOperator, setIsOperator] = useState(false);
 
@@ -140,7 +110,7 @@ export default function ConnectDashboardPage() {
   const loadData = useCallback(() => {
     if (!orgId) return;
     setLoading(true);
-    setError(null);
+    setLoadError(null);
     Promise.all([
       get<ConnectSettings>(`restaurants/${orgId}/connect`),
       get<ConnectScore>(`restaurants/${orgId}/connect/score`),
@@ -149,7 +119,7 @@ export default function ConnectDashboardPage() {
         setSettings(s);
         setScore(sc);
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: Error) => setLoadError(err.message))
       .finally(() => setLoading(false));
   }, [orgId, get]);
 
@@ -160,20 +130,18 @@ export default function ConnectDashboardPage() {
   async function toggle(field: 'connectPublished' | 'connectAgentic') {
     if (!settings || !orgId) return;
     setSaving(field);
-    setError(null);
-    setSuccessMsg(null);
 
     try {
       const newValue = !settings[field];
       await patch(`restaurants/${orgId}/connect`, { [field]: newValue });
       setSettings((prev) => (prev ? { ...prev, [field]: newValue } : prev));
-      setSuccessMsg(
+      toast.success(
         field === 'connectPublished'
           ? newValue
-            ? 'Connect activé — votre page est en ligne'
+            ? 'Connect activé : votre page est en ligne'
             : 'Connect désactivé'
           : newValue
-            ? 'Découverte IA activée — visible sur ChatGPT, Perplexity & Google AI'
+            ? 'Découverte IA activée'
             : 'Découverte IA désactivée',
       );
       // Recharge le score seul après un toggle : la page et l'aperçu restent en place (pas de clignotement).
@@ -185,27 +153,22 @@ export default function ConnectDashboardPage() {
     } catch (err: unknown) {
       // Publier sans adresse publique (slug) : l'API répond 409 sans texte, on dit quoi faire.
       if (err instanceof ApiError && err.code === 'CONNECT_SLUG_REQUIRED') {
-        setError(
-          'Choisissez d’abord l’adresse publique de votre page : complétez le profil de votre restaurant dans les paramètres, puis activez Connect.',
+        toast.error(
+          'Choisissez d’abord l’adresse publique : complétez le profil du restaurant dans les réglages, puis activez Connect.',
         );
       } else {
-        setError(err instanceof Error ? err.message : 'Erreur lors de la mise à jour');
+        toast.error(err instanceof Error ? err.message : 'Erreur lors de la mise à jour');
       }
     } finally {
       setSaving(null);
     }
   }
 
-  // ── États early ──────────────────────────────────────
-
   if (!orgId && !loading) {
     return (
       <Card>
-        <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
-          <AlertCircle className="h-8 w-8 text-muted-foreground" />
-          <p className="text-muted-foreground">
-            Sélectionnez un restaurant pour configurer Connect.
-          </p>
+        <CardContent className="py-12 text-center text-muted-foreground">
+          Sélectionnez un restaurant pour configurer Connect.
         </CardContent>
       </Card>
     );
@@ -214,111 +177,66 @@ export default function ConnectDashboardPage() {
   return (
     <div className="space-y-6">
       <OnboardingLockBanner task="connect-identity" />
-      {/* ── Header ────────────────────────────────────── */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <Zap className="h-6 w-6 text-primary" />
-            <h2 className="text-2xl font-semibold tracking-tight">Sokar Connect</h2>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Votre présence en ligne + IA. Soyez trouvable et réservable sur Google, ChatGPT et les
-            assistants IA.
-          </p>
-        </div>
-        <div className="flex flex-col items-start gap-3 sm:items-end">
-          {/* Score circle */}
-          {score && !loading && (
-            <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
-              <ScoreCircle score={score.score} level={score.level} />
-              <div className="max-w-[200px]">
-                <p className="text-sm font-medium">
-                  {score.completed}/{score.total} éléments du profil configurés
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{score.message}</p>
-              </div>
-            </div>
-          )}
+
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Connect</h1>
+        <div className="flex flex-wrap items-center gap-3">
           {isOperator && (
             <Link
               href="/dashboard/connect/pilot"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-all duration-200 hover:border-primary/40 hover:bg-accent"
+              className="inline-flex items-center rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-all duration-200 hover:border-primary/40 hover:bg-accent"
             >
-              <Gauge className="h-3.5 w-3.5" />
               KPIs pilote P1
             </Link>
           )}
         </div>
       </div>
 
-      {/* ── Messages ──────────────────────────────────── */}
-      {error && settings && (
-        <div
-          role="alert"
-          className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-        >
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-      {successMsg && (
-        <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          <span>{successMsg}</span>
-        </div>
-      )}
-
       {loading ? (
         <div className="space-y-4">
-          <Skeleton className="h-32 w-full rounded-xl" />
-          <Skeleton className="h-48 w-full rounded-xl" />
-          <Skeleton className="h-48 w-full rounded-xl" />
+          <Skeleton className="h-40 w-full rounded-xl" />
+          <Skeleton className="h-64 w-full rounded-xl" />
         </div>
-      ) : settings ? (
+      ) : !settings ? (
+        <DataFetchError
+          message={loadError || 'Impossible de charger les paramètres Connect.'}
+          onRetry={loadData}
+          retrying={loading}
+        />
+      ) : (
         <>
-          {/* ── Layout 2 colonnes : État + Preview ─────── */}
           <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-            {/* Colonne gauche : État + Découverte IA */}
             <div className="space-y-4">
-              {/* Connect activé */}
               <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center justify-between text-base">
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          'flex h-2.5 w-2.5 rounded-full',
-                          settings.connectPublished
-                            ? 'bg-success shadow-[0_0_8px] shadow-success/50'
-                            : 'bg-muted-foreground/40',
-                        )}
-                      />
-                      Connect {settings.connectPublished ? 'activé' : 'inactif'}
-                    </span>
+                <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+                  <CardTitle className="text-base">Page publique</CardTitle>
+                  <div className="flex items-center gap-3">
+                    <StatusBadge level={settings.connectPublished ? 'progress' : 'neutral'}>
+                      {settings.connectPublished ? 'En ligne' : 'Inactive'}
+                    </StatusBadge>
                     <Switch
+                      aria-label="Activer la page publique"
                       checked={settings.connectPublished}
                       disabled={saving !== null}
                       onCheckedChange={() => toggle('connectPublished')}
                     />
-                  </CardTitle>
+                  </div>
                 </CardHeader>
-                <CardContent className="space-y-3 pt-0">
+                <CardContent className="space-y-2 pt-0 text-sm">
                   {settings.connectPublished ? (
                     <>
-                      <p className="text-sm text-muted-foreground">
-                        Votre page est en ligne sur{' '}
-                        <a
-                          href={settings.pageUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium text-foreground underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
-                        >
-                          {settings.pageUrl.replace('https://', '')}
-                        </a>
-                      </p>
+                      <a
+                        href={settings.pageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex min-w-0 items-center gap-1.5 break-all font-medium underline underline-offset-2 transition-all duration-200 hover:text-primary"
+                      >
+                        {settings.pageUrl.replace('https://', '')}
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
                       {settings.connectPublishedAt && (
-                        <p className="text-xs text-muted-foreground/60">
-                          Actif depuis le{' '}
+                        <p className="text-xs text-muted-foreground">
+                          Active depuis le{' '}
                           {new Date(settings.connectPublishedAt).toLocaleDateString('fr-FR', {
                             day: 'numeric',
                             month: 'long',
@@ -328,85 +246,58 @@ export default function ConnectDashboardPage() {
                       )}
                     </>
                   ) : (
-                    <div className="space-y-3">
-                      <p className="text-sm text-muted-foreground">
-                        Lancez votre présence en ligne. Activez Connect pour que votre restaurant
-                        soit trouvable et réservable sur Google, ChatGPT et les assistants IA.
+                    <>
+                      <p className="text-muted-foreground">
+                        Activez Connect pour publier votre page.
                       </p>
                       {score && score.score < 60 && (
-                        <div className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
-                          <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          <span>
-                            Votre profil est à {score.score}%. Complétez-le pour maximiser votre
-                            visibilité avant d&apos;activer.
-                          </span>
-                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Profil complété à {formatPercent(score.score)}. Complétez-le avant
+                          d’activer.
+                        </p>
                       )}
-                      <Button
-                        size="sm"
-                        onClick={() => toggle('connectPublished')}
-                        disabled={saving !== null}
-                        className="w-full transition-all duration-200"
-                      >
-                        <Zap className="mr-2 h-4 w-4" />
-                        Activer Connect
-                      </Button>
-                    </div>
+                    </>
                   )}
                 </CardContent>
               </Card>
 
-              {/* Découverte IA */}
               <Card
                 className={cn(
                   'transition-all duration-200',
                   !settings.connectPublished && 'opacity-60',
                 )}
               >
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center justify-between text-base">
-                    <span className="flex items-center gap-2">
-                      <Bot className="h-4 w-4 text-primary" />
-                      Découverte IA
-                    </span>
+                <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+                  <CardTitle className="flex items-center gap-1.5 text-base">
+                    Découverte IA
+                    <InfoTip label="Précision sur la découverte IA">
+                      Les métadonnées de réservation (ReserveAction) sont exposées aux crawlers d’IA
+                      quand l’option est active.
+                    </InfoTip>
+                  </CardTitle>
+                  <div className="flex items-center gap-3">
+                    <StatusBadge level={settings.connectAgentic ? 'progress' : 'neutral'}>
+                      {settings.connectAgentic ? 'Active' : 'Inactive'}
+                    </StatusBadge>
                     <Switch
+                      aria-label="Activer la découverte IA"
                       checked={settings.connectAgentic}
                       disabled={saving !== null || !settings.connectPublished}
                       onCheckedChange={() => toggle('connectAgentic')}
                     />
-                  </CardTitle>
+                  </div>
                 </CardHeader>
-                <CardContent className="pt-0">
-                  {settings.connectAgentic ? (
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">
-                        Votre restaurant est visible par les assistants IA (ChatGPT, Perplexity,
-                        Google AI). Les métadonnées structurées ReserveAction sont actives.
-                      </p>
-                      <div className="flex items-center gap-2 text-xs text-success">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        <span>Réservation directe depuis les IA</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">
-                        Soyez trouvable sur ChatGPT, Perplexity et Google AI. Activez cette option
-                        pour autoriser les crawlers d&apos;IA et exposer les métadonnées de
-                        réservation.
-                      </p>
-                    </div>
-                  )}
+                <CardContent className="pt-0 text-sm text-muted-foreground">
+                  {settings.connectAgentic
+                    ? 'Visible par ChatGPT, Perplexity et Google AI, avec réservation directe.'
+                    : 'Rend votre restaurant visible par ChatGPT, Perplexity et Google AI.'}
                 </CardContent>
               </Card>
 
-              {/* Parcours client de bout en bout, sans toucher au restaurant */}
               {settings.pageUrl && <TestBookingCard publicUrl={settings.pageUrl} />}
 
-              {/* Sous-domaine gratuit (zéro configuration) */}
               <SubdomainCard slug={settings.slug} connectPublished={settings.connectPublished} />
 
-              {/* Domaine personnalisé (P2 premium) */}
               <CustomDomainCard
                 restaurantId={settings.restaurantId}
                 customDomain={settings.customDomain ?? null}
@@ -417,27 +308,21 @@ export default function ConnectDashboardPage() {
               />
             </div>
 
-            {/* Colonne droite : Aperçu live */}
             <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Aperçu en direct</CardTitle>
-                  {settings.connectPublished && (
-                    <Button variant="ghost" size="sm" asChild>
-                      <a
-                        href={`${settings.pageUrl}?preview=1`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                        Plein écran
-                      </a>
-                    </Button>
-                  )}
-                </div>
-                <CardDescription className="text-xs">
-                  Voici ce que voient vos clients et Google.
-                </CardDescription>
+              <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="text-base">Aperçu en direct</CardTitle>
+                {settings.connectPublished && (
+                  <Button variant="ghost" size="sm" asChild>
+                    <a
+                      href={`${settings.pageUrl}?preview=1`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Plein écran
+                      <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                    </a>
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="pt-0">
                 {settings.connectPublished ? (
@@ -451,48 +336,39 @@ export default function ConnectDashboardPage() {
                     />
                   </div>
                 ) : (
-                  <div className="flex h-[420px] items-center justify-center rounded-lg border border-dashed border-border bg-muted text-center">
-                    <div className="space-y-3">
-                      <Eye className="mx-auto h-10 w-10 text-muted-foreground" />
-                      <p className="text-sm text-muted-foreground">
-                        Activez Connect pour voir votre page publique.
-                      </p>
-                    </div>
+                  <div className="flex h-[420px] items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
+                    Activez Connect pour voir votre page.
                   </div>
                 )}
               </CardContent>
             </Card>
           </div>
 
-          {/* ── Complétude du profil ───────────────────── */}
           {score && (
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <TrendingUp className="h-4 w-4 text-primary" />
+              <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="flex items-center gap-1.5 text-base">
                   Complétude du profil
+                  <InfoTip label="Précision sur la complétude">{score.message}</InfoTip>
                 </CardTitle>
-                <CardDescription>
-                  {score.completed}/{score.total} éléments complétés — {score.message}
-                </CardDescription>
+                <span className="text-lg font-semibold tabular-nums">
+                  {formatPercent(score.score)}
+                </span>
               </CardHeader>
               <CardContent className="space-y-4 pt-0">
-                {/* Barre de progression */}
-                <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                <p className="text-sm text-muted-foreground">
+                  {score.completed}/{score.total} éléments complétés
+                </p>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                   <div
                     className={cn(
                       'h-full rounded-full transition-all duration-700 ease-out',
-                      score.level === 'premium'
-                        ? 'bg-success'
-                        : score.level === 'almost'
-                          ? 'bg-warning'
-                          : 'bg-primary',
+                      score.level === 'premium' ? 'bg-success' : 'bg-primary',
                     )}
                     style={{ width: `${score.score}%` }}
                   />
                 </div>
 
-                {/* Items en grille */}
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {score.items.map((item) => (
                     <div
@@ -500,52 +376,42 @@ export default function ConnectDashboardPage() {
                       className={cn(
                         'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-all duration-200',
                         item.done
-                          ? 'border-success/20 bg-success/5 text-foreground'
-                          : 'border-border bg-muted text-muted-foreground',
+                          ? 'border-border text-foreground'
+                          : 'border-dashed border-border text-muted-foreground',
                       )}
                     >
                       {item.done ? (
                         <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
                       ) : (
-                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-muted-foreground" />
+                        <span className="h-4 w-4 shrink-0 rounded-full border-2 border-muted-foreground" />
                       )}
-                      <span className="flex-1 truncate">{item.label}</span>
-                      <span className="text-xs text-faint">+{item.weight}%</span>
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      <span className="text-xs text-muted-foreground">
+                        +{formatPercent(item.weight)}
+                      </span>
                     </div>
                   ))}
                 </div>
 
-                {/* Actions rapides : top 3 manquants */}
                 {score.missing.length > 0 && (
-                  <div className="space-y-2 pt-2">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Actions rapides
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {score.missing.slice(0, 3).map((item) => (
-                        <Link
-                          key={item.key}
-                          href="/dashboard/settings"
-                          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-all duration-200 hover:border-primary/40 hover:bg-accent"
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full bg-warning" />
-                          {item.label}
-                          <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                        </Link>
-                      ))}
-                    </div>
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">À compléter :</span>
+                    {score.missing.slice(0, 3).map((item) => (
+                      <Link
+                        key={item.key}
+                        href="/dashboard/settings"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium text-foreground transition-all duration-200 hover:border-primary/40 hover:bg-accent"
+                      >
+                        {item.label}
+                        <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                      </Link>
+                    ))}
                   </div>
                 )}
               </CardContent>
             </Card>
           )}
         </>
-      ) : (
-        <DataFetchError
-          message={error || 'Impossible de charger les paramètres Connect.'}
-          onRetry={loadData}
-          retrying={loading}
-        />
       )}
     </div>
   );

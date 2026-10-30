@@ -1,31 +1,26 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  AlertCircle,
-  Check,
-  Clock3,
-  Download,
-  ListFilter,
-  Megaphone,
-  Plus,
-  RefreshCw,
-  Send,
-  ShieldCheck,
-} from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { AlertCircle, Check, MoreHorizontal } from 'lucide-react';
 import { useApi } from '@/lib/api';
 import { featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DataFetchError } from '@/components/DataFetchError';
 import { FeatureLockCard } from '@/components/FeatureLockCard';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge, type StatusLevel } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 type AutomationType = 'AFTER_FIRST_HONORED' | 'DORMANT' | 'BIRTHDAY';
 type MarketingChannel = 'SMS' | 'EMAIL' | 'WHATSAPP';
@@ -208,15 +203,13 @@ function statusLabel(status: string): string {
   return labels[status] ?? status;
 }
 
-function statusClass(status: string): string {
-  if (status === 'SENT') return 'bg-success/15 text-success';
-  if (status === 'FAILED') return 'bg-destructive/15 text-destructive';
-  if (status === 'SENDING' || status === 'SCHEDULED') return 'bg-warning/15 text-warning';
-  return 'bg-muted text-muted-foreground';
-}
-
-function readinessLabel(value: boolean): string {
-  return value ? 'Prêt' : 'Bientôt disponible';
+// Niveau par sens : envoyée = terminée ; programmée ou en envoi = en cours ; prête ou en pause = action ; échec ou annulée = erreur.
+function campaignStatusLevel(status: string): StatusLevel {
+  if (status === 'SENT') return 'done';
+  if (status === 'SCHEDULED' || status === 'SENDING') return 'progress';
+  if (status === 'READY' || status === 'PAUSED') return 'action';
+  if (status === 'FAILED' || status === 'CANCELLED') return 'error';
+  return 'neutral';
 }
 
 /** Explication lisible d'un incident de campagne : le code interne ne dit rien au restaurateur. */
@@ -229,6 +222,7 @@ function campaignErrorLabel(code: string): string {
     AUTOMATION_ALREADY_DISPATCHED: 'Campagne déjà envoyée pour cette règle',
     NO_CONTACT_OR_UNAVAILABLE: 'Aucun destinataire consentant joignable',
     LEGACY_REACTIVATION_AUDIENCE_EMPTY: 'Aucun destinataire consentant joignable',
+    MARKETING_DAILY_BUDGET_EXCEEDED: 'Budget d’e-mails du jour atteint : reprogrammez l’envoi',
   };
   return labels[code] ?? 'Un incident est survenu';
 }
@@ -328,6 +322,7 @@ export default function MarketingPage() {
     null,
   );
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<AutomationType, DraftErrors>>>({});
+  const [editingAutomation, setEditingAutomation] = useState<AutomationType | null>(null);
   const [campaignToCancel, setCampaignToCancel] = useState<Campaign | null>(null);
 
   const load = useCallback(async () => {
@@ -361,7 +356,7 @@ export default function MarketingPage() {
       );
     } catch (err: unknown) {
       setLoadError({
-        message: getErrorMessage(err, 'Impossible de charger le marketing Pro.'),
+        message: getErrorMessage(err, 'Impossible de charger le marketing.'),
         lock: featureLockFromError(err),
       });
     } finally {
@@ -483,11 +478,6 @@ export default function MarketingPage() {
     }
   }
 
-  const enabledCount = useMemo(
-    () => automations.filter((automation) => automation.enabled).length,
-    [automations],
-  );
-
   if (loading) {
     return (
       <div className="space-y-6">
@@ -507,12 +497,11 @@ export default function MarketingPage() {
       <div className="space-y-6">
         <header>
           <div className="flex items-center gap-2">
-            <Megaphone className="h-6 w-6 text-primary" />
-            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Marketing Pro</h1>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Marketing</h1>
           </div>
         </header>
         {loadError.lock ? (
-          <FeatureLockCard lock={loadError.lock} feature="Marketing Pro" />
+          <FeatureLockCard lock={loadError.lock} feature="Marketing" />
         ) : (
           <DataFetchError
             message={`${loadError.message} Vos règles enregistrées n’ont pas été modifiées.`}
@@ -528,76 +517,52 @@ export default function MarketingPage() {
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <Megaphone className="h-6 w-6 text-primary" />
-            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Marketing Pro</h1>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Marketing</h1>
           </div>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Automatisez les relances utiles à partir de vos visites, avec consentement et mesure de
-            chaque résultat.
-          </p>
+          {providerReadiness && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {[
+                [
+                  ['SMS', providerReadiness.sms],
+                  ['Email', providerReadiness.email],
+                  ['WhatsApp', providerReadiness.whatsapp],
+                ]
+                  .filter(([, channel]) => (channel as ProviderReadiness['sms']).configured)
+                  .map(([name]) => name)
+                  .join(' · '),
+                [
+                  ['SMS', providerReadiness.sms],
+                  ['Email', providerReadiness.email],
+                  ['WhatsApp', providerReadiness.whatsapp],
+                ]
+                  .filter(([, channel]) => !(channel as ProviderReadiness['sms']).configured)
+                  .map(([name]) => name)
+                  .join(' · '),
+              ]
+                .map((names, index) =>
+                  names
+                    ? `${names} ${index === 0 ? (names.includes(' · ') ? 'prêts' : 'prêt') : names.includes(' · ') ? 'bientôt disponibles' : 'bientôt disponible'}`
+                    : null,
+                )
+                .filter(Boolean)
+                .join(' — ')}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button asChild size="sm" className="transition-all duration-200">
-            <Link href="/dashboard/marketing/campaigns/new">
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              Nouvelle campagne
-            </Link>
+            <Link href="/dashboard/marketing/campaigns/new">Nouvelle campagne</Link>
           </Button>
           <Button asChild variant="outline" size="sm" className="transition-all duration-200">
-            <Link href="/dashboard/marketing/segments">
-              <ListFilter className="mr-1 h-3.5 w-3.5" />
-              Segments Pro
-            </Link>
+            <Link href="/dashboard/marketing/segments">Segments</Link>
           </Button>
-          <Badge className="w-fit bg-primary/15 text-primary">
-            {enabledCount}/3 automations actives
-          </Badge>
         </div>
       </header>
 
-      <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
-        <ShieldCheck className="mt-0.5 h-4 w-4 flex-none text-warning" />
-        <p className="text-muted-foreground">
-          Les règles restent en brouillon. Aucun SMS ni email n&apos;est envoyé ici.
+      {providerReadiness && !providerReadiness.sendsEnabled && (
+        <p className="rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm text-muted-foreground">
+          Envois désactivés : aucun message ne part pour l&apos;instant.
         </p>
-      </div>
-
-      {providerReadiness && (
-        <Card>
-          <CardHeader className="pb-4">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <CardTitle className="text-base">État des canaux</CardTitle>
-                <CardDescription>L’équipe Sokar ouvre les envois canal par canal.</CardDescription>
-              </div>
-              <Badge
-                className={
-                  providerReadiness.sendsEnabled
-                    ? 'bg-success/15 text-success'
-                    : 'bg-warning/15 text-warning'
-                }
-              >
-                {providerReadiness.sendsEnabled ? 'Envois activés' : 'Envois bientôt disponibles'}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-3">
-            {(
-              [
-                ['SMS', providerReadiness.sms],
-                ['Email', providerReadiness.email],
-                ['WhatsApp', providerReadiness.whatsapp],
-              ] as const
-            ).map(([label, channel]) => (
-              <div key={label} className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{label}</span>
-                  <Badge variant="secondary">{readinessLabel(channel.configured)}</Badge>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
       )}
 
       {error && (
@@ -613,231 +578,12 @@ export default function MarketingPage() {
         </div>
       )}
 
-      <section aria-labelledby="automations-title" className="space-y-3">
-        <div>
-          <h2 id="automations-title" className="text-lg font-semibold">
-            Automations
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Chaque règle est limitée, versionnée et vérifiée juste avant un éventuel envoi.
-          </p>
-        </div>
-        <div className="grid gap-4 xl:grid-cols-3">
-          {AUTOMATION_ORDER.map((type) => {
-            const draft = drafts[type];
-            const saved = automations.find((automation) => automation.type === type);
-            const dirty = dirtyTypes.includes(type);
-            return (
-              <Card key={type} className="flex flex-col">
-                <CardHeader className="pb-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <CardTitle className="text-base">{AUTOMATION_META[type].title}</CardTitle>
-                      <CardDescription className="mt-1">
-                        {AUTOMATION_META[type].description}
-                      </CardDescription>
-                    </div>
-                    <Switch
-                      checked={draft.enabled}
-                      onCheckedChange={(enabled) => updateDraft(type, { enabled })}
-                      aria-label={`Activer ${AUTOMATION_META[type].title}`}
-                    />
-                  </div>
-                </CardHeader>
-                <CardContent className="flex flex-1 flex-col gap-3">
-                  <label className="space-y-1 text-xs font-medium">
-                    Canal
-                    <select
-                      value={draft.channel}
-                      onChange={(event) =>
-                        updateDraft(type, { channel: event.target.value as MarketingChannel })
-                      }
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
-                    >
-                      <option value="SMS">SMS</option>
-                      <option value="EMAIL">Email</option>
-                      <option value="WHATSAPP">WhatsApp</option>
-                    </select>
-                  </label>
-                  {draft.channel === 'EMAIL' && (
-                    <label className="space-y-1 text-xs font-medium">
-                      Objet
-                      <input
-                        value={draft.subject}
-                        onChange={(event) => updateDraft(type, { subject: event.target.value })}
-                        placeholder="Une attention pour vous"
-                        aria-invalid={Boolean(fieldErrors[type]?.subject)}
-                        aria-describedby={`${type}-subject-error`}
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
-                      />
-                      <FieldError
-                        id={`${type}-subject-error`}
-                        message={fieldErrors[type]?.subject}
-                      />
-                    </label>
-                  )}
-                  <label className="space-y-1 text-xs font-medium">
-                    Message
-                    <textarea
-                      value={draft.bodyTemplate}
-                      onChange={(event) => updateDraft(type, { bodyTemplate: event.target.value })}
-                      rows={4}
-                      aria-invalid={Boolean(fieldErrors[type]?.bodyTemplate)}
-                      aria-describedby={`${type}-body-error`}
-                      className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
-                    />
-                    <FieldError
-                      id={`${type}-body-error`}
-                      message={fieldErrors[type]?.bodyTemplate}
-                    />
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {type === 'AFTER_FIRST_HONORED' && (
-                      <label className="space-y-1 text-xs font-medium">
-                        Délai (heures)
-                        <input
-                          type="number"
-                          min={0}
-                          max={168}
-                          value={draft.delayHours}
-                          onChange={(event) =>
-                            updateDraft(type, { delayHours: event.target.value })
-                          }
-                          aria-invalid={Boolean(fieldErrors[type]?.delayHours)}
-                          aria-describedby={`${type}-delayHours-error`}
-                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
-                        />
-                        <FieldError
-                          id={`${type}-delayHours-error`}
-                          message={fieldErrors[type]?.delayHours}
-                        />
-                      </label>
-                    )}
-                    {type === 'DORMANT' && (
-                      <label className="space-y-1 text-xs font-medium">
-                        Inactivité (jours)
-                        <input
-                          type="number"
-                          min={30}
-                          max={365}
-                          value={draft.inactiveDays}
-                          onChange={(event) =>
-                            updateDraft(type, { inactiveDays: event.target.value })
-                          }
-                          aria-invalid={Boolean(fieldErrors[type]?.inactiveDays)}
-                          aria-describedby={`${type}-inactiveDays-error`}
-                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
-                        />
-                        <FieldError
-                          id={`${type}-inactiveDays-error`}
-                          message={fieldErrors[type]?.inactiveDays}
-                        />
-                      </label>
-                    )}
-                    {type === 'BIRTHDAY' && (
-                      <>
-                        <label className="space-y-1 text-xs font-medium">
-                          Jours avant
-                          <input
-                            type="number"
-                            min={0}
-                            max={30}
-                            value={draft.daysBefore}
-                            onChange={(event) =>
-                              updateDraft(type, { daysBefore: event.target.value })
-                            }
-                            aria-invalid={Boolean(fieldErrors[type]?.daysBefore)}
-                            aria-describedby={`${type}-daysBefore-error`}
-                            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
-                          />
-                          <FieldError
-                            id={`${type}-daysBefore-error`}
-                            message={fieldErrors[type]?.daysBefore}
-                          />
-                        </label>
-                        <label className="space-y-1 text-xs font-medium">
-                          Heure locale
-                          <input
-                            type="number"
-                            min={0}
-                            max={23}
-                            value={draft.sendHour}
-                            onChange={(event) =>
-                              updateDraft(type, { sendHour: event.target.value })
-                            }
-                            aria-invalid={Boolean(fieldErrors[type]?.sendHour)}
-                            aria-describedby={`${type}-sendHour-error`}
-                            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
-                          />
-                          <FieldError
-                            id={`${type}-sendHour-error`}
-                            message={fieldErrors[type]?.sendHour}
-                          />
-                        </label>
-                      </>
-                    )}
-                    <label className="col-span-2 space-y-1 text-xs font-medium">
-                      Fuseau horaire
-                      <select
-                        value={draft.timezone}
-                        onChange={(event) => updateDraft(type, { timezone: event.target.value })}
-                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
-                      >
-                        {TIMEZONES.some(([value]) => value === draft.timezone) ? null : (
-                          <option value={draft.timezone}>{draft.timezone}</option>
-                        )}
-                        {TIMEZONES.map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-                    <span
-                      className={cn(
-                        'text-xs',
-                        dirty ? 'font-medium text-foreground' : 'text-muted-foreground',
-                      )}
-                    >
-                      {dirty
-                        ? 'Modifications non enregistrées'
-                        : saved
-                          ? `v${saved.version} · évaluée ${formatDate(saved.lastEvaluatedAt)}`
-                          : 'Pas encore enregistrée'}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant={dirty ? 'default' : 'outline'}
-                      onClick={() => void saveAutomation(type)}
-                      disabled={saving === type}
-                      className="transition-all duration-200"
-                    >
-                      {saving === type ? (
-                        <RefreshCw className="mr-1 h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Check className="mr-1 h-3.5 w-3.5" />
-                      )}
-                      Enregistrer
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      </section>
-
       <section aria-labelledby="campaigns-title" className="space-y-3">
         <div className="flex items-end justify-between gap-3">
           <div>
             <h2 id="campaigns-title" className="text-lg font-semibold">
               Campagnes et résultats
             </h2>
-            <p className="text-sm text-muted-foreground">
-              Les campagnes sont des snapshots : l’audience ne change plus après préparation.
-            </p>
           </div>
           <Button
             variant="outline"
@@ -846,19 +592,13 @@ export default function MarketingPage() {
             disabled={loading}
             className="transition-all duration-200"
           >
-            <RefreshCw className={cn('mr-1 h-3.5 w-3.5', loading && 'animate-spin')} />
             Actualiser
           </Button>
         </div>
         {campaigns.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
-              <Clock3 className="h-8 w-8 text-muted-foreground/50" />
               <p className="text-sm font-medium">Aucune campagne préparée</p>
-              <p className="max-w-md text-xs text-muted-foreground">
-                Une automation active créera une campagne snapshot après son prochain scan, sous
-                réserve de consentement et de coordonnées valides.
-              </p>
             </CardContent>
           </Card>
         ) : (
@@ -871,9 +611,9 @@ export default function MarketingPage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-medium">{campaign.name}</p>
-                        <Badge className={statusClass(campaign.status)}>
+                        <StatusBadge level={campaignStatusLevel(campaign.status)}>
                           {statusLabel(campaign.status)}
-                        </Badge>
+                        </StatusBadge>
                         <span className="text-xs text-muted-foreground">
                           {channelLabel(campaign.channel)} · {campaign.audienceCount} destinataires
                         </span>
@@ -884,23 +624,26 @@ export default function MarketingPage() {
                           ? ` · ${campaignErrorLabel(campaign.lastErrorCode)}`
                           : ''}
                       </p>
-                      <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">
-                        <span>
-                          <strong className="text-foreground">{campaign.acceptedCount}</strong>{' '}
-                          acceptés
-                        </span>
-                        <span>
-                          <strong className="text-foreground">{campaign.deliveredCount}</strong>{' '}
-                          délivrés
-                        </span>
-                        <span>
-                          <strong className="text-foreground">{campaign.failedCount}</strong> échecs
-                        </span>
-                        <span>
-                          <strong className="text-foreground">{campaign.conversionCount}</strong>{' '}
-                          conversions
-                        </span>
-                      </div>
+                      {campaign.status !== 'DRAFT' && (
+                        <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">
+                          <span>
+                            <strong className="text-foreground">{campaign.acceptedCount}</strong>{' '}
+                            acceptés
+                          </span>
+                          <span>
+                            <strong className="text-foreground">{campaign.deliveredCount}</strong>{' '}
+                            délivrés
+                          </span>
+                          <span>
+                            <strong className="text-foreground">{campaign.failedCount}</strong>{' '}
+                            échecs
+                          </span>
+                          <span>
+                            <strong className="text-foreground">{campaign.conversionCount}</strong>{' '}
+                            conversions
+                          </span>
+                        </div>
+                      )}
                       {campaign.status === 'DRAFT' && campaign.audienceCount === 0 && (
                         <p className="mt-2 text-xs text-muted-foreground">
                           Aucun destinataire consentant pour le moment : rien à préparer.
@@ -933,7 +676,7 @@ export default function MarketingPage() {
                       )}
                     </div>
                     <div className="flex flex-wrap gap-2 md:justify-end">
-                      {campaign.status === 'DRAFT' && (
+                      {campaign.status === 'DRAFT' ? (
                         <Button
                           size="sm"
                           onClick={() => void campaignAction(campaign, 'prepare')}
@@ -942,42 +685,57 @@ export default function MarketingPage() {
                           }
                           className="transition-all duration-200"
                         >
-                          <Check className="mr-1 h-3.5 w-3.5" /> Préparer
+                          Préparer
                         </Button>
-                      )}
-                      {['DRAFT', 'READY', 'SCHEDULED'].includes(campaign.status) && (
+                      ) : (
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => setCampaignToCancel(campaign)}
-                          disabled={action === `cancel:${campaign.id}`}
+                          onClick={() => void loadReport(campaign.id)}
+                          disabled={action === `report:${campaign.id}`}
                           className="transition-all duration-200"
                         >
-                          Annuler la campagne
+                          Rapport
                         </Button>
                       )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void loadReport(campaign.id)}
-                        disabled={action === `report:${campaign.id}`}
-                        className="transition-all duration-200"
-                      >
-                        <Send className="mr-1 h-3.5 w-3.5" /> Rapport
-                      </Button>
-                      <Button
-                        asChild
-                        size="sm"
-                        variant="outline"
-                        className="transition-all duration-200"
-                      >
-                        <a
-                          href={`/api/proxy/marketing/campaigns/${encodeURIComponent(campaign.id)}/report.csv${orgId ? `?siteId=${encodeURIComponent(orgId)}` : ''}`}
-                          download
-                        >
-                          <Download className="mr-1 h-3.5 w-3.5" /> CSV
-                        </a>
-                      </Button>
+                      <DropdownMenu modal={false}>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            className="h-9 w-9 transition-all duration-200"
+                            aria-label={`Autres actions pour ${campaign.name}`}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {campaign.status === 'DRAFT' && (
+                            <DropdownMenuItem
+                              disabled={action === `report:${campaign.id}`}
+                              onSelect={() => void loadReport(campaign.id)}
+                            >
+                              Rapport
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem asChild>
+                            <a
+                              href={`/api/proxy/marketing/campaigns/${encodeURIComponent(campaign.id)}/report.csv${orgId ? `?siteId=${encodeURIComponent(orgId)}` : ''}`}
+                              download
+                            >
+                              CSV
+                            </a>
+                          </DropdownMenuItem>
+                          {['DRAFT', 'READY', 'SCHEDULED'].includes(campaign.status) && (
+                            <DropdownMenuItem
+                              disabled={action === `cancel:${campaign.id}`}
+                              onSelect={() => setCampaignToCancel(campaign)}
+                            >
+                              Annuler la campagne
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </CardContent>
                 </Card>
@@ -985,6 +743,238 @@ export default function MarketingPage() {
             })}
           </div>
         )}
+      </section>
+
+      <section aria-labelledby="automations-title" className="space-y-3">
+        <div>
+          <h2 id="automations-title" className="text-lg font-semibold">
+            Automations
+          </h2>
+        </div>
+        <div className="grid gap-4 xl:grid-cols-3">
+          {AUTOMATION_ORDER.map((type) => {
+            const draft = drafts[type];
+            const saved = automations.find((automation) => automation.type === type);
+            const dirty = dirtyTypes.includes(type);
+            return (
+              <Card key={type} className="flex flex-col">
+                <CardHeader className="pb-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-base">{AUTOMATION_META[type].title}</CardTitle>
+                      <CardDescription className="mt-1">
+                        {AUTOMATION_META[type].description}
+                      </CardDescription>
+                    </div>
+                    <Switch
+                      checked={draft.enabled}
+                      onCheckedChange={(enabled) => updateDraft(type, { enabled })}
+                      aria-label={`Activer ${AUTOMATION_META[type].title}`}
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent className="flex flex-1 flex-col gap-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="self-start transition-all duration-200"
+                    aria-expanded={editingAutomation === type}
+                    onClick={() => setEditingAutomation(editingAutomation === type ? null : type)}
+                  >
+                    Modifier
+                  </Button>
+                  {dirty && editingAutomation !== type && (
+                    <p className="text-xs font-medium text-foreground">
+                      Modifications non enregistrées
+                    </p>
+                  )}
+                  {editingAutomation === type && (
+                    <div className="flex flex-col gap-3">
+                      <label className="space-y-1 text-xs font-medium">
+                        Canal
+                        <select
+                          value={draft.channel}
+                          onChange={(event) =>
+                            updateDraft(type, { channel: event.target.value as MarketingChannel })
+                          }
+                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                        >
+                          <option value="SMS">SMS</option>
+                          <option value="EMAIL">Email</option>
+                          <option value="WHATSAPP">WhatsApp</option>
+                        </select>
+                      </label>
+                      {draft.channel === 'EMAIL' && (
+                        <label className="space-y-1 text-xs font-medium">
+                          Objet
+                          <input
+                            value={draft.subject}
+                            onChange={(event) => updateDraft(type, { subject: event.target.value })}
+                            placeholder="Une attention pour vous"
+                            aria-invalid={Boolean(fieldErrors[type]?.subject)}
+                            aria-describedby={`${type}-subject-error`}
+                            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                          />
+                          <FieldError
+                            id={`${type}-subject-error`}
+                            message={fieldErrors[type]?.subject}
+                          />
+                        </label>
+                      )}
+                      <label className="space-y-1 text-xs font-medium">
+                        Message
+                        <textarea
+                          value={draft.bodyTemplate}
+                          onChange={(event) =>
+                            updateDraft(type, { bodyTemplate: event.target.value })
+                          }
+                          rows={4}
+                          aria-invalid={Boolean(fieldErrors[type]?.bodyTemplate)}
+                          aria-describedby={`${type}-body-error`}
+                          className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                        />
+                        <FieldError
+                          id={`${type}-body-error`}
+                          message={fieldErrors[type]?.bodyTemplate}
+                        />
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {type === 'AFTER_FIRST_HONORED' && (
+                          <label className="space-y-1 text-xs font-medium">
+                            Délai (heures)
+                            <input
+                              type="number"
+                              min={0}
+                              max={168}
+                              value={draft.delayHours}
+                              onChange={(event) =>
+                                updateDraft(type, { delayHours: event.target.value })
+                              }
+                              aria-invalid={Boolean(fieldErrors[type]?.delayHours)}
+                              aria-describedby={`${type}-delayHours-error`}
+                              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                            />
+                            <FieldError
+                              id={`${type}-delayHours-error`}
+                              message={fieldErrors[type]?.delayHours}
+                            />
+                          </label>
+                        )}
+                        {type === 'DORMANT' && (
+                          <label className="space-y-1 text-xs font-medium">
+                            Inactivité (jours)
+                            <input
+                              type="number"
+                              min={30}
+                              max={365}
+                              value={draft.inactiveDays}
+                              onChange={(event) =>
+                                updateDraft(type, { inactiveDays: event.target.value })
+                              }
+                              aria-invalid={Boolean(fieldErrors[type]?.inactiveDays)}
+                              aria-describedby={`${type}-inactiveDays-error`}
+                              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                            />
+                            <FieldError
+                              id={`${type}-inactiveDays-error`}
+                              message={fieldErrors[type]?.inactiveDays}
+                            />
+                          </label>
+                        )}
+                        {type === 'BIRTHDAY' && (
+                          <>
+                            <label className="space-y-1 text-xs font-medium">
+                              Jours avant
+                              <input
+                                type="number"
+                                min={0}
+                                max={30}
+                                value={draft.daysBefore}
+                                onChange={(event) =>
+                                  updateDraft(type, { daysBefore: event.target.value })
+                                }
+                                aria-invalid={Boolean(fieldErrors[type]?.daysBefore)}
+                                aria-describedby={`${type}-daysBefore-error`}
+                                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                              />
+                              <FieldError
+                                id={`${type}-daysBefore-error`}
+                                message={fieldErrors[type]?.daysBefore}
+                              />
+                            </label>
+                            <label className="space-y-1 text-xs font-medium">
+                              Heure locale
+                              <input
+                                type="number"
+                                min={0}
+                                max={23}
+                                value={draft.sendHour}
+                                onChange={(event) =>
+                                  updateDraft(type, { sendHour: event.target.value })
+                                }
+                                aria-invalid={Boolean(fieldErrors[type]?.sendHour)}
+                                aria-describedby={`${type}-sendHour-error`}
+                                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                              />
+                              <FieldError
+                                id={`${type}-sendHour-error`}
+                                message={fieldErrors[type]?.sendHour}
+                              />
+                            </label>
+                          </>
+                        )}
+                        <label className="col-span-2 space-y-1 text-xs font-medium">
+                          Fuseau horaire
+                          <select
+                            value={draft.timezone}
+                            onChange={(event) =>
+                              updateDraft(type, { timezone: event.target.value })
+                            }
+                            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                          >
+                            {TIMEZONES.some(([value]) => value === draft.timezone) ? null : (
+                              <option value={draft.timezone}>{draft.timezone}</option>
+                            )}
+                            {TIMEZONES.map(([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+                        <span
+                          className={cn(
+                            'text-xs',
+                            dirty ? 'font-medium text-foreground' : 'text-muted-foreground',
+                          )}
+                        >
+                          {dirty
+                            ? 'Modifications non enregistrées'
+                            : saved
+                              ? saved.lastEvaluatedAt
+                                ? `Exécutée le ${formatDate(saved.lastEvaluatedAt)}`
+                                : 'Jamais exécutée'
+                              : 'Pas encore enregistrée'}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant={dirty ? 'default' : 'outline'}
+                          onClick={() => void saveAutomation(type)}
+                          disabled={saving === type}
+                          className="transition-all duration-200"
+                        >
+                          {saving === type ? 'Enregistrement…' : 'Enregistrer'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </section>
 
       <ConfirmDialog

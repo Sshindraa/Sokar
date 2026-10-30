@@ -76,6 +76,24 @@ describe('Next proxy — protection Clerk', () => {
     expect(auth).not.toHaveBeenCalled();
   });
 
+  it.each([
+    '/widget/chez-sokar',
+    '/api/proxy/public/r/chez-sokar/hold',
+    '/api/proxy/marketing/attribution/click',
+    '/api/proxy/restaurants/r1/availability',
+  ])('sert %s sans passer par Clerk (sous-domaines des restaurants)', async (path) => {
+    const response = await runProxy(path);
+    // Réponse « next » du chemin sans Clerk ; le chemin Clerk répondrait undefined ici.
+    expect(response?.headers.get('x-middleware-next')).toBe('1');
+  });
+
+  it.each(['/widget/chez-sokar/admin', '/api/proxy/customers', '/api/proxy/restaurants/r1'])(
+    'garde Clerk pour %s, hors de la liste publique du widget',
+    async (path) => {
+      expect(await runProxy(path)).toBeUndefined();
+    },
+  );
+
   it('refuse un démarrage production sans configuration Clerk', async () => {
     vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', '');
     await expect(import('./proxy')).rejects.toThrow('manquant en production');

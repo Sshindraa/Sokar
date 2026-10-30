@@ -158,6 +158,22 @@ export const optionalUrlSchema = z.preprocess((value) => {
   return trimmed === '' ? undefined : trimmed;
 }, z.string().url().optional());
 
+/**
+ * Adresse e-mail seule (« bonjour@… », sans nom affiché) : le nom affiché vient du restaurant. Une
+ * valeur vide se lit « non configurée ».
+ */
+export const optionalEmailAddressSchema = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+}, z.string().email().optional());
+
+/** Budget quotidien des e-mails marketing : entier ≥ 0, 40 par défaut, 0 coupe les envois. */
+export const marketingEmailDailyBudgetSchema = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.coerce.number().int().min(0).default(40),
+);
+
 /** Hôtes Deepgram autorisés : la clé API leur est envoyée, jamais à une valeur libre. */
 export const DEEPGRAM_API_HOSTS = ['api.deepgram.com', 'api.eu.deepgram.com'] as const;
 
@@ -376,6 +392,7 @@ const EnvSchema = z
     RESEND_WEBHOOK_SECRET: z.string().min(16).optional(),
     EMAIL_FROM: z.string().optional(),
     EMAIL_REPLY_TO: z.string().optional(),
+    REPUTATION_EMAIL_SECRET: z.string().optional(),
     // Les rapports récurrents envoient un email aux gestionnaires. Staging les
     // désactive explicitement tant qu'il n'existe pas de canal d'envoi isolé.
     EVENING_REPORTS_ENABLED: z
@@ -409,6 +426,9 @@ const EnvSchema = z
     MARKETING_SENDS_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_WHATSAPP_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_RECIPIENT_ALLOWLIST: z.string().optional(),
+    // Expéditeur dédié aux e-mails marketing (jamais EMAIL_FROM) et budget quotidien global.
+    MARKETING_EMAIL_FROM: optionalEmailAddressSchema,
+    MARKETING_EMAIL_DAILY_BUDGET: marketingEmailDailyBudgetSchema,
     // POS connectors remain disabled until a provider sandbox and pilot are
     // qualified. The adapter and import endpoints are still available locally
     // when explicitly enabled in a non-production environment.
@@ -418,10 +438,6 @@ const EnvSchema = z
     RESERVATION_PAYMENTS_ENABLED: z.enum(['true', 'false']).default('false'),
     // Shared CRM identity is limited to qualified multi-site pilots.
     CUSTOMER_GROUPS_ENABLED: z.enum(['true', 'false']).default('false'),
-    // Feedback and benefits remain local-only until channels, rules and a
-    // restaurant pilot are qualified.
-    REPUTATION_ENABLED: z.enum(['true', 'false']).default('false'),
-    LOYALTY_ENABLED: z.enum(['true', 'false']).default('false'),
     // Internal experience management and public paid bookings have independent
     // gates. Public Checkout remains off until Connect/payment readiness is proven.
     EXPERIENCES_ENABLED: z.enum(['true', 'false']).default('false'),

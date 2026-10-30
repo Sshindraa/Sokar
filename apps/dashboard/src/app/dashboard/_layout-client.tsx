@@ -7,25 +7,13 @@ import { SokarLogo } from '@/components/SokarLogo';
 import { useTranslations } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
-  BarChart3,
   CalendarCheck,
-  PhoneCall,
   Settings,
-  Users,
   Sparkles,
-  Zap,
-  HeartHandshake,
-  Code,
-  Gift,
   Moon,
   Sun,
   Radio,
   PencilRuler,
-  Megaphone,
-  Star,
-  Award,
-  Ticket,
-  Share2,
   ShieldCheck,
   X,
   ChevronDown,
@@ -49,93 +37,8 @@ import { SiteProvider, SiteSwitcher, useSiteSelection } from '@/features/sites/s
 import { SERVICE_STAFF_HOME, canOpenDashboardPath, isServiceStaff } from '@/features/team/roles';
 import { Button } from '@/components/ui/button';
 import { CreateOfferDialog } from '@/features/offers/create-offer-dialog';
-
-// Le libellé de chaque item de nav passe par `useTranslations('nav')`. Les
-// icônes et les hrefs ne dépendent pas de la locale, donc ils restent dans
-// un tableau de config hors du composant.
-type NavKey =
-  | 'overview'
-  | 'calls'
-  | 'reservations'
-  | 'floorPlan'
-  | 'customers'
-  | 'marketing'
-  | 'reputation'
-  | 'loyalty'
-  | 'experiences'
-  | 'events'
-  | 'distribution'
-  | 'reactivation'
-  | 'giftCards'
-  | 'agentic'
-  | 'connect'
-  | 'widget'
-  | 'admin';
-
-type NavItem = { href: string; key: NavKey; icon: LucideIcon };
-type NavGroupId = 'service' | 'customers' | 'growth' | 'offers' | 'channels';
-
-type NavGroup = {
-  id: NavGroupId;
-  key: NavGroupId;
-  icon: LucideIcon;
-  items: NavItem[];
-};
-
-const overviewNavItem: NavItem = { href: '/dashboard', key: 'overview', icon: BarChart3 };
-
-const navGroups: NavGroup[] = [
-  {
-    id: 'service',
-    key: 'service',
-    icon: PhoneCall,
-    items: [
-      { href: '/dashboard/reservations', key: 'reservations', icon: CalendarCheck },
-      { href: '/dashboard/calls', key: 'calls', icon: PhoneCall },
-      { href: '/dashboard/floor-plan?view=service-live', key: 'floorPlan', icon: Radio },
-      { href: '/dashboard/agentic', key: 'agentic', icon: Sparkles },
-    ],
-  },
-  {
-    id: 'customers',
-    key: 'customers',
-    icon: Users,
-    items: [
-      { href: '/dashboard/customers', key: 'customers', icon: Users },
-      { href: '/dashboard/loyalty', key: 'loyalty', icon: Award },
-      { href: '/dashboard/reactivation', key: 'reactivation', icon: HeartHandshake },
-    ],
-  },
-  {
-    id: 'growth',
-    key: 'growth',
-    icon: Megaphone,
-    items: [
-      { href: '/dashboard/marketing', key: 'marketing', icon: Megaphone },
-      { href: '/dashboard/reputation', key: 'reputation', icon: Star },
-    ],
-  },
-  {
-    id: 'offers',
-    key: 'offers',
-    icon: Ticket,
-    items: [
-      { href: '/dashboard/experiences', key: 'experiences', icon: CalendarCheck },
-      { href: '/dashboard/events', key: 'events', icon: Ticket },
-      { href: '/dashboard/gift-cards', key: 'giftCards', icon: Gift },
-    ],
-  },
-  {
-    id: 'channels',
-    key: 'channels',
-    icon: Share2,
-    items: [
-      { href: '/dashboard/connect', key: 'connect', icon: Zap },
-      { href: '/dashboard/widget', key: 'widget', icon: Code },
-      { href: '/dashboard/distribution', key: 'distribution', icon: Share2 },
-    ],
-  },
-];
+import { SectionTabs } from '@/components/SectionTabs';
+import { navSections, isNavEntryActive, type NavSectionId } from '@/features/navigation/sections';
 
 function SidebarNavItem({
   href,
@@ -209,7 +112,7 @@ function SidebarGroupButton({
   open,
   onClick,
 }: {
-  id: NavGroupId;
+  id: NavSectionId;
   label: string;
   icon: LucideIcon;
   active: boolean;
@@ -286,41 +189,6 @@ function SettingsButton({ active = false }: { active?: boolean }) {
       <Settings size={16} />
     </Link>
   );
-}
-
-function DashboardBrand({ restaurantName }: { restaurantName: string }) {
-  return (
-    <Link
-      href="/dashboard"
-      aria-label={`${restaurantName} HQ`}
-      title={`${restaurantName} HQ`}
-      className="dashboard-brand-link flex shrink-0 items-center justify-center rounded-xl border border-border bg-card/70 transition-all duration-200 hover:border-foreground/20 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <Image
-        src="/sokar-restaurant-mark.png"
-        alt="Sokar"
-        width={44}
-        height={44}
-        className="dashboard-brand-logo h-9 w-9 object-contain"
-      />
-    </Link>
-  );
-}
-
-function isNavItemActive(pathname: string, item: NavItem) {
-  if (item.key === 'giftCards') return pathname.startsWith('/dashboard/gift-card');
-  if (item.key === 'customers') return pathname.startsWith('/dashboard/customers');
-  if (item.key === 'marketing') return pathname.startsWith('/dashboard/marketing');
-  if (item.key === 'loyalty') return pathname.startsWith('/dashboard/loyalty');
-  if (item.key === 'experiences') return pathname.startsWith('/dashboard/experiences');
-  if (item.key === 'events') return pathname.startsWith('/dashboard/events');
-  if (item.key === 'distribution') return pathname.startsWith('/dashboard/distribution');
-  if (item.key === 'floorPlan') return pathname.startsWith('/dashboard/floor-plan');
-  return pathname === item.href;
-}
-
-function isNavGroupActive(pathname: string, group: NavGroup) {
-  return group.items.some((item) => isNavItemActive(pathname, item));
 }
 
 function DashboardModeSwitcher({
@@ -457,7 +325,7 @@ function DashboardModeSwitcher({
                         <span className="min-w-0 truncate">{plan.name}</span>
                         <span className="flex flex-none items-center gap-2 text-muted-foreground">
                           {plan.tableCount > 0 && (
-                            <span className="text-[11px]">{plan.tableCount} tables</span>
+                            <span className="text-xs">{plan.tableCount} tables</span>
                           )}
                           {active && <Check size={14} className="text-foreground" />}
                         </span>
@@ -496,7 +364,7 @@ function DashboardModeSwitcher({
           <span>Companion</span>
           <span
             className={cn(
-              'dashboard-mode-switcher__coming-soon rounded-full border border-border/80 bg-background/70 font-semibold uppercase tracking-[0.08em] text-muted-foreground transition-colors group-hover:border-foreground/20 group-hover:text-foreground',
+              'dashboard-mode-switcher__coming-soon rounded-full border border-border/80 bg-background/70 font-semibold text-muted-foreground transition-colors group-hover:border-foreground/20 group-hover:text-foreground',
               'px-1.5 py-0.5 text-[9px]',
             )}
           >
@@ -564,8 +432,8 @@ function DashboardSidebar({
   const salleMode = pathname.startsWith('/dashboard/floor-plan');
   const { activeSite } = useSiteSelection();
   const serviceStaff = isServiceStaff(activeSite?.role);
-  const [openGroup, setOpenGroup] = useState<NavGroupId | null>(null);
-  const openGroupDefinition = navGroups.find((group) => group.id === openGroup) ?? null;
+  const [openGroup, setOpenGroup] = useState<NavSectionId | null>(null);
+  const openGroupDefinition = navSections.find((section) => section.id === openGroup) ?? null;
 
   return (
     <aside className="dashboard-desktop-sidebar fixed bottom-4 left-4 top-4 z-40 w-16 flex-col items-center rounded-[1.4rem] border border-border bg-card/85 p-2 pt-[9px] shadow-2xl shadow-background/40 backdrop-blur-xl">
@@ -618,26 +486,34 @@ function DashboardSidebar({
           </>
         ) : (
           <>
-            <SidebarNavItem
-              href={overviewNavItem.href}
-              label={tNav(overviewNavItem.key)}
-              icon={overviewNavItem.icon}
-              active={isNavItemActive(pathname, overviewNavItem)}
-              onClick={() => setOpenGroup(null)}
-            />
-            {navGroups.map((group) => {
-              const active = isNavGroupActive(pathname, group);
-              const open = openGroup === group.id;
+            {navSections.map((section) => {
+              // Une section d'une seule entrée (Pilotage) est un lien direct.
+              if (section.entries.length === 1) {
+                const [entry] = section.entries;
+                return (
+                  <SidebarNavItem
+                    key={section.id}
+                    href={entry.href}
+                    label={tNav(entry.key)}
+                    icon={entry.icon}
+                    active={isNavEntryActive(pathname, entry)}
+                    onClick={() => setOpenGroup(null)}
+                  />
+                );
+              }
+
+              const active = section.entries.some((entry) => isNavEntryActive(pathname, entry));
+              const open = openGroup === section.id;
 
               return (
-                <div key={group.id} className="flex flex-none flex-col">
+                <div key={section.id} className="flex flex-none flex-col">
                   <SidebarGroupButton
-                    id={group.id}
-                    label={tNav(group.key)}
-                    icon={group.icon}
+                    id={section.id}
+                    label={tNav(section.labelKey)}
+                    icon={section.icon}
                     active={active}
                     open={open}
-                    onClick={() => setOpenGroup(open ? null : group.id)}
+                    onClick={() => setOpenGroup(open ? null : section.id)}
                   />
                 </div>
               );
@@ -653,7 +529,7 @@ function DashboardSidebar({
         >
           <div className="flex items-center justify-between gap-2 border-b border-border px-2 pb-2">
             <span className="text-sm font-semibold text-foreground">
-              {tNav(openGroupDefinition.key)}
+              {tNav(openGroupDefinition.labelKey)}
             </span>
             {openGroupDefinition.id !== 'offers' && (
               <button
@@ -673,22 +549,22 @@ function DashboardSidebar({
               openGroupDefinition.id === 'offers' ? 'space-y-1.5' : 'space-y-1',
             )}
           >
-            {openGroupDefinition.items.map((item) =>
+            {openGroupDefinition.entries.map((entry) =>
               openGroupDefinition.id === 'offers' ? (
                 <OffersPanelNavItem
-                  key={item.href}
-                  href={item.href}
-                  label={tNav(item.key)}
-                  active={isNavItemActive(pathname, item)}
+                  key={entry.href}
+                  href={entry.href}
+                  label={tNav(entry.key)}
+                  active={isNavEntryActive(pathname, entry)}
                   onClick={() => setOpenGroup(null)}
                 />
               ) : (
                 <SidebarNavItem
-                  key={item.href}
-                  href={item.href}
-                  label={tNav(item.key)}
-                  icon={item.icon}
-                  active={isNavItemActive(pathname, item)}
+                  key={entry.href}
+                  href={entry.href}
+                  label={tNav(entry.key)}
+                  icon={entry.icon}
+                  active={isNavEntryActive(pathname, entry)}
                   expanded
                   onClick={() => setOpenGroup(null)}
                 />
@@ -916,7 +792,6 @@ function DashboardShell({ children }: { children: ReactNode }) {
         <SiteSwitcher />
       </div>
       <div className="dashboard-desktop-only fixed right-8 top-6 z-50 h-12 items-center gap-2">
-        <DashboardBrand restaurantName={restaurantName} />
         <AccountMenu />
       </div>
       <div
@@ -934,7 +809,6 @@ function DashboardShell({ children }: { children: ReactNode }) {
         */}
         <div className="dashboard-flow-header mb-3 gap-2 sm:mb-4">
           <div className="dashboard-flow-header__brand flex min-w-0 items-center gap-2">
-            <DashboardBrand restaurantName={restaurantName} />
             <SiteSwitcher className="hidden w-[9rem] max-w-[20vw] md:flex" />
           </div>
           <DashboardModeSwitcher
@@ -983,6 +857,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
           ) : (
             <>
               <BillingNotice canManageBilling={canManageBilling} />
+              <SectionTabs />
               {children}
             </>
           )}

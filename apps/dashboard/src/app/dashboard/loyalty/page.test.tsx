@@ -58,8 +58,6 @@ const customers = [
     id: 'customer-1',
     name: 'Alice Martin',
     phone: '+33601021234',
-    visitCount: 3,
-    loyaltyScore: 7.5,
     isVip: false,
     notes: null,
     lastSeenAt: null,
@@ -68,8 +66,6 @@ const customers = [
     id: 'customer-2',
     name: 'Bob VIP',
     phone: '+33655667788',
-    visitCount: 12,
-    loyaltyScore: 9.5,
     isVip: true,
     notes: null,
     lastSeenAt: null,
@@ -107,7 +103,7 @@ describe('LoyaltyPage', () => {
   it('charge les règles, les attributions, les clients et les métriques', async () => {
     render(<LoyaltyPage />);
 
-    expect(await screen.findByRole('heading', { name: 'Attentions clients' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Fidélité' })).toBeInTheDocument();
     expect(await screen.findAllByText(/Dessert anniversaire/)).not.toHaveLength(0);
     expect(await screen.findAllByText(/Alice Martin/)).not.toHaveLength(0);
     expect(screen.getByText('Attentions à utiliser')).toBeInTheDocument();
@@ -118,8 +114,9 @@ describe('LoyaltyPage', () => {
 
   it('crée une attention avec des libellés métier et des valeurs par défaut', async () => {
     render(<LoyaltyPage />);
-    await screen.findByRole('heading', { name: 'Attentions clients' });
+    await screen.findByRole('heading', { name: 'Fidélité' });
 
+    fireEvent.click(screen.getByText('Créer une attention', { selector: 'summary' }));
     fireEvent.change(screen.getByLabelText('Nom de l’attention'), {
       target: { value: 'Café VIP' },
     });
@@ -144,8 +141,9 @@ describe('LoyaltyPage', () => {
 
   it('convertit les montants en euros vers les centimes attendus par l’API', async () => {
     render(<LoyaltyPage />);
-    await screen.findByRole('heading', { name: 'Attentions clients' });
+    await screen.findByRole('heading', { name: 'Fidélité' });
 
+    fireEvent.click(screen.getByText('Créer une attention', { selector: 'summary' }));
     fireEvent.change(screen.getByLabelText('Nom de l’attention'), {
       target: { value: 'Menu fidélité' },
     });
@@ -176,7 +174,7 @@ describe('LoyaltyPage', () => {
 
   it('attribue une attention à un client et affiche le code une seule fois', async () => {
     render(<LoyaltyPage />);
-    await screen.findByRole('heading', { name: 'Attentions clients' });
+    await screen.findByRole('heading', { name: 'Fidélité' });
     // Le titre s’affiche avant les données : le bouton reste désactivé tant que les attentions et les
     // clients ne sont pas chargés, et React ignore un clic sur un bouton désactivé.
     await waitFor(() =>
@@ -197,11 +195,26 @@ describe('LoyaltyPage', () => {
     );
     expect(await screen.findByText('Code à remettre au client')).toBeInTheDocument();
     expect(screen.getByText('ABC123DEF456')).toBeInTheDocument();
+    expect(screen.getByText(/30 jours · 2 attributions/)).toBeInTheDocument();
+  });
+
+  it('ne compte pas une attribution rejouée deux fois', async () => {
+    apiMocks.post.mockResolvedValue({ data: { ...grant, code: null, replayed: true } });
+    render(<LoyaltyPage />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Attribuer l’attention' })).toBeEnabled(),
+    );
+    fireEvent.change(screen.getByLabelText('Client destinataire'), {
+      target: { value: 'customer-2' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Attribuer l’attention' }));
+    expect(await screen.findByText(/30 jours · 1 attribution/)).toBeInTheDocument();
+    expect(await screen.findByText(/avait déjà été attribuée/)).toBeInTheDocument();
   });
 
   it('valide une attention avec son attribution et son code', async () => {
     render(<LoyaltyPage />);
-    await screen.findByRole('heading', { name: 'Attentions clients' });
+    await screen.findByRole('heading', { name: 'Fidélité' });
     // Tant que les attributions ne sont pas chargées, l’option manque et le bouton reste désactivé.
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Valider l’attention' })).toBeEnabled(),
@@ -229,10 +242,16 @@ describe('LoyaltyPage', () => {
 
   it('permet d’annuler une attribution en attente avec confirmation', async () => {
     render(<LoyaltyPage />);
-    await screen.findByRole('heading', { name: 'Attentions clients' });
+    await screen.findByRole('heading', { name: 'Fidélité' });
 
     // Le bouton n’existe qu’une fois la liste des attributions chargée.
-    fireEvent.click(await screen.findByRole('button', { name: 'Annuler l’attribution' }));
+    fireEvent.pointerDown(
+      await screen.findByRole('button', {
+        name: 'Autres actions pour Dessert anniversaire · Alice Martin',
+      }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Annuler l’attribution' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/ne pourra plus être validée/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler l’attribution' }));
@@ -243,18 +262,6 @@ describe('LoyaltyPage', () => {
     expect(
       await screen.findByText('Attribution annulée. Elle ne peut plus être validée en salle.'),
     ).toBeInTheDocument();
-  });
-
-  it('explique calmement que le module n’est pas encore ouvert, sans formulaire ni compteurs', async () => {
-    apiMocks.get.mockRejectedValue(toApiError(503, { error: 'LOYALTY_DISABLED' }));
-    render(<LoyaltyPage />);
-
-    expect(
-      await screen.findByText('Cette fonctionnalité n’est pas encore ouverte sur votre compte.'),
-    ).toBeInTheDocument();
-    expect(screen.queryByText('LOYALTY_DISABLED')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Enregistrer l’attention' })).toBeNull();
-    expect(screen.queryByRole('button', { name: /réessayer/i })).toBeNull();
   });
 
   it('propose les formules quand la fidélité est hors formule', async () => {
@@ -279,7 +286,7 @@ describe('LoyaltyPage', () => {
 
   it('ne propose plus de champ technique (référence interne, identifiant de réservation)', async () => {
     render(<LoyaltyPage />);
-    await screen.findByRole('heading', { name: 'Attentions clients' });
+    await screen.findByRole('heading', { name: 'Fidélité' });
 
     expect(screen.queryByLabelText(/Référence interne/)).toBeNull();
     expect(screen.queryByLabelText(/Réservation liée/)).toBeNull();

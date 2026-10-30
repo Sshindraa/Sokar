@@ -15,6 +15,7 @@ describe('équipe de service (STAFF)', () => {
     ['GET', '/restaurants/:id/floor-plans/:floorPlanId'],
     ['GET', '/restaurants/:id/floor-plan/reservations'],
     ['GET', '/restaurants/:id/availability'],
+    ['GET', '/customers/service-cards'],
     ['GET', '/restaurants/:id'],
     ['GET', '/restaurants/sites'],
     ['GET', '/restaurant/onboarding'],
@@ -61,7 +62,6 @@ describe('équipe de service (STAFF)', () => {
     ['POST', '/team/invitations'],
     ['POST', '/restaurants/sites'],
     ['POST', '/restaurants/sites/:id/members'],
-    ['POST', '/integrations/google-calendar/disconnect'],
     ['POST', '/api/agentic/opt-in'],
     ['GET', '/api/agentic/exposure-settings'],
     // Données clients et activité

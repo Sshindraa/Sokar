@@ -45,6 +45,9 @@ import {
 } from '../../../shared/reservations/reservation-state';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
+import { ConsentService } from '../../rgpd/consent.service.js';
+import Fastify from 'fastify';
+import { connectRoutes } from '../../connect/connect.routes';
 
 const prisma = new PrismaClient();
 const audit = new AuditLogService(prisma);
@@ -412,6 +415,51 @@ describeIntegration('concurrency — un créneau gardé bloque une table, pas le
       });
   }
 
+  it('refuse une section préférée d’un autre restaurant sur PostgreSQL', async () => {
+    const plan = await prisma.floorPlan.findFirstOrThrow({
+      where: { restaurantId: multiRestaurantId },
+    });
+    const section = await prisma.section.create({
+      data: { floorPlanId: plan.id, name: 'Étrangère' },
+    });
+    await prisma.table.update({ where: { id: multiTableIds[0] }, data: { sectionId: section.id } });
+    const slotStart = new Date('2099-09-09T19:00:00Z');
+    const hold = await holds.createHold({
+      restaurantId: testRestaurantId,
+      partySize: 2,
+      slotStart,
+      slotEnd: new Date(slotStart.getTime() + 90 * 60_000),
+      channel: 'WEB',
+      policy,
+      actor: 'test:cross-tenant',
+      preferredSectionId: section.id,
+    });
+    expect(hold.tableId).toBe(testTableId);
+    const foreignStart = new Date('2099-09-09T21:00:00Z');
+    await expect(
+      new ReservationService(prisma, audit, holds, idem).createReservation(
+        {
+          restaurantId: testRestaurantId,
+          partySize: 2,
+          startsAt: foreignStart,
+          endsAt: new Date(foreignStart.getTime() + 90 * 60_000),
+          customerName: 'Client',
+          customerPhone: parityPhone(),
+          channel: 'MCP',
+          actor: 'test:cross-tenant',
+          policy,
+          tableId: multiTableIds[0],
+        },
+        {
+          scope: `${testRestaurantId}:foreign-table`,
+          key: randomUUID(),
+          payloadHash: hashPayload({ foreignStart }),
+          ttlSeconds: 60,
+        },
+      ),
+    ).rejects.toBeInstanceOf(ReservationSlotUnavailableError);
+  });
+
   it('deux clients, même heure et mêmes couverts : chacun obtient sa table', async () => {
     const slotStart = new Date(Date.UTC(2099, 8, 1, 19, 0, 0));
     const first = await holdOnce(slotStart);
@@ -422,6 +470,467 @@ describeIntegration('concurrency — un créneau gardé bloque une table, pas le
     if (first.outcome === 'ok' && second.outcome === 'ok') {
       expect(first.hold.tableId).not.toBe(second.hold.tableId);
     }
+  });
+
+  it('confirme deux holds simultanés de même taille sur deux tables distinctes', async () => {
+    const slotStart = new Date(Date.UTC(2099, 8, 10, 19));
+    const first = await holdOnce(slotStart);
+    const second = await holdOnce(slotStart);
+    if (first.outcome !== 'ok' || second.outcome !== 'ok') throw new Error('hold creation failed');
+    const service = new ReservationService(prisma, audit, holds, idem);
+    const results = await Promise.all(
+      [first.hold, second.hold].map((hold, index) =>
+        service.createReservation(
+          {
+            restaurantId: multiRestaurantId,
+            partySize: 2,
+            startsAt: slotStart,
+            endsAt: hold.slotEnd,
+            customerName: `Client ${index}`,
+            customerPhone: parityPhone(),
+            channel: 'MCP',
+            actor: 'test:multi-confirm',
+            policy,
+            tableId: hold.tableId,
+            holdToken: hold.holdToken!,
+          },
+          {
+            scope: `${multiRestaurantId}:audit:${hold.id}`,
+            key: hold.id,
+            payloadHash: hashPayload({ holdId: hold.id }),
+            ttlSeconds: 60,
+          },
+        ),
+      ),
+    );
+    const created = await prisma.reservation.findMany({
+      where: { id: { in: results.map((r) => r.reservationId) } },
+    });
+    expect(created).toHaveLength(2);
+    expect(new Set(created.map((row) => row.tableId)).size).toBe(2);
+  });
+
+  it('rejoue une confirmation publique perdue sans créer deux réservations ou consentements', async () => {
+    await prisma.restaurant.update({
+      where: { id: multiRestaurantId },
+      data: { publishedAt: new Date() },
+    });
+    await prisma.restaurantExposureSettings.upsert({
+      where: { restaurantId: multiRestaurantId },
+      create: { restaurantId: multiRestaurantId, connectPublished: true },
+      update: { connectPublished: true },
+    });
+    const held = await holdOnce(new Date('2099-09-20T19:00:00Z'));
+    if (held.outcome !== 'ok') throw new Error('hold creation failed');
+    expect((await holdOnce(held.hold.slotStart)).outcome).toBe('ok');
+    expect((await holdOnce(held.hold.slotStart)).outcome).toBe('ok');
+    const app = Fastify();
+    const analytics = vi.fn();
+    app.decorate('queues', {
+      connectAnalytics: { add: analytics },
+    } as unknown as typeof app.queues);
+    await app.register(connectRoutes);
+    const payload = {
+      holdToken: held.hold.holdToken,
+      customer: { firstName: 'Client', phone: parityPhone() },
+      specialRequests: 'Terrasse',
+    };
+    try {
+      const [first, parallel] = await Promise.all([
+        app.inject({ method: 'POST', url: `/public/r/${multiRestaurantId}/confirm`, payload }),
+        app.inject({ method: 'POST', url: `/public/r/${multiRestaurantId}/confirm`, payload }),
+      ]);
+      expect(first.statusCode).toBe(200);
+      expect(parallel.statusCode).toBe(200);
+      expect(parallel.json().reservationId).toBe(first.json().reservationId);
+      const replay = await app.inject({
+        method: 'POST',
+        url: `/public/r/${multiRestaurantId}/confirm`,
+        payload,
+      });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json()).toMatchObject({
+        reservationId: first.json().reservationId,
+        reused: true,
+      });
+      const changed = await app.inject({
+        method: 'POST',
+        url: `/public/r/${multiRestaurantId}/confirm`,
+        payload: { ...payload, specialRequests: 'Intérieur' },
+      });
+      expect(changed.statusCode).toBe(409);
+      expect(await prisma.reservation.count({ where: { consumedHoldId: held.hold.id } })).toBe(1);
+      expect(
+        await prisma.customerConsent.count({
+          where: {
+            restaurantId: multiRestaurantId,
+            subjectHash: ConsentService.hashSubject(payload.customer.phone),
+          },
+        }),
+      ).toBe(1);
+      expect(analytics).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('annule le consentement et la réservation ensemble si la transaction échoue', async () => {
+    const slotStart = new Date(Date.UTC(2099, 8, 17, 19));
+    const held = await holdOnce(slotStart);
+    if (held.outcome !== 'ok') throw new Error('hold creation failed');
+    const before = await prisma.customerConsent.count({
+      where: { restaurantId: multiRestaurantId },
+    });
+    const service = new ReservationService(prisma, audit, holds, idem);
+    await expect(
+      service.createReservation(
+        {
+          restaurantId: multiRestaurantId,
+          partySize: 2,
+          startsAt: slotStart,
+          endsAt: held.hold.slotEnd,
+          customerName: 'Client',
+          customerPhone: parityPhone(),
+          channel: 'WEB',
+          actor: 'connect:web',
+          policy,
+          tableId: held.hold.tableId,
+          holdToken: held.hold.holdToken!,
+          beforeCreate: async (tx) => {
+            await new ConsentService(tx).recordConsent({
+              restaurantId: multiRestaurantId,
+              customerId: null,
+              reservationId: null,
+              subject: '+33600000000',
+              channel: 'WEB',
+              context: 'web_booking_intent',
+              consents: { reservationProcessing: true },
+            });
+            throw new Error('transaction failed');
+          },
+        },
+        {
+          scope: `${multiRestaurantId}:audit:rollback`,
+          key: randomUUID(),
+          payloadHash: hashPayload({ holdId: held.hold.id }),
+          ttlSeconds: 60,
+        },
+      ),
+    ).rejects.toThrow('transaction failed');
+    expect(await prisma.customerConsent.count({ where: { restaurantId: multiRestaurantId } })).toBe(
+      before,
+    );
+    expect(await prisma.reservation.count({ where: { consumedHoldId: held.hold.id } })).toBe(0);
+    expect(
+      (await prisma.agenticHold.findUniqueOrThrow({ where: { id: held.hold.id } })).status,
+    ).toBe('ACTIVE');
+  });
+
+  it('sérialise deux changements de couverts vers la dernière grande table', async () => {
+    const slotStart = new Date(Date.UTC(2099, 8, 11, 19));
+    const slotEnd = new Date(slotStart.getTime() + 90 * 60_000);
+    const plan = await prisma.floorPlan.findFirstOrThrow({
+      where: { restaurantId: multiRestaurantId },
+    });
+    const large = await prisma.table.create({
+      data: { floorPlanId: plan.id, name: 'Grande', capacity: 4, minCapacity: 1, isActive: true },
+    });
+    const rows = await Promise.all(
+      multiTableIds.slice(0, 2).map((tableId, index) =>
+        prisma.reservation.create({
+          data: {
+            restaurantId: multiRestaurantId,
+            tableId,
+            reservedAt: slotStart,
+            startsAt: slotStart,
+            endsAt: slotEnd,
+            partySize: 2,
+            customerName: `Client ${index}`,
+            state: 'CONFIRMED',
+            status: 'CONFIRMED',
+          },
+        }),
+      ),
+    );
+    const results = await Promise.allSettled(
+      rows.map((row) =>
+        LegacyReservationService.update(row.id, multiRestaurantId, {
+          partySize: 4,
+          customerName: 'Modifié',
+        }),
+      ),
+    );
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    const stored = await prisma.reservation.findMany({
+      where: { id: { in: rows.map((row) => row.id) } },
+    });
+    expect(
+      stored.filter(
+        (row) => row.tableId === large.id && row.partySize === 4 && row.customerName === 'Modifié',
+      ),
+    ).toHaveLength(1);
+    expect(
+      stored.filter((row) => row.partySize === 2 && row.customerName !== 'Modifié'),
+    ).toHaveLength(1);
+    await prisma.table.update({ where: { id: large.id }, data: { isActive: false } });
+  });
+
+  it('attribue une seule table lors de deux demandes simultanées pour une réservation sans table', async () => {
+    const start = new Date(Date.UTC(2099, 8, 12, 19));
+    const row = await prisma.reservation.create({
+      data: {
+        restaurantId: multiRestaurantId,
+        reservedAt: start,
+        startsAt: start,
+        endsAt: new Date(start.getTime() + 90 * 60_000),
+        partySize: 2,
+        customerName: 'Client',
+        state: 'CONFIRMED',
+        status: 'CONFIRMED',
+      },
+    });
+    const results = await Promise.all([
+      LegacyReservationService.allocateTable(row.id, multiRestaurantId),
+      LegacyReservationService.allocateTable(row.id, multiRestaurantId),
+    ]);
+    expect(results[0].tableId).toBeTruthy();
+    expect(results[1].tableId).toBe(results[0].tableId);
+  });
+
+  it('garde statut, nom et couverts atomiques dans la modification historique', async () => {
+    const start = new Date(Date.UTC(2099, 8, 13, 19));
+    const row = await prisma.reservation.create({
+      data: {
+        restaurantId: multiRestaurantId,
+        tableId: multiTableIds[0],
+        reservedAt: start,
+        startsAt: start,
+        endsAt: new Date(start.getTime() + 90 * 60_000),
+        partySize: 2,
+        customerName: 'Avant',
+        state: 'CONFIRMED',
+        status: 'CONFIRMED',
+      },
+    });
+    const result = await LegacyReservationService.update(row.id, multiRestaurantId, {
+      status: 'CANCELLED',
+      partySize: 4,
+      customerName: 'Après',
+    });
+    expect(result).toMatchObject({
+      state: 'CANCELLED',
+      status: 'CANCELLED',
+      partySize: 4,
+      customerName: 'Après',
+    });
+  });
+
+  it('ne change aucun champ si les nouveaux couverts ne tiennent sur aucune table', async () => {
+    const start = new Date(Date.UTC(2099, 8, 18, 19));
+    const row = await prisma.reservation.create({
+      data: {
+        restaurantId: multiRestaurantId,
+        tableId: multiTableIds[0],
+        reservedAt: start,
+        startsAt: start,
+        endsAt: new Date(start.getTime() + 90 * 60_000),
+        partySize: 2,
+        customerName: 'Avant',
+        state: 'CONFIRMED',
+        status: 'CONFIRMED',
+      },
+    });
+    await expect(
+      LegacyReservationService.update(row.id, multiRestaurantId, {
+        status: 'CONFIRMED',
+        partySize: 20,
+        customerName: 'Après',
+      }),
+    ).rejects.toThrow('SLOT_NOT_AVAILABLE');
+    expect(await prisma.reservation.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
+      state: 'CONFIRMED',
+      status: 'CONFIRMED',
+      partySize: 2,
+      customerName: 'Avant',
+      tableId: multiTableIds[0],
+    });
+  });
+
+  it('refuse de marquer installée une réservation dont la table est trop petite', async () => {
+    const start = new Date(Date.now() + 60 * 60_000);
+    const row = await prisma.reservation.create({
+      data: {
+        restaurantId: multiRestaurantId,
+        tableId: multiTableIds[0],
+        reservedAt: start,
+        startsAt: start,
+        endsAt: new Date(start.getTime() + 90 * 60_000),
+        partySize: 2,
+        customerName: 'Avant',
+        state: 'CONFIRMED',
+        status: 'CONFIRMED',
+      },
+    });
+    await expect(
+      LegacyReservationService.update(row.id, multiRestaurantId, {
+        status: 'SEATED',
+        partySize: 4,
+        customerName: 'Après',
+      }),
+    ).rejects.toThrow('SLOT_NOT_AVAILABLE');
+    expect(await prisma.reservation.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
+      state: 'CONFIRMED',
+      status: 'CONFIRMED',
+      partySize: 2,
+      customerName: 'Avant',
+      tableId: multiTableIds[0],
+    });
+  });
+
+  it('reconstruit la durée historique même au passage de minuit', async () => {
+    const start = new Date('2099-09-14T21:30:00Z');
+    await prisma.restaurantExposureSettings.upsert({
+      where: { restaurantId: multiRestaurantId },
+      create: { restaurantId: multiRestaurantId, capacitySpecials: { serviceDurationMinutes: 90 } },
+      update: { capacitySpecials: { serviceDurationMinutes: 90 } },
+    });
+    const row = await prisma.reservation.create({
+      data: {
+        restaurantId: multiRestaurantId,
+        tableId: multiTableIds[0],
+        reservedAt: start,
+        startsAt: null,
+        endsAt: null,
+        partySize: 2,
+        customerName: 'Ancienne',
+        state: 'CONFIRMED',
+        status: 'CONFIRMED',
+      },
+    });
+    const allocation = new TableAllocationService(prisma);
+    const interval = {
+      startsAt: new Date('2099-09-14T22:30:00Z'),
+      endsAt: new Date('2099-09-14T23:00:00Z'),
+    };
+    expect(await allocation.isTableAvailable({ tableId: multiTableIds[0], ...interval })).toBe(
+      false,
+    );
+    expect(
+      await allocation.isTableAvailable({
+        tableId: multiTableIds[0],
+        startsAt: new Date('2099-09-14T23:00:00Z'),
+        endsAt: new Date('2099-09-15T00:00:00Z'),
+      }),
+    ).toBe(true);
+    await prisma.reservation.update({ where: { id: row.id }, data: { tableId: null } });
+    const candidate = await prisma.$transaction((tx) =>
+      allocation.allocate({ restaurantId: multiRestaurantId, partySize: 2, ...interval }, tx),
+    );
+    expect(candidate).toBeNull();
+  });
+
+  it('ignore les réservations test avec et sans table dans les contrôles de capacité', async () => {
+    const start = new Date('2099-09-16T19:00:00Z');
+    const end = new Date(start.getTime() + 90 * 60_000);
+    for (const tableId of [null, multiTableIds[0]]) {
+      await prisma.reservation.create({
+        data: {
+          restaurantId: multiRestaurantId,
+          tableId,
+          reservedAt: start,
+          startsAt: start,
+          endsAt: end,
+          partySize: 2,
+          customerName: 'Test',
+          isTest: true,
+          state: 'CONFIRMED',
+          status: 'CONFIRMED',
+        },
+      });
+    }
+    const allocation = new TableAllocationService(prisma);
+    expect(
+      await allocation.isTableAvailable({
+        tableId: multiTableIds[0],
+        startsAt: start,
+        endsAt: end,
+      }),
+    ).toBe(true);
+    const candidate = await prisma.$transaction((tx) =>
+      allocation.allocate(
+        { restaurantId: multiRestaurantId, partySize: 2, startsAt: start, endsAt: end },
+        tx,
+      ),
+    );
+    expect(candidate).toBeTruthy();
+    const available = await new CapacityAwareAvailabilityService(prisma).getAvailability({
+      restaurantId: multiRestaurantId,
+      date: '2099-09-16',
+      partySize: 2,
+    });
+    expect(available.slots.find((slot) => slot.time === '21:00')?.available).toBe(true);
+    const service = new ReservationService(prisma, audit, holds, idem);
+    const created = await service.createReservation(
+      {
+        restaurantId: multiRestaurantId,
+        partySize: 2,
+        startsAt: start,
+        endsAt: end,
+        customerName: 'Client réel',
+        customerPhone: parityPhone(),
+        channel: 'MCP',
+        actor: 'test:real-after-test',
+        policy,
+      },
+      {
+        scope: `${multiRestaurantId}:real-after-test`,
+        key: randomUUID(),
+        payloadHash: hashPayload({ startsAt: start }),
+        ttlSeconds: 60,
+      },
+    );
+    expect(created.reservationId).toBeTruthy();
+  });
+
+  it('reste conservateur pour une nouvelle réservation sans table', async () => {
+    const start = new Date('2099-09-19T19:00:00Z');
+    const end = new Date(start.getTime() + 90 * 60_000);
+    await prisma.reservation.create({
+      data: {
+        restaurantId: multiRestaurantId,
+        tableId: multiTableIds[0],
+        reservedAt: start,
+        startsAt: start,
+        endsAt: end,
+        partySize: 2,
+        customerName: 'Déjà réservé',
+        state: 'CONFIRMED',
+        status: 'CONFIRMED',
+      },
+    });
+    const service = new ReservationService(prisma, audit, holds, idem);
+    await expect(
+      service.createReservation(
+        {
+          restaurantId: multiRestaurantId,
+          partySize: 3,
+          startsAt: start,
+          endsAt: end,
+          customerName: 'Sans table',
+          customerPhone: parityPhone(),
+          channel: 'MCP',
+          actor: 'test:unassigned',
+          policy,
+        },
+        {
+          scope: `${multiRestaurantId}:unassigned`,
+          key: randomUUID(),
+          payloadHash: hashPayload({ startsAt: start }),
+          ttlSeconds: 60,
+        },
+      ),
+    ).rejects.toBeInstanceOf(ReservationSlotUnavailableError);
   });
 
   it('30 requêtes simultanées pour 3 tables : exactement 3 holds, sur 3 tables distinctes', async () => {
@@ -806,6 +1315,29 @@ describeIntegration('capacity — releaseTable', () => {
 });
 
 describeIntegration('capacity — réservation active sans table dans le chemin agentic', () => {
+  it('masque le début du lendemain pour une ancienne réservation sans heure de fin', async () => {
+    const start = new Date('2099-09-14T21:30:00Z');
+    await prisma.reservation.create({
+      data: {
+        restaurantId: testRestaurantId,
+        tableId: testTableId,
+        reservedAt: start,
+        startsAt: null,
+        endsAt: null,
+        partySize: 2,
+        customerName: 'Ancienne',
+        state: 'CONFIRMED',
+        status: 'CONFIRMED',
+      },
+    });
+    const available = await new CapacityAwareAvailabilityService(prisma).getAvailability({
+      restaurantId: testRestaurantId,
+      date: '2099-09-15',
+      partySize: 2,
+    });
+    expect(available.slots.find((slot) => slot.time === '00:30')?.available).toBe(false);
+    expect(available.slots.find((slot) => slot.time === '01:30')?.available).toBe(true);
+  });
   it.each(ACTIVE_RESERVATION_STATES)(
     '%s est bloquante pour findBlockingReservation même sans table',
     async (state) => {

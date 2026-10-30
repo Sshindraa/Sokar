@@ -16,7 +16,11 @@ import { resolveServiceDurationMinutes } from './floor-plan.types';
 import { TableAllocationService } from './table-allocation.service';
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';
-import { ACTIVE_RESERVATION_STATES, intervalsOverlap } from '../../shared/reservations/capacity.js';
+import {
+  ACTIVE_RESERVATION_STATES,
+  intervalsOverlap,
+  reservationOverlapWhere,
+} from '../../shared/reservations/capacity.js';
 import {
   DEFAULT_RESTAURANT_TIMEZONE,
   zonedTimeToUtc,
@@ -65,6 +69,7 @@ export function markTooSoonSlotsUnavailable(
   timeZone: string,
   now: Date,
   minLeadTimeMinutes: number = 0,
+  includePast = false,
 ): AvailabilityDto {
   const dayStart = Date.parse(`${dto.date}T00:00:00.000Z`);
   if (Number.isNaN(dayStart)) return dto;
@@ -74,15 +79,21 @@ export function markTooSoonSlotsUnavailable(
   // Tous les créneaux de la date commencent au plus tôt à `earliestStartMs` (minuit local en UTC+14) :
   // si maintenant et maintenant + délai ne l'atteignent pas, rien n'est trop proche.
   const earliestStartMs = dayStart - MAX_UTC_OFFSET_AHEAD_MS;
-  if (now.getTime() < earliestStartMs && earliestBookableMs <= earliestStartMs) return dto;
+  if (!includePast && now.getTime() < earliestStartMs && earliestBookableMs <= earliestStartMs)
+    return dto;
   const allTooSoon = earliestBookableMs >= dayStart + DAY_MS + MAX_UTC_OFFSET_BEHIND_MS;
   return {
     ...dto,
-    slots: dto.slots.map((slot) =>
-      slot.available && (allTooSoon || isSlotTooSoonAt(dto.date, slot.time, timeZone, lead, now))
-        ? { ...slot, available: false }
-        : slot,
-    ),
+    slots: dto.slots.map((slot) => {
+      const past =
+        includePast && zonedTimeToUtc(dto.date, slot.time, timeZone).getTime() <= now.getTime();
+      const tooSoon = allTooSoon || isSlotTooSoonAt(dto.date, slot.time, timeZone, lead, now);
+      return {
+        ...slot,
+        ...(slot.available && (tooSoon || past) ? { available: false } : {}),
+        ...(includePast ? { past } : {}),
+      };
+    }),
   };
 }
 
@@ -161,6 +172,8 @@ export class CapacityAwareAvailabilityService {
       /** Private modification preview: never read or populate the public cache. */
       excludeReservationId?: string;
       defaultFloorOnly?: boolean;
+      allowWithoutTables?: boolean;
+      includePast?: boolean;
       /**
        * Délai minimum de réservation, en minutes. Passé par les surfaces EN LIGNE (page et widget
        * Connect, page /book, cartes cadeaux) ; absent (donc 0) pour le téléphone et le personnel.
@@ -170,7 +183,8 @@ export class CapacityAwareAvailabilityService {
     tx?: Prisma.TransactionClient,
   ): Promise<AvailabilityDto> {
     const queryDb = tx ?? this.prisma;
-    const privatePreview = !!args.excludeReservationId || !!tx || !!args.defaultFloorOnly;
+    const privatePreview =
+      !!args.excludeReservationId || !!tx || !!args.defaultFloorOnly || !!args.allowWithoutTables;
     // Une seule lecture de l'horloge par appel : le cache garde le résultat brut (sans passé ni délai),
     // ils se marquent à chaque lecture, y compris pour une valeur en cache depuis quelques secondes.
     // Le délai n'entre pas dans la clé de cache : il ne change que ce qu'on marque après.
@@ -182,7 +196,13 @@ export class CapacityAwareAvailabilityService {
         const cached = await redisCache.get(this.cacheKey(args, version));
         const hit = cached ? parseCachedAvailability(cached) : null;
         if (hit) {
-          return markTooSoonSlotsUnavailable(hit.dto, hit.timeZone, now, args.minLeadTimeMinutes);
+          return markTooSoonSlotsUnavailable(
+            hit.dto,
+            hit.timeZone,
+            now,
+            args.minLeadTimeMinutes,
+            args.includePast,
+          );
         }
       } catch (err) {
         logger.warn(
@@ -223,21 +243,16 @@ export class CapacityAwareAvailabilityService {
     // Récupérer toutes les réservations bloquantes et holds actifs du jour
     // pour les tester localement (optimisation P1).
     const dayStart = zonedTimeToUtc(args.date, '00:00', timeZone);
-    const dayEnd = zonedTimeToUtc(args.date, '23:59:59.999', timeZone);
+    const dayEnd = new Date(zonedTimeToUtc(args.date, '23:59:59.999', timeZone).getTime() + 1);
 
     const [reservations, holds, tables] = await Promise.all([
       queryDb.reservation.findMany({
         where: {
           restaurantId: args.restaurantId,
+          isTest: false,
           state: { in: [...ACTIVE_RESERVATION_STATES] },
           ...(args.excludeReservationId ? { id: { not: args.excludeReservationId } } : {}),
-          OR: [
-            { startsAt: { lt: dayEnd }, endsAt: { gt: dayStart } },
-            // Legacy rows may have startsAt but no endsAt; their duration is
-            // reconstructed below from the restaurant service duration.
-            { startsAt: { gte: dayStart, lt: dayEnd }, endsAt: null },
-            { startsAt: null, reservedAt: { gte: dayStart, lt: dayEnd } },
-          ],
+          OR: reservationOverlapWhere(dayStart, dayEnd, serviceDurationMinutes),
         },
         select: { tableId: true, startsAt: true, endsAt: true, reservedAt: true },
       }),
@@ -302,6 +317,12 @@ export class CapacityAwareAvailabilityService {
       busyByTable.set(h.tableId, list);
     }
 
+    const noActiveTables =
+      args.allowWithoutTables &&
+      !(await queryDb.table.findFirst({
+        where: { isActive: true, floorPlan: { restaurantId: args.restaurantId, isActive: true } },
+        select: { id: true },
+      }));
     const slots: AvailabilitySlot[] = allSlots.map((time) => {
       const slotStart = zonedTimeToUtc(args.date, time, timeZone);
       const slotEnd = new Date(slotStart.getTime() + serviceDurationMinutes * 60_000);
@@ -316,7 +337,7 @@ export class CapacityAwareAvailabilityService {
       const hasGlobalConflict = globallyBlockedIntervals.some((interval) =>
         intervalsOverlap(interval.start, interval.end, slotStart, slotEnd),
       );
-      const available = !hasGlobalConflict && hasAvailableTable(tables);
+      const available = !hasGlobalConflict && (hasAvailableTable(tables) || !!noActiveTables);
 
       return { time, available };
     });
@@ -330,7 +351,8 @@ export class CapacityAwareAvailabilityService {
 
     if (!privatePreview)
       try {
-        version = await this.getVersion(args.restaurantId);
+        // Version lue AVANT le calcul : une mutation survenue entre-temps l'a déjà dépassée, donc ce
+        // résultat peut-être périmé n'est jamais relu.
         const entry: CachedAvailability = { timeZone, dto };
         await redisCache.set(
           this.cacheKey(args, version),
@@ -345,7 +367,13 @@ export class CapacityAwareAvailabilityService {
         );
       }
 
-    return markTooSoonSlotsUnavailable(dto, timeZone, now, args.minLeadTimeMinutes);
+    return markTooSoonSlotsUnavailable(
+      dto,
+      timeZone,
+      now,
+      args.minLeadTimeMinutes,
+      args.includePast,
+    );
   }
 }
 

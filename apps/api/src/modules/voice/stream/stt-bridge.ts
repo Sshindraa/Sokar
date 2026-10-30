@@ -8,9 +8,9 @@ import {
 } from './caller-voice-activity';
 import { isRepeatOfLastProcessedTurn } from './transcript-dedupe';
 import { checkFastBargeIn } from './fast-barge-in';
+import { clearBackchannelCandidate, handleCallerBackchannel } from './caller-backchannel';
 import { logVoiceDebugText } from './debug-dialogue';
-import * as fs from 'fs';
-import * as path from 'path';
+import { writeDebugLog } from './debug-log';
 import type { CallSession, SttEvent, SttFinalTrigger, SttWord } from './types';
 import { CallSessionManager } from './manager';
 import { speculateStructuredTurn } from './structured-turn/engine';
@@ -59,6 +59,7 @@ import { cancelNoInputRecovery, scheduleUnheardRecovery } from './no-input-recov
 import { resumeInterruptedGreeting } from './greeting-resume';
 import {
   closeInkParallel,
+  peekReadyInkTranscript,
   openInkParallel,
   partySizeDiffers,
   resolveInkTranscript,
@@ -258,21 +259,6 @@ export const STT_AUDIO_BUFFER_MAX = 400;
 
 const MAX_TURN_PARTIALS = 30;
 
-function writeDebugLog(msg: string, err?: unknown): void {
-  const e = err instanceof Error ? err : err ? new Error(String(err)) : undefined;
-  const timestamp = new Date().toISOString();
-  const logMsg =
-    '[' + timestamp + '] ' + msg + (e ? ' | ERROR: ' + e.message + '\n' + e.stack : '') + '\n';
-  try {
-    const logPath =
-      process.env.DEBUG_LOG_PATH || path.join(process.cwd(), 'scratch', 'call_debug.log');
-    fs.mkdirSync(path.dirname(logPath), { recursive: true });
-    fs.appendFileSync(logPath, logMsg);
-  } catch (writeError) {
-    logger.error({ err: writeError }, 'Failed to write debug log');
-  }
-}
-
 export const DEEPGRAM_ENDPOINTING_MS = 200;
 export const DEEPGRAM_UTTERANCE_END_MS = 1_000;
 
@@ -336,6 +322,7 @@ function sttAdapterForSession(session: CallSession): SttProviderAdapter {
 }
 
 interface SttTurnTiming {
+  transcriptProvider?: string;
   speechEndAt?: number;
   sttFinalAt?: number;
   finalTrigger?: SttFinalTrigger;
@@ -413,6 +400,11 @@ function mergeSttTiming(previous?: SttTurnTiming, next?: SttTurnTiming): SttTurn
   return {
     ...(previous ?? {}),
     ...(next ?? {}),
+    ...(previous?.transcriptProvider &&
+    next?.transcriptProvider &&
+    previous.transcriptProvider !== next.transcriptProvider
+      ? { transcriptProvider: 'mixed-stt' }
+      : {}),
   };
 }
 
@@ -593,6 +585,9 @@ function dispatchUtteranceEnd(
   flushSttChunkBuffer(session);
   const cleanTranscript = transcript.trim();
   if (!cleanTranscript) return;
+  // Un tour fusionné avec Ink ne possède pas de mots/confiances alignés sur tout son texte.
+  if (timing?.transcriptProvider === 'cartesia-ink-2' || timing?.transcriptProvider === 'mixed-stt')
+    words = undefined;
   if (languageCode) session.sttLanguageCode = languageCode;
   const sttFinalAt = timing?.sttFinalAt ?? Date.now();
   const speechEndAt =
@@ -619,6 +614,7 @@ function dispatchUtteranceEnd(
   session.onSttEvent?.({
     type: 'UtteranceEnd',
     transcript: cleanTranscript,
+    transcriptProvider: timing?.transcriptProvider ?? session.sttProviderUsed ?? session.sttModel,
     ...(words ? { words } : {}),
     ...(languageCode ? { languageCode } : {}),
     ...(speechEndAt !== undefined ? { speechEndAt } : {}),
@@ -667,7 +663,12 @@ function spellingContinuationExpected(
 ): boolean {
   const createdAt = pending.createdAt ?? now;
   if (now - createdAt >= SPELLING_MAX_HOLD_MS) return false;
-  if (callerSilenceMs(session, now) < SPELLING_VOICE_QUIET_MS) return true;
+  const silence = callerSilenceMs(session, now);
+  const quietMs =
+    Number.isFinite(silence) && (session.callerVoice?.trackedMs ?? 0) >= 500
+      ? Math.max(SPELLING_VOICE_QUIET_MS, spellingSilenceBudgetMs(session))
+      : SPELLING_VOICE_QUIET_MS;
+  if (silence < quietMs) return true;
   const partialAt = session.sttLastNonEmptyPartialAt;
   return (
     partialAt !== undefined && partialAt > createdAt && now - partialAt < SPELLING_PARTIAL_RECENT_MS
@@ -706,6 +707,25 @@ function continuesHeldSpelling(session: CallSession, transcript: string): boolea
 /** Le texte se recolle à l'épellation en cours : profil d'épellation actif, ou suite de lettres d'un segment retenu. */
 function spellingContinues(session: CallSession, transcript: string): boolean {
   return isSpellingTurn(session, transcript) || continuesHeldSpelling(session, transcript);
+}
+
+function spellingSilenceBudgetMs(session: CallSession): number {
+  return Math.max(
+    voiceConfig.VOICE_DEEPGRAM_SPELLING_SILENCE_MS,
+    callerPauseFinalizeMs(session, voiceConfig.VOICE_DEEPGRAM_SPELLING_SILENCE_MS),
+  );
+}
+
+/** Budget de silence déjà écoulé déduit, avec une grâce minimale pour les fragments STT tardifs. */
+export function spellingEndOfTurnDelayMs(session: CallSession, now = Date.now()): number {
+  if (session.sttAdapter?.id !== 'deepgram') return STT_SPELLING_EOT_GRACE_MS;
+  const legacy = Math.max(
+    0,
+    voiceConfig.VOICE_DEEPGRAM_SPELLING_SILENCE_MS - voiceConfig.VOICE_DEEPGRAM_ENDPOINTING_MS,
+  );
+  const silence = callerSilenceMs(session, now);
+  if (!Number.isFinite(silence) || (session.callerVoice?.trackedMs ?? 0) < 500) return legacy;
+  return Math.max(Math.min(200, legacy), spellingSilenceBudgetMs(session) - silence);
 }
 
 function schedulePendingSttEndOfTurn(
@@ -759,7 +779,7 @@ function sendSessionAudioChunk(session: CallSession, telnyxAudio: Buffer): void 
     sendInkAudio(session, telnyxAudio);
   }
   session.sttConnectionAudioBytesSent = (session.sttConnectionAudioBytesSent ?? 0) + audio.length;
-  addSttAudioSamples(session, adapter.samplesForAudio(session.codec, audio.length));
+  addSttAudioSamples(session, adapter.samplesForAudio(session.codec, audio.length), adapter.id);
   session.sttFirstAudioChunkSent = true;
   const chunkMs = String(getSttChunkMs());
   voiceSttProviderAudioMessagesTotal.inc({ provider: adapter.id, chunk_ms: chunkMs });
@@ -1047,6 +1067,7 @@ function emitPartialTranscript(
   allowBargeIn = hasBargeInWordThreshold(echo);
   // Le texte du tour que l'agent est en train de traiter ou de dire : ni interruption, ni nouveau tour.
   if (isRepeatOfLastProcessedTurn(session, cleanTranscript)) return;
+  if (handleCallerBackchannel(session, cleanTranscript, 'partial', words)) return;
 
   if (isVoiceDialogueIncompleteTranscript(cleanTranscript)) {
     if (allowBargeIn)
@@ -1140,6 +1161,13 @@ function dispatchCommittedTranscript(
     return;
   }
 
+  if (handleCallerBackchannel(session, cleanTranscript, 'committed', words)) {
+    if (timing?.speechEndAt !== undefined) session.sttConsumedSpeechEndAt = timing.speechEndAt;
+    session.turnPartials = [];
+    resetSttTurnDiagnostics(session);
+    return;
+  }
+
   if (isVoiceDialogueIncompleteTranscript(cleanTranscript)) {
     if (allowBargeIn)
       handleBargeInFromTranscript(
@@ -1229,14 +1257,7 @@ function dispatchCommittedTranscript(
       ...(mergedTiming ? { timing: mergedTiming } : {}),
       createdAt: Date.now(),
     };
-    const spellingDelay =
-      session.sttAdapter?.id === 'deepgram'
-        ? Math.max(
-            0,
-            voiceConfig.VOICE_DEEPGRAM_SPELLING_SILENCE_MS -
-              voiceConfig.VOICE_DEEPGRAM_ENDPOINTING_MS,
-          )
-        : STT_SPELLING_EOT_GRACE_MS;
+    const spellingDelay = spellingEndOfTurnDelayMs(session);
     schedulePendingSttEndOfTurn(session, spellingDelay);
     return;
   }
@@ -1314,9 +1335,13 @@ function dispatchDeepgramFinalParts(
     dispatchCommittedTranscript(
       session,
       finalTranscript,
-      words.length ? words : undefined,
+      source === 'deepgram' && words.length ? words : undefined,
       languageCode,
-      timing,
+      {
+        ...timing,
+        transcriptProvider:
+          source === 'ink' ? 'cartesia-ink-2' : (session.sttProviderUsed ?? session.sttModel),
+      },
     );
   };
   if (!session.sttInk?.ready) {
@@ -1339,9 +1364,20 @@ function dispatchDeepgramFinalParts(
         // Deepgram seul.
       }
       logger.info(
-        { callId: session.callControlId, source: resolved.source, waitedMs: resolved.waitedMs },
+        {
+          callId: session.callControlId,
+          source: resolved.source,
+          waitedMs: resolved.waitedMs,
+          deepgram: describeTranscript(transcript),
+          ink: resolved.inkTranscript ? describeTranscript(resolved.inkTranscript) : undefined,
+        },
         '[stt-ink] final transcript',
       );
+      logVoiceDebugText(session, 'stt_comparison', {
+        deepgramTranscript: transcript,
+        inkTranscript: resolved.inkTranscript,
+        selectedSource: resolved.source,
+      });
       const nextPhrase = session.turnTranscript;
       send(resolved.transcript, resolved.source);
       if (nextPhrase && !session.turnTranscript) session.turnTranscript = nextPhrase;
@@ -1556,6 +1592,11 @@ function armSpeculationTimer(session: CallSession, transcript: string): void {
         schedule(Math.max(40, pauseMs - silentMs + 10));
         return;
       }
+    }
+    const readyInk = peekReadyInkTranscript(session);
+    if (readyInk) {
+      speculateStructuredTurn(session, CallSessionManager.getInstance(), readyInk);
+      return;
     }
     speculateStructuredTurn(session, CallSessionManager.getInstance(), transcript, (complete) =>
       finalizeOnSemanticEndOfTurn(session, transcript, complete),
@@ -1951,6 +1992,7 @@ export function handleNormalizedSttMessage(
       }
       return;
     case 'speech_started':
+      clearBackchannelCandidate(session);
       cancelNoInputRecovery(session);
       session.sttLastSpeechStartedAt =
         event.speechStartOffsetMs !== undefined &&
@@ -2010,7 +2052,12 @@ export function connectStt(
   if (onEvent) session.onSttEvent = onEvent;
   const adapter = sttAdapterForSession(session);
   // Ink-2 en parallèle (restaurants listés) : ouverte une fois par appel, sans effet sur Deepgram.
-  if (adapter.id === 'deepgram') openInkParallel(session).catch(() => undefined);
+  if (adapter.id === 'deepgram') {
+    openInkParallel(session, {
+      onCompleteTranscript: (transcript) =>
+        speculateStructuredTurn(session, CallSessionManager.getInstance(), transcript),
+    }).catch(() => undefined);
+  }
   if (session.sttReady) return session.sttReady;
   if (session.sttRetryTimer || session.sttTerminalFailure || session.sttFallbackTriggered) {
     return Promise.resolve();

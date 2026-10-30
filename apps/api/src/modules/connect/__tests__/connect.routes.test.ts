@@ -86,6 +86,12 @@ import { recordBookingMarketingConsent } from '../../marketing/marketing-consent
 import { redisCache } from '../../../shared/redis/client';
 import { ReservationService } from '../../agentic-reservations/core/reservation.service';
 import { PolicyValidationError } from '../../agentic-reservations/core/policies.service';
+import {
+  computeIdempotencyScope,
+  hashPayload,
+} from '../../agentic-reservations/core/idempotency.service';
+import { ConfirmInputSchema } from '../connect.types';
+import { hashPhone } from '../connect.service';
 import { ConsentService } from '../../rgpd/consent.service';
 import * as connectRateLimit from '../connect-rate-limit';
 import { consumeTestBookingQuota, issueTestBookingToken } from '../test-booking';
@@ -487,6 +493,37 @@ describe('Sokar Connect — Routes publiques', () => {
   });
 
   describe('POST /public/r/:slug/hold', () => {
+    it('refuse un créneau absent des horaires proposés avant de créer un hold', async () => {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: RESTAURANT_ID,
+        slug: SLUG,
+        agenticOptIn: true,
+        publishedAt: new Date(),
+        city: 'Lyon',
+        country: 'FR',
+        postalCode: '69001',
+        name: 'Chez Sokar',
+        phoneNumber: '+33400000000',
+        openingHours: {},
+        images: [],
+        cuisineType: [],
+        ambiance: [],
+        dietary: [],
+        exposureSettings: { connectPublished: true, connectAgentic: false },
+      } as never);
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
+        mockExposureSettings as never,
+      );
+      const res = await app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/hold`,
+        remoteAddress: '198.51.100.201',
+        payload: { date: '2026-06-29', time: '04:00', partySize: 2 },
+      });
+      expect(res.statusCode).toBe(409);
+      expect(db.agenticHold.create).not.toHaveBeenCalled();
+    });
+
     it('crée un hold 5min et retourne holdToken', async () => {
       // Mock restaurant
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
@@ -690,6 +727,86 @@ describe('Sokar Connect — Routes publiques', () => {
   });
 
   describe('POST /public/r/:slug/confirm', () => {
+    it('rejoue une confirmation consommée uniquement si la demande et le restaurant correspondent', async () => {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: RESTAURANT_ID,
+        slug: SLUG,
+        agenticOptIn: true,
+        publishedAt: new Date(),
+        city: 'Lyon',
+        country: 'FR',
+        postalCode: '69001',
+        name: 'Chez Sokar',
+        phoneNumber: '+33400000000',
+        openingHours: {},
+        images: [],
+        cuisineType: [],
+        ambiance: [],
+        dietary: [],
+        exposureSettings: { connectPublished: true, connectAgentic: false },
+      } as never);
+      const holdId = 'hold-replay';
+      vi.mocked(db.agenticHold.findFirst).mockResolvedValue({
+        id: holdId,
+        restaurantId: RESTAURANT_ID,
+        status: 'CONSUMED',
+        reservationId: 'reservation-replay',
+        partySize: 2,
+        slotStart: new Date('2026-06-29T20:00:00Z'),
+      } as never);
+      const request = {
+        holdToken: CONFIRM_HOLD_TOKEN,
+        customer: { firstName: 'Alice', phone: '+33612345678', email: 'alice@example.invalid' },
+        specialRequests: 'Terrasse',
+      };
+      const parsed = ConfirmInputSchema.parse(request);
+      const expectedWhere = {
+        id: 'reservation-replay',
+        restaurantId: RESTAURANT_ID,
+        consumedHoldId: holdId,
+        idempotencyScope: computeIdempotencyScope({
+          restaurantId: RESTAURANT_ID,
+          channel: 'WEB',
+          clientId: hashPhone(request.customer.phone),
+        }),
+        idempotencyKey: holdId,
+        idempotencyPayloadHash: hashPayload({ holdId, ...parsed }),
+        isTest: false,
+      };
+      const find = vi
+        .spyOn(db.reservation, 'findFirst')
+        .mockImplementation((async (args: { where?: unknown }) =>
+          JSON.stringify(args?.where) === JSON.stringify(expectedWhere)
+            ? ({ id: 'reservation-replay', state: 'CONFIRMED', source: 'web' } as never)
+            : null) as never);
+      const create = vi.spyOn(ReservationService.prototype, 'createReservation');
+      const first = await app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/confirm`,
+        remoteAddress: '198.51.100.202',
+        payload: request,
+      });
+      expect(first.statusCode).toBe(200);
+      expect(first.json()).toMatchObject({ reservationId: 'reservation-replay', reused: true });
+      const changed = await app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/confirm`,
+        remoteAddress: '198.51.100.202',
+        payload: { ...request, specialRequests: 'Intérieur' },
+      });
+      expect(changed.statusCode).toBe(409);
+      const otherPhone = await app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/confirm`,
+        remoteAddress: '198.51.100.202',
+        payload: { ...request, customer: { ...request.customer, phone: '+33612345679' } },
+      });
+      expect(otherPhone.statusCode).toBe(409);
+      expect(create).not.toHaveBeenCalled();
+      expect(db.customerConsent.create).not.toHaveBeenCalled();
+      create.mockRestore();
+      find.mockRestore();
+    });
     it.each([
       [false, false],
       [true, false],
@@ -802,14 +919,18 @@ describe('Sokar Connect — Routes publiques', () => {
           } else {
             expect(res.json().whatsappWithdrawalToken).toBeUndefined();
           }
-          expect(app.queues.connectAnalytics.add).toHaveBeenCalledWith(
-            'connect-event',
-            expect.objectContaining({
-              event: 'reservation_confirmed',
-              reservationId,
-            }),
-            expect.any(Object),
-          );
+          if (reused) {
+            expect(app.queues.connectAnalytics.add).not.toHaveBeenCalled();
+          } else {
+            expect(app.queues.connectAnalytics.add).toHaveBeenCalledWith(
+              'connect-event',
+              expect.objectContaining({
+                event: 'reservation_confirmed',
+                reservationId,
+              }),
+              expect.any(Object),
+            );
+          }
         } finally {
           createReservation.mockRestore();
           vi.unstubAllEnvs();
@@ -1410,6 +1531,7 @@ describe('Sokar Connect — Routes publiques', () => {
       expect(input.marketingAttributionToken).toBe('m'.repeat(40));
       expect(input.giftCardCode).toBe('GIFT-TEST');
       expect(idempotency.scope).not.toContain('test:');
+      await (input.beforeCreate as (tx: typeof db) => Promise<void>)(db);
       expect(recordConsent).toHaveBeenCalled();
       expect(canConfirm).toHaveBeenCalled();
     });

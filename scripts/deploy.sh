@@ -199,7 +199,7 @@ if [ "$DRY_RUN" = false ]; then
     log info ""
     log info "📦 Snapshot pré-build (rollback safety net)..."
     snapshot_artifacts "$PREV_RELEASE" "pre-build"
-    backup_db "$PREV_RELEASE" || true
+    backup_db "$PREV_RELEASE"
 
     # Variable globale pour le trap ERR
     RESTORE_ON_FAIL="$PREV_RELEASE"
@@ -470,9 +470,6 @@ if [ "$EXTENDED_HEALTH_CHECKS" = true ]; then
         # Sauvegarder le hash pour le prochain déploiement incrémental
         git rev-parse HEAD > "$RELEASES_DIR/.latest-hash"
 
-        # Le snapshot pré-build a servi de safety net et n'est plus needed
-        rm -rf "$PREV_RELEASE" 2>/dev/null || true
-
         log info ""
         log info "📦 Releases disponibles pour rollback :"
         list_releases
@@ -501,8 +498,6 @@ else
         # Cleanup old releases (garde KEEP_RELEASES)
         cleanup_releases "$KEEP_RELEASES"
 
-        # Nettoyer le snapshot pré-build
-        rm -rf "${PREV_RELEASE}" 2>/dev/null || true
         cleanup_previous_next_builds
         prune_stale_next_builds
 

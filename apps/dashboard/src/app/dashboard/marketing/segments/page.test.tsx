@@ -54,7 +54,7 @@ describe('MarketingSegmentsPage', () => {
   it('charge les segments et envoie une définition bornée au preview', async () => {
     render(<MarketingSegmentsPage />);
 
-    expect(await screen.findByRole('heading', { name: 'Segments Pro' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Segments' })).toBeInTheDocument();
     expect(screen.getAllByText('Habitués').length).toBeGreaterThan(0);
 
     fireEvent.change(screen.getByDisplayValue('Clients fidèles'), {
@@ -72,7 +72,7 @@ describe('MarketingSegmentsPage', () => {
         sampleLimit: 5,
       }),
     );
-    expect(await screen.findByText('8 profil(s) correspondent')).toBeInTheDocument();
+    expect(await screen.findByText('8 client(s) correspondent')).toBeInTheDocument();
     expect(screen.getByText(/Règles : Visites honorées \(365 j\)/)).toBeInTheDocument();
   });
 
@@ -102,7 +102,11 @@ describe('MarketingSegmentsPage', () => {
     render(<MarketingSegmentsPage />);
     await screen.findByText('Habitués');
 
-    fireEvent.click(screen.getByRole('button', { name: /^VIP manuels/ }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: /Partir d.un modèle/ }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^VIP manuels/ }));
     expect(screen.getByDisplayValue('VIP manuels')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Champ condition 1' })).toHaveValue('isVip');
     expect(screen.getByText('Modèle « VIP manuels » chargé.')).toBeInTheDocument();
@@ -138,9 +142,9 @@ describe('MarketingSegmentsPage', () => {
     render(<MarketingSegmentsPage />);
     await screen.findByText('Habitués');
 
-    expect(screen.getAllByText('Toutes (ET)').some((element) => element.tagName !== 'OPTION')).toBe(
-      true,
-    );
+    expect(
+      screen.getAllByText('Toutes les conditions').some((element) => element.tagName !== 'OPTION'),
+    ).toBe(true);
     expect(screen.queryByText('AND')).toBeNull();
   });
 
@@ -164,7 +168,7 @@ describe('MarketingSegmentsPage', () => {
     expect(await screen.findByText(/Préférence existe Langue préférée/)).toBeInTheDocument();
     expect(screen.queryByText(/preferred_language/)).toBeNull();
     expect(
-      screen.getAllByText('Au moins une (OU)').some((element) => element.tagName !== 'OPTION'),
+      screen.getAllByText('Au moins une condition').some((element) => element.tagName !== 'OPTION'),
     ).toBe(true);
   });
 });

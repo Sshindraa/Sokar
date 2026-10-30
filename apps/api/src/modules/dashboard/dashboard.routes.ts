@@ -4,6 +4,7 @@ import { db } from '../../shared/db/client';
 import { requireOrg } from '../../plugins/clerk';
 import { normalizeOpeningHours } from '@sokar/shared';
 import { summarizeReservationChannels } from './reservation-channels';
+import { COUNTED_RESERVATION_STATES } from '../../shared/reservations/reservation-state';
 
 const PeriodSchema = z.enum(['today', '7d', '30d']).default('7d');
 
@@ -83,8 +84,6 @@ function buildBuckets(period: z.infer<typeof PeriodSchema>, start: Date): Analyt
  * mesure que l'équipe marquait les tables installées, et faussait le ticket moyen (les réservations
  * passées et bien menées finissent HONORED).
  */
-const COUNTED_RESERVATION_STATES = ['CONFIRMED', 'SEATED', 'HONORED'] as const;
-
 function isCountedReservation(reservation: { state: string }): boolean {
   return (COUNTED_RESERVATION_STATES as readonly string[]).includes(reservation.state);
 }
@@ -171,6 +170,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     return reply.send({
       period: query.period,
       total_calls: totalCalls,
+      call_reservations: callReservations,
       total_reservations: totalReservations,
       covers,
       conversion_rate: conversionRate,
@@ -322,27 +322,27 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const weekEnd = new Date(today);
     weekEnd.setDate(weekEnd.getDate() + 7);
 
-    // Réservations confirmées sur les 7 prochains jours
-    const upcomingReservations = await db.reservation.findMany({
-      where: {
-        restaurantId,
-        state: { in: [...COUNTED_RESERVATION_STATES] },
-        reservedAt: { gte: today, lt: weekEnd },
-      },
-      select: { reservedAt: true, partySize: true, estimatedRevenue: true, confirmedRevenue: true },
-    });
-
     // Historique : 30 derniers jours pour calculer le ticket moyen réel
     const historyStart = new Date(today);
     historyStart.setDate(historyStart.getDate() - 30);
-    const historicalReservations = await db.reservation.findMany({
-      where: {
-        restaurantId,
-        state: { in: [...COUNTED_RESERVATION_STATES] },
-        reservedAt: { gte: historyStart, lt: today },
-      },
-      select: { partySize: true, estimatedRevenue: true, confirmedRevenue: true },
-    });
+    const [upcomingReservations, historicalReservations] = await Promise.all([
+      db.reservation.findMany({
+        where: {
+          restaurantId,
+          state: { in: [...COUNTED_RESERVATION_STATES] },
+          reservedAt: { gte: today, lt: weekEnd },
+        },
+        select: { reservedAt: true, partySize: true },
+      }),
+      db.reservation.findMany({
+        where: {
+          restaurantId,
+          state: { in: [...COUNTED_RESERVATION_STATES] },
+          reservedAt: { gte: historyStart, lt: today },
+        },
+        select: { estimatedRevenue: true, confirmedRevenue: true },
+      }),
+    ]);
 
     // Ticket moyen par réservation sur l'historique
     const avgRevenuePerReservation =
@@ -439,8 +439,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
   });
 
   // ─── No-show tracking : taux de no-show et impact du rappel SMS ────────
-  // Compare les réservations qui ont reçu un rappel SMS (confirmationStatus
-  // PENDING/CONFIRMED) vs celles qui n'en ont pas reçu (NOT_REQUIRED).
+  // Compare les SMS dont l'envoi est attesté aux réservations sans rappel connu.
   // Le gérant doit marquer les no-shows dans le dashboard pour que ça marche.
   app.get('/dashboard/no-show-stats', { preHandler: requireOrg() }, async (req, reply) => {
     const restaurantId = req.restaurantId as string;
@@ -461,8 +460,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
         state: { in: ['CONFIRMED', 'SEATED', 'HONORED', 'NO_SHOW'] },
       },
       select: {
+        id: true,
         state: true,
         confirmationStatus: true,
+        confirmationSentAt: true,
         partySize: true,
         estimatedRevenue: true,
         confirmedRevenue: true,
@@ -481,11 +482,27 @@ export async function dashboardRoutes(app: FastifyInstance) {
       });
     }
 
-    // Groupes : avec SMS (PENDING/CONFIRMED) vs sans SMS (NOT_REQUIRED)
-    const withSms = reservations.filter(
-      (r) => r.confirmationStatus === 'PENDING' || r.confirmationStatus === 'CONFIRMED',
+    const reminderEvents = await db.usageEvent.findMany({
+      where: {
+        restaurantId,
+        sourceType: 'reservation_reminder',
+        category: { in: ['SMS_SEGMENTS', 'WHATSAPP_MESSAGES'] },
+        occurredAt: { gte: since },
+      },
+      select: { sourceId: true, category: true },
+    });
+    const smsIds = new Set(
+      reminderEvents
+        .filter((event) => event.category === 'SMS_SEGMENTS')
+        .map((event) => event.sourceId),
     );
-    const withoutSms = reservations.filter((r) => r.confirmationStatus === 'NOT_REQUIRED');
+    const remindedIds = new Set(reminderEvents.map((event) => event.sourceId));
+    const withSms = reservations.filter((r) => smsIds.has(r.id));
+    // shortcut: legacy reminders without a durable channel are excluded, until channel evidence is backfilled.
+    const withoutSms = reservations.filter(
+      (r) =>
+        r.confirmationStatus === 'NOT_REQUIRED' && !r.confirmationSentAt && !remindedIds.has(r.id),
+    );
 
     const noShowsTotal = reservations.filter((r) => r.state === 'NO_SHOW');
     const noShowsWithSms = withSms.filter((r) => r.state === 'NO_SHOW');

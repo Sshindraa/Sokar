@@ -22,6 +22,7 @@
     "usage:accounting:package": "node --import tsx scripts/build-usage-accounting-package.ts",
     "ops:dead-letter": "node --env-file=.env --import tsx scripts/dead-letter.ts",
     "ops:billing-interval-backfill": "node --env-file=.env --import tsx scripts/backfill-billing-interval.ts",
+    "ops:customer-phones-backfill": "node --env-file=.env --import tsx scripts/backfill-customer-phones.ts",
     "ops:phone-reservation-timezone": "node --env-file=.env --import tsx scripts/fix-phone-reservation-timezone.ts",
     "clean": "rm -rf .turbo dist"
   },
@@ -62,11 +63,11 @@
     "@types/node": "^20.17.0",
     "@types/pdfkit": "^0.17.6",
     "@types/ws": "^8.18.1",
-    "@vitest/coverage-v8": "^4",
+    "@vitest/coverage-v8": "^4.1.12",
     "eslint": "^9",
     "prisma": "^6.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.8.0",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.12"
   }
 }

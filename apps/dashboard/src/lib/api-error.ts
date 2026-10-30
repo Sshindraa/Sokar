@@ -3,7 +3,7 @@
  *
  * L'API répond de trois façons : un message français rédigé pour l'utilisateur (« La modification des
  * notes client est réservée aux responsables. »), un code stable (`CAPABILITY_NOT_INCLUDED`,
- * `LOYALTY_DISABLED`…), ou un texte technique anglais (« Authentication required », « Validation Error »).
+ * `DISTRIBUTION_DISABLED`…), ou un texte technique anglais (« Authentication required », « Validation Error »).
  * Seul le premier cas est lisible tel quel : les deux autres sont traduits ici, une fois pour toutes les
  * pages, au lieu d'afficher « Erreur 409 » ou du jargon.
  */
@@ -197,7 +197,7 @@ const FIELD_LABELS: Record<string, string> = {
 
 /** Texte technique ou générique : à remplacer, jamais à montrer. */
 const TECHNICAL_MESSAGE =
-  /^(authentication required|organization required|forbidden|unauthorized|not found|bad request|validation error|internal server error|service unavailable|sokar operator access required|authentication provider not configured|erreur \d+|error|internalservererror|badrequesterror)\b/i;
+  /^(rate limit exceeded|too many requests|authentication required|organization required|forbidden|unauthorized|not found|bad request|validation error|internal server error|service unavailable|sokar operator access required|authentication provider not configured|erreur \d+|error|internalservererror|badrequesterror)\b/i;
 
 /** Phrase anglaise de l'API (« Restaurant not found », « Slug is required ») : jamais lisible par le restaurateur. */
 const ENGLISH_MESSAGE =
@@ -226,6 +226,13 @@ export function describeApiError(payload: ApiErrorPayload): string {
   const kind = classifyApiError(payload.status, payload.code);
   if (kind === 'session' || kind === 'not-included') return KIND_MESSAGES[kind];
   if (payload.code && CODE_MESSAGES[payload.code]) return CODE_MESSAGES[payload.code];
+  const rateLimitDelay =
+    kind === 'rate-limited' &&
+    payload.message?.match(/^Rate limit exceeded, retry in (\d+) seconds?$/i);
+  if (rateLimitDelay) {
+    const seconds = rateLimitDelay[1];
+    return `Trop de requêtes. Réessayez dans ${seconds} seconde${seconds === '1' ? '' : 's'}.`;
+  }
   if (kind === 'not-ready') return KIND_MESSAGES['not-ready'];
   if (kind === 'invalid' && isTechnicalMessage(payload.message)) {
     return `${KIND_MESSAGES.invalid}${invalidFieldsHint(payload.details)}`;

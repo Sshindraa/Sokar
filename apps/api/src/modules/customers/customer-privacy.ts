@@ -54,3 +54,21 @@ export function canViewSensitiveNotes(
     effectiveSensitiveNoteRoles(siteSensitiveNoteRoles).includes(siteRole.toUpperCase()),
   );
 }
+
+/** Writing follows reading: whoever may see the notes may edit them, except READ_ONLY. */
+export function canWriteSensitiveNotes(
+  siteRole: string | undefined,
+  siteSensitiveNoteRoles?: string | null,
+): boolean {
+  return (
+    siteRole?.toUpperCase() !== 'READ_ONLY' &&
+    canViewSensitiveNotes(siteRole, siteSensitiveNoteRoles)
+  );
+}
+
+/** Free-text fields a guest may have confided: hidden together from roles that cannot read notes. */
+export function redactSensitiveCustomerFields<T extends { notes: string | null }>(
+  customer: T,
+): T & { notes: null; specialOccasion: null } {
+  return { ...customer, notes: null, specialOccasion: null };
+}

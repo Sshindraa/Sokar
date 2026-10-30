@@ -1,30 +1,29 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
 import {
   AlertCircle,
-  ArrowRight,
-  Award,
-  Ban,
-  CalendarDays,
   CheckCircle2,
-  CircleDollarSign,
-  Clock3,
-  Gift,
+  ChevronDown,
   Info,
-  ListChecks,
+  MoreHorizontal,
   RefreshCw,
-  ShieldAlert,
-  Ticket,
-  UserRound,
-  UsersRound,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { StatusBadge, type StatusLevel } from '@/components/StatusBadge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -136,27 +135,6 @@ const RULE_OPTIONS: Array<{
   },
 ];
 
-const JOURNEY_STEPS = [
-  {
-    number: '1',
-    title: 'Créer une attention',
-    description: 'Définissez la règle, le coût et la durée de validité.',
-    icon: Gift,
-  },
-  {
-    number: '2',
-    title: 'L’attribuer au client',
-    description: 'L’équipe choisit le client et reçoit un code à lui remettre.',
-    icon: UserRound,
-  },
-  {
-    number: '3',
-    title: 'La valider en salle',
-    description: 'Le code est contrôlé à l’addition et l’utilisation est tracée.',
-    icon: CheckCircle2,
-  },
-] as const;
-
 function emptyBenefitForm(): BenefitForm {
   return {
     key: '',
@@ -232,34 +210,20 @@ function grantStatusLabel(status: GrantStatus): string {
   return { ISSUED: 'À utiliser', REDEEMED: 'Validée', VOID: 'Annulée', EXPIRED: 'Expirée' }[status];
 }
 
-function grantStatusClassName(status: GrantStatus): string {
-  if (status === 'REDEEMED') return 'border-success/30 bg-success/10 text-success';
-  if (status === 'ISSUED') return 'border-primary/30 bg-primary/5 text-primary';
-  return 'border-border bg-secondary text-muted-foreground';
+// Niveau par sens : à utiliser = en cours ; validée = terminée ; annulée = erreur ; expirée = neutre.
+function grantStatusLevel(status: GrantStatus): StatusLevel {
+  if (status === 'REDEEMED') return 'done';
+  if (status === 'ISSUED') return 'progress';
+  if (status === 'VOID') return 'error';
+  return 'neutral';
 }
 
-function MetricCard({
-  label,
-  value,
-  caption,
-  icon,
-}: {
-  label: string;
-  value: string;
-  caption: string;
-  icon: ReactNode;
-}) {
+function MetricCard({ label, value }: { label: string; value: string }) {
   return (
     <Card>
       <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <CardDescription>{label}</CardDescription>
-            <p className="mt-2 text-3xl font-semibold tracking-tight">{value}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{caption}</p>
-          </div>
-          <div className="rounded-xl bg-secondary p-2 text-muted-foreground">{icon}</div>
-        </div>
+        <CardDescription>{label}</CardDescription>
+        <p className="mt-2 text-3xl font-semibold tabular-nums tracking-tight">{value}</p>
       </CardContent>
     </Card>
   );
@@ -272,12 +236,10 @@ export default function LoyaltyPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   // Échec du chargement (ou module fermé) : séparé des erreurs de saisie, qui n'ôtent ni les chiffres ni les listes.
   const [loadError, setLoadError] = useState('');
   const [customersFailed, setCustomersFailed] = useState(false);
   const [lock, setLock] = useState<FeatureLock | null>(null);
-  const errorRef = useRef<HTMLDivElement>(null);
   const redeemCardRef = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState('');
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
@@ -288,7 +250,6 @@ export default function LoyaltyPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError('');
     setLoadError('');
     setLock(null);
     try {
@@ -375,12 +336,11 @@ export default function LoyaltyPage() {
   async function createBenefit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
-    setError('');
     setNotice('');
 
     const name = benefitForm.name.trim();
     if (!name) {
-      setError('Donnez un nom à cette attention.');
+      toast.error('Donnez un nom à cette attention.');
       setBusy(false);
       return;
     }
@@ -389,7 +349,7 @@ export default function LoyaltyPage() {
     if (benefitForm.rule === 'MIN_VISITS') {
       const value = Number(benefitForm.ruleValue);
       if (!Number.isInteger(value) || value < 1) {
-        setError('Indiquez un nombre de visites entier supérieur ou égal à 1.');
+        toast.error('Indiquez un nombre de visites entier supérieur ou égal à 1.');
         setBusy(false);
         return;
       }
@@ -398,7 +358,7 @@ export default function LoyaltyPage() {
     if (benefitForm.rule === 'MIN_ESTIMATED_SPEND') {
       const value = parseEuroCents(benefitForm.ruleValue);
       if (value === null || value < 1) {
-        setError('Indiquez une dépense cumulée supérieure ou égale à 0,01 €.');
+        toast.error('Indiquez une dépense cumulée supérieure ou égale à 0,01 €.');
         setBusy(false);
         return;
       }
@@ -408,14 +368,14 @@ export default function LoyaltyPage() {
     const costText = benefitForm.costEuros.trim();
     const costCents = costText ? parseEuroCents(costText) : undefined;
     if (costText && costCents === null) {
-      setError('Le coût estimé doit être un montant en euros, par exemple 5,00.');
+      toast.error('Le coût estimé doit être un montant en euros, par exemple 5,00.');
       setBusy(false);
       return;
     }
 
     const validityDays = Number(benefitForm.validityDays);
     if (!Number.isInteger(validityDays) || validityDays < 1 || validityDays > 365) {
-      setError('La durée de validité doit être comprise entre 1 et 365 jours.');
+      toast.error('La durée de validité doit être comprise entre 1 et 365 jours.');
       setBusy(false);
       return;
     }
@@ -426,7 +386,7 @@ export default function LoyaltyPage() {
       maxUsesPerCustomer < 1 ||
       maxUsesPerCustomer > 100
     ) {
-      setError('Le nombre maximum d’utilisations doit être compris entre 1 et 100.');
+      toast.error('Le nombre maximum d’utilisations doit être compris entre 1 et 100.');
       setBusy(false);
       return;
     }
@@ -452,7 +412,7 @@ export default function LoyaltyPage() {
       setBenefitForm(emptyBenefitForm());
       setNotice('Attention enregistrée. Elle peut maintenant être attribuée à un client.');
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible d’enregistrer cette attention'));
+      toast.error(getErrorMessage(err, 'Impossible d’enregistrer cette attention'));
     } finally {
       setBusy(false);
     }
@@ -461,7 +421,6 @@ export default function LoyaltyPage() {
   async function issueGrant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
-    setError('');
     setNotice('');
     setIssuedCode(null);
     try {
@@ -476,6 +435,16 @@ export default function LoyaltyPage() {
       );
       if (response.data) {
         setIssuedCode(response.data.code);
+        if (!response.data.replayed) {
+          const benefitId = response.data.benefitId;
+          setBenefits((current) =>
+            current.map((benefit) =>
+              benefit.id === benefitId
+                ? { ...benefit, grantCount: benefit.grantCount + 1 }
+                : benefit,
+            ),
+          );
+        }
         setGrants((current) => [
           response.data!,
           ...current.filter((item) => item.id !== response.data!.id),
@@ -489,7 +458,7 @@ export default function LoyaltyPage() {
           : 'Attention attribuée à ' + customerLabel + '. Remettez le code au client.',
       );
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible d’attribuer cette attention'));
+      toast.error(getErrorMessage(err, 'Impossible d’attribuer cette attention'));
     } finally {
       setBusy(false);
     }
@@ -498,7 +467,6 @@ export default function LoyaltyPage() {
   async function redeemGrant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
-    setError('');
     setNotice('');
     try {
       const response = await post<MutationResponse<Grant>>(
@@ -516,7 +484,7 @@ export default function LoyaltyPage() {
       setRedeemForm({ grantId: '', code: '', note: '' });
       setNotice('Attention validée. Elle est maintenant comptabilisée comme utilisée.');
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de valider cette attention'));
+      toast.error(getErrorMessage(err, 'Impossible de valider cette attention'));
     } finally {
       setBusy(false);
     }
@@ -524,7 +492,6 @@ export default function LoyaltyPage() {
 
   async function toggleBenefit(benefit: Benefit) {
     setBusy(true);
-    setError('');
     setNotice('');
     try {
       const response = await patch<MutationResponse<Benefit>>('loyalty/benefits/' + benefit.id, {
@@ -541,7 +508,7 @@ export default function LoyaltyPage() {
           : 'Attention réactivée pour les nouvelles attributions.',
       );
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de modifier cette attention'));
+      toast.error(getErrorMessage(err, 'Impossible de modifier cette attention'));
     } finally {
       setBusy(false);
     }
@@ -551,7 +518,6 @@ export default function LoyaltyPage() {
     if (!grantToVoid) return;
     const grant = grantToVoid;
     setBusy(true);
-    setError('');
     setNotice('');
     try {
       const response = await post<MutationResponse<Grant>>(
@@ -565,7 +531,7 @@ export default function LoyaltyPage() {
       }
       setNotice('Attribution annulée. Elle ne peut plus être validée en salle.');
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible d’annuler cette attribution'));
+      toast.error(getErrorMessage(err, 'Impossible d’annuler cette attribution'));
     } finally {
       setBusy(false);
       setGrantToVoid(null);
@@ -576,27 +542,13 @@ export default function LoyaltyPage() {
   const controlsDisabled = busy || locked || Boolean(loadError);
   const metricsUnavailable = loading || locked || Boolean(loadError);
 
-  // Une erreur de saisie s'affiche en haut d'une page longue : on l'amène sous les yeux.
-  useEffect(() => {
-    if (error) errorRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-  }, [error]);
-
   return (
     <div className="w-full space-y-6 pb-8">
       <header className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
         <div>
           <div className="flex items-center gap-2">
-            <Gift className="text-primary" size={22} aria-hidden="true" />
-            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Attentions clients</h1>
-            <Badge variant="secondary">Pro</Badge>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Fidélité</h1>
           </div>
-          <p className="mt-2 max-w-3xl text-sm text-foreground/70">
-            Créez et attribuez des attentions que l’équipe valide au moment de l’addition.
-          </p>
-          <p className="mt-2 flex items-center gap-1.5 text-xs text-foreground/70">
-            <Info size={14} aria-hidden="true" />
-            Sokar ne contacte personne automatiquement : l’équipe remet le code au client.
-          </p>
         </div>
         <Button
           variant="ghost"
@@ -617,17 +569,6 @@ export default function LoyaltyPage() {
         <DataFetchError message={loadError} onRetry={() => void load()} retrying={loading} />
       ) : null}
 
-      {!locked && !loadError && error ? (
-        <div
-          ref={errorRef}
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-        >
-          <AlertCircle className="mt-0.5 shrink-0" size={17} aria-hidden="true" />
-          {error}
-        </div>
-      ) : null}
-
       {notice ? (
         <div
           className="flex items-center gap-2 rounded-xl border border-success/30 bg-success/5 p-3 text-sm text-success"
@@ -640,87 +581,270 @@ export default function LoyaltyPage() {
 
       {!locked && !loadError ? (
         <>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-0">
-                {JOURNEY_STEPS.map(({ number, title, description, icon: Icon }, index) => (
-                  <Fragment key={number}>
-                    <div className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-1">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                        <Icon size={16} aria-hidden="true" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium">
-                          {number}. {title}
-                        </p>
-                        <p className="mt-0.5 text-xs text-foreground/70">{description}</p>
-                      </div>
-                    </div>
-                    {index < JOURNEY_STEPS.length - 1 ? (
-                      <ArrowRight
-                        className="mx-2 hidden shrink-0 text-muted-foreground sm:block"
-                        size={16}
-                        aria-hidden="true"
-                      />
-                    ) : null}
-                  </Fragment>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <MetricCard
               label="Règles actives"
               value={metricsUnavailable ? '—' : String(metrics.activeBenefits)}
-              caption="Disponibles pour l’équipe"
-              icon={<ListChecks size={18} aria-hidden="true" />}
             />
             <MetricCard
               label="Attentions à utiliser"
               value={metricsUnavailable ? '—' : String(metrics.issued)}
-              caption="Attribuées, non validées"
-              icon={<Ticket size={18} aria-hidden="true" />}
             />
             <MetricCard
               label="Attentions validées"
               value={metricsUnavailable ? '—' : String(metrics.redeemed)}
-              caption="Consommées en salle"
-              icon={<CheckCircle2 size={18} aria-hidden="true" />}
             />
             <MetricCard
               label="Budget potentiel"
               value={metricsUnavailable ? '—' : formatEur(metrics.issuedCost)}
-              caption="Coût des attentions à utiliser"
-              icon={<CircleDollarSign size={18} aria-hidden="true" />}
             />
             <MetricCard
               label="Taux d’utilisation"
               value={
                 metricsUnavailable || metrics.redemptionRate === null
                   ? '—'
-                  : metrics.redemptionRate + '%'
+                  : new Intl.NumberFormat('fr-FR', { style: 'percent' }).format(
+                      metrics.redemptionRate / 100,
+                    )
               }
-              caption="Sur les attributions suivies"
-              icon={<Award size={18} aria-hidden="true" />}
             />
           </div>
-          {grants.length >= 100 ? (
-            <p className="-mt-3 text-xs text-muted-foreground">
-              Indicateurs calculés sur les 100 attributions chargées : au-delà, les chiffres sont
-              partiels.
-            </p>
-          ) : null}
+          {grants.length >= 100 && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Comprendre les indicateurs"
+                    className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-all duration-200 hover:text-foreground"
+                  >
+                    <Info className="h-3.5 w-3.5" /> Indicateurs
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  Indicateurs calculés sur les 100 attributions chargées : au-delà, les chiffres
+                  sont partiels.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
 
-          <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <Card ref={redeemCardRef}>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Valider une attention en salle</CardTitle>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-4" onSubmit={redeemGrant}>
+                <fieldset
+                  disabled={controlsDisabled || issuedGrants.length === 0}
+                  className="grid gap-4 xl:grid-cols-[1.4fr_1fr_1fr_auto] xl:items-end disabled:opacity-60"
+                >
+                  <div className="space-y-2">
+                    <Label htmlFor="redeem-grant">Attention à valider</Label>
+                    <select
+                      id="redeem-grant"
+                      value={redeemForm.grantId}
+                      onChange={(event) =>
+                        setRedeemForm((current) => ({ ...current, grantId: event.target.value }))
+                      }
+                      className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                      required
+                    >
+                      <option value="">Choisir une attribution</option>
+                      {issuedGrants.map((grant) => (
+                        <option key={grant.id} value={grant.id}>
+                          {grant.benefit.name} · {grant.customerName || 'Client'} · expire le{' '}
+                          {formatDate(grant.expiresAt)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="redeem-code">Code de validation</Label>
+                    <Input
+                      id="redeem-code"
+                      value={redeemForm.code}
+                      onChange={(event) =>
+                        setRedeemForm((current) => ({
+                          ...current,
+                          code: event.target.value.toUpperCase().replace(/\s+/g, ''),
+                        }))
+                      }
+                      placeholder="12 caractères"
+                      maxLength={12}
+                      autoComplete="off"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="redeem-note">Note interne (facultatif)</Label>
+                    <Input
+                      id="redeem-note"
+                      value={redeemForm.note}
+                      onChange={(event) =>
+                        setRedeemForm((current) => ({ ...current, note: event.target.value }))
+                      }
+                      placeholder="Servi avec l’addition"
+                    />
+                  </div>
+                  <Button type="submit" disabled={issuedGrants.length === 0}>
+                    Valider l’attention
+                  </Button>
+                </fieldset>
+                {issuedGrants.length === 0 && !locked ? (
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    Aucune attention en attente de validation.
+                  </p>
+                ) : null}
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Attribuer à un client</CardTitle>
+                </div>
+                <Badge variant="outline">
+                  {customers.length} client{customers.length > 1 ? 's' : ''} disponible
+                  {customers.length > 1 ? 's' : ''}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-5" onSubmit={issueGrant}>
+                <fieldset disabled={controlsDisabled} className="space-y-5 disabled:opacity-60">
+                  <div className="space-y-2">
+                    <Label htmlFor="grant-benefit">Attention à attribuer</Label>
+                    <select
+                      id="grant-benefit"
+                      value={grantForm.benefitId}
+                      onChange={(event) =>
+                        setGrantForm((current) => ({ ...current, benefitId: event.target.value }))
+                      }
+                      className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                      required
+                    >
+                      <option value="">Choisir une attention active</option>
+                      {activeBenefits.map((benefit) => (
+                        <option key={benefit.id} value={benefit.id}>
+                          {benefit.name}
+                        </option>
+                      ))}
+                    </select>
+                    {activeBenefits.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Enregistrez d’abord une attention active.
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="grant-customer">Client destinataire</Label>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label="Informations sur le client destinataire"
+                              className="rounded text-muted-foreground transition-all duration-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs">
+                            Le nom et les quatre derniers chiffres du téléphone sont affichés à
+                            l’équipe.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <select
+                      id="grant-customer"
+                      value={grantForm.customerId}
+                      onChange={(event) =>
+                        setGrantForm((current) => ({
+                          ...current,
+                          customerId: event.target.value,
+                        }))
+                      }
+                      className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                      required
+                    >
+                      <option value="">Sélectionner un client</option>
+                      {customers.map((customer) => (
+                        <option key={customer.id} value={customer.id}>
+                          {formatCustomerLabel(customer)}
+                        </option>
+                      ))}
+                    </select>
+                    {customersFailed ? (
+                      <p role="alert" className="text-xs text-destructive">
+                        Votre liste de clients n’a pas pu être chargée.{' '}
+                        <button
+                          type="button"
+                          onClick={() => void load()}
+                          className="font-medium underline underline-offset-4 transition-all duration-200"
+                        >
+                          Réessayer
+                        </button>
+                      </p>
+                    ) : customers.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Aucun client disponible dans le fichier client pour le moment.
+                      </p>
+                    ) : customers.length >= 100 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Vos 100 clients les plus fidèles sont proposés. Pour un autre client, passez
+                        par sa fiche.
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={activeBenefits.length === 0 || customers.length === 0}
+                  >
+                    Attribuer l’attention
+                  </Button>
+
+                  {issuedCode ? (
+                    <div
+                      className="rounded-xl border border-primary/30 bg-primary/5 p-4"
+                      role="status"
+                    >
+                      <p className="text-sm font-medium text-muted-foreground">
+                        Code à remettre au client
+                      </p>
+                      <p className="mt-2 font-mono text-2xl font-semibold tracking-[0.18em] text-primary">
+                        {issuedCode}
+                      </p>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Ce code ne sera plus affiché après cette émission. Notez-le ou remettez-le
+                        immédiatement au client.
+                      </p>
+                    </div>
+                  ) : null}
+                </fieldset>
+              </form>
+            </CardContent>
+          </Card>
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl border border-border bg-card p-4 text-sm font-medium transition-all duration-200 [&::-webkit-details-marker]:hidden">
+              <ChevronDown className="h-4 w-4 transition-all duration-200 group-open:rotate-180" />
+              Créer une attention
+            </summary>
             <Card>
               <CardHeader>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <CardTitle className="text-base">Créer une attention</CardTitle>
-                    <CardDescription className="mt-1">
-                      Définissez ce que l’équipe peut offrir et dans quelles conditions.
-                    </CardDescription>
                   </div>
                   <Badge variant="outline">Règle · coût · durée</Badge>
                 </div>
@@ -735,7 +859,10 @@ export default function LoyaltyPage() {
                           id="benefit-name"
                           value={benefitForm.name}
                           onChange={(event) =>
-                            setBenefitForm((current) => ({ ...current, name: event.target.value }))
+                            setBenefitForm((current) => ({
+                              ...current,
+                              name: event.target.value,
+                            }))
                           }
                           placeholder="Dessert anniversaire"
                           required
@@ -873,232 +1000,19 @@ export default function LoyaltyPage() {
                       </div>
                     </div>
 
-                    <Button type="submit">
-                      <Gift size={16} aria-hidden="true" />
-                      Enregistrer l’attention
-                    </Button>
+                    <Button type="submit">Enregistrer l’attention</Button>
                   </fieldset>
                 </form>
               </CardContent>
             </Card>
-
-            <Card>
-              <CardHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <CardTitle className="text-base">Attribuer à un client</CardTitle>
-                    <CardDescription className="mt-1">
-                      Remettez ensuite le code généré au client.
-                    </CardDescription>
-                  </div>
-                  <Badge variant="outline">
-                    {customers.length} client{customers.length > 1 ? 's' : ''} disponible
-                    {customers.length > 1 ? 's' : ''}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <form className="space-y-5" onSubmit={issueGrant}>
-                  <fieldset disabled={controlsDisabled} className="space-y-5 disabled:opacity-60">
-                    <div className="space-y-2">
-                      <Label htmlFor="grant-benefit">Attention à attribuer</Label>
-                      <select
-                        id="grant-benefit"
-                        value={grantForm.benefitId}
-                        onChange={(event) =>
-                          setGrantForm((current) => ({ ...current, benefitId: event.target.value }))
-                        }
-                        className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                        required
-                      >
-                        <option value="">Choisir une attention active</option>
-                        {activeBenefits.map((benefit) => (
-                          <option key={benefit.id} value={benefit.id}>
-                            {benefit.name}
-                          </option>
-                        ))}
-                      </select>
-                      {activeBenefits.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          Enregistrez d’abord une attention active.
-                        </p>
-                      ) : null}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="grant-customer">Client destinataire</Label>
-                      <select
-                        id="grant-customer"
-                        value={grantForm.customerId}
-                        onChange={(event) =>
-                          setGrantForm((current) => ({
-                            ...current,
-                            customerId: event.target.value,
-                          }))
-                        }
-                        className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                        required
-                      >
-                        <option value="">Sélectionner un client</option>
-                        {customers.map((customer) => (
-                          <option key={customer.id} value={customer.id}>
-                            {formatCustomerLabel(customer)}
-                          </option>
-                        ))}
-                      </select>
-                      {customersFailed ? (
-                        <p role="alert" className="text-xs text-destructive">
-                          Votre liste de clients n’a pas pu être chargée.{' '}
-                          <button
-                            type="button"
-                            onClick={() => void load()}
-                            className="font-medium underline underline-offset-4 transition-all duration-200"
-                          >
-                            Réessayer
-                          </button>
-                        </p>
-                      ) : customers.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          Aucun client disponible dans le fichier client pour le moment.
-                        </p>
-                      ) : customers.length >= 100 ? (
-                        <p className="text-xs text-muted-foreground">
-                          Vos 100 clients les plus fidèles sont proposés. Pour un autre client,
-                          passez par sa fiche.
-                        </p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          Le nom et les quatre derniers chiffres du téléphone sont affichés à
-                          l’équipe.
-                        </p>
-                      )}
-                    </div>
-
-                    <Button
-                      type="submit"
-                      disabled={activeBenefits.length === 0 || customers.length === 0}
-                    >
-                      <Ticket size={16} aria-hidden="true" />
-                      Attribuer l’attention
-                    </Button>
-
-                    {issuedCode ? (
-                      <div
-                        className="rounded-xl border border-primary/30 bg-primary/5 p-4"
-                        role="status"
-                      >
-                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          Code à remettre au client
-                        </p>
-                        <p className="mt-2 font-mono text-2xl font-semibold tracking-[0.18em] text-primary">
-                          {issuedCode}
-                        </p>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          Ce code ne sera plus affiché après cette émission. Notez-le ou remettez-le
-                          immédiatement au client.
-                        </p>
-                      </div>
-                    ) : null}
-                  </fieldset>
-                </form>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card ref={redeemCardRef}>
-            <CardHeader>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardTitle className="text-base">Valider une attention en salle</CardTitle>
-                  <CardDescription className="mt-1">
-                    À l’addition, choisissez l’attention et saisissez le code remis au client.
-                  </CardDescription>
-                </div>
-                <Badge variant="outline">{issuedGrants.length} à valider</Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <form className="space-y-4" onSubmit={redeemGrant}>
-                <fieldset
-                  disabled={controlsDisabled || issuedGrants.length === 0}
-                  className="grid gap-4 md:grid-cols-[1.4fr_1fr_1fr_auto] md:items-end disabled:opacity-60"
-                >
-                  <div className="space-y-2">
-                    <Label htmlFor="redeem-grant">Attention à valider</Label>
-                    <select
-                      id="redeem-grant"
-                      value={redeemForm.grantId}
-                      onChange={(event) =>
-                        setRedeemForm((current) => ({ ...current, grantId: event.target.value }))
-                      }
-                      className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                      required
-                    >
-                      <option value="">Choisir une attribution</option>
-                      {issuedGrants.map((grant) => (
-                        <option key={grant.id} value={grant.id}>
-                          {grant.benefit.name} · {grant.customerName || 'Client'} · expire le{' '}
-                          {formatDate(grant.expiresAt)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="redeem-code">Code de validation</Label>
-                    <Input
-                      id="redeem-code"
-                      value={redeemForm.code}
-                      onChange={(event) =>
-                        setRedeemForm((current) => ({
-                          ...current,
-                          code: event.target.value.toUpperCase().replace(/\s+/g, ''),
-                        }))
-                      }
-                      placeholder="12 caractères"
-                      maxLength={12}
-                      autoComplete="off"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="redeem-note">Note interne (facultatif)</Label>
-                    <Input
-                      id="redeem-note"
-                      value={redeemForm.note}
-                      onChange={(event) =>
-                        setRedeemForm((current) => ({ ...current, note: event.target.value }))
-                      }
-                      placeholder="Servi avec l’addition"
-                    />
-                  </div>
-                  <Button type="submit" disabled={issuedGrants.length === 0}>
-                    <CheckCircle2 size={16} aria-hidden="true" />
-                    Valider l’attention
-                  </Button>
-                </fieldset>
-                {issuedGrants.length === 0 && !locked ? (
-                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock3 size={15} aria-hidden="true" />
-                    Aucune attention en attente de validation.
-                  </p>
-                ) : null}
-              </form>
-            </CardContent>
-          </Card>
+          </details>
 
           <Card>
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <CardTitle className="text-base">Règles configurées</CardTitle>
-                  <CardDescription className="mt-1">
-                    Désactiver une règle empêche les nouvelles attributions, sans effacer
-                    l’historique.
-                  </CardDescription>
                 </div>
-                <Badge variant="outline">
-                  {activeBenefits.length} active{activeBenefits.length > 1 ? 's' : ''}
-                </Badge>
               </div>
             </CardHeader>
             <CardContent>
@@ -1108,13 +1022,7 @@ export default function LoyaltyPage() {
                   <Skeleton className="h-16 w-full rounded-xl" />
                 </div>
               ) : benefits.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border p-8 text-center">
-                  <Gift className="mx-auto text-muted-foreground/50" size={28} aria-hidden="true" />
-                  <p className="mt-3 text-sm font-medium">Aucune attention configurée</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Créez votre première attention ci-dessus pour commencer.
-                  </p>
-                </div>
+                <p className="text-sm text-muted-foreground">Aucune attention configurée</p>
               ) : (
                 <div className="space-y-3">
                   {benefits.map((benefit) => (
@@ -1125,16 +1033,9 @@ export default function LoyaltyPage() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-medium">{benefit.name}</span>
-                          <Badge
-                            variant="outline"
-                            className={
-                              benefit.status === 'ACTIVE'
-                                ? 'border-success/30 bg-success/10 text-success'
-                                : 'text-muted-foreground'
-                            }
-                          >
+                          <StatusBadge level={benefit.status === 'ACTIVE' ? 'progress' : 'neutral'}>
                             {benefit.status === 'ACTIVE' ? 'Active' : 'Inactive'}
-                          </Badge>
+                          </StatusBadge>
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">
                           {benefitRuleSummary(benefit)} · {formatEur(benefit.costCents)} · valable{' '}
@@ -1167,9 +1068,6 @@ export default function LoyaltyPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <CardTitle className="text-base">Attributions récentes</CardTitle>
-                  <CardDescription className="mt-1">
-                    Le téléphone est limité aux quatre derniers chiffres sur cet écran.
-                  </CardDescription>
                 </div>
                 <Badge variant="outline">
                   {grants.length} attribution{grants.length > 1 ? 's' : ''}
@@ -1180,17 +1078,7 @@ export default function LoyaltyPage() {
               {loading ? (
                 <Skeleton className="h-40 w-full rounded-xl" />
               ) : grants.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border p-8 text-center">
-                  <UsersRound
-                    className="mx-auto text-muted-foreground/50"
-                    size={28}
-                    aria-hidden="true"
-                  />
-                  <p className="mt-3 text-sm font-medium">Aucune attention attribuée</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Les attributions apparaîtront ici pour permettre leur suivi.
-                  </p>
-                </div>
+                <p className="text-sm text-muted-foreground">Aucune attention attribuée</p>
               ) : (
                 <div className="space-y-3">
                   {grants.map((grant) => (
@@ -1201,9 +1089,9 @@ export default function LoyaltyPage() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-medium">{grant.benefit.name}</span>
-                          <Badge variant="outline" className={grantStatusClassName(grant.status)}>
+                          <StatusBadge level={grantStatusLevel(grant.status)}>
                             {grantStatusLabel(grant.status)}
-                          </Badge>
+                          </StatusBadge>
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">
                           {grant.customerName ?? 'Client'} · •••• {grant.phoneLast4}
@@ -1230,18 +1118,26 @@ export default function LoyaltyPage() {
                               });
                             }}
                           >
-                            <CheckCircle2 size={14} aria-hidden="true" />
                             Préparer la validation
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setGrantToVoid(grant)}
-                            disabled={controlsDisabled}
-                          >
-                            <Ban size={14} aria-hidden="true" />
-                            Annuler l’attribution
-                          </Button>
+                          <DropdownMenu modal={false}>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-9 w-9 transition-all duration-200"
+                                disabled={controlsDisabled}
+                                aria-label={`Autres actions pour ${grant.benefit.name} · ${grant.customerName ?? 'Client'}`}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onSelect={() => setGrantToVoid(grant)}>
+                                Annuler l’attribution
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       ) : null}
                     </div>
@@ -1250,12 +1146,6 @@ export default function LoyaltyPage() {
               )}
             </CardContent>
           </Card>
-
-          <p className="flex items-center gap-2 text-xs text-muted-foreground">
-            <CalendarDays size={14} aria-hidden="true" />
-            Les codes sont à usage unique, les données sensibles restent protégées et les
-            attributions expirées restent consultables pour l’audit.
-          </p>
         </>
       ) : null}
 

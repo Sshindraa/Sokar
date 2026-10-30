@@ -231,6 +231,8 @@ staging contrôlé. Elles ne doivent jamais être committées ni exposées au da
 | `MARKETING_SENDS_ENABLED`        | `false` par défaut ; seul `true` autorise les routes et le worker à appeler un fournisseur.                                                                                                                                                                                                                                                                                                                                       |
 | `MARKETING_WHATSAPP_ENABLED`     | `false` par défaut ; doit rester `false` tant que le template et le compte WhatsApp ne sont pas qualifiés.                                                                                                                                                                                                                                                                                                                        |
 | `MARKETING_RECIPIENT_ALLOWLIST`  | Vide par défaut (aucune restriction). Adresses e-mail ou numéros séparés par des virgules : seuls ces contacts reçoivent un message marketing (tous restaurants), les autres sont annulés `NOT_IN_TEST_ALLOWLIST`. Ne touche pas les e-mails transactionnels, contrairement à `EMAIL_TEST_ALLOWLIST`. Voir `marketing-email-pilot.md`.                                                                                            |
+| `MARKETING_EMAIL_FROM`           | Expéditeur dédié aux seuls e-mails marketing, par exemple `bonjour@news.sokar.tech` (adresse seule : le nom affiché est celui du restaurant). Absent = aucun envoi marketing (`MARKETING_EMAIL_FROM_MISSING`, la campagne reste prête) ; Adresse seule, validée au démarrage ; jamais de repli sur `EMAIL_FROM`.                                                                                                                  |
+| `MARKETING_EMAIL_DAILY_BUDGET`   | Budget quotidien global des e-mails marketing, toute la plateforme (jour UTC), `40` par défaut. Entier ≥ 0, validé au démarrage. Une campagne dont l'audience dépasse le reste du jour est refusée au lancement (envoi immédiat ou programmation). Garde le quota Resend Free, partagé avec les transactionnels, hors de portée du marketing. Voir `marketing-email-pilot.md` §3.                                                 |
 | `RESEND_WEBHOOK_SECRET`          | Secret de signature (Svix) du webhook Resend `POST /marketing/webhooks/resend` ; absent = `503`. À poser à la main dans l'`.env` du VPS (aucun workflow ne le propage).                                                                                                                                                                                                                                                           |
 | `WHATSAPP_ENABLED`               | `false` par defaut. Rappel WhatsApp J-1 uniquement pour WEB avec accord et fournisseur qualifie (`WHATSAPP_PROVIDER`). Aucun rappel SMS, y compris en secours.                                                                                                                                                                                                                                                                    |
 | `TELNYX_WHATSAPP_FROM`           | Expediteur WhatsApp dedie requis, distinct de la configuration voix ; aucun repli implicite sur `TELNYX_FROM_NUMBER`. Voir `whatsapp-reservation-activation.md`.                                                                                                                                                                                                                                                                  |
@@ -255,17 +257,16 @@ staging contrôlé. Elles ne doivent jamais être committées ni exposées au da
 Ces flags sont indépendants des entitlements et doivent rester fermés dans les environnements
 suivis tant qu'un pilote n'a pas produit ses preuves externes :
 
-| Variable                       | Défaut sûr | Ce que l'ouverture autorise                                                                                                                                                      |
-| ------------------------------ | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POS_CONNECTORS_ENABLED`       | `false`    | Routes POS provider-neutral, import de tickets et matcher ; aucun fournisseur n'est appelé sans adaptateur qualifié.                                                             |
-| `RESERVATION_PAYMENTS_ENABLED` | `false`    | Policies et préparation de paiement de réservation, webhook signé ; aucun intent, hold, capture ou remboursement réel n'est créé par le socle local.                             |
-| `CUSTOMER_GROUPS_ENABLED`      | `false`    | API d'identité de groupe Multi-site, sous consentement ; aucun rapprochement automatique ni campagne inter-sites n'est activé.                                                   |
-| `REPUTATION_ENABLED`           | `false`    | Demandes de feedback post-visite et récupération locale ; aucun envoi ni fournisseur d'avis n'est déclenché par le socle.                                                        |
-| `LOYALTY_ENABLED`              | `false`    | Catalogue d'avantages et grants à code hashé ; aucun point, envoi, POS ou débit n'est déclenché par le socle.                                                                    |
-| `EXPERIENCES_ENABLED`          | `false`    | Catalogue et gestion interne des expériences, sessions et réservations.                                                                                                          |
-| `EXPERIENCE_BOOKING_ENABLED`   | `false`    | Parcours public de réservation et paiement intégral Stripe Connect ; exige aussi `EXPERIENCES_ENABLED=true`.                                                                     |
-| `EVENTS_ENABLED`               | `false`    | Catalogue, sessions, tarifs, jauges, billets, check-in et liste d'attente ; aucun paiement, facture fiscale, notification ou canal de distribution n'est déclenché par le socle. |
-| `DISTRIBUTION_ENABLED`         | `false`    | Connexions, snapshots, runs, liens et inbox webhook provider-neutral ; aucun OAuth, secret fournisseur, webhook public ou appel Google/Meta/API n'est déclenché par le socle.    |
+| Variable                       | Défaut sûr          | Ce que l'ouverture autorise                                                                                                                                                      |
+| ------------------------------ | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POS_CONNECTORS_ENABLED`       | `false`             | Routes POS provider-neutral, import de tickets et matcher ; aucun fournisseur n'est appelé sans adaptateur qualifié.                                                             |
+| `RESERVATION_PAYMENTS_ENABLED` | `false`             | Policies et préparation de paiement de réservation, webhook signé ; aucun intent, hold, capture ou remboursement réel n'est créé par le socle local.                             |
+| `CUSTOMER_GROUPS_ENABLED`      | `false`             | API d'identité de groupe Multi-site, sous consentement ; aucun rapprochement automatique ni campagne inter-sites n'est activé.                                                   |
+| `REPUTATION_EMAIL_SECRET`      | requis pour l’envoi | Secret aléatoire (32 caractères minimum), conservé hors Git ; à configurer avant déploiement sur chaque environnement.                                                           |
+| `EXPERIENCES_ENABLED`          | `false`             | Catalogue et gestion interne des expériences, sessions et réservations.                                                                                                          |
+| `EXPERIENCE_BOOKING_ENABLED`   | `false`             | Parcours public de réservation et paiement intégral Stripe Connect ; exige aussi `EXPERIENCES_ENABLED=true`.                                                                     |
+| `EVENTS_ENABLED`               | `false`             | Catalogue, sessions, tarifs, jauges, billets, check-in et liste d'attente ; aucun paiement, facture fiscale, notification ou canal de distribution n'est déclenché par le socle. |
+| `DISTRIBUTION_ENABLED`         | `false`             | Connexions, snapshots, runs, liens et inbox webhook provider-neutral ; aucun OAuth, secret fournisseur, webhook public ou appel Google/Meta/API n'est déclenché par le socle.    |
 
 Avant toute ouverture, vérifier la capability correspondante (`pos.connect`,
 `reservations.payments`, `customers.group`, `reputation.feedback`, `reputation.loyalty` ou
@@ -378,8 +379,9 @@ VOICE_STT_SILENCE_GUARD_MAX_DEFER_MS="1500"
 VOICE_STT_SPELLING_SILENCE_GUARD_MS="1200"
 # Attente avant le premier son d'une réponse : elle est déjà calculée (texte et voix) mais ne part
 # que si l'appelant est silencieux depuis ce délai ; s'il reprend la parole pendant l'attente,
-# elle est jetée sans qu'il ait entendu un mot (comme un barge-in, sans attendre la transcription).
-# Contexte Cartesia seulement (voix de secours HTTP non concernée). 0 désactive. Le plafond évite
+# l’annulation exige 160 ms de signal continu au seuil adaptatif du détecteur (voix faible incluse).
+# Un bruit bref retarde la lecture jusqu’au silence ou au plafond, sans jeter la réponse.
+# Contextes Cartesia et ElevenLabs (voix de secours HTTP non concernée). 0 désactive. Le plafond évite
 # qu'un bruit continu bloque une réponse. Métriques : sokar_voice_first_audio_hold_total{outcome},
 # sokar_voice_first_audio_hold_ms ; télémétrie de tour : événement first_audio_hold.
 VOICE_FIRST_AUDIO_SILENCE_MS="600"
@@ -435,17 +437,30 @@ VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
 # Visites réelles lues dans les réservations (honorées, placées, ou confirmées passées ; annulées et absences
 # exclues), dernière visite, prochaine réservation, taille de groupe médiane, préférences saisies ou confirmées
 # par l'équipe, étiquettes ; client connu reconnu par principe, sans civilité devinée.
-# Cartesia Ink-2 en parallèle de Deepgram, pour tous les restaurants dès que `CARTESIA_API_KEY` est présente.
-# Deepgram garde la fin de phrase, les mots (timings, confiance, bruit, interruption) et les mots isolés ;
-# Ink-2 (`/stt/websocket`, ink-2, français, A-law/µ-law 8 kHz tels quels, L16 en PCM16 16 kHz) reçoit seulement
-# la voix de l'appelant (détection locale `trackCallerVoice`, 0,5 s gardées avant, 1 s après la dernière voix).
-# À chaque fin de phrase Deepgram de 2 mots ou plus : `finalize`, puis le texte Ink-2 remplace celui de Deepgram
-# s'il arrive dans `VOICE_STT_INK_WAIT_MS` (défaut 250, 50 à 1000 ; banc : 87 ms médiane, 128 ms p90), sinon
-# Deepgram. `finalize` part dès 150 ms de silence local : le texte est en général prêt quand Deepgram clôt la phrase.
-# Si les deux ne s'accordent pas sur le nombre de personnes, Léa le fait confirmer dans son récapitulatif (aucune
-# question en plus). 3 crédits Cartesia par seconde envoyée, au plus 10 min par appel, sans plafond quotidien ;
-# les secondes du jour sont comptées dans Redis (`stt-ink:seconds:<jour>`) pour suivre la dépense. Toute panne
-# retombe sur Deepgram seul.
+# Cartesia Ink-2 parallèle : désactivé par défaut. Clé seule insuffisante.
+# VOICE_STT_INK_RESTAURANT_IDS autorise la comparaison sur les restaurants de test choisis.
+# Deepgram reste la source du dialogue. Pour autoriser aussi le remplacement, ajouter le même restaurant
+# à VOICE_STT_INK_REPLACE_RESTAURANT_IDS ; cette liste seule n'ouvre aucune connexion Ink.
+# Aucun remplacement général fondé sur la seule présence d'une clé. Ce retrait de priorité ne démontre
+# pas que Deepgram reconnaît mieux : qualifier les deux hypothèses avec un audio de référence.
+# Les deltas Ink sont concaténés à l'identique, et seul `flush_done` rend la transcription disponible.
+# Un seul `finalize` est en vol ; une reprise déjà présente à la fin Deepgram est finalisée ensuite.
+# Réponse complète vide : Deepgram pour ce tour. Timeout : Deepgram pour le reste de l'appel,
+# socket Ink fermée pour éviter qu'une réponse tardive ne contamine le prochain tour.
+# Mots isolés : réponse Ink ignorée jusqu'à flush_done ; si le tour suivant arrive avant, fermeture Ink.
+# Ink reçoit seulement la voix (0,5 s avant, 1 s après), au même codec que Deepgram ; attente bornée
+# VOICE_STT_INK_WAIT_MS (250 ms par défaut, 50 à 1000) sur les seuls appels de comparaison.
+# Logs généraux : source sélectionnée, longueurs et empreintes des hypothèses, jamais le texte.
+# Les deux textes sont accessibles uniquement via VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS (14 jours,
+# redactPii). Les confiances/mots Deepgram ne sont pas attribués à un texte Ink ; le fournisseur du
+# texte sélectionné est enregistré par tour. Les horodatages de fin de parole restent ceux de Deepgram.
+# Coût : 3 crédits Cartesia par seconde envoyée, au plus 10 min par appel ; compteur Redis quotidien.
+VOICE_STT_INK_RESTAURANT_IDS=""
+VOICE_STT_INK_REPLACE_RESTAURANT_IDS=""
+# Phase 1 naturel : refus/accords liés à la proposition précédente et acquiescements pendant une
+# explication. Liste UUID vide par défaut ; qualification sur restaurant de test uniquement.
+# Même groupe `scripts/ops/sync-env.sh voice-stt`, aucune clé fournisseur ni réglage TTS modifié.
+VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS=""
 # Secours Ink-2 quand Deepgram tombe, pour tous les restaurants (`CARTESIA_API_KEY`) : au lieu de
 # déclarer la transcription indisponible, l'appel bascule une fois sur Cartesia Ink-2 en mode tours
 # (`/stt/turns/websocket`, ink-2, français, A-law/µ-law 8 kHz tels quels, `turn_end_timeout_ms=1500`, nom du
@@ -880,9 +895,12 @@ propriétaire le 30/09/2026, car les nombres de mots ne suffisaient pas à compr
 `GET /api/internal/voice/calls?restaurantId=…&limit=20` (derniers appels),
 `GET /api/internal/voice/calls/latest?restaurantId=…` et `GET /api/internal/voice/calls/:callId`
 (mesures par tour, plus le dialogue pour les seuls restaurants de
-`VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS`). Jamais le numéro de l'appelant, le transcript brut ni
-les champs d'enregistrement. Pour une session Claude : autoriser `api.sokar.tech` dans l'accès
-réseau de l'environnement et y poser la même valeur en variable d'environnement.
+`VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS`), et `GET /api/internal/voice/calls/:callId/report`
+(rapport d'appel JSON stocké, début de l'id accepté, mêmes restaurants que le dialogue). Jamais le
+numéro de l'appelant, le transcript brut, l'audio ni les champs d'enregistrement. Pour une session
+Claude : autoriser `api.sokar.tech` dans l'accès réseau de l'environnement et y poser la même
+valeur en variable d'environnement `SOKAR_VOICE_READ_TOKEN`. Une session cloud ne peut pas ouvrir
+de SSH (port 22 sortant fermé) : cette lecture HTTPS est la voie prévue.
 
 Le rapport d'appel (plus de drapeau `CALL_REPORT_ENABLED` depuis le 23/10/2026) est construit après chaque appel d'un restaurant de
 `CALL_RECORDING_TEST_RESTAURANT_IDS` : un rapport (JSON + Markdown) stocké à côté de l'enregistrement,
@@ -949,22 +967,25 @@ envoie les seuils 80 % (avertissement), 95 % et 100 % (critique) via `dispatchAl
 Prometheus garde un miroir consultable ; aucun Alertmanager n'est configuré. Chaque seuil
 dispose d'un latch Redis par période de facturation, réarmé si la consommation repasse dessous.
 
-Les bancs utilisent la clé ElevenLabs unique `ELEVENLABS_API_KEY` (décision du 14/10/2026,
-partagée prod, dev, staging et banc). Les autres clés de banc restent dédiées :
+Les bancs Scribe historiques utilisent encore la clé ElevenLabs unique `ELEVENLABS_API_KEY`
+(décision du 14/10/2026, partagée prod, dev et staging) ; ils ne qualifient plus le STT runtime
+et ne doivent pas servir aux essais fournisseur. Les bancs actuels Deepgram/Cartesia requièrent
+une clé fournisseur : les clés de banc sont prioritaires, avec repli sur les clés runtime :
 
-| Variable                     | Usage                                                                                        |
-| ---------------------------- | -------------------------------------------------------------------------------------------- |
-| **ELEVENLABS_API_KEY**       | Clé unique : prod, dev, staging et bancs STT/TTS (décision du 14/10/2026)                    |
-| **CARTESIA_BENCH_API_KEY**   | Clé dédiée à la synthèse Cartesia du banc, différente de CARTESIA_API_KEY                    |
-| **OPENROUTER_BENCH_API_KEY** | Clé dédiée du banc LLM archivé, différente de OPENROUTER_API_KEY                             |
-| **CEREBRAS_BENCH_API_KEY**   | Clé dédiée du diagnostic vocal manuel, différente de CEREBRAS_API_KEY                        |
-| **BENCH_MAX_CREDITS**        | Plafond positif obligatoire ; les unités estimées sont affichées avant tout contrôle d'accès |
+| Variable                       | Usage                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------ |
+| **DEEPGRAM_BENCH_API_KEY**     | Clé optionnelle des bancs Deepgram ; sinon DEEPGRAM_API_KEY                          |
+| **CARTESIA_BENCH_API_KEY**     | Clé optionnelle du banc STT Cartesia ; sinon CARTESIA_API_KEY                        |
+| **ELEVENLABS_API_KEY**         | Clé unique : prod, dev, staging et anciens bancs Scribe/TTS (décision du 14/10/2026) |
+| **OPENROUTER_BENCH_API_KEY**   | Clé dédiée du banc LLM archivé, différente de OPENROUTER_API_KEY                     |
+| **CEREBRAS_BENCH_API_KEY**     | Clé dédiée du diagnostic vocal manuel, différente de CEREBRAS_API_KEY                |
+| **BENCH_DG_MAX_AUDIO_SECONDS** | Plafond audio des essais Deepgram, 660 s par défaut pour les bancs rapides           |
+| **BENCH_MAX_CREDITS**          | Plafond Cartesia positif obligatoire ; l'estimation précède tout envoi STT           |
 
 Les scripts vérifient l'accès à chaque endpoint utilisé avant le corpus, avec une seule
 requête de contrôle par fournisseur. Pour le banc Scribe, le contrôle ouvre la socket Realtime et
 n'envoie aucun audio. Le banc STT détaillé et ses limites sont documentés dans
-apps/api/scripts/voice-stt-bench/README.md. N'exécutez jamais un banc avec une clé
-identique à celle de production.
+apps/api/scripts/voice-stt-bench/README.md. Les bancs Deepgram/Cartesia acceptent aussi les clés de production.
 
 Historique du banc Scribe du 24/09/2026 (7 phrases × 3 passages, A-law 8 kHz) : détection sur toutes les
 langues 33 % d'informations critiques justes, `fr,en` 76 %, `fr` imposé 52 %. Deepgram est configuré en
@@ -1110,6 +1131,13 @@ Hors `.env` (à vérifier avec l'équipe) : `ELEVENLABS_API_KEY` (transcription)
 Côté Telnyx : l'application d'appel de staging a pour webhook `https://api-staging.sokar.tech/voice/telnyx`.
 Le numéro de test est rattaché à cette application (provisioning, `assign-phone`). Ce numéro n'est jamais un
 numéro de production, ni le numéro public affiché sur le site.
+
+**État vérifié le 24/10/2026 :** le compte n'a qu'un numéro, rattaché à l'application de production
+`Sokar Voice` avec webhook `https://api.sokar.tech/voice/telnyx`. L'application `Sokar VOICE-01 staging`
+existe avec le webhook staging, mais ses voies entrante et sortante sont désactivées et aucun numéro ne lui
+est affecté. La configuration de staging réutilise actuellement le numéro de production. Ne pas appeler ni
+activer un pilote staging avant d'avoir un numéro dédié, son rattachement à l'application staging, les voies
+nécessaires activées et la configuration vérifiée de bout en bout.
 
 ### Bloc 3 : appel de test sortant (provisioning)
 

@@ -11,28 +11,17 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import {
-  Award,
   BarChart3,
   CalendarCheck,
-  Code,
-  Gift,
-  HeartHandshake,
-  Megaphone,
+  ClipboardList,
   Moon,
   MoreHorizontal,
   Plus,
   PencilRuler,
-  PhoneCall,
   Radio,
-  Settings,
-  Share2,
-  Sparkles,
-  Star,
   Sun,
-  Ticket,
   Users,
   X,
-  Zap,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useDashboardTheme } from '@/features/theme/dashboard-theme';
@@ -40,10 +29,12 @@ import { cn, triggerHaptic } from '@/lib/utils';
 import { CreateOfferDialog } from '@/features/offers/create-offer-dialog';
 import { useSiteSelection } from '@/features/sites/site-context';
 import { isServiceStaff } from '@/features/team/roles';
+import { isNavEntryActive, navSections, settingsSection } from '@/features/navigation/sections';
 
 const copilotNavItems = [
   { href: '/dashboard', key: 'overview' as const, icon: BarChart3 },
   { href: '/dashboard/reservations', key: 'reservations' as const, icon: CalendarCheck },
+  { href: '/dashboard/briefing', key: 'briefing' as const, icon: ClipboardList },
   { href: '/dashboard/customers', key: 'customers' as const, icon: Users },
 ];
 
@@ -60,21 +51,16 @@ const staffNavItems = [
 
 type PrimaryNavItem = (typeof copilotNavItems)[number] | (typeof salleNavItems)[number];
 
-const moreItems = [
-  { href: '/dashboard/calls', key: 'calls', icon: PhoneCall },
-  { href: '/dashboard/marketing', key: 'marketing', icon: Megaphone },
-  { href: '/dashboard/reputation', key: 'reputation', icon: Star },
-  { href: '/dashboard/loyalty', key: 'loyalty', icon: Award },
-  { href: '/dashboard/reactivation', key: 'reactivation', icon: HeartHandshake },
-  { href: '/dashboard/experiences', key: 'experiences', icon: CalendarCheck },
-  { href: '/dashboard/events', key: 'events', icon: Ticket },
-  { href: '/dashboard/gift-cards', key: 'giftCards', icon: Gift },
-  { href: '/dashboard/connect', key: 'connect', icon: Zap },
-  { href: '/dashboard/widget', key: 'widget', icon: Code },
-  { href: '/dashboard/distribution', key: 'distribution', icon: Share2 },
-  { href: '/dashboard/agentic', key: 'agentic', icon: Sparkles },
-  { href: '/dashboard/settings', key: 'settings', icon: Settings },
-];
+// Menu Plus : les sections de la barre latérale, sans ce que la barre du bas montre déjà.
+const primaryHrefs = copilotNavItems.map((item) => item.href);
+const moreNavSections = [...navSections, settingsSection]
+  .map((section) => ({
+    ...section,
+    entries: section.entries.filter(
+      (entry) => !entry.spaceSwitch && !primaryHrefs.includes(entry.href),
+    ),
+  }))
+  .filter((section) => section.entries.length > 0);
 
 function isMobileNavActive(pathname: string, href: string) {
   if (href === '/dashboard') return pathname === href;
@@ -142,7 +128,11 @@ export default function MobileBottomNav() {
   const settledIndexRef = useRef<number | null>(null);
 
   const moreActive =
-    hasMoreMenu && (moreOpen || moreItems.some((item) => isMobileNavActive(pathname, item.href)));
+    hasMoreMenu &&
+    (moreOpen ||
+      moreNavSections.some((section) =>
+        section.entries.some((entry) => isNavEntryActive(pathname, entry)),
+      ));
   const committedIndex = moreActive
     ? activeNavItems.length
     : Math.max(
@@ -494,35 +484,44 @@ export default function MobileBottomNav() {
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-1.5 md:grid-cols-3">
-              {moreItems.map((item) => {
-                const Icon = item.icon;
-                const active = isMobileNavActive(pathname, item.href);
-                const spansMenu = item.key === 'settings';
+            <div className="space-y-3">
+              {moreNavSections.map((section) => (
+                <div key={section.id}>
+                  <h3 className="mb-1.5 px-1 text-sm font-medium text-muted-foreground">
+                    {tNav(section.labelKey)}
+                  </h3>
+                  <div className="grid grid-cols-2 gap-1.5 md:grid-cols-3">
+                    {section.entries.map((entry) => {
+                      const Icon = entry.icon;
+                      const active = isNavEntryActive(pathname, entry);
+                      const spansMenu = entry.key === 'settings';
 
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMoreOpen(false)}
-                    className={cn(
-                      'group flex min-h-10 items-center gap-1.5 rounded-xl border border-border bg-card/35 px-2.5 py-1.5 text-left text-sm font-medium leading-tight text-muted-foreground transition-all duration-200 hover:border-foreground/20 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-2 sm:px-3',
-                      spansMenu && 'col-span-2 md:col-span-3',
-                      active && 'border-primary/40 bg-primary/10 text-foreground',
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-secondary/70 text-muted-foreground transition-colors duration-200 group-hover:bg-background group-hover:text-foreground',
-                        active && 'bg-primary/15 text-primary',
-                      )}
-                    >
-                      <Icon size={16} strokeWidth={active ? 2.2 : 1.7} />
-                    </span>
-                    <span className="break-words">{tNav(item.key)}</span>
-                  </Link>
-                );
-              })}
+                      return (
+                        <Link
+                          key={entry.href}
+                          href={entry.href}
+                          onClick={() => setMoreOpen(false)}
+                          className={cn(
+                            'group flex min-h-10 items-center gap-1.5 rounded-xl border border-border bg-card/35 px-2.5 py-1.5 text-left text-sm font-medium leading-tight text-muted-foreground transition-all duration-200 hover:border-foreground/20 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-2 sm:px-3',
+                            spansMenu && 'col-span-2 md:col-span-3',
+                            active && 'border-primary/40 bg-primary/10 text-foreground',
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-secondary/70 text-muted-foreground transition-colors duration-200 group-hover:bg-background group-hover:text-foreground',
+                              active && 'bg-primary/15 text-primary',
+                            )}
+                          >
+                            <Icon size={16} strokeWidth={active ? 2.2 : 1.7} />
+                          </span>
+                          <span className="break-words">{tNav(entry.key)}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
             <button
               type="button"

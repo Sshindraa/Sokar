@@ -7,7 +7,7 @@
  * envoyée en pcm_alaw comme Telnyx la fournit). 1 répétition propre + le 1er
  * seed de bruit, envoi temps réel par chunks de 100 ms, sessions en parallèle.
  *
- * Clé : `CARTESIA_STT_KEY` (fournie par l'environnement, jamais affichée).
+ * Clé : `CARTESIA_BENCH_API_KEY` ou `CARTESIA_API_KEY` ; `BENCH_MAX_CREDITS` plafonne le coût avant envoi.
  * Sortie : JSON au format `BenchRecord`, scorable par `nb-score.ts`.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import { NB_CORPUS, NOISE_SEEDS } from './nb-corpus';
+import { requireBenchCreditBudget, requireBenchKey } from './nb-keys';
 import {
   addBackgroundNoise,
   alawRoundTrip,
@@ -143,8 +144,7 @@ async function streamToCartesia(
 }
 
 async function main(): Promise<void> {
-  const apiKey = process.env.CARTESIA_STT_KEY?.trim();
-  if (!apiKey) throw new Error('CARTESIA_STT_KEY manquant');
+  const apiKey = requireBenchKey('CARTESIA_BENCH_API_KEY', 'CARTESIA_API_KEY');
   const limit = Number(process.env.BENCH_LIMIT ?? NB_CORPUS.length);
   const concurrency = Number(process.env.BENCH_CONCURRENCY ?? 20);
   const conditions = (process.env.BENCH_CONDITIONS ?? 'A,B').split(',') as Condition[];
@@ -197,10 +197,16 @@ async function main(): Promise<void> {
   }
 
   const totalSec = tasks.reduce((s, t) => s + Number(t.record.audioMs) / 1000 + 0.6, 0);
+  const estimatedCredits = totalSec * 3;
+  const maxCredits = requireBenchCreditBudget(estimatedCredits);
   process.stderr.write(
     `Cartesia ${process.env.CARTESIA_STT_MODEL ?? 'ink-2'} : ${tasks.length} sessions, ` +
-      `~${Math.round(totalSec)} s d'audio, ~${Math.round(totalSec / concurrency)} s de mur.\n`,
+      `~${Math.round(totalSec)} s d'audio, ~${estimatedCredits.toFixed(1)} crédits estimés ` +
+      `(plafond ${maxCredits}), ~${Math.round(totalSec / concurrency)} s de mur.\n`,
   );
+  if (tasks.length > 8 && process.env.BENCH_CONFIRM !== '1') {
+    throw new Error('BENCH_CONFIRM=1 obligatoire pour plus de 8 sessions');
+  }
 
   const results: Array<Record<string, unknown>> = new Array(tasks.length);
   let next = 0;

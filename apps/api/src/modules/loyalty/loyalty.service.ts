@@ -6,6 +6,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { db } from '../../shared/db/client';
+import { loadCustomerVisitStats } from '../customers/customer-lifecycle';
 
 export const LOYALTY_BENEFIT_RULES = [
   'ANY',
@@ -572,6 +573,15 @@ function spendInCents(value: Prisma.Decimal | number | null | undefined): number
   return Number.isFinite(amount) ? Math.max(0, Math.round(amount * 100)) : 0;
 }
 
+async function countHonoredVisits(
+  restaurantId: string,
+  customerId: string,
+  now: Date,
+): Promise<number> {
+  const stats = await loadCustomerVisitStats(restaurantId, [customerId], now);
+  return stats.get(customerId)?.visitDates.length ?? 0;
+}
+
 async function assertCustomerEligible(input: {
   restaurantId: string;
   customerId: string;
@@ -588,7 +598,6 @@ async function assertCustomerEligible(input: {
     select: {
       id: true,
       isVip: true,
-      visitCount: true,
       birthMonth: true,
       metricSnapshot: { select: { estimatedSpend365d: true } },
     },
@@ -602,7 +611,13 @@ async function assertCustomerEligible(input: {
       if (customer.isVip) return;
       throw new LoyaltyNotEligibleError('VIP_REQUIRED');
     case LoyaltyBenefitRule.MIN_VISITS:
-      if (customer.visitCount >= (input.benefit.ruleValue ?? Number.MAX_SAFE_INTEGER)) return;
+      // Honoured visits from the reservations, as the CRM lifecycle counts them: the legacy
+      // `visitCount` counted phone bookings only, absences included.
+      if (
+        (await countHonoredVisits(input.restaurantId, customer.id, input.now)) >=
+        (input.benefit.ruleValue ?? Number.MAX_SAFE_INTEGER)
+      )
+        return;
       throw new LoyaltyNotEligibleError('MIN_VISITS_NOT_REACHED');
     case LoyaltyBenefitRule.BIRTHDAY_MONTH:
       if (customer.birthMonth === input.now.getUTCMonth() + 1) return;

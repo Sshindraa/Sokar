@@ -1,9 +1,11 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { ReputationFeedbackRequestStatus, ReputationRecoveryTaskStatus } from '@prisma/client';
 import { requireOrg } from '../../plugins/clerk';
 import { requireCapability } from '../entitlements/entitlement.guard';
-import { RATE_LIMIT_PUBLIC_WRITE } from '../../plugins/rate-limit.policy';
+import { RATE_LIMIT_PUBLIC_TOKEN, RATE_LIMIT_PUBLIC_WRITE } from '../../plugins/rate-limit.policy';
+import { reputationPublicPage } from './reputation-public.page';
+import { unsubscribeReputationEmail } from './reputation-email.service';
 import {
   REPUTATION_FEEDBACK_CHANNELS,
   REPUTATION_RECOVERY_STATUSES,
@@ -54,21 +56,6 @@ const UpdateTaskBodySchema = z.object({
   resolutionNote: z.string().max(2_000).nullable().optional(),
 });
 
-function reputationEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
-  return environment.REPUTATION_ENABLED === 'true';
-}
-
-async function requireReputationFeature(
-  _request: FastifyRequest,
-  reply: FastifyReply,
-): Promise<void | FastifyReply> {
-  if (reputationEnabled()) return;
-  return reply.status(503).send({
-    error: 'REPUTATION_DISABLED',
-    message: 'Les retours clients restent désactivés jusqu’à la qualification du pilote.',
-  });
-}
-
 async function requireReputationRole(
   request: { siteRole?: string },
   reply: FastifyReply,
@@ -105,16 +92,46 @@ const protectedRead = [
   requireOrg(),
   requireCapability('reputation.feedback'),
   requireReputationRole,
-  requireReputationFeature,
 ];
 const protectedWrite = protectedRead;
 
-/**
- * Provider-neutral reputation foundation. Requests are created in dry-run and
- * the public submission endpoint consumes an opaque, expiring token. No SMS,
- * email, review-platform or loyalty provider is contacted here.
- */
 export async function reputationRoutes(app: FastifyInstance): Promise<void> {
+  for (const [path, kind] of [
+    ['/reputation/respond', 'feedback'],
+    ['/reputation/unsubscribe', 'unsubscribe'],
+  ] as const) {
+    app.get(path, { config: { rateLimit: RATE_LIMIT_PUBLIC_TOKEN } }, async (_request, reply) =>
+      reply
+        .header('cache-control', 'no-store')
+        .header('referrer-policy', 'no-referrer')
+        .header('x-robots-tag', 'noindex')
+        .header(
+          'content-security-policy',
+          "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
+        )
+        .type('text/html; charset=utf-8')
+        .send(reputationPublicPage(kind)),
+    );
+  }
+
+  app.post(
+    '/reputation/unsubscribe',
+    { config: { rateLimit: RATE_LIMIT_PUBLIC_TOKEN } },
+    async (request, reply) => {
+      const parsed = z
+        .object({ token: z.string().trim().min(32).max(200) })
+        .safeParse(request.body);
+      if (!parsed.success) return reply.status(400).send({ error: 'INVALID_REPUTATION_TOKEN' });
+      try {
+        await unsubscribeReputationEmail(parsed.data.token);
+        return reply.send({ data: { unsubscribed: true } });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'INVALID_REPUTATION_TOKEN')
+          return reply.status(404).send({ error: 'INVALID_REPUTATION_TOKEN' });
+        throw error;
+      }
+    },
+  );
   app.post(
     '/reputation/feedback-requests',
     { preHandler: protectedWrite },
@@ -224,12 +241,10 @@ export async function reputationRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // Public, token-gated endpoint. The feature guard is deliberate: a token
-  // cannot be used while the local foundation is disabled during the freeze.
+  // Public, token-gated endpoint.
   app.post(
     '/reputation/feedback/submit',
     {
-      preHandler: requireReputationFeature,
       config: { rateLimit: RATE_LIMIT_PUBLIC_WRITE },
     },
     async (request, reply) => {
@@ -257,5 +272,3 @@ export async function reputationRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 }
-
-export { reputationEnabled };

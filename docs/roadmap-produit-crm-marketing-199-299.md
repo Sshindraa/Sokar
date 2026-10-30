@@ -34,12 +34,20 @@ Hypothèse de capacité : un développeur principal à temps plein, Hamza dispon
 
 ## 1. Décision produit
 
+Actualisation du 29 octobre 2026 : Sokar est une plateforme de réservations, d'organisation du
+service et de relation client. Les objectifs ci-dessous décrivent des chaînes de valeur à qualifier,
+pas une garantie de résultat. La [carte produit](./PROJECT_MAP.md#ce-quest-sokar) distingue les
+capacités déjà développées de leur ouverture effective.
+
 Sokar ne doit pas attendre d'égaler SevenRooms pour facturer 199 ou 299 € par mois. Le prix doit être justifié par deux résultats simples et mesurables :
 
-- **Essential — 199 € HT/mois/établissement** : Sokar répond aux appels, prend et modifie les réservations sans erreur, synchronise le planning et réduit le travail manuel de l'équipe.
-- **Pro — 299 € HT/mois/établissement** : Sokar ajoute une connaissance client exploitable, des relances ciblées et la mesure des réservations générées.
+- **Essential — 199 € HT/mois/établissement** : réunir les réservations dans un planning commun et aider l'équipe à préparer le service, avec un assistant vocal pour les appels transférés après qualification.
+- **Pro — 299 € HT/mois/établissement** : développer une connaissance client exploitable, des relances ciblées et leur suivi, sous réserve d'activation et de qualification des parcours.
 
-La trajectoire SevenRooms vient ensuite : caisse, revenu réel, protection bancaire, marketing avancé, CRM groupe, réputation, fidélité, événements et écosystème d'intégrations.
+La trajectoire comprend aussi la caisse, le revenu réel, la protection bancaire, le marketing avancé,
+le CRM groupe, la réputation, la fidélité, les expériences, les événements et les intégrations.
+Des fondations sont déjà développées pour plusieurs de ces domaines ; leur présence dans le code ne
+signifie pas que les fournisseurs, les pilotes ou les parcours commerciaux sont ouverts.
 
 La priorité n'est donc pas le nombre de fonctionnalités. Elle est la fermeture complète de chaînes de valeur :
 
@@ -871,21 +879,13 @@ identité de groupe nommée et un graphe de correspondance explicite, mais chaqu
 
 **Objectif :** fermer la boucle après visite sans construire immédiatement un programme de points complexe.
 
-**État local au 14 septembre 2026 : fondation livrée, activation externe bloquée.**
-`apps/api/src/modules/reputation/` crée une demande de retour uniquement pour une réservation
-`HONORED`, génère un token opaque à durée limitée dont seul le hash est stocké, accepte une réponse
-1–5 une seule fois et ouvre automatiquement une tâche de récupération pour une note ≤ 2 dans la
-même transaction. Les listes et transitions Owner/Manager sont tenant-scoped ; le worker expire les
-liens toutes les 15 minutes. `REPUTATION_ENABLED=false` reste le défaut. Aucun SMS/email, avis
-Google ou programme de récompense n'est déclenché par cette fondation. La page
-`/dashboard/reputation` expose localement le score moyen, les retours et la boîte de récupération ;
-elle reste verrouillée par le flag.
+**Mise à jour du 28 octobre 2026 :** retour privé par e-mail à J+1 pour Pro/Multi-site, une demande par client et restaurant tous les 90 jours, désinscription, plafond global de 10 tentatives par jour UTC et tâche de récupération pour les notes ≤ 2. Aucun lien vers une plateforme d'avis.
 
 La brique P8-03 est maintenant livrée localement dans `apps/api/src/modules/loyalty/` et sur
 `/dashboard/loyalty`. Elle définit des avantages EUR bornés, des règles `ANY`, `VIP`,
 `MIN_VISITS`, `BIRTHDAY_MONTH` ou `MIN_ESTIMATED_SPEND`, émet un grant avec code à usage unique
 hashé, autorise une consommation atomique et expire les émissions toutes les 15 minutes. La
-capability `reputation.loyalty` est Pro/Multi-site ; `LOYALTY_ENABLED=false` reste le défaut.
+capability `reputation.loyalty` est réservée à Pro/Multi-site ; la version manuelle est ouverte.
 Cette fondation ne contacte aucun canal et ne constitue pas encore un programme de points.
 
 ### P8-01 — Retour après visite
@@ -1366,8 +1366,7 @@ Les pages suivantes sont déjà présentes localement : `/admin`, `/admin/margin
 `/dashboard/loyalty`, `/dashboard/experiences`, `/dashboard/reactivation`, `/dashboard/reservations` et `/dashboard/settings`.
 Les écrans
 `payments` et l'administration POS restent à construire après qualification des parcours externes ;
-l'écran réputation et la fidélité existent localement mais restent verrouillés par
-`REPUTATION_ENABLED=false`, `LOYALTY_ENABLED=false` et `EXPERIENCES_ENABLED=false`.
+les expériences restent verrouillées par `EXPERIENCES_ENABLED=false` ; la réputation privée et la fidélité manuelle sont réservées à Pro/Multi-site.
 
 ```text
 apps/dashboard/src/app/

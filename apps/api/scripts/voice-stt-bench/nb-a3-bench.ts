@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import WebSocket from 'ws';
 import { NB_A3_CALIBRATION_IDS, NB_A3_CORPUS, NOISE_SEEDS } from './nb-corpus';
 import { synthesize16k } from './nb-tts';
+import { requireBenchKey } from './nb-keys';
 import {
   addBackgroundNoise,
   alawEncode,
@@ -361,8 +362,7 @@ async function main(): Promise<void> {
   if (tasks.length > 8 && process.env.BENCH_CONFIRM !== '1') {
     throw new Error('BENCH_CONFIRM=1 obligatoire pour plus de 8 sessions');
   }
-  const apiKey = process.env.DEEPGRAM_BENCH_API_KEY?.trim();
-  if (!apiKey) throw new Error('DEEPGRAM_BENCH_API_KEY manquant; aucun appel lancé');
+  const apiKey = requireBenchKey('DEEPGRAM_BENCH_API_KEY', 'DEEPGRAM_API_KEY');
 
   const results: Result[] = new Array(tasks.length);
   let next = 0;

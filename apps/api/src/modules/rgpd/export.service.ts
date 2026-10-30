@@ -15,7 +15,10 @@
 import type { PrismaClient } from '@prisma/client';
 import { ConsentService } from './consent.service';
 import { CURRENT_PRIVACY_POLICY_VERSION } from './privacy-policy';
-import { normalizeCustomerPhone } from '../customers/customer-crm.service';
+import {
+  customerPhoneLookupValues,
+  normalizeCustomerPhone,
+} from '../customers/customer-crm.service';
 
 export class ExportSubjectNotFoundError extends Error {
   constructor(message: string) {
@@ -207,10 +210,13 @@ export class ExportService {
 
   async exportSubject(args: { subject: string }): Promise<ExportPayload> {
     const subjectHash = ConsentService.hashSubject(args.subject);
+    const phones = customerPhoneLookupValues(args.subject);
+    const phoneFilter = phones.length === 1 ? phones[0] : { in: phones };
+    const hashes = phones.map((phone) => ConsentService.hashSubject(phone));
 
     // Récupérer les résas (toutes les résas avec ce téléphone)
     const reservations = await this.prisma.reservation.findMany({
-      where: { customerPhone: args.subject },
+      where: { customerPhone: phoneFilter },
       select: {
         id: true,
         restaurantId: true,
@@ -231,7 +237,7 @@ export class ExportService {
 
     // Récupérer les consents
     const consents = await this.prisma.customerConsent.findMany({
-      where: { subjectHash },
+      where: { subjectHash: hashes.length === 1 ? subjectHash : { in: hashes } },
       orderBy: { consentedAt: 'desc' },
     });
 
@@ -246,7 +252,7 @@ export class ExportService {
     ).call;
     const calls = callModel
       ? await callModel.findMany({
-          where: { callerPhone: args.subject },
+          where: { callerPhone: phoneFilter },
           select: {
             id: true,
             restaurantId: true,
@@ -268,7 +274,7 @@ export class ExportService {
           where: normalizedPhone
             ? {
                 OR: [
-                  { phone: args.subject },
+                  { phone: phoneFilter },
                   { identities: { some: { type: 'PHONE', normalizedValue: normalizedPhone } } },
                 ],
               }
@@ -278,6 +284,8 @@ export class ExportService {
             restaurantId: true,
             phone: true,
             emailNormalized: true,
+            feedbackEmailOptOutAt: true,
+            feedbackEmailRequestedAt: true,
             birthMonth: true,
             birthDay: true,
             preferredLocale: true,
@@ -353,8 +361,8 @@ export class ExportService {
           where: {
             OR: [
               ...(crmCustomerIds.length > 0 ? [{ customerId: { in: crmCustomerIds } }] : []),
-              { customer: { phone: args.subject } },
-              { reservation: { customerPhone: args.subject } },
+              { customer: { phone: phoneFilter } },
+              { reservation: { customerPhone: phoneFilter } },
             ],
           },
           select: {
@@ -476,6 +484,7 @@ export class ExportService {
 
     if (
       reservations.length === 0 &&
+      calls.length === 0 &&
       consents.length === 0 &&
       crmProfiles.length === 0 &&
       crmMergeAudits.length === 0 &&

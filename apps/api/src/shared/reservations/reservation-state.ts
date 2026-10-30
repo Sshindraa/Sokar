@@ -1,5 +1,7 @@
 import type { ReservationState, ReservationStatus } from '@prisma/client';
 
+export const COUNTED_RESERVATION_STATES = ['CONFIRMED', 'SEATED', 'HONORED'] as const;
+
 /**
  * Projection canonique entre `Reservation.state` et `Reservation.status`.
  *

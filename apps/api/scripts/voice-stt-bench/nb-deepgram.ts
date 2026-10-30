@@ -10,13 +10,14 @@
  *                           fin de tour détectée par Flux (ForceEndTurn en secours).
  *
  * BENCH_DG_FORMAT=smart|numerals|none compare le formatage sur les mêmes clips.
- * Clé : `DEEPGRAM_BENCH_API_KEY` (jamais affichée). Sortie : JSON `BenchRecord`.
+ * Clé : `DEEPGRAM_BENCH_API_KEY` ou `DEEPGRAM_API_KEY` (jamais affichée). Sortie : JSON `BenchRecord`.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import { NB_CORPUS, NOISE_SEEDS } from './nb-corpus';
+import { requireBenchKey } from './nb-keys';
 import {
   addBackgroundNoise,
   alawRoundTrip,
@@ -181,8 +182,7 @@ async function streamToDeepgram(
 }
 
 async function main(): Promise<void> {
-  const apiKey = process.env.DEEPGRAM_BENCH_API_KEY?.trim();
-  if (!apiKey) throw new Error('DEEPGRAM_BENCH_API_KEY manquant');
+  const apiKey = requireBenchKey('DEEPGRAM_BENCH_API_KEY', 'DEEPGRAM_API_KEY');
   const model = (process.env.BENCH_DG_MODEL ?? 'nova-3') as Model;
   if (!['nova-3', 'flux'].includes(model)) throw new Error('BENCH_DG_MODEL invalide');
   const formatMode = (process.env.BENCH_DG_FORMAT ?? 'smart') as FormatMode;

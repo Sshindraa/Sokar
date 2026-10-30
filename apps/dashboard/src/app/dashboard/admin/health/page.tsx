@@ -13,10 +13,12 @@ import {
   PhoneCall,
   RefreshCw,
   ServerCog,
+  Wrench,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -33,7 +35,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useApi } from '@/lib/api';
+import { ApiError } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
+import { getErrorMessage } from '@/types/api';
 
 interface RestaurantListItem {
   restaurantId: string;
@@ -87,6 +91,17 @@ interface RestaurantHealth {
   } | null;
   workers: WorkerState[];
   generatedAt: string;
+}
+
+interface ProjectionRepairPreview {
+  changed: boolean;
+  reservationCount: number;
+}
+
+interface ProjectionRepairResult {
+  changed: boolean;
+  reservationCount: number;
+  replayed?: boolean;
 }
 
 const OUTCOME_LABELS: Record<string, string> = {
@@ -143,8 +158,19 @@ function EmptyHint({ children }: { children: string }) {
   return <p className="text-sm text-muted-foreground">{children}</p>;
 }
 
+function reservationCount(n: number): string {
+  return n === 1 ? '1 réservation' : `${n} réservations`;
+}
+
+function repairErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError && err.status === 404) {
+    return 'Client introuvable dans ce restaurant.';
+  }
+  return getErrorMessage(err, fallback);
+}
+
 export default function AdminHealthPage() {
-  const { get } = useApi();
+  const { get, post } = useApi();
 
   const [loadingList, setLoadingList] = useState(true);
   const [restaurants, setRestaurants] = useState<RestaurantListItem[]>([]);
@@ -154,6 +180,22 @@ export default function AdminHealthPage() {
   const [loadingHealth, setLoadingHealth] = useState(false);
   const healthRequestId = useRef(0);
   const [error, setError] = useState<string | null>(null);
+
+  const [customerId, setCustomerId] = useState('');
+  const [preview, setPreview] = useState<ProjectionRepairPreview | null>(null);
+  const [repaired, setRepaired] = useState<ProjectionRepairResult | null>(null);
+  const [repairBusy, setRepairBusy] = useState<'preview' | 'repair' | null>(null);
+  const [repairError, setRepairError] = useState<string | null>(null);
+  // Incrémenté à chaque réinitialisation : une réponse tardive ne doit pas écraser le nouvel état.
+  const repairRun = useRef(0);
+
+  const resetRepair = useCallback(() => {
+    repairRun.current += 1;
+    setPreview(null);
+    setRepaired(null);
+    setRepairError(null);
+    setRepairBusy(null);
+  }, []);
 
   const fetchRestaurants = useCallback(async () => {
     setLoadingList(true);
@@ -212,6 +254,55 @@ export default function AdminHealthPage() {
     }
   }, [selectedId, fetchHealth]);
 
+  const checkCustomer = async () => {
+    const restaurantId = selectedId;
+    const id = customerId.trim();
+    if (!restaurantId || !id) return;
+    const run = ++repairRun.current;
+    setPreview(null);
+    setRepaired(null);
+    setRepairError(null);
+    setRepairBusy('preview');
+    try {
+      const res = await get<{ data: ProjectionRepairPreview }>(
+        `admin/restaurants/${restaurantId}/customers/${encodeURIComponent(id)}/projection-repair-preview`,
+      );
+      if (run === repairRun.current) setPreview(res.data);
+    } catch (err: unknown) {
+      if (run === repairRun.current) {
+        setRepairError(repairErrorMessage(err, 'Impossible de vérifier ce client'));
+      }
+    } finally {
+      if (run === repairRun.current) setRepairBusy(null);
+    }
+  };
+
+  const repairCustomer = async () => {
+    const restaurantId = selectedId;
+    const id = customerId.trim();
+    if (!restaurantId || !id) return;
+    const run = repairRun.current;
+    setRepairBusy('repair');
+    setRepairError(null);
+    try {
+      const res = await post<{ data: ProjectionRepairResult }>(
+        `admin/restaurants/${restaurantId}/customers/${encodeURIComponent(id)}/projection-repair`,
+        undefined,
+        { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+      );
+      if (run === repairRun.current) {
+        setPreview(null);
+        setRepaired(res.data);
+      }
+    } catch (err: unknown) {
+      if (run === repairRun.current) {
+        setRepairError(repairErrorMessage(err, 'Impossible de recalculer les chiffres'));
+      }
+    } finally {
+      if (run === repairRun.current) setRepairBusy(null);
+    }
+  };
+
   if (loadingList) {
     return (
       <div className="flex items-center justify-center gap-2 p-8 text-muted-foreground">
@@ -244,7 +335,14 @@ export default function AdminHealthPage() {
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <Select value={selectedId ?? undefined} onValueChange={setSelectedId}>
+          <Select
+            value={selectedId ?? undefined}
+            onValueChange={(id) => {
+              setSelectedId(id);
+              setCustomerId('');
+              resetRepair();
+            }}
+          >
             <SelectTrigger className="w-full sm:w-64" aria-label="Choisir un restaurant">
               <SelectValue placeholder="Choisir un restaurant" />
             </SelectTrigger>
@@ -509,6 +607,78 @@ export default function AdminHealthPage() {
             </CardContent>
           </Card>
         </>
+      )}
+
+      {selectedId && (
+        <Card className="transition-all duration-200">
+          <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-2">
+            <Wrench size={16} className="text-primary" />
+            <CardTitle className="text-sm font-medium">
+              Recalculer les chiffres d’un client
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void checkCustomer();
+              }}
+            >
+              <Input
+                aria-label="ID du client"
+                placeholder="ID visible dans l’URL de la fiche"
+                value={customerId}
+                onChange={(e) => {
+                  setCustomerId(e.target.value);
+                  resetRepair();
+                }}
+                className="w-full sm:w-80"
+              />
+              <Button
+                type="submit"
+                variant="outline"
+                size="sm"
+                disabled={!customerId.trim() || repairBusy !== null}
+                className="transition-all duration-200"
+              >
+                {repairBusy === 'preview' && <Loader2 className="animate-spin" size={14} />}
+                Vérifier
+              </Button>
+            </form>
+
+            {repairError && <p className="text-sm text-destructive">{repairError}</p>}
+
+            {preview && !preview.changed && (
+              <p className="text-sm text-success">
+                {`Chiffres à jour (${reservationCount(preview.reservationCount)}).`}
+              </p>
+            )}
+
+            {preview?.changed && (
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-sm text-warning">
+                  {`Écart sur ${reservationCount(preview.reservationCount)}.`}
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => void repairCustomer()}
+                  disabled={repairBusy !== null}
+                  className="transition-all duration-200"
+                >
+                  {repairBusy === 'repair' && <Loader2 className="animate-spin" size={14} />}
+                  Recalculer
+                </Button>
+              </div>
+            )}
+
+            {repaired && (
+              <p className="text-sm text-success">
+                {repaired.replayed ? 'Déjà recalculé.' : 'Chiffres recalculés.'}
+              </p>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   );

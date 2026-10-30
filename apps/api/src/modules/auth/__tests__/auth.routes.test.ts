@@ -41,7 +41,7 @@ describe('auth.routes - POST /api/auth/sync', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       synced: true,
-      restaurant: { ...existing, googleCalendarConnected: false },
+      restaurant: existing,
     });
     expect(db.restaurant.create).not.toHaveBeenCalled();
     expect(clerkClient.organizations.getOrganization).not.toHaveBeenCalled();
@@ -51,6 +51,7 @@ describe('auth.routes - POST /api/auth/sync', () => {
     const app = await getApp();
     vi.mocked(db.restaurant.findUnique).mockResolvedValue(null);
     vi.mocked(clerkClient.organizations.getOrganization).mockResolvedValue({
+      createdBy: 'test-user-1',
       name: 'Le Bistrot',
       slug: 'le-bistrot',
     } as unknown as Awaited<ReturnType<typeof clerkClient.organizations.getOrganization>>);
@@ -76,7 +77,7 @@ describe('auth.routes - POST /api/auth/sync', () => {
     expect(res.statusCode).toBe(201);
     const body = res.json();
     expect(body.synced).toBe(true);
-    expect(body.restaurant).toEqual({ ...created, googleCalendarConnected: false });
+    expect(body.restaurant).toEqual(created);
 
     expect(db.restaurant.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -94,7 +95,7 @@ describe('auth.routes - POST /api/auth/sync', () => {
       update: { name: 'Le Bistrot' },
     });
     expect(db.restaurantAccountMembership.findFirst).toHaveBeenCalledWith({
-      where: { accountId: 'test-account-1', restaurantId: null, clerkUserId: 'test-user-1' },
+      where: { accountId: 'test-account-1' },
     });
     expect(db.restaurantAccountMembership.create).toHaveBeenCalledWith({
       data: {
@@ -111,37 +112,39 @@ describe('auth.routes - POST /api/auth/sync', () => {
     );
   });
 
-  it('utilise des valeurs par défaut si Clerk renvoie une erreur', async () => {
+  it('refuse de créer un propriétaire si Clerk est indisponible', async () => {
     const app = await getApp();
     vi.mocked(db.restaurant.findUnique).mockResolvedValue(null);
     vi.mocked(clerkClient.organizations.getOrganization).mockRejectedValue(new Error('Clerk down'));
-    vi.mocked(db.restaurant.create).mockResolvedValue({
-      id: 'test-rest-1',
-      name: 'Mon Restaurant',
-      phoneNumber: '+000test-res',
-    } as unknown as Awaited<ReturnType<typeof db.restaurant.create>>);
-
     const res = await app.inject({
       method: 'POST',
       url: '/api/auth/sync',
       headers: { authorization: 'Bearer test' },
     });
+    expect(res.statusCode).toBe(503);
+    expect(db.restaurant.create).not.toHaveBeenCalled();
+  });
 
-    expect(res.statusCode).toBe(201);
-    expect(db.restaurant.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        id: 'test-rest-1',
-        name: 'Mon Restaurant',
-        // fallback phoneNumber: prefix from orgId.slice(0,8)
-        phoneNumber: expect.stringMatching(/^\+000test-res$/),
-      }),
+  it('refuse de promouvoir une personne qui n’a pas créé l’organisation', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue(null);
+    vi.mocked(clerkClient.organizations.getOrganization).mockResolvedValue({
+      createdBy: 'another-user',
+    } as never);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/sync',
+      headers: { authorization: 'Bearer test' },
     });
+    expect(res.statusCode).toBe(403);
+    expect(db.restaurantAccountMembership.create).not.toHaveBeenCalled();
   });
 
   it('crée le restaurant même si la planification du rapport échoue (best-effort)', async () => {
     const app = await getApp();
     vi.mocked(db.restaurant.findUnique).mockResolvedValue(null);
     vi.mocked(clerkClient.organizations.getOrganization).mockResolvedValue({
+      createdBy: 'test-user-1',
       name: 'X',
       slug: 'x',
     } as unknown as Awaited<ReturnType<typeof clerkClient.organizations.getOrganization>>);
@@ -179,12 +182,14 @@ describe('auth.routes - POST /api/auth/sync', () => {
     const app = await getApp();
     vi.mocked(db.restaurant.findUnique).mockResolvedValue(null);
     vi.mocked(clerkClient.organizations.getOrganization).mockResolvedValue({
+      createdBy: 'test-user-1',
       name: 'Restaurant transactionnel',
       slug: 'restaurant-transactionnel',
     } as unknown as Awaited<ReturnType<typeof clerkClient.organizations.getOrganization>>);
     const created = { id: 'test-rest-1', accountId: 'account-created-in-transaction' };
     // Un client distinct détecte une écriture faite par erreur hors de la transaction.
     const tx = {
+      $executeRaw: vi.fn(),
       restaurantAccount: {
         upsert: vi.fn().mockResolvedValue({ id: created.accountId }),
       },
@@ -223,10 +228,12 @@ describe('auth.routes - POST /api/auth/sync', () => {
       const app = await getApp();
       vi.mocked(db.restaurant.findUnique).mockResolvedValue(null);
       vi.mocked(clerkClient.organizations.getOrganization).mockResolvedValue({
+        createdBy: 'test-user-1',
         name: 'Restaurant incomplet',
         slug: 'restaurant-incomplet',
       } as unknown as Awaited<ReturnType<typeof clerkClient.organizations.getOrganization>>);
       const tx = {
+        $executeRaw: vi.fn(),
         restaurantAccount: { upsert: vi.fn().mockResolvedValue({ id: 'transaction-account' }) },
         restaurantAccountMembership: {
           findFirst: vi.fn().mockResolvedValue(null),
@@ -282,5 +289,41 @@ describe('auth.routes - POST /api/auth/sync', () => {
     expect(db.restaurantAccountMembership.create).not.toHaveBeenCalled();
     expect(db.restaurantAccountMembership.update).not.toHaveBeenCalled();
     expect(db.restaurantAccount.upsert).not.toHaveBeenCalled();
+  });
+
+  it('ne confie un compte sans attribution qu’au créateur vérifié', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      accountId: 'test-account-1',
+    } as never);
+    vi.mocked(db.restaurantAccountMembership.findFirst).mockResolvedValue(null);
+    vi.mocked(clerkClient.organizations.getOrganization).mockResolvedValue({
+      createdBy: 'other-user',
+    } as never);
+    const denied = await app.inject({
+      method: 'POST',
+      url: '/api/auth/sync',
+      headers: { authorization: 'Bearer test' },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(db.restaurantAccountMembership.create).not.toHaveBeenCalled();
+    vi.mocked(clerkClient.organizations.getOrganization).mockResolvedValue({
+      createdBy: 'test-user-1',
+    } as never);
+    const allowed = await app.inject({
+      method: 'POST',
+      url: '/api/auth/sync',
+      headers: { authorization: 'Bearer test' },
+    });
+    expect(allowed.statusCode).toBe(200);
+    expect(db.restaurantAccountMembership.create).toHaveBeenCalledWith({
+      data: {
+        accountId: 'test-account-1',
+        restaurantId: null,
+        clerkUserId: 'test-user-1',
+        role: 'OWNER',
+      },
+    });
   });
 });

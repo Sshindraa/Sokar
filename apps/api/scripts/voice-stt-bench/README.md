@@ -1,8 +1,9 @@
 # Banc STT vocal
 
 Mesure ce que la réservation vocale retient réellement d'une réponse d'appelant :
-synthèse Cartesia → dégradation téléphonique → transcription Scribe de production →
-dialogue réel (`recordUserTurn`).
+synthèse Cartesia → dégradation téléphonique → transcription STT → dialogue réel
+(`recordUserTurn`). Scribe est conservé comme référence historique hors runtime ; le
+parcours actuel utilise Deepgram Nova-3 avec Cartesia Ink-2 en parallèle ou en secours.
 
 Depuis le 22/10/2026, réponses attendues et confirmation par la confiance sont actives pour tous les
 restaurants, sans réglage : les colonnes « coupé » et « actif » du rapport sont identiques. Les chiffres
@@ -53,12 +54,14 @@ résumé chiffré est commité (journal, description de PR).
 
 ## Garde-fous fournisseur
 
-Les scripts de banc utilisent la clé ElevenLabs unique `ELEVENLABS_API_KEY` (décision du
-14/10/2026 : une seule clé partagée prod, dev, staging et banc) et une clé Cartesia dédiée
-`CARTESIA_BENCH_API_KEY`, qui refuse une clé de production. Ils exigent un plafond
-`BENCH_MAX_CREDITS` avant toute requête. Les étapes de synthèse et transcription consomment
-les fournisseurs ; `evaluate.ts` reste hors ligne. Aucun banc ne doit être lancé sans
-validation explicite du budget.
+Les bancs Deepgram/Cartesia utilisent en priorité `DEEPGRAM_BENCH_API_KEY` et
+`CARTESIA_BENCH_API_KEY`, puis les clés runtime `DEEPGRAM_API_KEY` et `CARTESIA_API_KEY`
+si les clés de banc sont absentes ou vides. Une clé identique au runtime est acceptée. Cartesia exige
+`BENCH_MAX_CREDITS`; les bancs Deepgram plafonnent l'audio via `BENCH_DG_MAX_AUDIO_SECONDS`.
+Au-delà de huit sessions, `BENCH_CONFIRM=1` est aussi requis. Les scripts historiques Scribe
+utilisent encore la clé ElevenLabs partagée prod/dev/staging : ne pas les lancer pour une
+qualification fournisseur. La synthèse et la transcription consomment des crédits ;
+`evaluate.ts` reste hors ligne. Toute dépense doit rester dans le budget choisi avant le run.
 
 ## Deuxième transcription (expérience, hors production)
 
@@ -188,7 +191,7 @@ le même signal.
 Les trois réglages sont scorés sur les mêmes 31 clips propres et bruités (seed 0), condition
 B, A-law 8 kHz et keyterms de production. Le runner affiche durée et coût estimés avant le
 premier envoi. Le plafond par défaut est 660 s ; `BENCH_CONFIRM=1` est obligatoire au-delà de
-8 sessions. `DEEPGRAM_BENCH_API_KEY` est l'unique clé lue par ce script.
+8 sessions. `DEEPGRAM_BENCH_API_KEY` est prioritaire, avec repli sur `DEEPGRAM_API_KEY`.
 
 ```bash
 cd apps/api
@@ -232,7 +235,7 @@ BENCH_DG_DRY_RUN=1 BENCH_LIMIT=31 \
   node --env-file=.env --import tsx scripts/voice-stt-bench/nb-flux-bench.ts
 
 # Run complet apparié (124 sessions, plafond fournisseur cumulé 660 s).
-# DEEPGRAM_BENCH_API_KEY est requis; la synthèse audio say est locale.
+# DEEPGRAM_BENCH_API_KEY ou DEEPGRAM_API_KEY est requis; la synthèse audio say est locale.
 BENCH_CONFIRM=1 BENCH_LIMIT=51 BENCH_CONCURRENCY=4 \
   node --env-file=.env --import tsx scripts/voice-stt-bench/nb-flux-bench.ts
 
@@ -294,7 +297,7 @@ BENCH_A3_DRY_RUN=1 BENCH_LIMIT=2 \
 BENCH_CONFIRM=1 BENCH_LIMIT=2 BENCH_CONCURRENCY=4 \
   node --env-file=.env --import tsx scripts/voice-stt-bench/nb-a3-bench.ts
 
-# Run complet apparié (1 020 sessions, plafond 7 200 s). DEEPGRAM_BENCH_API_KEY uniquement.
+# Run complet apparié (1 020 sessions, plafond 7 200 s). DEEPGRAM_BENCH_API_KEY ou DEEPGRAM_API_KEY.
 BENCH_CONFIRM=1 BENCH_LIMIT=51 BENCH_CONCURRENCY=4 \
   node --env-file=.env --import tsx scripts/voice-stt-bench/nb-a3-bench.ts
 

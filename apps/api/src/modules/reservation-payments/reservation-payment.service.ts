@@ -88,6 +88,7 @@ export class ReservationPaymentInputError extends Error {
       | 'PAYMENT_IDEMPOTENCY_INVALID'
       | 'PAYMENT_EXPIRY_INVALID'
       | 'PAYMENT_EVENT_INVALID'
+      | 'PAYMENT_PROVIDER_MISMATCH'
       | 'PAYMENT_CURRENCY_MISMATCH'
       | 'PAYMENT_AMOUNT_MISMATCH',
     message: string,
@@ -216,6 +217,8 @@ export interface ReservationPaymentProviderEventInput {
   currency?: string;
   stripeSetupIntentId?: string;
   stripePaymentIntentId?: string;
+  stripeAccountId?: string | null;
+  refundedAmount?: string | number;
   failureCode?: string;
 }
 
@@ -713,129 +716,131 @@ export async function applyReservationPaymentProviderEvent(
   const providerEventId = normalizeProviderId(input.providerEventId, 'providerEventId');
   const eventType = normalizeProviderId(input.eventType, 'eventType');
   const payloadHash = normalizePayloadHash(input.payloadHash);
-  const resultingStatus = reservationPaymentStatusForProviderEvent(eventType);
 
-  const existingEvent = await db.reservationPaymentEvent.findUnique({
-    where: { providerEventId },
-    select: { id: true, paymentId: true, resultingStatus: true },
-  });
-  if (existingEvent) {
-    return {
-      eventId: existingEvent.id,
-      paymentId: existingEvent.paymentId,
-      resultingStatus: existingEvent.resultingStatus,
-      changed: false,
-      duplicate: true,
-      stale: false,
-      reservationConfirmed: false,
-    };
-  }
-
-  const payment = await db.reservationPayment.findFirst({
-    where: { id: input.paymentId, restaurantId: input.restaurantId },
-    select: PAYMENT_SELECT,
-  });
-  if (!payment) throw new ReservationPaymentNotFoundError();
-
-  if (!resultingStatus) {
-    const event = await db.reservationPaymentEvent.create({
-      data: {
-        restaurantId: input.restaurantId,
-        paymentId: payment.id,
-        providerEventId,
-        eventType,
-        resultingStatus: null,
-        payloadHash,
-        occurredAt: input.occurredAt,
-      },
-      select: { id: true },
-    });
-    return {
-      eventId: event.id,
-      paymentId: payment.id,
-      resultingStatus: null,
-      changed: false,
-      duplicate: false,
-      stale: false,
-      reservationConfirmed: false,
-      ignoredReason: 'UNSUPPORTED_EVENT',
-    };
-  }
-
-  if (input.currency && normalizeCurrency(input.currency) !== payment.currency) {
-    throw new ReservationPaymentInputError(
-      'PAYMENT_CURRENCY_MISMATCH',
-      'La devise du provider ne correspond pas au paiement.',
-    );
-  }
-  if (input.amount !== undefined && !normalizeMoney(input.amount).equals(payment.amount)) {
-    throw new ReservationPaymentInputError(
-      'PAYMENT_AMOUNT_MISMATCH',
-      'Le montant du provider ne correspond pas au paiement.',
-    );
-  }
-  if (payment.lastProviderEventAt && input.occurredAt < payment.lastProviderEventAt) {
-    const event = await db.reservationPaymentEvent.create({
-      data: {
-        restaurantId: input.restaurantId,
-        paymentId: payment.id,
-        providerEventId,
-        eventType,
-        resultingStatus: payment.status,
-        payloadHash,
-        occurredAt: input.occurredAt,
-      },
-      select: { id: true },
-    });
-    return {
-      eventId: event.id,
-      paymentId: payment.id,
-      resultingStatus: payment.status,
-      changed: false,
-      duplicate: false,
-      stale: true,
-      reservationConfirmed: false,
-      ignoredReason: 'STALE_EVENT',
-    };
-  }
-  if (!canTransitionReservationPayment(payment.status, resultingStatus)) {
-    throw new ReservationPaymentStateError('PAYMENT_TRANSITION_INVALID');
-  }
-
-  const [event, updated, lifecycleResult] = await db.$transaction(async (tx) => {
-    const duplicateInTx = await tx.reservationPaymentEvent.findUnique({
+  const outcome = await db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM reservation_payments WHERE id = ${input.paymentId} AND restaurant_id = ${input.restaurantId} FOR UPDATE`;
+    const existingEvent = await tx.reservationPaymentEvent.findUnique({
       where: { providerEventId },
       select: { id: true, paymentId: true, resultingStatus: true },
     });
-    if (duplicateInTx) return [duplicateInTx, null, null] as const;
-
-    const updateData: Prisma.ReservationPaymentUpdateInput = {
-      status: resultingStatus,
-      lastProviderEventAt: input.occurredAt,
-      ...(input.failureCode ? { failureCode: input.failureCode.slice(0, 120) } : {}),
-      ...(input.stripeSetupIntentId
-        ? {
-            stripeSetupIntentId: normalizeProviderId(
-              input.stripeSetupIntentId,
-              'stripeSetupIntentId',
-            ),
-          }
-        : {}),
-      ...(input.stripePaymentIntentId
-        ? {
-            stripePaymentIntentId: normalizeProviderId(
-              input.stripePaymentIntentId,
-              'stripePaymentIntentId',
-            ),
-          }
-        : {}),
-    };
-    const next = await tx.reservationPayment.update({
-      where: { id: payment.id },
-      data: updateData,
+    if (existingEvent) {
+      return {
+        result: {
+          eventId: existingEvent.id,
+          paymentId: existingEvent.paymentId,
+          resultingStatus: existingEvent.resultingStatus,
+          changed: false,
+          duplicate: true,
+          stale: false,
+          reservationConfirmed: false,
+        },
+        lifecycle: null,
+        reservationId: null,
+      };
+    }
+    const payment = await tx.reservationPayment.findFirst({
+      where: { id: input.paymentId, restaurantId: input.restaurantId },
       select: PAYMENT_SELECT,
     });
-    const createdEvent = await tx.reservationPaymentEvent.create({
+    if (!payment) throw new ReservationPaymentNotFoundError();
+    if (
+      (input.stripeAccountId ?? null) !== payment.stripeAccountId ||
+      ((eventType.startsWith('payment_intent.') || eventType === 'charge.refunded') &&
+        (!input.stripePaymentIntentId ||
+          input.stripePaymentIntentId !== payment.stripePaymentIntentId)) ||
+      (eventType.startsWith('setup_intent.') &&
+        (!input.stripeSetupIntentId || input.stripeSetupIntentId !== payment.stripeSetupIntentId))
+    ) {
+      throw new ReservationPaymentInputError(
+        'PAYMENT_PROVIDER_MISMATCH',
+        'Le paiement Stripe ne correspond pas au paiement enregistré.',
+      );
+    }
+
+    let resultingStatus = reservationPaymentStatusForProviderEvent(eventType);
+    if (eventType === 'charge.refunded') {
+      if (input.refundedAmount === undefined) {
+        throw new ReservationPaymentInputError(
+          'PAYMENT_EVENT_INVALID',
+          'Le montant remboursé est requis.',
+        );
+      }
+      const refunded = normalizeMoney(input.refundedAmount);
+      if (refunded.lte(0) || refunded.gt(payment.amount)) {
+        throw new ReservationPaymentInputError(
+          'PAYMENT_AMOUNT_MISMATCH',
+          'Le remboursement ne correspond pas au paiement.',
+        );
+      }
+      resultingStatus = refunded.equals(payment.amount)
+        ? ReservationPaymentStatus.REFUNDED
+        : ReservationPaymentStatus.PARTIALLY_REFUNDED;
+    }
+    if (
+      resultingStatus &&
+      input.currency &&
+      normalizeCurrency(input.currency) !== payment.currency
+    ) {
+      throw new ReservationPaymentInputError(
+        'PAYMENT_CURRENCY_MISMATCH',
+        'La devise du provider ne correspond pas au paiement.',
+      );
+    }
+    if (
+      resultingStatus &&
+      input.amount !== undefined &&
+      !normalizeMoney(input.amount).equals(payment.amount)
+    ) {
+      throw new ReservationPaymentInputError(
+        'PAYMENT_AMOUNT_MISMATCH',
+        'Le montant du provider ne correspond pas au paiement.',
+      );
+    }
+    const stale = Boolean(
+      resultingStatus &&
+      payment.lastProviderEventAt &&
+      input.occurredAt < payment.lastProviderEventAt,
+    );
+    if (!resultingStatus || stale) {
+      const event = await tx.reservationPaymentEvent.create({
+        data: {
+          restaurantId: input.restaurantId,
+          paymentId: payment.id,
+          providerEventId,
+          eventType,
+          resultingStatus: stale ? payment.status : null,
+          payloadHash,
+          occurredAt: input.occurredAt,
+        },
+        select: { id: true },
+      });
+      return {
+        result: {
+          eventId: event.id,
+          paymentId: payment.id,
+          resultingStatus: stale ? payment.status : null,
+          changed: false,
+          duplicate: false,
+          stale,
+          reservationConfirmed: false,
+          ignoredReason: stale ? ('STALE_EVENT' as const) : ('UNSUPPORTED_EVENT' as const),
+        },
+        lifecycle: null,
+        reservationId: null,
+      };
+    }
+    if (!canTransitionReservationPayment(payment.status, resultingStatus)) {
+      throw new ReservationPaymentStateError('PAYMENT_TRANSITION_INVALID');
+    }
+    await tx.reservationPayment.update({
+      where: { id: payment.id },
+      data: {
+        status: resultingStatus,
+        lastProviderEventAt: input.occurredAt,
+        ...(input.failureCode ? { failureCode: input.failureCode.slice(0, 120) } : {}),
+      },
+    });
+    const event = await tx.reservationPaymentEvent.create({
       data: {
         restaurantId: input.restaurantId,
         paymentId: payment.id,
@@ -845,18 +850,14 @@ export async function applyReservationPaymentProviderEvent(
         payloadHash,
         occurredAt: input.occurredAt,
       },
-      select: { id: true, paymentId: true, resultingStatus: true },
+      select: { id: true },
     });
-
-    let lifecycleResult: ReservationLifecycleResult | null = null;
+    let lifecycle: ReservationLifecycleResult | null = null;
     if (
       resultingStatus === ReservationPaymentStatus.AUTHORIZED ||
       resultingStatus === ReservationPaymentStatus.CAPTURED
     ) {
-      // Le paiement ne peut confirmer que la demande encore en validation
-      // manuelle. Le writer verrouille la ligne et transforme un changement
-      // concurrent en no-op, comme le faisait l'ancien updateMany conditionnel.
-      lifecycleResult = await reservationLifecycle.transitionInTransaction(tx, {
+      lifecycle = await reservationLifecycle.transitionInTransaction(tx, {
         reservationId: payment.reservationId,
         restaurantId: input.restaurantId,
         toState: 'CONFIRMED',
@@ -872,45 +873,34 @@ export async function applyReservationPaymentProviderEvent(
         },
       });
     }
-
-    return [createdEvent, next, lifecycleResult] as const;
-  });
-
-  if (!updated) {
     return {
-      eventId: event.id,
-      paymentId: event.paymentId,
-      resultingStatus: event.resultingStatus,
-      changed: false,
-      duplicate: true,
-      stale: false,
-      reservationConfirmed: false,
+      result: {
+        eventId: event.id,
+        paymentId: payment.id,
+        resultingStatus,
+        changed: payment.status !== resultingStatus,
+        duplicate: false,
+        stale: false,
+        reservationConfirmed: lifecycle?.mutated === true,
+      },
+      lifecycle,
+      reservationId: payment.reservationId,
     };
-  }
-
-  if (lifecycleResult) {
+  });
+  if (outcome.lifecycle && outcome.reservationId) {
     await reservationLifecycle.finalizeTransition(
       {
-        reservationId: payment.reservationId,
+        reservationId: outcome.reservationId,
         restaurantId: input.restaurantId,
         toState: 'CONFIRMED',
         actor: 'payment:provider-webhook',
         operation: 'confirmation',
         observationSource: 'direct',
       },
-      lifecycleResult,
+      outcome.lifecycle,
     );
   }
-
-  return {
-    eventId: event.id,
-    paymentId: payment.id,
-    resultingStatus,
-    changed: payment.status !== resultingStatus,
-    duplicate: false,
-    stale: false,
-    reservationConfirmed: lifecycleResult?.mutated === true,
-  };
+  return outcome.result;
 }
 
 export async function expireReservationPayments(now = new Date()): Promise<number> {
