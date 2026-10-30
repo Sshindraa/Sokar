@@ -3182,3 +3182,9 @@ Le lien de la carte « Ce soir » mène à `/dashboard/reservations?date=AAAA-MM
 ### 2026-10-30 — Companion : direction seule et panneau fermé à la navigation
 
 La politique de rôles (`role-policy.ts`) refuse la lecture seule sur `/companion/*` (`DIRECTION_ONLY_RULES`), comme l'équipe de service. `READ_ONLY` lit toujours le reste, dont `/reservations`. Le panneau Companion se ferme quand la page ou ses paramètres changent. Vérifié dans le navigateur, en dev local avec API et dashboard séparés : clic sur « Adrien Richard » dans « Ce soir », panneau fermé, détail du 30 octobre à 18 h 15 ouvert, alors que la page était sur le 29 octobre.
+
+### 2026-10-30 — Companion : catalogue de données générique (phase A)
+
+Les sources viennent d'un catalogue (`companion/catalog.ts`) : réservations, appels, liste d'attente et avis. Le moteur (`query-data.ts`) construit la validation, le calcul, la description et les paramètres de `query_data`, ainsi que la ligne « Périmètre » du prompt. Une lecture ne sélectionne que les champs de sa fiche, et un test refuse les champs personnels. Les réservations de test (`isTest`) sont exclues ; sans effet sur les données actuelles. Liste d'attente : désactivée, `{ unavailable: 'disabled' }` (garde-fou `WaitingListDisabledError`). Avis : sans `reputation.feedback`, `{ unavailable: 'plan' }`. Le seed ajoute liste d'attente, avis et tâches de récupération, et active la liste d'attente du restaurant de démo (dev seulement).
+
+Banc : 41 questions (13 nouvelles), 3 essais. Outil : 105/105. Chiffre : 99/105. Q30 (demandes obtenues le mois dernier) : le modèle a pris la date de demande, la question ne la précise pas. Q37 (note de 2 ou moins) : le catalogue n'a pas de filtre sur la note ; le modèle donne les deux valeurs et refuse de les additionner. Avant la phase A, 66/66 sur les 22 questions notées. Tokens : 672 039 entrée et 36 480 sortie (84 appels) avant ; 1 209 365 entrée et 60 541 sortie (123 appels) après.

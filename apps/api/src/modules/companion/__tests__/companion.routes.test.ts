@@ -3,6 +3,7 @@ import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { checkRateLimit } from '../../../shared/redis/rate-limit';
 import { env } from '../../../env';
+import { queryScope } from '../query-data';
 
 const CHAT_URL = '/companion/chat';
 const FEEDBACK_URL = '/companion/feedback';
@@ -218,7 +219,7 @@ describe('POST /companion/chat', () => {
     expect(system).toContain(
       "Un brouillon ne contient aucun fait absent des données : ni table libérée, ni promotion, ni prix, ni horaire, ni disponibilité. Mettez [à compléter] à la place et dites ce qu'il faut vérifier. Toute formule de disponibilité ou d'urgence va entre crochets : « table disponible », « places limitées », « dernières places », « vient de se libérer ».",
     );
-    expect(system).toContain("les appels reçus par l'assistant téléphonique");
+    expect(system).toContain(queryScope());
     expect(system).toContain(
       "Ne faites aucun calcul vous-même : ni somme, ni différence, ni moyenne, ni taux, ni pourcentage. Si vous avez besoin d'un total, demandez-le à un outil (query_data sans group_by donne le total). Citez les nombres tels que les outils les renvoient.",
     );

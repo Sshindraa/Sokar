@@ -5,7 +5,7 @@
  * Usage (depuis apps/api) : npx tsx scripts/companion-bench/run.ts
  * Les chiffres attendus se recalculent au moment du test. Ceux des questions 12, 22 à 27 viennent de
  * requêtes Prisma écrites ici, indépendantes de query-data.ts.
- * Questions notées : 1 à 12, 17 à 20 et 22 à 27. Deux critères, notés à part : au moins un outil
+ * Questions notées : 1 à 12, 17 à 20, 22 à 27 et 29 à 41 (41 : restaurant sans la formule Avis). Deux critères, notés à part : au moins un outil
  * appelé, puis valeur attendue dans la réponse (pour la question 26, le premier canal nommé doit être
  * le plus haut dans un résultat d'outil enregistré). Questions à relire : 13 à 16, 21 et 28 ; réponses
  * brutes et appels d'outils dans results/.
@@ -19,6 +19,7 @@ import { db } from '../../src/shared/db/client';
 import { answerCompanion } from '../../src/modules/companion/companion.service';
 import { computeRoi } from '../../src/modules/analytics/roi.service';
 import { computeCallStats } from '../../src/modules/calls/call-stats';
+import { evaluateCapability } from '../../src/modules/entitlements/entitlement.service';
 import {
   computeDashboardStats,
   computeEmptySlots,
@@ -56,12 +57,15 @@ type Expected =
   | { kind: 'day'; value: string[] }
   | { kind: 'all'; value: number[] }
   | { kind: 'any'; value: number[] }
-  | { kind: 'first'; value: string[]; others: string[] };
+  | { kind: 'first'; value: string[]; others: string[] }
+  | { kind: 'unavailable' };
 
 interface Question {
   n: number;
   text: string;
   expected?: (restaurantId: string) => Promise<Expected>;
+  /** withoutPlan : un restaurant sans la formule Avis, au lieu de DEMO_RESTAURANT_ID. */
+  restaurant?: 'withoutPlan';
 }
 
 const count = (value: number, unit?: string): Expected => ({ kind: 'count', value, unit });
@@ -188,6 +192,52 @@ function previousMonth(): string {
   const [year, month] = dayFormat.format(new Date()).split('-').map(Number);
   return new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7);
 }
+
+// Liste d'attente et avis : requêtes Prisma écrites ici, indépendantes du catalogue.
+function waitlistBetween(
+  restaurantId: string,
+  dateField: 'slotStart' | 'createdAt',
+  from: string,
+  to: string,
+  status?: 'PENDING' | 'PROMOTED' | 'CANCELLED' | 'EXPIRED',
+) {
+  const range = { gte: parisStart(from), lt: parisStart(shiftDay(to, 1)) };
+  return db.waitingListEntry.findMany({
+    where: {
+      restaurantId,
+      ...(status ? { status } : {}),
+      ...(dateField === 'slotStart' ? { slotStart: range } : { createdAt: range }),
+    },
+    select: { slotStart: true, createdAt: true, status: true, partySize: true },
+  });
+}
+function feedbacksBetween(restaurantId: string, from: string, to: string) {
+  return db.reputationFeedback.findMany({
+    where: {
+      restaurantId,
+      submittedAt: { gte: parisStart(from), lt: parisStart(shiftDay(to, 1)) },
+    },
+    select: { score: true, submittedAt: true, recoveryTask: { select: { status: true } } },
+  });
+}
+// Mois suivant à Paris, au format AAAA-MM.
+function nextMonth(): string {
+  const [year, month] = dayFormat.format(new Date()).split('-').map(Number);
+  return new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 7);
+}
+// Restaurant sans la formule Avis (reputation.feedback), pour la question hors formule.
+async function findWithoutPlanRestaurant(): Promise<string> {
+  const candidates = await db.restaurant.findMany({
+    where: { plan: 'STARTER' },
+    select: { id: true },
+    take: 20,
+  });
+  for (const { id } of candidates) {
+    if (!(await evaluateCapability(id, 'reputation.feedback')).allowed) return id;
+  }
+  throw new Error('aucun restaurant sans la formule Avis dans cette base.');
+}
+const roundOne = (value: number) => Math.round(value * 10) / 10;
 
 const QUESTIONS: Question[] = [
   {
@@ -408,6 +458,123 @@ const QUESTIONS: Question[] = [
     },
   },
   { n: 28, text: "Combien de personnes sont sur la liste d'attente ?" },
+  {
+    n: 29,
+    text: 'Combien de couverts sont en liste d’attente pour le mois prochain ?',
+    expected: async (id) => {
+      const [from, to] = monthBounds(nextMonth());
+      const rows = await waitlistBetween(id, 'slotStart', from, to, 'PENDING');
+      return count(sumCovers(rows));
+    },
+  },
+  {
+    n: 30,
+    text: 'Combien de demandes en liste d’attente ont été obtenues le mois dernier ?',
+    expected: async (id) => {
+      const [from, to] = monthBounds(previousMonth());
+      return count((await waitlistBetween(id, 'slotStart', from, to, 'PROMOTED')).length);
+    },
+  },
+  {
+    n: 31,
+    text: 'Combien de couverts ont été demandés en liste d’attente le mois dernier ?',
+    expected: async (id) => {
+      const [from, to] = monthBounds(previousMonth());
+      return count(sumCovers(await waitlistBetween(id, 'createdAt', from, to)));
+    },
+  },
+  {
+    n: 32,
+    text: 'Quel jour de la semaine reçoit le plus de demandes en liste d’attente le mois dernier, selon la date de la demande ?',
+    expected: async (id) => {
+      const [from, to] = monthBounds(previousMonth());
+      const perDay = new Map<string, number>();
+      for (const row of await waitlistBetween(id, 'createdAt', from, to)) {
+        const name = benchWeekdayName(row.createdAt);
+        perDay.set(name, (perDay.get(name) ?? 0) + 1);
+      }
+      return { kind: 'day', value: topKeys(perDay) };
+    },
+  },
+  {
+    n: 33,
+    text: 'Combien de demandes faites le mois dernier ont été annulées ?',
+    expected: async (id) => {
+      const [from, to] = monthBounds(previousMonth());
+      return count((await waitlistBetween(id, 'createdAt', from, to, 'CANCELLED')).length);
+    },
+  },
+  {
+    n: 34,
+    text: 'Combien de demandes en liste d’attente ont expiré le mois dernier, selon le créneau demandé ?',
+    expected: async (id) => {
+      const [from, to] = monthBounds(previousMonth());
+      return count((await waitlistBetween(id, 'slotStart', from, to, 'EXPIRED')).length);
+    },
+  },
+  {
+    n: 35,
+    text: 'Quelle est la note moyenne des avis clients le mois dernier ?',
+    expected: async (id) => {
+      const [from, to] = monthBounds(previousMonth());
+      const rows = await feedbacksBetween(id, from, to);
+      const average = rows.reduce((sum, row) => sum + row.score, 0) / rows.length;
+      return count(roundOne(average));
+    },
+  },
+  {
+    n: 36,
+    text: 'Combien d’avis clients ai-je reçus ce mois-ci ?',
+    expected: async (id) => {
+      const [from] = monthBounds(today().slice(0, 7));
+      return count((await feedbacksBetween(id, from, today())).length);
+    },
+  },
+  {
+    n: 37,
+    text: 'Combien d’avis ont une note de 2 ou moins le mois dernier ?',
+    expected: async (id) => {
+      const [from, to] = monthBounds(previousMonth());
+      const rows = await feedbacksBetween(id, from, to);
+      return count(rows.filter((row) => row.score <= 2).length);
+    },
+  },
+  {
+    n: 38,
+    text: 'Combien d’avis du mois dernier ont une tâche de récupération au statut ouvert ?',
+    expected: async (id) => {
+      const [from, to] = monthBounds(previousMonth());
+      const rows = await feedbacksBetween(id, from, to);
+      return count(rows.filter((row) => row.recoveryTask?.status === 'OPEN').length);
+    },
+  },
+  {
+    n: 39,
+    text: 'Quelle note revient le plus souvent le mois dernier ?',
+    expected: async (id) => {
+      const [from, to] = monthBounds(previousMonth());
+      const perScore = new Map<number, number>();
+      for (const row of await feedbacksBetween(id, from, to)) {
+        perScore.set(row.score, (perScore.get(row.score) ?? 0) + 1);
+      }
+      return { kind: 'any', value: topKeys(perScore) };
+    },
+  },
+  {
+    n: 40,
+    text: 'Combien d’avis du mois dernier ont une tâche de récupération résolue ?',
+    expected: async (id) => {
+      const [from, to] = monthBounds(previousMonth());
+      const rows = await feedbacksBetween(id, from, to);
+      return count(rows.filter((row) => row.recoveryTask?.status === 'RESOLVED').length);
+    },
+  },
+  {
+    n: 41,
+    text: 'Combien d’avis clients ai-je reçus le mois dernier ?',
+    restaurant: 'withoutPlan',
+    expected: async () => ({ kind: 'unavailable' }),
+  },
 ];
 
 // Nombres en lettres pour la question 7 : « Un seul jour est sous-réservé ».
@@ -440,6 +607,10 @@ function percentagesIn(reply: string): number[] {
 
 // Compte exact ; montant à l'euro près ; taux à 0,1 près ; jour : nom complet, sans accent ni casse.
 function valueFound(reply: string, expected: Expected): boolean {
+  if (expected.kind === 'unavailable') {
+    // Source hors formule : la réponse le dit, sans annoncer zéro.
+    return /formule/i.test(reply) && !/\b0\b|zéro|aucun/i.test(reply);
+  }
   if (expected.kind === 'all') {
     return expected.value.every((value) => numbersIn(reply).includes(value));
   }
@@ -488,6 +659,7 @@ function valueFound(reply: string, expected: Expected): boolean {
 
 function formatExpected(expected: Expected | undefined): string {
   if (!expected) return '';
+  if (expected.kind === 'unavailable') return 'non incluse dans la formule';
   if (expected.kind === 'day') return expected.value.join(' / ');
   if (expected.kind === 'all') return expected.value.join(' et ');
   if (expected.kind === 'any') return expected.value.join(' ou ');
@@ -636,12 +808,14 @@ async function main() {
   if (!restaurant) throw new Error(`restaurant ${restaurantId} introuvable dans cette base.`);
 
   const startedAt = new Date().toISOString();
+  const withoutPlanId = await findWithoutPlanRestaurant();
   const results = [];
   for (const question of QUESTIONS) {
-    const expected = question.expected ? await question.expected(restaurantId) : undefined;
+    const targetId = question.restaurant === 'withoutPlan' ? withoutPlanId : restaurantId;
+    const expected = question.expected ? await question.expected(targetId) : undefined;
     const trials: Trial[] = [];
     for (let attempt = 0; attempt < 3; attempt++) {
-      trials.push(await runTrial(question, expected, restaurantId));
+      trials.push(await runTrial(question, expected, targetId));
     }
     results.push({
       n: question.n,

@@ -1,43 +1,26 @@
 /**
- * Requête unique du Companion (outil query_data) : le modèle compose une requête, le serveur la valide,
- * la borne au restaurant, calcule et ne renvoie que des totaux. Les champs lus sont fixés ici : jamais
- * de nom, téléphone, e-mail, note ni transcription.
+ * Requête du Companion (outil query_data) : le modèle compose une requête, le serveur la valide,
+ * la borne au restaurant, calcule et ne renvoie que des totaux. Les sources, leurs champs et leurs
+ * mesures viennent du catalogue (catalog.ts) : ce fichier ne contient que le moteur.
  */
 import { normalizeOpeningHours } from '@sokar/shared';
 import { z } from 'zod';
 import { db } from '../../shared/db/client';
-import { COUNTED_RESERVATION_STATES } from '../../shared/reservations/reservation-state';
-import { isWithinOpeningHours } from '../calls/call-stats';
+import { WaitingListDisabledError } from '../agentic-reservations/core/waiting-list.errors';
+import { evaluateCapability } from '../entitlements/entitlement.service';
 import {
-  RESERVATION_CHANNEL_GROUPS,
-  reservationChannelGroup,
-  type ReservationChannelGroup,
-} from '../dashboard/reservation-channels';
-
-export const RESERVATION_STATES = [
-  'PENDING',
-  'CONFIRMED',
-  'SEATED',
-  'HONORED',
-  'CANCELLED',
-  'NO_SHOW',
-  'FAILED',
-  'EXPIRED',
-] as const;
-export const CALL_INTENTS = ['RESERVATION', 'HOURS', 'MENU', 'CANCEL', 'OTHER'] as const;
-export const CALL_OUTCOMES = [
-  'RESERVED',
-  'INFO',
-  'MESSAGE',
-  'NO_ACTION',
-  'HANDOFF',
-  'ERROR',
-  'unfinished',
-] as const;
+  RESERVATION_STATES,
+  SOURCES,
+  type Item,
+  type Measure,
+  type Scalar,
+  type Source,
+} from './catalog';
 
 const DAY_MS = 86_400_000;
 const MAX_SPAN_DAYS = 400;
 const MAX_DAY_GROUP_SPAN_DAYS = 62;
+const TIME_GROUPS = ['day', 'weekday', 'hour'] as const;
 
 // 0 = dimanche … 6 = samedi, comme normalizeOpeningHours.
 const WEEKDAY_NAMES = [
@@ -64,80 +47,6 @@ const WEEKDAY_BY_SHORT: Record<string, number> = {
   Fri: 5,
   Sat: 6,
 };
-
-const isRealDay = (value: string) => {
-  const time = Date.parse(`${value}T00:00:00Z`);
-  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
-};
-const DateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine(isRealDay, 'date inexistante');
-const WeekdaySchema = z.number().int().min(0).max(6);
-
-const reservationsQuery = z
-  .object({
-    entity: z.literal('reservations'),
-    metric: z.enum(['count', 'covers', 'estimated_revenue']),
-    date_field: z.enum(['service', 'created']),
-    group_by: z.enum(['day', 'weekday', 'hour', 'channel', 'state', 'party_size']).optional(),
-    filters: z
-      .object({
-        states: z.array(z.enum(RESERVATION_STATES)).optional(),
-        channels: z.array(z.enum(RESERVATION_CHANNEL_GROUPS)).optional(),
-        weekdays: z.array(WeekdaySchema).optional(),
-      })
-      .strict()
-      .optional(),
-    from: DateSchema,
-    to: DateSchema,
-  })
-  .strict();
-
-const callsQuery = z
-  .object({
-    entity: z.literal('calls'),
-    metric: z.enum(['count', 'avg_duration_sec']),
-    date_field: z.literal('created').optional(),
-    group_by: z.enum(['day', 'weekday', 'hour', 'intent', 'outcome', 'after_hours']).optional(),
-    filters: z
-      .object({
-        intents: z.array(z.enum(CALL_INTENTS)).optional(),
-        outcomes: z.array(z.enum(CALL_OUTCOMES)).optional(),
-        after_hours: z.boolean().optional(),
-        weekdays: z.array(WeekdaySchema).optional(),
-      })
-      .strict()
-      .optional(),
-    from: DateSchema,
-    to: DateSchema,
-  })
-  .strict();
-
-export const QuerySchema = z.discriminatedUnion('entity', [reservationsQuery, callsQuery]);
-type ReservationsQuery = z.infer<typeof reservationsQuery>;
-type CallsQuery = z.infer<typeof callsQuery>;
-
-export interface QueryGroup {
-  key: string | number;
-  value: number | null;
-}
-export interface QueryResult {
-  query: unknown;
-  total: number | null;
-  groups?: QueryGroup[];
-}
-export interface QueryError {
-  error: 'invalid_query';
-  detail: string;
-}
-
-interface DateRange {
-  gte: Date;
-  lt: Date;
-}
-
-const invalid = (detail: string): QueryError => ({ error: 'invalid_query', detail });
 
 const PARIS_CLOCK = new Intl.DateTimeFormat('en-US', {
   timeZone: 'Europe/Paris',
@@ -186,9 +95,7 @@ export function addDays(dayKey: string, days: number): string {
   return new Date(Date.parse(`${dayKey}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 }
 
-function matchesWeekdays(at: Date, weekdays: number[] | undefined): boolean {
-  return !weekdays || weekdays.includes(parisParts(at).weekday);
-}
+const invalid = (detail: string): QueryError => ({ error: 'invalid_query', detail });
 
 function rangeProblem(query: { from: string; to: string; group_by?: string }): string | null {
   const span = (Date.parse(query.to) - Date.parse(query.from)) / DAY_MS;
@@ -200,172 +107,151 @@ function rangeProblem(query: { from: string; to: string; group_by?: string }): s
   return null;
 }
 
-function timeKey(groupBy: string, at: Date): string | number {
+const isRealDay = (value: string) => {
+  const time = Date.parse(`${value}T00:00:00Z`);
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
+};
+const DateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(isRealDay, 'date inexistante');
+const WeekdaySchema = z.number().int().min(0).max(6);
+const enumOf = (values: readonly string[]) => z.enum(values as [string, ...string[]]);
+
+// Un schéma par source, à partir de sa fiche : seuls les champs de la fiche sont acceptés.
+function sourceSchema(name: string, source: Source) {
+  const dates = Object.keys(source.dates);
+  const filters: Record<string, z.ZodType> = { weekdays: z.array(WeekdaySchema).optional() };
+  if (source.states) filters.states = z.array(enumOf(source.states.values)).optional();
+  for (const [filterName, filter] of Object.entries(source.filters)) {
+    filters[filterName] =
+      filter.kind === 'flag'
+        ? z.boolean().optional()
+        : z
+            .array(enumOf(source.dimensions[filter.dimension].values as readonly string[]))
+            .optional();
+  }
+  return z
+    .object({
+      entity: z.literal(name),
+      metric: enumOf(Object.keys(source.measures)),
+      date_field: dates.length > 1 ? enumOf(dates) : z.literal(dates[0]).optional(),
+      group_by: enumOf([...TIME_GROUPS, ...Object.keys(source.dimensions)]).optional(),
+      filters: z.object(filters).strict().optional(),
+      from: DateSchema,
+      to: DateSchema,
+    })
+    .strict();
+}
+
+const QuerySchema = z.discriminatedUnion(
+  'entity',
+  Object.entries(SOURCES).map(([name, source]) => sourceSchema(name, source)) as unknown as [
+    z.ZodObject,
+    z.ZodObject,
+    ...z.ZodObject[],
+  ],
+);
+
+/** Requête validée : la forme commune à toutes les sources, précisée par la fiche. */
+interface ParsedQuery {
+  entity: string;
+  metric: string;
+  date_field?: string;
+  group_by?: string;
+  filters?: Record<string, unknown>;
+  from: string;
+  to: string;
+}
+
+export interface QueryGroup {
+  key: string | number;
+  value: number | null;
+}
+export interface QueryResult {
+  query: unknown;
+  total: number | null;
+  groups?: QueryGroup[];
+}
+/** Source indisponible pour ce restaurant : le modèle le dit, sans annoncer zéro. */
+export interface QueryUnavailable {
+  unavailable: 'plan' | 'disabled';
+}
+export interface QueryError {
+  error: 'invalid_query';
+  detail: string;
+}
+
+const roundTo = (value: number, decimals: number) => {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+};
+
+function measureValue(measure: Measure, group: Item[]): number | null {
+  if (measure.kind === 'count') return group.length;
+  const values = group.map((item) => item.fields[measure.field as string]);
+  const decimals = measure.decimals ?? 0;
+  if (measure.kind === 'sum') {
+    return roundTo(
+      values.reduce<number>((sum, value) => sum + Number(value ?? 0), 0),
+      decimals,
+    );
+  }
+  const present = values.filter((value) => value !== null && value !== undefined).map(Number);
+  if (present.length === 0) return null;
+  return roundTo(present.reduce((sum, value) => sum + value, 0) / present.length, decimals);
+}
+
+function timeKey(groupBy: 'day' | 'weekday' | 'hour', at: Date): string | number {
   const parts = parisParts(at);
   if (groupBy === 'day') return parts.dayKey;
   if (groupBy === 'hour') return parts.hour;
   return WEEKDAY_NAMES[parts.weekday];
 }
 
-function compareGroups(groupBy: string, a: QueryGroup, b: QueryGroup): number {
-  if (groupBy === 'day') return String(a.key) < String(b.key) ? -1 : 1;
-  if (groupBy === 'hour') return Number(a.key) - Number(b.key);
+const ascending = (a: Scalar, b: Scalar) =>
+  (a as string | number) < (b as string | number)
+    ? -1
+    : (a as string | number) > (b as string | number)
+      ? 1
+      : 0;
+
+interface Group {
+  key: Scalar;
+  value: number | null;
+}
+
+function compareGroups(groupBy: string, order: 'key' | 'value' | undefined, a: Group, b: Group) {
   if (groupBy === 'weekday') return WEEKDAY_RANK[String(a.key)] - WEEKDAY_RANK[String(b.key)];
+  if (groupBy === 'day' || groupBy === 'hour' || order === 'key') return ascending(a.key, b.key);
   return (b.value ?? 0) - (a.value ?? 0);
 }
 
-// Totaux d'un ensemble, puis un groupe par clé (ordre naturel, sinon décroissant).
-function summarize<T>(
-  items: T[],
+// Totaux d'un ensemble, puis un groupe par clé (ordre de la fiche, sinon décroissant).
+function summarize(
+  items: Item[],
   groupBy: string | undefined,
-  value: (group: T[]) => number | null,
-  keyOf: (item: T) => string | number,
-): { total: number | null; groups?: QueryGroup[] } {
+  dimension: { labels?: Record<string, string>; order?: 'key' | 'value' } | undefined,
+  value: (group: Item[]) => number | null,
+  keyOf: (item: Item) => Scalar,
+): Pick<QueryResult, 'total' | 'groups'> {
   const total = value(items);
   if (!groupBy) return { total };
-  const buckets = new Map<string | number, T[]>();
+  const buckets = new Map<Scalar, Item[]>();
   for (const item of items) {
     const key = keyOf(item);
     const bucket = buckets.get(key);
     if (bucket) bucket.push(item);
     else buckets.set(key, [item]);
   }
-  const groups = [...buckets].map(([key, bucket]) => ({ key, value: value(bucket) }));
-  groups.sort((a, b) => compareGroups(groupBy, a, b));
-  return { total, groups };
-}
-
-interface ReservationItem {
-  at: Date;
-  state: string;
-  channel: ReservationChannelGroup;
-  partySize: number;
-  revenue: number;
-}
-
-async function runReservations(
-  restaurantId: string,
-  query: ReservationsQuery,
-  range: DateRange,
-): Promise<QueryResult> {
-  const states = query.filters?.states ?? [...COUNTED_RESERVATION_STATES];
-  const rows = await db.reservation.findMany({
-    where: {
-      restaurantId,
-      state: { in: states },
-      ...(query.date_field === 'service' ? { reservedAt: range } : { createdAt: range }),
-    },
-    select: {
-      reservedAt: true,
-      createdAt: true,
-      state: true,
-      channel: true,
-      source: true,
-      partySize: true,
-      estimatedRevenue: true,
-      confirmedRevenue: true,
-    },
-  });
-  const channels = query.filters?.channels;
-  const items: ReservationItem[] = rows
-    .map((row) => ({
-      at: query.date_field === 'service' ? row.reservedAt : row.createdAt,
-      state: row.state,
-      channel: reservationChannelGroup(row),
-      partySize: row.partySize,
-      revenue: Number(row.confirmedRevenue ?? row.estimatedRevenue ?? 0),
-    }))
-    .filter(
-      (item) =>
-        (!channels || channels.includes(item.channel)) &&
-        matchesWeekdays(item.at, query.filters?.weekdays),
-    );
-
-  const value = (group: ReservationItem[]): number => {
-    if (query.metric === 'count') return group.length;
-    if (query.metric === 'covers') return group.reduce((sum, item) => sum + item.partySize, 0);
-    return Math.round(group.reduce((sum, item) => sum + item.revenue, 0));
-  };
-  const keyOf = (item: ReservationItem): string | number => {
-    if (query.group_by === 'channel') return item.channel;
-    if (query.group_by === 'state') return item.state;
-    if (query.group_by === 'party_size') return item.partySize;
-    return timeKey(query.group_by ?? 'day', item.at);
-  };
-
+  const groups: Group[] = [...buckets].map(([key, bucket]) => ({ key, value: value(bucket) }));
+  groups.sort((a, b) => compareGroups(groupBy, dimension?.order, a, b));
   return {
-    query: {
-      ...query,
-      filters: { states, channels: query.filters?.channels, weekdays: query.filters?.weekdays },
-    },
-    ...summarize(items, query.group_by, value, keyOf),
-  };
-}
-
-interface CallItem {
-  at: Date;
-  intent: (typeof CALL_INTENTS)[number] | null;
-  outcome: (typeof CALL_OUTCOMES)[number] | null;
-  durationSec: number | null;
-  afterHours: boolean | null;
-}
-
-async function runCalls(
-  restaurantId: string,
-  query: CallsQuery,
-  range: DateRange,
-): Promise<QueryResult | QueryError> {
-  const restaurant = await db.restaurant.findUniqueOrThrow({
-    where: { id: restaurantId },
-    select: { openingHours: true },
-  });
-  const hasHours = normalizeOpeningHours(restaurant.openingHours).length > 0;
-  const needsHours = query.group_by === 'after_hours' || query.filters?.after_hours !== undefined;
-  if (needsHours && !hasHours) {
-    return invalid('horaires d’ouverture absents : hors horaires non calculable');
-  }
-
-  const rows = await db.call.findMany({
-    where: { restaurantId, createdAt: range },
-    select: { createdAt: true, intent: true, outcome: true, durationSec: true },
-  });
-  const filters = query.filters;
-  const items: CallItem[] = rows
-    .map((row) => ({
-      at: row.createdAt,
-      intent: row.intent,
-      outcome: row.outcome,
-      durationSec: row.durationSec,
-      afterHours: hasHours ? !isWithinOpeningHours(row.createdAt, restaurant.openingHours) : null,
-    }))
-    .filter(
-      (item) =>
-        (!filters?.intents || (item.intent !== null && filters.intents.includes(item.intent))) &&
-        (!filters?.outcomes || filters.outcomes.includes(item.outcome ?? 'unfinished')) &&
-        (filters?.after_hours === undefined || item.afterHours === filters.after_hours) &&
-        matchesWeekdays(item.at, filters?.weekdays),
-    );
-
-  const value = (group: CallItem[]): number | null => {
-    if (query.metric === 'count') return group.length;
-    const durations = group.flatMap((item) =>
-      item.durationSec === null ? [] : [item.durationSec],
-    );
-    if (durations.length === 0) return null;
-    return Math.round(durations.reduce((sum, seconds) => sum + seconds, 0) / durations.length);
-  };
-  const keyOf = (item: CallItem): string | number => {
-    if (query.group_by === 'intent') return item.intent ?? 'unknown';
-    if (query.group_by === 'outcome') return item.outcome ?? 'unfinished';
-    if (query.group_by === 'after_hours') {
-      return item.afterHours ? 'hors horaires' : 'pendant les horaires';
-    }
-    return timeKey(query.group_by ?? 'day', item.at);
-  };
-
-  return {
-    query: { ...query, date_field: 'created', filters: filters ?? {} },
-    ...summarize(items, query.group_by, value, keyOf),
+    total,
+    groups: groups.map(({ key, value: groupValue }) => ({
+      key: (dimension?.labels?.[String(key)] ?? key) as string | number,
+      value: groupValue,
+    })),
   };
 }
 
@@ -376,7 +262,7 @@ async function runCalls(
 export async function computeQueryData(
   restaurantId: string,
   input: unknown,
-): Promise<QueryResult | QueryError> {
+): Promise<QueryResult | QueryUnavailable | QueryError> {
   const parsed = QuerySchema.safeParse(input);
   if (!parsed.success) {
     return invalid(
@@ -385,12 +271,204 @@ export async function computeQueryData(
         .join(' ; '),
     );
   }
-  const query = parsed.data;
+  // Le schéma des sources est construit à l'exécution : sa forme commune est celle de ParsedQuery.
+  const query = parsed.data as unknown as ParsedQuery;
   const problem = rangeProblem(query);
   if (problem) return invalid(problem);
 
+  const source = SOURCES[query.entity as keyof typeof SOURCES] as Source;
+  if (source.formula && !(await evaluateCapability(restaurantId, source.formula)).allowed) {
+    return { unavailable: 'plan' };
+  }
+  try {
+    await source.guard?.(restaurantId);
+  } catch (error) {
+    if (error instanceof WaitingListDisabledError) return { unavailable: 'disabled' };
+    throw error;
+  }
+
+  const filters = Object.fromEntries(
+    Object.entries((query.filters ?? {}) as Record<string, unknown>).filter(
+      ([, value]) => value !== undefined,
+    ),
+  );
+  const dateField = query.date_field ?? Object.keys(source.dates)[0];
+  const groupBy = query.group_by;
+  const dimension =
+    groupBy && !TIME_GROUPS.some((time) => time === groupBy)
+      ? source.dimensions[groupBy]
+      : undefined;
+
+  // Les horaires ne se lisent que si une dimension ou un filtre les demande.
+  const hoursDimension = [
+    groupBy,
+    ...Object.keys(filters).map((name) => source.filters[name]?.dimension),
+  ]
+    .map((name) => (name ? source.dimensions[name] : undefined))
+    .find((dim) => dim?.requiresHours);
+  let openingHours: unknown;
+  if (hoursDimension) {
+    const restaurant = await db.restaurant.findUniqueOrThrow({
+      where: { id: restaurantId },
+      select: { openingHours: true },
+    });
+    if (normalizeOpeningHours(restaurant.openingHours).length === 0) {
+      return invalid(`horaires d’ouverture absents : ${hoursDimension.label} non calculable`);
+    }
+    openingHours = restaurant.openingHours;
+  }
+
+  const states = source.states
+    ? ((filters.states as string[] | undefined) ?? [...source.states.default])
+    : [];
   const range = { gte: parisMidnight(query.from), lt: parisMidnight(addDays(query.to, 1)) };
-  return query.entity === 'reservations'
-    ? runReservations(restaurantId, query, range)
-    : runCalls(restaurantId, query, range);
+  const items = await source.read({ restaurantId, dateField, range, states, openingHours });
+
+  const matches = (item: Item): boolean =>
+    Object.entries(filters).every(([name, value]) => {
+      if (name === 'states') return true;
+      if (name === 'weekdays') {
+        return (value as number[]).includes(parisParts(item.dates[dateField]).weekday);
+      }
+      const filter = source.filters[name];
+      const key = source.dimensions[filter.dimension].key(item);
+      return filter.kind === 'flag' ? key === value : (value as Scalar[]).includes(key);
+    });
+  const kept = items.filter(matches);
+
+  const keyOf = (item: Item): Scalar => {
+    if (!groupBy) return null;
+    if (TIME_GROUPS.some((time) => time === groupBy)) {
+      return timeKey(groupBy as 'day' | 'weekday' | 'hour', item.dates[dateField]);
+    }
+    return dimension?.key(item) ?? null;
+  };
+
+  return {
+    query: {
+      ...query,
+      date_field: dateField,
+      filters: { ...filters, ...(source.states ? { states } : {}) },
+    },
+    ...summarize(
+      kept,
+      groupBy,
+      dimension,
+      (group) => measureValue(source.measures[query.metric], group),
+      keyOf,
+    ),
+  };
+}
+
+const unique = (values: readonly string[]) => [...new Set(values)];
+const sources = Object.entries(SOURCES) as Array<[string, Source]>;
+
+/** Description de query_data, générée depuis le catalogue. */
+export function queryDataDescription(): string {
+  const measures = sources
+    .map(
+      ([name, source]) =>
+        `${name} : ${Object.entries(source.measures)
+          .map(([metric, spec]) => `${metric} = ${spec.definition}`)
+          .join(' ; ')}`,
+    )
+    .join(' ; ');
+  const dates = sources
+    .filter(([, source]) => Object.keys(source.dates).length > 1)
+    .map(
+      ([name, source]) =>
+        `${name} : ${Object.entries(source.dates)
+          .map(([key, label]) => `${key} = ${label}`)
+          .join(' ; ')}`,
+    )
+    .join(' ; ');
+  const dimensions = sources
+    .map(
+      ([name, source]) =>
+        `pour ${name}, ${Object.entries(source.dimensions)
+          .map(([key, spec]) => `${key} (${spec.label})`)
+          .join(', ')}`,
+    )
+    .join(' ; ');
+  const filterNames = sources
+    .flatMap(([, source]) => Object.keys(source.filters))
+    .concat(sources.some(([, source]) => source.states) ? ['states'] : [], ['weekdays']);
+  const stateNotes = sources.flatMap(([, source]) => (source.states ? [source.states.note] : []));
+  return [
+    `Requête sur une source du restaurant (entity) : le serveur calcule et ne renvoie que des totaux. Sources : ${sources.map(([name, source]) => `${name} = ${source.description}`).join(' ; ')}.`,
+    `Mesures — ${measures}.`,
+    `date_field (obligatoire si la source a plusieurs dates ; sinon la date unique) : ${dates}.`,
+    `Regroupements (group_by, facultatif) : day (AAAA-MM-JJ), weekday (lundi à dimanche), hour (heure de début, 0 à 23) ; ${dimensions}.`,
+    `Filtres (facultatifs) : ${unique(filterNames).join(', ')} (weekdays : 0 = dimanche … 6 = samedi).`,
+    ...stateNotes,
+    `from et to : AAAA-MM-JJ, premier et dernier jour inclus, jours de Paris ; écart ≤ ${MAX_SPAN_DAYS} jours ; regroupement par jour ≤ ${MAX_DAY_GROUP_SPAN_DAYS} jours.`,
+  ].join(' ');
+}
+
+/** Périmètre du prompt, généré depuis le catalogue ; une source indisponible ne doit jamais valoir zéro. */
+export function queryScope(): string {
+  return sources
+    .map(
+      ([, source]) =>
+        source.description +
+        (source.formula
+          ? ' (si la réponse est unavailable « plan » : « non inclus dans votre formule », sans annoncer zéro)'
+          : '') +
+        (source.guard
+          ? ' (si la réponse est unavailable « disabled » : « non activée pour ce restaurant », sans annoncer zéro)'
+          : ''),
+    )
+    .join(', ');
+}
+
+/** Paramètres JSON de query_data, générés depuis le catalogue. */
+export function queryDataParameters() {
+  const dimensionValues = (name: string) =>
+    sources.flatMap(([, source]) => (source.dimensions[name]?.values ?? []) as string[]);
+  const filterProperties: Record<string, unknown> = {
+    weekdays: { type: 'array', items: { type: 'integer', minimum: 0, maximum: 6 } },
+  };
+  if (sources.some(([, source]) => source.states)) {
+    filterProperties.states = {
+      type: 'array',
+      items: { type: 'string', enum: [...RESERVATION_STATES] },
+    };
+  }
+  for (const [, source] of sources) {
+    for (const [name, filter] of Object.entries(source.filters)) {
+      filterProperties[name] =
+        filter.kind === 'flag'
+          ? { type: 'boolean' }
+          : {
+              type: 'array',
+              items: { type: 'string', enum: unique(dimensionValues(filter.dimension)) },
+            };
+    }
+  }
+  return {
+    type: 'object',
+    properties: {
+      entity: { type: 'string', enum: sources.map(([name]) => name) },
+      metric: {
+        type: 'string',
+        enum: unique(sources.flatMap(([, source]) => Object.keys(source.measures))),
+      },
+      date_field: {
+        type: 'string',
+        enum: unique(sources.flatMap(([, source]) => Object.keys(source.dates))),
+      },
+      group_by: {
+        type: 'string',
+        enum: unique([
+          ...TIME_GROUPS,
+          ...sources.flatMap(([, source]) => Object.keys(source.dimensions)),
+        ]),
+      },
+      filters: { type: 'object', properties: filterProperties, additionalProperties: false },
+      from: { type: 'string', description: 'Premier jour inclus, AAAA-MM-JJ (heure de Paris).' },
+      to: { type: 'string', description: 'Dernier jour inclus, AAAA-MM-JJ (heure de Paris).' },
+    },
+    required: ['entity', 'metric', 'from', 'to'],
+    additionalProperties: false,
+  };
 }

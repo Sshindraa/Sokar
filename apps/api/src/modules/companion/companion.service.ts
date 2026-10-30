@@ -8,6 +8,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
 import { env } from '../../env';
 import { COMPANION_TOOLS, runCompanionTool } from './companion.tools';
+import { queryScope } from './query-data';
 
 const REQUEST_TIMEOUT_MS = 20_000;
 const MAX_TOOL_ROUNDS = 4;
@@ -110,7 +111,7 @@ export function companionSystemPrompt(now: Date): string {
     "- Répondez d'abord à la question posée ; proposez les autres chiffres en une phrase, sans les dérouler. Ne rattachez jamais un chiffre à un groupe auquel il ne correspond pas.",
     '- Les montants (chiffre d’affaires, économies, coûts évités) sont des estimations : dites-le.',
     "- Le mois en cours n'est pas terminé : si vous citez ses chiffres, dites qu'ils sont partiels (arrêtés à aujourd'hui).",
-    "- Périmètre : les réservations prises pendant une période, les appels reçus par l'assistant téléphonique (intention, résultat, hors horaires, durée moyenne), les jours à venir (réservations et couverts prévus), les no-shows des 90 derniers jours, le retour sur investissement d'un mois.",
+    `- Périmètre : ${queryScope()}, les jours à venir (réservations et couverts prévus), les no-shows des 90 derniers jours, le retour sur investissement d’un mois.`,
     "- Une rédaction (message à un client, relance) est un brouillon : rien n'est envoyé, et vous ne dites jamais l'avoir envoyé.",
     "- Un brouillon ne contient aucun fait absent des données : ni table libérée, ni promotion, ni prix, ni horaire, ni disponibilité. Mettez [à compléter] à la place et dites ce qu'il faut vérifier. Toute formule de disponibilité ou d'urgence va entre crochets : « table disponible », « places limitées », « dernières places », « vient de se libérer ».",
     '- Pas de conseil juridique, fiscal ni comptable : orientez vers un professionnel.',

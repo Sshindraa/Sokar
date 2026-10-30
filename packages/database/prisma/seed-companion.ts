@@ -7,6 +7,11 @@
  * - Reservation.createdByClient = 'seed-companion' ;
  * - Call.callSid préfixé 'seed-companion-' ;
  * - Customer.notes = 'seed-companion'.
+ * - WaitingListEntry.source = 'seed-companion' ;
+ * - ReputationFeedbackRequest.tokenHash préfixé 'seed-companion-' : avis et tâches de récupération
+ *   partent par cascade avec leur réservation ;
+ * - capacitySpecials.waitingListEnabled = true sur le restaurant, pour que la liste d'attente soit
+ *   active dans le banc (les autres réglages sont conservés).
  *
  * Écriture Prisma directe : aucune file BullMQ, aucun SMS, e-mail ni webhook.
  * Usage : pnpm --filter @sokar/database seed:companion (lit apps/api/.env, comme l'API en dev).
@@ -16,8 +21,11 @@ import {
   type CallIntent,
   type CallOutcome,
   type Prisma,
+  type ReputationFeedbackChannel,
+  type ReputationRecoveryTaskStatus,
   type ReservationChannel,
   type ReservationState,
+  type WaitingListStatus,
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { isLocalDatabaseUrl } from './seed-demo-guard';
@@ -31,6 +39,28 @@ const FUTURE_DAYS = 14;
 const WINDOW_DAYS = 7;
 const CUSTOMER_COUNT = 60;
 const CHUNK = 300;
+const WAITLIST_PAST: ReadonlyArray<readonly [WaitingListStatus, number]> = [
+  ['PROMOTED', 0.45],
+  ['EXPIRED', 0.35],
+  ['CANCELLED', 0.2],
+];
+const SCORES: ReadonlyArray<readonly [number, number]> = [
+  [5, 0.4],
+  [4, 0.25],
+  [3, 0.15],
+  [2, 0.12],
+  [1, 0.08],
+];
+const FEEDBACK_CHANNELS: ReadonlyArray<readonly [ReputationFeedbackChannel, number]> = [
+  ['SMS', 0.6],
+  ['EMAIL', 0.4],
+];
+const RECOVERY_STATUSES: ReadonlyArray<readonly [ReputationRecoveryTaskStatus, number]> = [
+  ['OPEN', 0.4],
+  ['IN_PROGRESS', 0.15],
+  ['RESOLVED', 0.35],
+  ['DISMISSED', 0.1],
+];
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
 const { DATABASE_URL, DEMO_RESTAURANT_ID, NODE_ENV } = process.env;
@@ -263,6 +293,10 @@ async function main() {
     process.exit(1);
   }
   const hours = (restaurant.openingHours ?? {}) as OpeningHours;
+  const exposure = await prisma.restaurantExposureSettings.findUnique({
+    where: { restaurantId },
+    select: { capacitySpecials: true },
+  });
   const now = new Date();
   const today = dayKeyOf(now);
   // Jour faible des 7 prochains jours : un seul, avec une ou deux réservations.
@@ -367,20 +401,128 @@ async function main() {
     }
   }
 
+  // Liste d'attente : demandes sur des créneaux à venir (en attente) ou passés (obtenues, expirées, annulées).
+  const waitlist: Prisma.WaitingListEntryCreateManyInput[] = [];
+  for (let offset = -PAST_DAYS; offset <= FUTURE_DAYS; offset++) {
+    const day = addDays(today, offset);
+    const periods = periodsOn(day, hours);
+    if (periods.length === 0) continue;
+    for (let index = 0; index < randInt(0, 3); index++) {
+      const period = pick(periods);
+      const slotStart = parisInstant(day, bookingMinute(period));
+      const customer = pick(customers);
+      const [firstName, ...lastNames] = customer.name.split(' ');
+      const status: WaitingListStatus = slotStart > now ? 'PENDING' : weighted(WAITLIST_PAST);
+      waitlist.push({
+        id: randomUUID(),
+        restaurantId,
+        partySize: weighted(PARTY_SIZES),
+        customerFirstName: firstName,
+        customerLastName: lastNames.join(' ') || null,
+        customerPhone: customer.phone,
+        customerPhoneNormalized: customer.phone,
+        customerEmail: customer.emailNormalized,
+        slotStart,
+        slotEnd: new Date(slotStart.getTime() + 90 * 60_000),
+        status,
+        position: index + 1,
+        actionTokenHash: `${MARKER}-${randomUUID()}`,
+        expiresAt: slotStart,
+        promotedAt: status === 'PROMOTED' ? new Date(slotStart.getTime() - 30 * 60_000) : null,
+        cancelledAt: status === 'CANCELLED' ? new Date(slotStart.getTime() - 2 * 3_600_000) : null,
+        source: MARKER,
+        createdAt: new Date(slotStart.getTime() - randInt(1, 21) * 86_400_000),
+      });
+    }
+  }
+
+  // Avis : une partie des réservations honorées passées reçoit une demande, un avis, et une tâche de
+  // récupération si la note est faible.
+  const requests: Prisma.ReputationFeedbackRequestCreateManyInput[] = [];
+  const feedbacks: Prisma.ReputationFeedbackCreateManyInput[] = [];
+  const recoveries: Prisma.ReputationRecoveryTaskCreateManyInput[] = [];
+  for (const reservation of reservations) {
+    const reservedAt = reservation.reservedAt as Date;
+    if (reservation.state !== 'HONORED' || reservedAt > now || rnd() > 0.35) continue;
+    const requestedAt = new Date(reservedAt.getTime() + 86_400_000);
+    const submittedAt = new Date(requestedAt.getTime() + randInt(0, 2) * 86_400_000);
+    if (submittedAt > now) continue;
+    const requestId = randomUUID();
+    const customerId = reservation.customerId as string;
+    requests.push({
+      id: requestId,
+      restaurantId,
+      reservationId: reservation.id as string,
+      customerId,
+      channel: weighted(FEEDBACK_CHANNELS),
+      status: 'SUBMITTED',
+      tokenHash: `${MARKER}-${randomUUID()}`,
+      expiresAt: new Date(requestedAt.getTime() + 7 * 86_400_000),
+      requestedAt,
+      sentAt: requestedAt,
+      submittedAt,
+    });
+    const score = weighted(SCORES);
+    const feedbackId = randomUUID();
+    feedbacks.push({
+      id: feedbackId,
+      requestId,
+      restaurantId,
+      reservationId: reservation.id as string,
+      customerId,
+      score,
+      comment: null,
+      submittedAt,
+    });
+    if (score <= 2) {
+      const status = weighted(RECOVERY_STATUSES);
+      recoveries.push({
+        feedbackId,
+        restaurantId,
+        reservationId: reservation.id as string,
+        customerId,
+        status,
+        priority: score === 1 ? 'HIGH' : 'NORMAL',
+        resolvedAt: status === 'RESOLVED' || status === 'DISMISSED' ? submittedAt : null,
+      });
+    }
+  }
+
   await prisma.$transaction([
     prisma.reservation.deleteMany({ where: { restaurantId, createdByClient: MARKER } }),
     prisma.call.deleteMany({ where: { restaurantId, callSid: { startsWith: CALL_SID_PREFIX } } }),
     prisma.customer.deleteMany({ where: { restaurantId, notes: MARKER } }),
+    prisma.waitingListEntry.deleteMany({ where: { restaurantId, source: MARKER } }),
+    prisma.reputationFeedbackRequest.deleteMany({
+      where: { restaurantId, tokenHash: { startsWith: MARKER } },
+    }),
     ...chunks(customers.map((customer) => ({ ...customer, restaurantId, notes: MARKER }))).map(
       (data) => prisma.customer.createMany({ data }),
     ),
     ...chunks(calls).map((data) => prisma.call.createMany({ data })),
     ...chunks(reservations).map((data) => prisma.reservation.createMany({ data })),
+    ...chunks(waitlist).map((data) => prisma.waitingListEntry.createMany({ data })),
+    ...chunks(requests).map((data) => prisma.reputationFeedbackRequest.createMany({ data })),
+    ...chunks(feedbacks).map((data) => prisma.reputationFeedback.createMany({ data })),
+    ...chunks(recoveries).map((data) => prisma.reputationRecoveryTask.createMany({ data })),
+    ...(exposure
+      ? [
+          prisma.restaurantExposureSettings.update({
+            where: { restaurantId },
+            data: {
+              capacitySpecials: {
+                ...((exposure.capacitySpecials ?? {}) as object),
+                waitingListEnabled: true,
+              },
+            },
+          }),
+        ]
+      : []),
   ]);
 
   // eslint-disable-next-line no-console -- bilan de la graine, lu dans le terminal
   console.log(
-    `Companion pour ${restaurant.name} : ${reservations.length} réservations, ${calls.length} appels, ${customers.length} clients créés.`,
+    `Companion pour ${restaurant.name} : ${reservations.length} réservations, ${calls.length} appels, ${waitlist.length} demandes en liste d'attente, ${feedbacks.length} avis (${recoveries.length} tâches de récupération), ${customers.length} clients créés.`,
   );
 }
 
