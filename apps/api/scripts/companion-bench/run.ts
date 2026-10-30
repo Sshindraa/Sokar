@@ -3,12 +3,15 @@
  * clé OpenRouter, directement (ni HTTP ni plafond), sur la base locale de DEMO_RESTAURANT_ID.
  *
  * Usage (depuis apps/api) : npx tsx scripts/companion-bench/run.ts
- * Les chiffres attendus se recalculent au moment du test avec les fonctions que les outils appellent.
- * Questions 1 à 11 et 17 à 19 : outil attendu dans les sources, puis valeur attendue dans la réponse,
- * chaque critère noté à part. Questions 12 à 16 : à relire à la main, réponses brutes dans results/.
+ * Les chiffres attendus se recalculent au moment du test. Ceux des questions 12, 22 à 27 viennent de
+ * requêtes Prisma écrites ici, indépendantes de query-data.ts.
+ * Questions notées : 1 à 12, 17 à 20 et 22 à 27 (outil attendu dans les sources, puis valeur attendue
+ * dans la réponse, chaque critère noté à part). Questions à relire : 13 à 16, 21 et 28 ; réponses
+ * brutes dans results/.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import type { ReservationState } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 import { env } from '../../src/env';
 import { db } from '../../src/shared/db/client';
@@ -50,7 +53,8 @@ type Expected =
       rates?: number[];
     }
   | { kind: 'day'; value: string[] }
-  | { kind: 'all'; value: number[] };
+  | { kind: 'all'; value: number[] }
+  | { kind: 'any'; value: number[] };
 
 interface Question {
   n: number;
@@ -60,6 +64,123 @@ interface Question {
 }
 
 const count = (value: number, unit?: string): Expected => ({ kind: 'count', value, unit });
+
+// Calculs de référence, écrits ici : aucun ne passe par query-data.ts.
+const COUNTED_STATES: ReservationState[] = ['CONFIRMED', 'SEATED', 'HONORED'];
+const benchClock = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Europe/Paris',
+  hourCycle: 'h23',
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+});
+const benchWeekday = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Europe/Paris',
+  weekday: 'long',
+});
+const benchHour = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Europe/Paris',
+  hourCycle: 'h23',
+  hour: 'numeric',
+});
+const FRENCH_WEEKDAYS: Record<string, string> = {
+  Sunday: 'dimanche',
+  Monday: 'lundi',
+  Tuesday: 'mardi',
+  Wednesday: 'mercredi',
+  Thursday: 'jeudi',
+  Friday: 'vendredi',
+  Saturday: 'samedi',
+};
+const CHANNEL_LABELS: Record<string, string[]> = {
+  phone: ['telephone'],
+  website: ['site'],
+  google: ['google'],
+  ai: ['assistant', 'chatgpt', 'ia'],
+  team: ['equipe', 'saisie'],
+};
+
+const today = () => dayFormat.format(new Date());
+function shiftDay(dayKey: string, days: number): string {
+  return new Date(Date.parse(`${dayKey}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+// Décalage de Paris à cet instant (en ms), puis minuit de Paris en instant UTC.
+function parisOffset(instant: number): number {
+  const parts = Object.fromEntries(
+    benchClock.formatToParts(new Date(instant)).map(({ type, value }) => [type, Number(value)]),
+  );
+  return (
+    Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) -
+    instant
+  );
+}
+function parisStart(dayKey: string): Date {
+  const wall = Date.parse(`${dayKey}T00:00:00Z`);
+  return new Date(wall - parisOffset(wall - parisOffset(wall)));
+}
+// Premier et dernier jour d'un mois AAAA-MM.
+function monthBounds(yearMonth: string): [string, string] {
+  const [year, month] = yearMonth.split('-').map(Number);
+  const nextMonth = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
+  return [`${yearMonth}-01`, shiftDay(nextMonth, -1)];
+}
+// Dernier jour de cette semaine ouvrée donnée (0 = dimanche), avant le jour indiqué.
+function lastWeekdayBefore(dayKey: string, weekday: number): string {
+  let day = shiftDay(dayKey, -1);
+  while (new Date(`${day}T12:00:00Z`).getUTCDay() !== weekday) day = shiftDay(day, -1);
+  return day;
+}
+// Réservations de la plage, par date de service (reservedAt) ou de prise (createdAt), à Paris.
+function reservationsBetween(
+  restaurantId: string,
+  dateField: 'reservedAt' | 'createdAt',
+  from: string,
+  to: string,
+  states: ReservationState[] = COUNTED_STATES,
+) {
+  const range = { gte: parisStart(from), lt: parisStart(shiftDay(to, 1)) };
+  return db.reservation.findMany({
+    where: {
+      restaurantId,
+      state: { in: states },
+      ...(dateField === 'reservedAt' ? { reservedAt: range } : { createdAt: range }),
+    },
+    select: {
+      reservedAt: true,
+      createdAt: true,
+      state: true,
+      channel: true,
+      source: true,
+      partySize: true,
+    },
+  });
+}
+// Canal d'arrivée (phone, website, google, ai, team), réécrit ici.
+function benchChannel(row: { channel: string; source: string | null }): string {
+  if (row.channel === 'PHONE') return 'phone';
+  if (row.channel === 'ADMIN') return 'team';
+  if (['MCP', 'OPENAI_RESERVE', 'API'].includes(row.channel)) return 'ai';
+  if (row.channel === 'WEB') {
+    const source = (row.source ?? '').toLowerCase();
+    if (source === 'google') return 'google';
+    if (['chatgpt', 'perplexity', 'bing'].includes(source)) return 'ai';
+  }
+  return 'website';
+}
+function benchWeekdayName(date: Date): string {
+  return FRENCH_WEEKDAYS[benchWeekday.format(date)];
+}
+// Clés dont la valeur est la plus haute (égalités comprises).
+function topKeys<K>(totals: Map<K, number>): K[] {
+  const max = Math.max(...totals.values());
+  return [...totals].filter(([, value]) => value === max).map(([key]) => key);
+}
+function sumCovers(rows: Array<{ partySize: number }>): number {
+  return rows.reduce((sum, row) => sum + row.partySize, 0);
+}
 
 // Mois précédent à Paris, au format AAAA-MM (Date.UTC accepte le mois -1 : janvier → décembre).
 function previousMonth(): string {
@@ -149,7 +270,15 @@ const QUESTIONS: Question[] = [
       value: (await computeRoi(id, previousMonth())).theforkSavings,
     }),
   },
-  { n: 12, text: 'Combien de couverts avons-nous servis mardi dernier ?' },
+  {
+    n: 12,
+    text: 'Combien de couverts avons-nous servis mardi dernier ?',
+    tool: 'query_data',
+    expected: async (id) => {
+      const day = lastWeekdayBefore(today(), 2);
+      return count(sumCovers(await reservationsBetween(id, 'reservedAt', day, day)));
+    },
+  },
   { n: 13, text: "Quel est le nom du client qui n'est pas venu hier ?" },
   { n: 14, text: "Quel est mon chiffre d'affaires net après charges ?" },
   { n: 15, text: "Rédigez un SMS pour relancer la liste d'attente samedi." },
@@ -198,6 +327,101 @@ const QUESTIONS: Question[] = [
     },
   },
   { n: 21, text: 'Par quel moyen les gens appellent ?' },
+  {
+    n: 22,
+    text: 'Quel jour de la semaine fait le plus de couverts sur les 8 dernières semaines ?',
+    tool: 'query_data',
+    expected: async (id) => {
+      const covers = new Map<string, number>();
+      for (const row of await reservationsBetween(
+        id,
+        'reservedAt',
+        shiftDay(today(), -55),
+        today(),
+      )) {
+        const name = benchWeekdayName(row.reservedAt);
+        covers.set(name, (covers.get(name) ?? 0) + row.partySize);
+      }
+      return { kind: 'day', value: topKeys(covers) };
+    },
+  },
+  {
+    n: 23,
+    text: 'Combien de réservations annulées en septembre ?',
+    tool: 'query_data',
+    expected: async (id) => {
+      const [from, to] = monthBounds(`${today().slice(0, 4)}-09`);
+      const byService = await reservationsBetween(id, 'reservedAt', from, to, ['CANCELLED']);
+      const byCreated = await reservationsBetween(id, 'createdAt', from, to, ['CANCELLED']);
+      return { kind: 'any', value: [byService.length, byCreated.length] };
+    },
+  },
+  {
+    n: 24,
+    text: 'Combien de couverts via le site web le mois dernier ?',
+    tool: 'query_data',
+    expected: async (id) => {
+      const [from, to] = monthBounds(previousMonth());
+      const rows = await reservationsBetween(id, 'reservedAt', from, to);
+      return count(sumCovers(rows.filter((row) => benchChannel(row) === 'website')));
+    },
+  },
+  {
+    n: 25,
+    text: "Combien d'appels pour des annulations sur 30 jours ?",
+    tool: 'query_data',
+    expected: async (id) =>
+      count(
+        await db.call.count({
+          where: {
+            restaurantId: id,
+            intent: 'CANCEL',
+            createdAt: {
+              gte: parisStart(shiftDay(today(), -29)),
+              lt: parisStart(shiftDay(today(), 1)),
+            },
+          },
+        }),
+      ),
+  },
+  {
+    n: 26,
+    text: 'Quel canal apporte le plus de couverts sur 90 jours ?',
+    tool: 'query_data',
+    expected: async (id) => {
+      const covers = new Map<string, number>();
+      for (const row of await reservationsBetween(
+        id,
+        'createdAt',
+        shiftDay(today(), -89),
+        today(),
+      )) {
+        const channel = benchChannel(row);
+        covers.set(channel, (covers.get(channel) ?? 0) + row.partySize);
+      }
+      return { kind: 'day', value: topKeys(covers).flatMap((channel) => CHANNEL_LABELS[channel]) };
+    },
+  },
+  {
+    n: 27,
+    text: 'À quelle heure arrivent la plupart des clients le samedi, sur 8 semaines ?',
+    tool: 'query_data',
+    expected: async (id) => {
+      const perHour = new Map<number, number>();
+      for (const row of await reservationsBetween(
+        id,
+        'reservedAt',
+        shiftDay(today(), -55),
+        today(),
+      )) {
+        if (benchWeekdayName(row.reservedAt) !== 'samedi') continue;
+        const hour = Number(benchHour.format(row.reservedAt));
+        perHour.set(hour, (perHour.get(hour) ?? 0) + 1);
+      }
+      return { kind: 'any', value: topKeys(perHour) };
+    },
+  },
+  { n: 28, text: "Combien de personnes sont sur la liste d'attente ?" },
 ];
 
 // Nombres en lettres pour la question 7 : « Un seul jour est sous-réservé ».
@@ -233,12 +457,15 @@ function valueFound(reply: string, expected: Expected): boolean {
   if (expected.kind === 'all') {
     return expected.value.every((value) => numbersIn(reply).includes(value));
   }
+  if (expected.kind === 'any') {
+    return numbersIn(reply).some((n) => expected.value.includes(n));
+  }
   if (expected.kind === 'day') {
     const text = reply
       .normalize('NFD')
       .replace(/\p{Diacritic}/gu, '')
       .toLowerCase();
-    return expected.value.some((name) => text.includes(name));
+    return expected.value.some((name) => new RegExp(`\\b${name}\\b`).test(text));
   }
   // Le nombre doit être suivi de son unité : un « 1 » quelconque ne compte pas.
   if (expected.unit) {
@@ -270,6 +497,7 @@ function formatExpected(expected: Expected | undefined): string {
   if (!expected) return '';
   if (expected.kind === 'day') return expected.value.join(' / ');
   if (expected.kind === 'all') return expected.value.join(' et ');
+  if (expected.kind === 'any') return expected.value.join(' ou ');
   return expected.alt === undefined
     ? String(expected.value)
     : `${expected.value} ou ${expected.alt}`;

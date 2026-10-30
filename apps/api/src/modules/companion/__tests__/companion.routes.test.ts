@@ -223,8 +223,12 @@ describe('POST /companion/chat', () => {
       "Ne calculez jamais vous-même un taux, un pourcentage ni une moyenne : reprenez celui que donne un outil. S'il n'existe pas, donnez les deux nombres sans le ratio.",
     );
     expect(system).toContain(
-      "Répondez d'abord à la question posée. Ne déroulez pas d'autres chiffres non demandés : proposez-les en une phrase. Ne rattachez jamais un chiffre à un groupe auquel il ne correspond pas.",
+      "Répondez d'abord à la question posée ; proposez les autres chiffres en une phrase, sans les dérouler. Ne rattachez jamais un chiffre à un groupe auquel il ne correspond pas.",
     );
+    expect(system).toContain('composez une requête query_data');
+    expect(system).toContain('date de service pour servis / prévus / ce jour-là');
+    expect(system).toContain('Convertissez les dates relatives (mardi dernier, le mois dernier)');
+    expect(system).not.toContain('les jours passés par date de service ne sont pas disponibles');
   });
 
   it('s’arrête à 4 tours d’outils puis demande la réponse finale sans outils', async () => {

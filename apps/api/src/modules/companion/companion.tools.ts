@@ -6,11 +6,13 @@ import { z } from 'zod';
 import { logger } from '../../shared/logger/pino';
 import { computeRoi } from '../analytics/roi.service';
 import { computeCallStats } from '../calls/call-stats';
+import { RESERVATION_CHANNEL_GROUPS } from '../dashboard/reservation-channels';
 import {
   computeDashboardStats,
   computeEmptySlots,
   computeNoShowStats,
 } from '../dashboard/dashboard.routes';
+import { CALL_INTENTS, CALL_OUTCOMES, RESERVATION_STATES, computeQueryData } from './query-data';
 
 const DASHBOARD_HREF = '/dashboard';
 const SOURCE_HREFS: Record<string, string> = { call_stats: '/dashboard/calls' };
@@ -53,6 +55,61 @@ export const COMPANION_TOOLS = [
               'today : depuis minuit. 7d : 7 derniers jours (défaut). 30d : 30 derniers jours.',
           },
         },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'query_data',
+      description:
+        'Requête sur les réservations (entity reservations) ou les appels reçus par Léa (entity calls) : le serveur calcule et ne renvoie que des totaux. Mesures — reservations : count = nombre de réservations ; covers = couverts (somme des tailles de groupe) ; estimated_revenue = CA estimé en euros (montant confirmé s’il existe, sinon estimé). calls : count = nombre d’appels ; avg_duration_sec = durée moyenne en secondes des appels qui ont une durée (null sinon). date_field (obligatoire pour les réservations) : service = jour du repas (date prévue de la réservation) ; created = jour où la réservation a été prise. Les appels ont toujours la date de l’appel. Regroupements (group_by, facultatif) : day (AAAA-MM-JJ), weekday (lundi à dimanche), hour (heure de début, 0 à 23) ; pour les réservations, channel (par où arrivent les clients : phone = téléphone, website = site du restaurant, google, ai = assistants IA, team = saisie par l’équipe), state, party_size ; pour les appels, intent, outcome (unfinished = appel non terminé), after_hours (hors horaires d’ouverture). Filtres (facultatifs) : states (réservations ; par défaut les réservations valables : confirmées, installées ou honorées), channels, intents, outcomes (unfinished = non terminé), after_hours (booléen), weekdays (0 = dimanche … 6 = samedi). from et to : AAAA-MM-JJ, premier et dernier jour inclus, jours de Paris ; écart ≤ 400 jours ; regroupement par jour ≤ 62 jours.',
+      parameters: {
+        type: 'object',
+        properties: {
+          entity: { type: 'string', enum: ['reservations', 'calls'] },
+          metric: {
+            type: 'string',
+            enum: ['count', 'covers', 'estimated_revenue', 'avg_duration_sec'],
+          },
+          date_field: { type: 'string', enum: ['service', 'created'] },
+          group_by: {
+            type: 'string',
+            enum: [
+              'day',
+              'weekday',
+              'hour',
+              'channel',
+              'state',
+              'party_size',
+              'intent',
+              'outcome',
+              'after_hours',
+            ],
+          },
+          filters: {
+            type: 'object',
+            properties: {
+              states: { type: 'array', items: { type: 'string', enum: [...RESERVATION_STATES] } },
+              channels: {
+                type: 'array',
+                items: { type: 'string', enum: [...RESERVATION_CHANNEL_GROUPS] },
+              },
+              intents: { type: 'array', items: { type: 'string', enum: [...CALL_INTENTS] } },
+              outcomes: { type: 'array', items: { type: 'string', enum: [...CALL_OUTCOMES] } },
+              after_hours: { type: 'boolean' },
+              weekdays: { type: 'array', items: { type: 'integer', minimum: 0, maximum: 6 } },
+            },
+            additionalProperties: false,
+          },
+          from: {
+            type: 'string',
+            description: 'Premier jour inclus, AAAA-MM-JJ (heure de Paris).',
+          },
+          to: { type: 'string', description: 'Dernier jour inclus, AAAA-MM-JJ (heure de Paris).' },
+        },
+        required: ['entity', 'metric', 'from', 'to'],
         additionalProperties: false,
       },
     },
@@ -139,6 +196,10 @@ export async function runCompanionTool(
       const parsed = PeriodArgs.safeParse(args);
       if (!parsed.success) return invalid;
       result = computeCallStats(restaurantId, parsed.data.period);
+      break;
+    }
+    case 'query_data': {
+      result = computeQueryData(restaurantId, args);
       break;
     }
     case 'upcoming_days': {
