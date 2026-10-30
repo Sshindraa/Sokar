@@ -139,9 +139,8 @@ function optOutReasonFor(source: string): MarketingOptOutReason {
 }
 
 /**
- * Keeps the opt-out register in step with the permission. It never fails the permission change: a
- * withdrawal is recorded first, and the register is an additional protection (errors are logged
- * without any address).
+ * A withdrawal blocks the current profile first. Report a failure if the independent register
+ * could not be updated, so the caller does not mistake that partial protection for completion.
  */
 async function syncOptOutRegister(args: {
   restaurantId: string;
@@ -168,11 +167,8 @@ async function syncOptOutRegister(args: {
         source: args.source,
         occurredAt: args.occurredAt,
       });
-      if (outcome === 'SKIPPED_NO_KEY') {
-        logger.warn(
-          { restaurantId: args.restaurantId, channel: args.channel },
-          '[marketing-opt-out] register key missing: opposition not registered',
-        );
+      if (outcome !== 'REGISTERED') {
+        throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
       }
     } else {
       await clearMarketingOptOut({
@@ -190,6 +186,7 @@ async function syncOptOutRegister(args: {
       },
       '[marketing-opt-out] register not updated',
     );
+    throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
   }
 }
 

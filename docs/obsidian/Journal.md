@@ -3107,3 +3107,7 @@ Production : routes RGPD bloquées en Nginx, workflow Deploy Production suspendu
 ### 2026-10-29 — RGPD : réouverture partielle
 
 Vérification d’identité et export rouverts après qualification SMS en staging ; effacement et opposition marketing restent en 503 car leurs correctifs ne sont pas encore livrés. Configuration Nginx restrictive, liens non journalisés ; requêtes de contrôle sur les hôtes et le proxy. Les demandes concernées restent traitées manuellement via privacy@sokar.tech.
+
+### 2026-10-30 — Opposition marketing : échecs visibles
+
+Correctif local : une opposition échoue explicitement si son registre durable ne peut pas être écrit ; la fiche existante reste OPTED_OUT. Test PostgreSQL local : une fiche supprimée puis recréée reste exclue. L'effacement doit préserver les oppositions et coordonner les écritures concurrentes avant toute réouverture. Les corrections ne sont pas déployées.
