@@ -67,26 +67,12 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
       return reply.send({ result: 'ok' });
     }
 
-    if (!payload) return reply.send({ result: 'ok' });
-
-    // Telnyx WhatsApp: from est une string (E.164)
-    const fromObj = payload.from;
-    const from = typeof fromObj === 'string' ? fromObj : fromObj?.phone_number;
-    const text = payload.text;
+    if (!payload) return reply.status(503).send({ result: 'temporarily_unavailable' });
 
     if (!payload.id) {
       req.log.warn('whatsapp inbound: missing message ID');
       return reply.status(503).send({ result: 'temporarily_unavailable' });
     }
-    if (!from || !text) {
-      req.log.warn(
-        { hasFrom: Boolean(from), hasText: !!text, hasId: Boolean(payload.id) },
-        'whatsapp inbound: missing from, text or message ID',
-      );
-      return reply.send({ result: 'ok' });
-    }
-
-    req.log.info({ hasFrom: true, textLength: text.length }, 'whatsapp inbound received');
 
     // A shared sender cannot identify the reservation; retain an opaque reference for review.
     try {

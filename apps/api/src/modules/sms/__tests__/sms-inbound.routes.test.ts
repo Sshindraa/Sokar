@@ -142,7 +142,7 @@ describe('POST /sms/telnyx/inbound', () => {
     expect(mockHandleReply).not.toHaveBeenCalled();
   });
 
-  it("renvoie ok sans dispatcher si 'from' est manquant", async () => {
+  it("conserve une référence pour la revue si 'from' est manquant", async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/sms/telnyx/inbound',
@@ -156,9 +156,10 @@ describe('POST /sms/telnyx/inbound', () => {
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.payload)).toEqual({ result: 'ok' });
     expect(mockHandleReply).not.toHaveBeenCalled();
+    expect(queues.deadLetter.add).toHaveBeenCalledOnce();
   });
 
-  it("renvoie ok sans dispatcher si 'text' est manquant", async () => {
+  it("conserve une référence pour la revue si 'text' est manquant", async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/sms/telnyx/inbound',
@@ -171,6 +172,7 @@ describe('POST /sms/telnyx/inbound', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(mockHandleReply).not.toHaveBeenCalled();
+    expect(queues.deadLetter.add).toHaveBeenCalledOnce();
   });
 
   it('supporte from en string (et pas seulement en objet {phone_number})', async () => {

@@ -110,17 +110,17 @@ describe('POST /whatsapp/webhook', () => {
     expect(mockHandleReply).not.toHaveBeenCalled();
   });
 
-  it('ignore si payload manquant', async () => {
+  it('ne confirme pas un message sans payload', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/whatsapp/webhook',
       payload: { data: { event_type: 'message.received' } },
     });
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(503);
     expect(mockHandleReply).not.toHaveBeenCalled();
   });
 
-  it("renvoie ok sans dispatcher si 'from' est manquant", async () => {
+  it("conserve une référence pour la revue si 'from' est manquant", async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/whatsapp/webhook',
@@ -133,9 +133,10 @@ describe('POST /whatsapp/webhook', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(mockHandleReply).not.toHaveBeenCalled();
+    expect(queues.deadLetter.add).toHaveBeenCalledOnce();
   });
 
-  it("renvoie ok sans dispatcher si 'text' est manquant", async () => {
+  it("conserve une référence pour la revue si 'text' est manquant", async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/whatsapp/webhook',
@@ -148,6 +149,7 @@ describe('POST /whatsapp/webhook', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(mockHandleReply).not.toHaveBeenCalled();
+    expect(queues.deadLetter.add).toHaveBeenCalledOnce();
   });
 
   it('supporte from en objet {phone_number}', async () => {

@@ -117,24 +117,10 @@ export async function smsInboundRoutes(app: FastifyInstance) {
       return reply.send({ result: 'ignored' });
     }
 
-    // Telnyx SMS: from est un objet avec phone_number
-    const fromObj = data.payload.from;
-    const from = typeof fromObj === 'string' ? fromObj : fromObj?.phone_number;
-    const text = data.payload.text;
-
     if (!data.payload.id) {
       req.log.warn('sms inbound: missing message ID');
       return reply.status(503).send({ result: 'temporarily_unavailable' });
     }
-    if (!from || !text) {
-      req.log.warn(
-        { hasFrom: Boolean(from), hasText: !!text, hasId: Boolean(data.payload.id) },
-        'sms inbound: missing from, text or message ID',
-      );
-      return reply.send({ result: 'ok' });
-    }
-
-    req.log.info({ hasFrom: true, textLength: text.length }, 'sms inbound received');
 
     // A shared sender cannot identify the reservation; retain an opaque reference for review.
     try {
