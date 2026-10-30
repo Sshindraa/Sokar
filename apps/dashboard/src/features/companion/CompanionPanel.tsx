@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api-error';
 import { useApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { TonightCard } from './TonightCard';
 
 const MAX_CHARS = 4000;
 /** Nombre de messages renvoyés au modèle à chaque question : l'historique complet reste affiché. */
@@ -243,6 +244,7 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
       >
         {messages.length === 0 ? (
           <div className="space-y-3">
+            <TonightCard />
             <p className="text-sm leading-relaxed text-muted-foreground">{t('greeting')}</p>
             <div className="flex flex-col gap-2">
               {SUGGESTION_KEYS.map((key) => (

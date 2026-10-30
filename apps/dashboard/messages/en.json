@@ -95,7 +95,29 @@
     "openSource": "View in the dashboard",
     "helpful": "Helpful answer",
     "unhelpful": "Unhelpful answer",
-    "genericError": "The assistant cannot answer right now. Please try again shortly."
+    "genericError": "The assistant cannot answer right now. Please try again shortly.",
+    "tonight": {
+      "title": "This service",
+      "midi": "Today’s lunch",
+      "soir": "Tonight",
+      "loading": "Loading the service…",
+      "error": "The service cannot be loaded right now.",
+      "retry": "Try again",
+      "empty": "No reservations for this service",
+      "nothingToWatch": "Nothing to flag for this service.",
+      "covers": "{count, plural, one {# cover} other {# covers}}",
+      "usual": "usually {usual} covers",
+      "specialRequests": "{count, plural, one {# special request} other {# special requests}}",
+      "waitlist": "{count, plural, one {# person on the waiting list} other {# people on the waiting list}}",
+      "reasons": {
+        "unconfirmed": "Unconfirmed",
+        "noTable": "No table",
+        "largeParty": "Large party",
+        "pastNoShow": "Previous no-show",
+        "vip": "VIP",
+        "regular": "Regular guest"
+      }
+    }
   },
   "languageSwitcher": {
     "label": "Language",

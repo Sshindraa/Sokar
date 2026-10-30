@@ -152,7 +152,7 @@ const PARIS_CLOCK = new Intl.DateTimeFormat('en-US', {
 });
 
 // Jour (AAAA-MM-JJ), jour de semaine et heure à Paris pour un instant donné.
-function parisParts(date: Date) {
+export function parisParts(date: Date) {
   const parts = Object.fromEntries(
     PARIS_CLOCK.formatToParts(date).map(({ type, value }) => [type, value]),
   );
@@ -182,7 +182,7 @@ export function parisMidnight(dayKey: string): Date {
   return new Date(wall - parisOffsetMs(wall - parisOffsetMs(wall)));
 }
 
-function addDays(dayKey: string, days: number): string {
+export function addDays(dayKey: string, days: number): string {
   return new Date(Date.parse(`${dayKey}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 }
 

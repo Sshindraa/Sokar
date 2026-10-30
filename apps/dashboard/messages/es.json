@@ -94,7 +94,29 @@
     "openSource": "Ver en el panel",
     "helpful": "Respuesta útil",
     "unhelpful": "Respuesta poco útil",
-    "genericError": "El asistente no puede responder por el momento. Inténtelo de nuevo en un momento."
+    "genericError": "El asistente no puede responder por el momento. Inténtelo de nuevo en un momento.",
+    "tonight": {
+      "title": "Este servicio",
+      "midi": "Mediodía de hoy",
+      "soir": "Esta noche",
+      "loading": "Cargando el servicio…",
+      "error": "No se puede cargar el servicio por el momento.",
+      "retry": "Reintentar",
+      "empty": "No hay reservas para este servicio",
+      "nothingToWatch": "Nada que señalar en este servicio.",
+      "covers": "{count, plural, one {# comensal} other {# comensales}}",
+      "usual": "habitualmente {usual} comensales",
+      "specialRequests": "{count, plural, one {# petición especial} other {# peticiones especiales}}",
+      "waitlist": "{count, plural, one {# persona en lista de espera} other {# personas en lista de espera}}",
+      "reasons": {
+        "unconfirmed": "Sin confirmar",
+        "noTable": "Sin mesa",
+        "largeParty": "Grupo grande",
+        "pastNoShow": "Ausencia anterior",
+        "vip": "VIP",
+        "regular": "Cliente habitual"
+      }
+    }
   },
   "languageSwitcher": {
     "label": "Idioma",

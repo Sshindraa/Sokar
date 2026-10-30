@@ -3168,3 +3168,9 @@ Le prompt interdit au modèle tout calcul (somme, différence, moyenne, taux, po
 ### 2026-10-30 — Companion : banc, critère d'outil générique
 
 Le critère « outil » du banc devient « au moins un outil appelé » pour toutes les questions notées : le nom d'outil attendu par question est retiré. Les appels d'outils (arguments et résultats) restent enregistrés par essai. Question 26 : le premier canal nommé doit aussi être celui dont la valeur est la plus haute dans un résultat d'outil enregistré (groupes par canal de `query_data` ou `by_channel`). Résultat sur les questions notées, trois essais chacune : outil 66/66, chiffre 66/66. Tokens : 672 780 en entrée, 37 641 en sortie.
+
+### 2026-10-30 — Companion : carte « Ce soir »
+
+`GET /companion/tonight` calcule le service en cours à Paris (midi avant 16 h, soir à partir de 16 h) : couverts, couverts habituels (même service et même jour de semaine, sur les 4 semaines précédentes, moyenne des jours qui ont des réservations valables), demandes spéciales (comptées, jamais le texte), liste d'attente, et deux listes de réservations avec leurs motifs (`watch` : non confirmée, sans table, grande tablée, absence passée ; `attention` : VIP, client régulier). Requêtes groupées (jour, historique, liste d'attente, puis absences et fidélité par client). Le modèle n'est pas appelé. Fichiers : `apps/api/src/modules/companion/tonight.ts`, `companion.routes.ts`, `query-data.ts` (deux fonctions exportées, sans duplication), `apps/dashboard/src/features/companion/TonightCard.tsx`, puis le panneau et ses messages (fr, en, es, it).
+
+Décision : `READ_ONLY` garde la lecture de la carte, comme `/reservations` : la politique de rôles lit toutes les routes en GET. Le clic sur une ligne mène à `/dashboard/reservations`, faute de route qui ouvre une réservation par son identifiant (point ouvert).

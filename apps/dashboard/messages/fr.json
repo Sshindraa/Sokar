@@ -95,7 +95,29 @@
     "openSource": "Voir dans le tableau de bord",
     "helpful": "Réponse utile",
     "unhelpful": "Réponse peu utile",
-    "genericError": "L’assistant ne peut pas répondre pour le moment. Réessayez dans un instant."
+    "genericError": "L’assistant ne peut pas répondre pour le moment. Réessayez dans un instant.",
+    "tonight": {
+      "title": "Ce service",
+      "midi": "Ce midi",
+      "soir": "Ce soir",
+      "loading": "Chargement du service…",
+      "error": "Impossible de charger le service pour le moment.",
+      "retry": "Réessayer",
+      "empty": "Aucune réservation pour ce service",
+      "nothingToWatch": "Rien à signaler pour ce service.",
+      "covers": "{count, plural, one {# couvert} other {# couverts}}",
+      "usual": "habituellement {usual} couverts",
+      "specialRequests": "{count, plural, one {# demande spéciale} other {# demandes spéciales}}",
+      "waitlist": "{count, plural, one {# personne en liste d’attente} other {# personnes en liste d’attente}}",
+      "reasons": {
+        "unconfirmed": "Non confirmée",
+        "noTable": "Sans table",
+        "largeParty": "Grande tablée",
+        "pastNoShow": "Absence passée",
+        "vip": "VIP",
+        "regular": "Client régulier"
+      }
+    }
   },
   "languageSwitcher": {
     "label": "Langue",

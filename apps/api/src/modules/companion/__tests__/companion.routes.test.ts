@@ -386,3 +386,42 @@ describe('POST /companion/feedback', () => {
     expect(res.statusCode).toBe(403);
   });
 });
+
+describe('GET /companion/tonight', () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  const originalKey = env.OPENROUTER_API_KEY;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    env.OPENROUTER_API_KEY = 'k';
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+    vi.mocked(db.reservation.findMany).mockResolvedValue([]);
+    vi.mocked(db.waitingListEntry.findMany).mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+    env.OPENROUTER_API_KEY = originalKey;
+  });
+
+  it('renvoie la carte du service sans appeler le modèle', async () => {
+    const app = await getApp();
+    const res = await app.inject({ method: 'GET', url: '/companion/tonight', headers: AUTH });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ covers: 0, watch: [], attention: [] });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuse le rôle STAFF avec 403, sans appeler le modèle', async () => {
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/companion/tonight',
+      headers: { ...AUTH, 'x-test-site-role': 'STAFF', 'x-test-enforce-role-policy': '1' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

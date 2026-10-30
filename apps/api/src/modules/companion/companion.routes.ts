@@ -4,6 +4,7 @@ import { requireOrg } from '../../plugins/clerk';
 import { env } from '../../env';
 import { checkRateLimit } from '../../shared/redis/rate-limit';
 import { answerCompanion, CompanionUpstreamError, companionDayKey } from './companion.service';
+import { computeTonight } from './tonight';
 
 const DAILY_MESSAGE_LIMIT = 100;
 const DAY_SECONDS = 86_400;
@@ -36,6 +37,12 @@ export async function companionRoutes(app: FastifyInstance) {
     const body = FeedbackBodySchema.parse(req.body);
     req.log.info({ responseId: body.responseId, rating: body.rating }, 'companion feedback');
     return reply.status(204).send();
+  });
+
+  // Carte « Ce soir » : calculée ici, jamais envoyée au modèle. La politique de rôles refuse STAFF (403) :
+  // la route n'est dans aucune règle de l'équipe de service.
+  app.get('/companion/tonight', { preHandler: requireOrg() }, async (req, reply) => {
+    return reply.send(await computeTonight(req.restaurantId as string, new Date()));
   });
 
   // Lecture seule côté serveur : la politique de rôles refuse STAFF et READ_ONLY (403).

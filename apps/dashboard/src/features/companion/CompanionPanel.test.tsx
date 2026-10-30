@@ -7,11 +7,47 @@ import { CompanionPanel } from './CompanionPanel';
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(),
+  get: vi.fn(),
   siteId: 'site_1' as string | undefined,
 }));
 vi.mock('@/lib/api', () => ({
-  useApi: () => ({ post: mocks.post, siteId: mocks.siteId }),
+  useApi: () => ({ post: mocks.post, get: mocks.get, siteId: mocks.siteId }),
 }));
+
+const TONIGHT = {
+  service: 'soir',
+  date: '2026-10-30',
+  covers: 14,
+  usualCovers: 16,
+  specialRequestsCount: 1,
+  waitlistCount: 0,
+  watch: [
+    {
+      reservationId: 'res-1',
+      name: 'Léa Martin',
+      time: '20:00',
+      partySize: 6,
+      reasons: ['largeParty'],
+    },
+  ],
+  attention: [
+    {
+      reservationId: 'res-2',
+      name: 'Paul Durand',
+      time: '19:30',
+      partySize: 2,
+      reasons: ['vip'],
+    },
+  ],
+};
+const EMPTY_TONIGHT = {
+  ...TONIGHT,
+  covers: 0,
+  usualCovers: null,
+  specialRequestsCount: 0,
+  watch: [],
+  attention: [],
+};
 
 const WEEK_QUESTION = 'Comment se présentent les 7 prochains jours ?';
 const RESPONSE_ID = '3f2b8c1e-5d4a-4b7e-9c1f-2a6d8e0b7c45';
@@ -32,6 +68,7 @@ function typeInDraft(text: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.siteId = 'site_1';
+  mocks.get.mockResolvedValue(TONIGHT);
   window.sessionStorage.clear();
 });
 
@@ -258,5 +295,67 @@ describe('CompanionPanel', () => {
     expect(window.sessionStorage.getItem('sokar.companion.site_1')).toBeNull();
     expect(screen.queryByText('Question ancienne')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: WEEK_QUESTION })).toBeInTheDocument();
+  });
+});
+
+describe('carte « Ce soir »', () => {
+  it('affiche le chargement tant que le service n’est pas reçu', () => {
+    mocks.get.mockReturnValue(new Promise(() => {}));
+    renderPanel();
+
+    expect(screen.getByRole('status')).toHaveTextContent('Chargement du service…');
+  });
+
+  it('affiche « Aucune réservation pour ce service » quand le service est vide', async () => {
+    mocks.get.mockResolvedValue(EMPTY_TONIGHT);
+    renderPanel();
+
+    expect(await screen.findByText('Aucune réservation pour ce service')).toBeInTheDocument();
+  });
+
+  it('affiche l’erreur, puis Réessayer recharge le service', async () => {
+    mocks.get.mockRejectedValueOnce(new Error('réseau'));
+    mocks.get.mockResolvedValueOnce(TONIGHT);
+    renderPanel();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Impossible de charger le service pour le moment.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
+
+    expect(await screen.findByText('Léa Martin')).toBeInTheDocument();
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+    expect(mocks.get).toHaveBeenCalledWith('companion/tonight');
+  });
+
+  it('affiche chaque réservation une seule fois, avec ses motifs et son lien vers les réservations', async () => {
+    mocks.get.mockResolvedValue({
+      ...TONIGHT,
+      watch: [...TONIGHT.watch, { ...TONIGHT.attention[0], reasons: ['unconfirmed'] }],
+      attention: [{ ...TONIGHT.attention[0], reasons: ['vip'] }],
+    });
+    renderPanel();
+
+    expect(await screen.findByText('Paul Durand')).toBeInTheDocument();
+    expect(screen.getAllByText('Paul Durand')).toHaveLength(1);
+    expect(screen.getByText('Non confirmée')).toBeInTheDocument();
+    expect(screen.getByText('VIP')).toBeInTheDocument();
+    expect(screen.getByText('14 couverts · habituellement 16 couverts')).toBeInTheDocument();
+    expect(screen.getByText('Léa Martin').closest('a')).toHaveAttribute(
+      'href',
+      '/dashboard/reservations',
+    );
+  });
+
+  it('disparaît dès la première question', async () => {
+    mocks.post.mockResolvedValue({ reply: 'Vous avez 14 couverts.', sources: [] });
+    renderPanel();
+
+    expect(await screen.findByText('Léa Martin')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: WEEK_QUESTION }));
+
+    expect(await screen.findByText('Vous avez 14 couverts.')).toBeInTheDocument();
+    expect(screen.queryByText('Léa Martin')).not.toBeInTheDocument();
+    expect(screen.queryByText('Ce soir')).not.toBeInTheDocument();
   });
 });

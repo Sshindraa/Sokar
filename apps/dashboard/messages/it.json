@@ -94,7 +94,29 @@
     "openSource": "Vedi nella dashboard",
     "helpful": "Risposta utile",
     "unhelpful": "Risposta poco utile",
-    "genericError": "L'assistente non può rispondere al momento. Riprovi tra poco."
+    "genericError": "L'assistente non può rispondere al momento. Riprovi tra poco.",
+    "tonight": {
+      "title": "Questo servizio",
+      "midi": "Pranzo di oggi",
+      "soir": "Stasera",
+      "loading": "Caricamento del servizio…",
+      "error": "Impossibile caricare il servizio al momento.",
+      "retry": "Riprova",
+      "empty": "Nessuna prenotazione per questo servizio",
+      "nothingToWatch": "Niente da segnalare per questo servizio.",
+      "covers": "{count, plural, one {# coperto} other {# coperti}}",
+      "usual": "di solito {usual} coperti",
+      "specialRequests": "{count, plural, one {# richiesta speciale} other {# richieste speciali}}",
+      "waitlist": "{count, plural, one {# persona in lista d’attesa} other {# persone in lista d’attesa}}",
+      "reasons": {
+        "unconfirmed": "Non confermata",
+        "noTable": "Senza tavolo",
+        "largeParty": "Gruppo numeroso",
+        "pastNoShow": "Assenza precedente",
+        "vip": "VIP",
+        "regular": "Cliente abituale"
+      }
+    }
   },
   "languageSwitcher": {
     "label": "Lingua",
