@@ -5,9 +5,10 @@
  * Usage (depuis apps/api) : npx tsx scripts/companion-bench/run.ts
  * Les chiffres attendus se recalculent au moment du test. Ceux des questions 12, 22 à 27 viennent de
  * requêtes Prisma écrites ici, indépendantes de query-data.ts.
- * Questions notées : 1 à 12, 17 à 20 et 22 à 27 (outil attendu dans les sources, puis valeur attendue
- * dans la réponse, chaque critère noté à part). Questions à relire : 13 à 16, 21 et 28 ; réponses
- * brutes dans results/.
+ * Questions notées : 1 à 12, 17 à 20 et 22 à 27. Deux critères, notés à part : au moins un outil
+ * appelé, puis valeur attendue dans la réponse (pour la question 26, le premier canal nommé doit être
+ * le plus haut dans un résultat d'outil enregistré). Questions à relire : 13 à 16, 21 et 28 ; réponses
+ * brutes et appels d'outils dans results/.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -60,7 +61,6 @@ type Expected =
 interface Question {
   n: number;
   text: string;
-  tool?: string | string[];
   expected?: (restaurantId: string) => Promise<Expected>;
 }
 
@@ -193,25 +193,21 @@ const QUESTIONS: Question[] = [
   {
     n: 1,
     text: "Combien de réservations ont été prises aujourd'hui ?",
-    tool: 'reservation_stats',
     expected: async (id) => count((await computeDashboardStats(id, 'today')).total_reservations),
   },
   {
     n: 2,
     text: 'Combien de couverts ont été réservés ces 7 derniers jours ?',
-    tool: ['reservation_stats', 'query_data'],
     expected: async (id) => count((await computeDashboardStats(id, '7d')).covers),
   },
   {
     n: 3,
     text: "Combien d'appels sur les 30 derniers jours ?",
-    tool: ['reservation_stats', 'call_stats'],
     expected: async (id) => count((await computeDashboardStats(id, '30d')).total_calls),
   },
   {
     n: 4,
     text: 'Quel est le taux de conversion des appels sur 7 jours ?',
-    tool: ['reservation_stats', 'call_stats'],
     expected: async (id) => {
       const rate = (await computeDashboardStats(id, '7d')).conversion_rate;
       return { kind: 'rate', value: rate, rates: [rate] };
@@ -220,13 +216,11 @@ const QUESTIONS: Question[] = [
   {
     n: 5,
     text: 'Combien de couverts sont prévus demain ?',
-    tool: 'upcoming_days',
     expected: async (id) => count((await computeEmptySlots(id)).days[1].covers),
   },
   {
     n: 6,
     text: 'Quel est le jour le plus faible des 7 prochains jours ?',
-    tool: 'upcoming_days',
     expected: async (id) => {
       const open = (await computeEmptySlots(id)).days.filter((day) => day.isOpen);
       const lowest = Math.min(...open.map((day) => day.reservationCount));
@@ -241,31 +235,26 @@ const QUESTIONS: Question[] = [
   {
     n: 7,
     text: 'Combien de jours sous-réservés dans les 7 prochains jours ?',
-    tool: 'upcoming_days',
     expected: async (id) => count((await computeEmptySlots(id)).summary.underbookedDays, 'jours?'),
   },
   {
     n: 8,
     text: 'Quel est mon taux de no-show ?',
-    tool: 'no_shows',
     expected: async (id) => ({ kind: 'rate', value: (await computeNoShowStats(id)).noShowRate }),
   },
   {
     n: 9,
     text: 'Combien de no-shows sur les 90 derniers jours ?',
-    tool: 'no_shows',
     expected: async (id) => count((await computeNoShowStats(id)).noShows),
   },
   {
     n: 10,
     text: 'Combien de couverts le mois dernier ?',
-    tool: ['monthly_roi', 'query_data'],
     expected: async (id) => count((await computeRoi(id, previousMonth())).totalCouverts),
   },
   {
     n: 11,
     text: "Combien Sokar m'a fait économiser en commissions TheFork le mois dernier ?",
-    tool: 'monthly_roi',
     expected: async (id) => ({
       kind: 'amount',
       value: (await computeRoi(id, previousMonth())).theforkSavings,
@@ -274,7 +263,6 @@ const QUESTIONS: Question[] = [
   {
     n: 12,
     text: 'Combien de couverts avons-nous servis mardi dernier ?',
-    tool: 'query_data',
     expected: async (id) => {
       const day = lastWeekdayBefore(today(), 2);
       return count(sumCovers(await reservationsBetween(id, 'reservedAt', day, day)));
@@ -287,13 +275,11 @@ const QUESTIONS: Question[] = [
   {
     n: 17,
     text: "Combien d'appels avons-nous reçus ces 7 derniers jours ?",
-    tool: 'call_stats',
     expected: async (id) => count((await computeCallStats(id, '7d')).total),
   },
   {
     n: 18,
     text: "Combien d'appels hors horaires sur 30 jours ?",
-    tool: 'call_stats',
     expected: async (id) => {
       const { afterHours } = await computeCallStats(id, '30d');
       if (afterHours === null)
@@ -304,7 +290,6 @@ const QUESTIONS: Question[] = [
   {
     n: 19,
     text: "Combien d'appels ont abouti à une réservation cette semaine ?",
-    tool: 'call_stats',
     expected: async (id) => {
       const calls = await computeCallStats(id, '7d');
       const dashboard = await computeDashboardStats(id, '7d');
@@ -319,7 +304,6 @@ const QUESTIONS: Question[] = [
   {
     n: 20,
     text: 'Par quel moyen les clients réservent-ils, sur 30 jours ?',
-    tool: 'reservation_stats',
     expected: async (id) => {
       const channels = (await computeDashboardStats(id, '30d')).by_channel;
       const reservations = (channel: string) =>
@@ -331,7 +315,6 @@ const QUESTIONS: Question[] = [
   {
     n: 22,
     text: 'Quel jour de la semaine fait le plus de couverts sur les 8 dernières semaines ?',
-    tool: 'query_data',
     expected: async (id) => {
       const covers = new Map<string, number>();
       for (const row of await reservationsBetween(
@@ -349,7 +332,6 @@ const QUESTIONS: Question[] = [
   {
     n: 23,
     text: 'Combien de réservations annulées en septembre ?',
-    tool: 'query_data',
     expected: async (id) => {
       const [from, to] = monthBounds(`${today().slice(0, 4)}-09`);
       const byService = await reservationsBetween(id, 'reservedAt', from, to, ['CANCELLED']);
@@ -360,7 +342,6 @@ const QUESTIONS: Question[] = [
   {
     n: 24,
     text: 'Combien de couverts via le site web le mois dernier ?',
-    tool: 'query_data',
     expected: async (id) => {
       const [from, to] = monthBounds(previousMonth());
       const rows = await reservationsBetween(id, 'reservedAt', from, to);
@@ -370,7 +351,6 @@ const QUESTIONS: Question[] = [
   {
     n: 25,
     text: "Combien d'appels pour des annulations sur 30 jours ?",
-    tool: 'query_data',
     expected: async (id) =>
       count(
         await db.call.count({
@@ -388,7 +368,6 @@ const QUESTIONS: Question[] = [
   {
     n: 26,
     text: 'Quel canal apporte le plus de couverts sur 90 jours ?',
-    tool: 'query_data',
     expected: async (id) => {
       const covers = new Map<string, number>();
       for (const row of await reservationsBetween(
@@ -413,7 +392,6 @@ const QUESTIONS: Question[] = [
   {
     n: 27,
     text: 'À quelle heure arrivent la plupart des clients le samedi, sur 8 semaines ?',
-    tool: 'query_data',
     expected: async (id) => {
       const perHour = new Map<number, number>();
       for (const row of await reservationsBetween(
@@ -534,6 +512,50 @@ function firstMention(text: string, labels: string[]): number {
   return Math.min(...positions, Infinity);
 }
 
+// Canal nommé le premier dans la réponse, d'après les libellés de CHANNEL_LABELS.
+function firstNamedChannel(reply: string): string | undefined {
+  const text = reply
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+  let first: { channel: string; position: number } | undefined;
+  for (const [channel, labels] of Object.entries(CHANNEL_LABELS)) {
+    const position = firstMention(text, labels);
+    if (position !== Infinity && (!first || position < first.position)) {
+      first = { channel, position };
+    }
+  }
+  return first?.channel;
+}
+
+// Valeur par canal de chaque résultat d'outil qui en porte une : groupes de query_data par canal,
+// ou by_channel de reservation_stats (couverts).
+function channelBreakdowns(calls: ToolCall[]): Array<Map<string, number>> {
+  return calls.flatMap((call) => {
+    const result = call.result as {
+      query?: { group_by?: string };
+      groups?: Array<{ key: string | number; value: number | null }>;
+      by_channel?: Array<{ channel: string; covers: number }>;
+    };
+    if (result?.query?.group_by === 'channel' && Array.isArray(result.groups)) {
+      return [new Map(result.groups.map((group) => [String(group.key), Number(group.value)]))];
+    }
+    if (Array.isArray(result?.by_channel)) {
+      return [new Map(result.by_channel.map((stat) => [stat.channel, stat.covers]))];
+    }
+    return [];
+  });
+}
+
+// Le canal nommé en premier est, dans un résultat d'outil enregistré, celui dont la valeur est la plus haute.
+function firstChannelIsTop(reply: string, calls: ToolCall[]): boolean {
+  const named = firstNamedChannel(reply);
+  if (!named) return false;
+  return channelBreakdowns(calls).some(
+    (totals) => totals.get(named) === Math.max(...totals.values()),
+  );
+}
+
 interface Trial {
   reply: string;
   sources: string[];
@@ -572,8 +594,11 @@ async function runTrial(
       reply: answer.reply,
       sources,
       calls,
-      toolOk: question.tool ? [question.tool].flat().some((tool) => sources.includes(tool)) : null,
-      valueOk: expected ? valueFound(answer.reply, expected) : null,
+      toolOk: question.expected ? calls.length > 0 : null,
+      valueOk: expected
+        ? valueFound(answer.reply, expected) &&
+          (expected.kind !== 'first' || firstChannelIsTop(answer.reply, calls))
+        : null,
       ...lastUsage,
     };
   } catch (error) {
@@ -581,7 +606,7 @@ async function runTrial(
       reply: '',
       sources: [],
       calls,
-      toolOk: question.tool ? false : null,
+      toolOk: question.expected ? false : null,
       valueOk: expected ? false : null,
       error: error instanceof Error ? error.message : String(error),
       ...lastUsage,
@@ -621,7 +646,6 @@ async function main() {
     results.push({
       n: question.n,
       text: question.text,
-      tool: question.tool ?? null,
       expected: expected ?? null,
       trials,
     });
@@ -631,7 +655,7 @@ async function main() {
 
   console.table(
     results
-      .filter((result) => result.tool)
+      .filter((result) => result.expected)
       .map((result) => ({
         '#': result.n,
         Question: result.text,
