@@ -3111,3 +3111,7 @@ Vérification d’identité et export rouverts après qualification SMS en stagi
 ### 2026-10-30 — Opposition marketing : échecs visibles
 
 Correctif local : une opposition échoue explicitement si son registre durable ne peut pas être écrit ; la fiche existante reste OPTED_OUT. Test PostgreSQL local : une fiche supprimée puis recréée reste exclue. L'effacement doit préserver les oppositions et coordonner les écritures concurrentes avant toute réouverture. Les corrections ne sont pas déployées.
+
+### 2026-10-30 — Opposition : concurrence locale
+
+La fiche client est verrouillée pendant la mise à jour transactionnelle de son consentement et du registre ; essai PostgreSQL concurrent accord/opposition réussi sur une même fiche. Le traitement des plaintes fournisseur et les scénarios impliquant plusieurs fiches ou un échec du registre restent à coordonner avant livraison. PR #620 en brouillon.

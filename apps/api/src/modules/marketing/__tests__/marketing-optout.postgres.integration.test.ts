@@ -5,7 +5,10 @@ vi.unmock('@prisma/client');
 vi.unmock('../../../shared/db/client');
 
 import { db } from '../../../shared/db/client';
-import { withdrawMarketingPermission } from '../marketing-permission.service';
+import {
+  upsertMarketingPermission,
+  withdrawMarketingPermission,
+} from '../marketing-permission.service';
 import { previewMarketingAudience } from '../marketing-campaign.service';
 
 const url = process.env.MARKETING_OPTOUT_TEST_DATABASE_URL;
@@ -86,5 +89,46 @@ describe.skipIf(!url)('marketing opt-out on PostgreSQL', () => {
         })
       ).status,
     ).toBe('OPTED_OUT');
+  });
+  it('keeps permission and register consistent when consent and withdrawal race', async () => {
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+    const tag = randomUUID();
+    const restaurant = await db.restaurant.create({
+      data: {
+        name: 'Race test',
+        managerPhone: '',
+        managerEmail: '',
+        phoneNumber: tag,
+        openingHours: {},
+      },
+    });
+    const customer = await db.customer.create({
+      data: { restaurantId: restaurant.id, phone: '+33612345679' },
+    });
+    for (let round = 0; round < 5; round++) {
+      await Promise.all([
+        withdrawMarketingPermission({
+          restaurantId: restaurant.id,
+          customerId: customer.id,
+          channel: 'SMS',
+        }),
+        upsertMarketingPermission({
+          restaurantId: restaurant.id,
+          customerId: customer.id,
+          channel: 'SMS',
+          status: 'OPTED_IN',
+          source: 'TEST',
+          proofVersion: 'test',
+          proof: 'test',
+        }),
+      ]);
+      const permission = await db.marketingPermission.findUniqueOrThrow({
+        where: { customerId_channel: { customerId: customer.id, channel: 'SMS' } },
+      });
+      const registered = await db.marketingOptOut.count({
+        where: { restaurantId: restaurant.id, channel: 'SMS' },
+      });
+      expect(registered).toBe(permission.status === 'OPTED_OUT' ? 1 : 0);
+    }
   });
 });

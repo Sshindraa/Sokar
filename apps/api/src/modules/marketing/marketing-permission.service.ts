@@ -3,6 +3,7 @@ import {
   MarketingChannel,
   MarketingPermissionStatus,
   type MarketingPermission,
+  type Prisma,
 } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { logger } from '../../shared/logger/pino';
@@ -125,8 +126,9 @@ export function resolveMarketingPermission(args: {
 async function assertCustomerTenant(
   customerId: string,
   restaurantId: string,
+  writer: Pick<Prisma.TransactionClient, 'customer'> = db,
 ): Promise<{ phone?: string | null; emailNormalized?: string | null }> {
-  const customer = await db.customer.findFirst({
+  const customer = await writer.customer.findFirst({
     where: { id: customerId, restaurantId, archivedAt: null },
     select: { id: true, phone: true, emailNormalized: true },
   });
@@ -142,14 +144,17 @@ function optOutReasonFor(source: string): MarketingOptOutReason {
  * A withdrawal blocks the current profile first. Report a failure if the independent register
  * could not be updated, so the caller does not mistake that partial protection for completion.
  */
-async function syncOptOutRegister(args: {
-  restaurantId: string;
-  channel: MarketingChannel;
-  status: MarketingPermissionStatus;
-  source: string;
-  occurredAt: Date;
-  contact: { phone?: string | null; emailNormalized?: string | null };
-}): Promise<void> {
+async function syncOptOutRegister(
+  args: {
+    restaurantId: string;
+    channel: MarketingChannel;
+    status: MarketingPermissionStatus;
+    source: string;
+    occurredAt: Date;
+    contact: { phone?: string | null; emailNormalized?: string | null };
+  },
+  writer: Pick<Prisma.TransactionClient, 'marketingOptOut'>,
+): Promise<void> {
   if (
     args.status !== MarketingPermissionStatus.OPTED_OUT &&
     args.status !== MarketingPermissionStatus.OPTED_IN
@@ -159,23 +164,29 @@ async function syncOptOutRegister(args: {
   const address = args.channel === 'EMAIL' ? args.contact.emailNormalized : args.contact.phone;
   try {
     if (args.status === MarketingPermissionStatus.OPTED_OUT) {
-      const outcome = await registerMarketingOptOut({
-        restaurantId: args.restaurantId,
-        channel: args.channel,
-        address,
-        reason: optOutReasonFor(args.source),
-        source: args.source,
-        occurredAt: args.occurredAt,
-      });
+      const outcome = await registerMarketingOptOut(
+        {
+          restaurantId: args.restaurantId,
+          channel: args.channel,
+          address,
+          reason: optOutReasonFor(args.source),
+          source: args.source,
+          occurredAt: args.occurredAt,
+        },
+        writer,
+      );
       if (outcome !== 'REGISTERED') {
         throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
       }
     } else {
-      await clearMarketingOptOut({
-        restaurantId: args.restaurantId,
-        channel: args.channel,
-        address,
-      });
+      await clearMarketingOptOut(
+        {
+          restaurantId: args.restaurantId,
+          channel: args.channel,
+          address,
+        },
+        writer,
+      );
     }
   } catch (error) {
     logger.error(
@@ -193,8 +204,6 @@ async function syncOptOutRegister(args: {
 export async function upsertMarketingPermission(
   input: MarketingPermissionInput,
 ): Promise<MarketingPermission> {
-  const contact = await assertCustomerTenant(input.customerId, input.restaurantId);
-
   const channel = normalizeChannel(input.channel);
   const source = normalizeText(input.source, 'source', 80);
   const occurredAt = normalizeOccurredAt(input.occurredAt);
@@ -214,7 +223,7 @@ export async function upsertMarketingPermission(
     throw new Error('channel opt-in requires proofVersion and proof');
   }
 
-  const permission = await db.marketingPermission.upsert({
+  const permissionArgs = {
     where: { customerId_channel: { customerId: input.customerId, channel } },
     create: {
       restaurantId: input.restaurantId,
@@ -235,33 +244,57 @@ export async function upsertMarketingPermission(
       consentedAt: input.status === MarketingPermissionStatus.OPTED_IN ? occurredAt : null,
       withdrawnAt: input.status === MarketingPermissionStatus.OPTED_OUT ? occurredAt : null,
     },
-  });
+  };
 
-  await db.marketingPermissionEvent.create({
-    data: {
-      restaurantId: input.restaurantId,
-      customerId: input.customerId,
-      permissionId: permission.id,
-      channel,
-      status: input.status,
-      source,
-      proofVersion,
-      proofHash,
-      proofText,
-      actorUserId,
-      occurredAt,
-    },
-  });
+  let registerFailed = false;
+  let permission: MarketingPermission;
+  try {
+    permission = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM customers WHERE id = ${input.customerId} AND restaurant_id = ${input.restaurantId} FOR UPDATE`;
+      const contact = await assertCustomerTenant(input.customerId, input.restaurantId, tx);
+      const permission = await tx.marketingPermission.upsert(permissionArgs);
+      await tx.marketingPermissionEvent.create({
+        data: {
+          restaurantId: input.restaurantId,
+          customerId: input.customerId,
+          permissionId: permission.id,
+          channel,
+          status: input.status,
+          source,
+          proofVersion,
+          proofHash,
+          proofText,
+          actorUserId,
+          occurredAt,
+        },
+      });
 
-  await syncOptOutRegister({
-    restaurantId: input.restaurantId,
-    channel,
-    status: input.status,
-    source,
-    occurredAt,
-    contact,
-  });
+      try {
+        await syncOptOutRegister(
+          {
+            restaurantId: input.restaurantId,
+            channel,
+            status: input.status,
+            source,
+            occurredAt,
+            contact,
+          },
+          tx,
+        );
+      } catch (error) {
+        registerFailed = true;
+        throw error;
+      }
 
+      return permission;
+    });
+  } catch (error) {
+    if (registerFailed && input.status === MarketingPermissionStatus.OPTED_OUT) {
+      // Keep the current profile blocked even if the durable register failed.
+      await db.marketingPermission.upsert(permissionArgs);
+    }
+    throw error;
+  }
   await appendCustomerTimelineEvent({
     restaurantId: input.restaurantId,
     customerId: input.customerId,
