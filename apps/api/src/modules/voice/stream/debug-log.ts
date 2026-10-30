@@ -21,7 +21,7 @@ export function writeDebugLog(msg: string, err?: unknown) {
   const logMsg = `[${timestamp}] ${redactPii(msg)}${errStr}\n`;
   const logPath =
     process.env.DEBUG_LOG_PATH || path.join(process.cwd(), 'scratch', 'call_debug.log');
-  void fs.promises
+  fs.promises
     .mkdir(path.dirname(logPath), { recursive: true })
     .then(() => fs.promises.appendFile(logPath, logMsg))
     .catch((err) => logger.error({ err }, 'Failed to write debug log'));

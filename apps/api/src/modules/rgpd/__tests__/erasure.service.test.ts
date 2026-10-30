@@ -142,7 +142,9 @@ describe('ErasureService.eraseSubject', () => {
   it.each(['message', 'call'] as const)("échoue si l'anonymisation de %s échoue", async (table) => {
     vi.mocked(prisma.reservation.findFirst).mockResolvedValue({ id: 'res-1' } as never);
     vi.mocked(prisma.customerConsent.findFirst).mockResolvedValue(null);
-    vi.mocked(prisma.$transaction).mockImplementation(async (fn) => (fn as Function)(prisma));
+    vi.mocked(prisma.$transaction).mockImplementation(async (fn) =>
+      (fn as (tx: typeof prisma) => unknown)(prisma),
+    );
     vi.mocked(prisma[table].updateMany).mockRejectedValue(new Error('database unavailable'));
 
     await expect(
@@ -154,7 +156,9 @@ describe('ErasureService.eraseSubject', () => {
   it("échoue si la trace d'audit ne peut pas être enregistrée", async () => {
     vi.mocked(prisma.reservation.findFirst).mockResolvedValue({ id: 'res-1' } as never);
     vi.mocked(prisma.customerConsent.findFirst).mockResolvedValue(null);
-    vi.mocked(prisma.$transaction).mockImplementation(async (fn) => (fn as Function)(prisma));
+    vi.mocked(prisma.$transaction).mockImplementation(async (fn) =>
+      (fn as (tx: typeof prisma) => unknown)(prisma),
+    );
     vi.mocked(prisma.reservationAuditLog.create).mockRejectedValue(new Error('audit unavailable'));
 
     await expect(
