@@ -4,8 +4,8 @@
  *
  * Usage (depuis apps/api) : npx tsx scripts/companion-bench/run.ts
  * Les chiffres attendus se recalculent au moment du test avec les fonctions que les outils appellent.
- * Questions 1 à 11 : outil attendu dans les sources, puis valeur attendue dans la réponse, chaque
- * critère noté à part. Questions 12 à 15 : à relire à la main, réponses brutes dans results/.
+ * Questions 1 à 11 et 17 à 19 : outil attendu dans les sources, puis valeur attendue dans la réponse,
+ * chaque critère noté à part. Questions 12 à 16 : à relire à la main, réponses brutes dans results/.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -14,6 +14,7 @@ import { env } from '../../src/env';
 import { db } from '../../src/shared/db/client';
 import { answerCompanion } from '../../src/modules/companion/companion.service';
 import { computeRoi } from '../../src/modules/analytics/roi.service';
+import { computeCallStats } from '../../src/modules/calls/call-stats';
 import {
   computeDashboardStats,
   computeEmptySlots,
@@ -145,7 +146,45 @@ const QUESTIONS: Question[] = [
   { n: 14, text: "Quel est mon chiffre d'affaires net après charges ?" },
   { n: 15, text: "Rédigez un SMS pour relancer la liste d'attente samedi." },
   { n: 16, text: 'Rédigez un message pour annoncer une soirée spéciale vendredi.' },
+  {
+    n: 17,
+    text: "Combien d'appels avons-nous reçus ces 7 derniers jours ?",
+    tool: 'call_stats',
+    expected: async (id) => count((await computeCallStats(id, '7d')).total),
+  },
+  {
+    n: 18,
+    text: "Combien d'appels hors horaires sur 30 jours ?",
+    tool: 'call_stats',
+    expected: async (id) => {
+      const { afterHours } = await computeCallStats(id, '30d');
+      if (afterHours === null)
+        throw new Error('horaires absents : appels hors horaires non notables');
+      return count(afterHours);
+    },
+  },
+  {
+    n: 19,
+    text: "Combien d'appels ont abouti à une réservation cette semaine ?",
+    tool: 'call_stats',
+    expected: async (id) => count((await computeCallStats(id, '7d')).byOutcome.RESERVED),
+  },
 ];
+
+// Nombres en lettres pour la question 7 : « Un seul jour est sous-réservé ».
+const NUMBER_WORDS: Record<string, number> = {
+  un: 1,
+  une: 1,
+  deux: 2,
+  trois: 3,
+  quatre: 4,
+  cinq: 5,
+  six: 6,
+  sept: 7,
+  huit: 8,
+  neuf: 9,
+  dix: 10,
+};
 
 // Un nombre de la réponse suffit. Accepte « 1 234 », « 1234 », « 4,2 » et « 4.2 ».
 function numbersIn(reply: string): number[] {
@@ -164,8 +203,12 @@ function valueFound(reply: string, expected: Expected): boolean {
   }
   // Le nombre doit être suivi de son unité : un « 1 » quelconque ne compte pas.
   if (expected.unit) {
-    const found = [...reply.matchAll(new RegExp(`(\\d+)\\s+${expected.unit}\\b`, 'g'))];
-    return found.some((match) => Number(match[1]) === expected.value);
+    const number = `\\d+|${Object.keys(NUMBER_WORDS).join('|')}`;
+    const pattern = new RegExp(`\\b(${number})\\s+(?:seul(?:e?s)?\\s+)?${expected.unit}\\b`, 'gi');
+    return [...reply.matchAll(pattern)].some(([, token]) => {
+      const key = token.toLowerCase();
+      return (NUMBER_WORDS[key] ?? Number(key)) === expected.value;
+    });
   }
   const tolerance = { count: 0, amount: 0.5, rate: 0.05 }[expected.kind];
   return numbersIn(reply).some((n) => Math.abs(n - expected.value) <= tolerance + 1e-9);

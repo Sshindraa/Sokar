@@ -26,7 +26,7 @@ interface AnalyticsBucket {
   revenue: number;
 }
 
-function periodStart(period: z.infer<typeof PeriodSchema>): Date {
+export function periodStart(period: z.infer<typeof PeriodSchema>): Date {
   const now = new Date();
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);

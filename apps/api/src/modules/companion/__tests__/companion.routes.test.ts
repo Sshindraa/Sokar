@@ -216,8 +216,9 @@ describe('POST /companion/chat', () => {
       "Le mois en cours n'est pas terminé : si vous citez ses chiffres, dites qu'ils sont partiels (arrêtés à aujourd'hui).",
     );
     expect(system).toContain(
-      "Un brouillon ne contient aucun fait absent des données : ni table libérée, ni promotion, ni prix, ni horaire, ni disponibilité. Mettez [à compléter] à la place et dites ce qu'il faut vérifier.",
+      "Un brouillon ne contient aucun fait absent des données : ni table libérée, ni promotion, ni prix, ni horaire, ni disponibilité. Mettez [à compléter] à la place et dites ce qu'il faut vérifier. Toute formule de disponibilité ou d'urgence va entre crochets : « table disponible », « places limitées », « dernières places », « vient de se libérer ».",
     );
+    expect(system).toContain("les appels reçus par l'assistant téléphonique");
   });
 
   it('s’arrête à 4 tours d’outils puis demande la réponse finale sans outils', async () => {

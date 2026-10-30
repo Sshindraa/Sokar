@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import { logger } from '../../shared/logger/pino';
 import { computeRoi } from '../analytics/roi.service';
+import { computeCallStats } from '../calls/call-stats';
 import {
   computeDashboardStats,
   computeEmptySlots,
@@ -12,6 +13,7 @@ import {
 } from '../dashboard/dashboard.routes';
 
 const DASHBOARD_HREF = '/dashboard';
+const SOURCE_HREFS: Record<string, string> = { call_stats: '/dashboard/calls' };
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 export const COMPANION_TOOLS = [
@@ -21,6 +23,26 @@ export const COMPANION_TOOLS = [
       name: 'reservation_stats',
       description:
         'Réservations PRISES pendant la période (date de création), appels, couverts, CA estimé. 7d = 7 derniers jours, aujourd’hui compris ; 30d = 30 derniers jours, aujourd’hui compris.',
+      parameters: {
+        type: 'object',
+        properties: {
+          period: {
+            type: 'string',
+            enum: ['today', '7d', '30d'],
+            description:
+              'today : depuis minuit. 7d : 7 derniers jours (défaut). 30d : 30 derniers jours.',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'call_stats',
+      description:
+        'Appels reçus par l’assistant téléphonique Léa : intention, résultat, hors horaires, durée moyenne. 7d = 7 derniers jours, aujourd’hui compris ; 30d = 30 derniers jours, aujourd’hui compris.',
       parameters: {
         type: 'object',
         properties: {
@@ -75,7 +97,7 @@ export const COMPANION_TOOLS = [
   },
 ];
 
-const ReservationStatsArgs = z.object({ period: z.enum(['today', '7d', '30d']).default('7d') });
+const PeriodArgs = z.object({ period: z.enum(['today', '7d', '30d']).default('7d') });
 const NoArgs = z.object({});
 const MonthlyRoiArgs = z.object({ month: z.string().regex(MONTH_PATTERN) });
 
@@ -108,9 +130,15 @@ export async function runCompanionTool(
 
   switch (name) {
     case 'reservation_stats': {
-      const parsed = ReservationStatsArgs.safeParse(args);
+      const parsed = PeriodArgs.safeParse(args);
       if (!parsed.success) return invalid;
       result = computeDashboardStats(restaurantId, parsed.data.period);
+      break;
+    }
+    case 'call_stats': {
+      const parsed = PeriodArgs.safeParse(args);
+      if (!parsed.success) return invalid;
+      result = computeCallStats(restaurantId, parsed.data.period);
       break;
     }
     case 'upcoming_days': {
@@ -134,7 +162,10 @@ export async function runCompanionTool(
   }
 
   try {
-    return { content: await result, source: { tool: name, href: DASHBOARD_HREF } };
+    return {
+      content: await result,
+      source: { tool: name, href: SOURCE_HREFS[name] ?? DASHBOARD_HREF },
+    };
   } catch (error) {
     logger.warn(
       { tool: name, error: error instanceof Error ? error.name : 'unknown' },
