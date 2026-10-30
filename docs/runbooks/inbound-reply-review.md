@@ -2,6 +2,10 @@
 
 Les réponses entrantes reçues par les webhooks Telnyx ne modifient aucune réservation tant que leur rattachement n'est pas fiable. Un identifiant fournisseur et le canal sont placés dans `dead-letter`, sans numéro ni texte du message. Les accusés de livraison restent traités normalement.
 
+## Condition préalable à la mise en service
+
+Le portail Telnyx ne constitue pas une boîte de réception permettant de lire le contenu des SMS entrants ([documentation Telnyx](https://support.telnyx.com/en/articles/4348981-receiving-sms-on-your-telnyx-number)). La référence conservée seule ne prouve donc pas que le message ou son expéditeur sera récupérable. Ne pas déployer cette suspension avant de valider en staging une conservation sécurisée du contenu et une consultation effective par un opérateur, avec un message de test.
+
 Pour repérer les éléments à examiner, depuis l'environnement API :
 
 ```sh
