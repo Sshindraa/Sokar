@@ -83,7 +83,10 @@ describe('marketing unsubscribe token', () => {
     });
     expect(db.marketingPermission.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { customerId_channel: { customerId: 'customer-1', channel: 'EMAIL' } },
+        where: {
+          customerId_channel: { customerId: 'customer-1', channel: 'EMAIL' },
+          restaurantId: 'restaurant-1',
+        },
         create: expect.objectContaining({ status: MarketingPermissionStatus.OPTED_OUT }),
       }),
     );
