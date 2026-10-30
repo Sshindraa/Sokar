@@ -138,8 +138,9 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
         messages: history.slice(-SENT_HISTORY).map(({ role, content }) => ({ role, content })),
       };
       const reply = await post<CompanionReply>('companion/chat', body);
-      setMessages([
-        ...history,
+      // Mise à jour fonctionnelle : un avis donné pendant l'attente reste dans la liste.
+      setMessages((previous) => [
+        ...previous,
         {
           role: 'assistant',
           content: reply.reply,

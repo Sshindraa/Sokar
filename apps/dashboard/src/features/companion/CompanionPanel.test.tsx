@@ -15,6 +15,7 @@ vi.mock('@/lib/api', () => ({
 
 const WEEK_QUESTION = 'Comment se présentent les 7 prochains jours ?';
 const RESPONSE_ID = '3f2b8c1e-5d4a-4b7e-9c1f-2a6d8e0b7c45';
+const OTHER_RESPONSE_ID = '8a1d5e7f-2b3c-4d9e-8f0a-1c2b3d4e5f60';
 
 function renderPanel() {
   return render(
@@ -210,6 +211,39 @@ describe('CompanionPanel', () => {
     expect(screen.getByText('Réponse ancienne')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Réponse utile' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Réponse peu utile' })).not.toBeInTheDocument();
+  });
+
+  it('un avis donné pendant une question en cours n’est pas effacé par la réponse suivante', async () => {
+    let resolveSecond!: (value: unknown) => void;
+    mocks.post.mockResolvedValueOnce({
+      reply: 'Première réponse.',
+      sources: [],
+      responseId: RESPONSE_ID,
+    });
+    mocks.post.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSecond = resolve;
+      }),
+    );
+    mocks.post.mockResolvedValueOnce(undefined);
+    renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: WEEK_QUESTION }));
+    await screen.findByText('Première réponse.');
+    typeInDraft('Et les no-shows ?');
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Réponse utile' }));
+    resolveSecond({ reply: 'Deuxième réponse.', sources: [], responseId: OTHER_RESPONSE_ID });
+
+    expect(await screen.findByText('Deuxième réponse.')).toBeInTheDocument();
+    const [first] = screen.getAllByRole('button', { name: 'Réponse utile' });
+    expect(first).toHaveAttribute('aria-pressed', 'true');
+    expect(first).toBeDisabled();
+    const feedbackCalls = mocks.post.mock.calls.filter(([path]) => path === 'companion/feedback');
+    expect(feedbackCalls).toEqual([
+      ['companion/feedback', { responseId: RESPONSE_ID, rating: 'up' }],
+    ]);
   });
 
   it('Nouvelle conversation vide l’historique du site', () => {
