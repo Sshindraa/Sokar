@@ -922,6 +922,20 @@ de réservation et la disponibilité. La provenance est stockée dans
 Grafana donne un accès anonyme en lecture seule, sans inscription, et s'ouvre
 uniquement par tunnel SSH ; ne publiez pas son port.
 
+## Companion (assistant du dashboard)
+
+`POST /companion/chat` répond à l'équipe de direction (OWNER, MANAGER, ORG_MEMBER). STAFF et READ_ONLY reçoivent 403
+par la politique de rôles. Le modèle passe par OpenRouter avec `OPENROUTER_API_KEY` et `OPENROUTER_BASE_URL`, partagées
+avec la voix : sans clé, la route répond 503. Une requête OpenRouter en erreur ou en délai dépassé (20 s) répond 502.
+Plafond : 100 messages par jour et par restaurant (jour calendaire Europe/Paris), 429 au-delà. Les outils ne lisent que
+des agrégats. Chaque requête OpenRouter demande `provider.data_collection: deny` : le fournisseur ne conserve pas les
+messages du gérant.
+
+```dotenv
+# Modèle du Companion. Défaut : Claude Haiku 5.5 (slug OpenRouter vérifié le 30/10/2026).
+COMPANION_LLM_MODEL="anthropic/claude-haiku-5.5"
+```
+
 ## Voice STT (Deepgram)
 
 Deepgram Nova-3 est le seul fournisseur de reconnaissance, pour tous les restaurants et sans réglage

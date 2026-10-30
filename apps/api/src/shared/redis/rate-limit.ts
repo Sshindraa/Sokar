@@ -16,12 +16,16 @@ const DEFAULT_LIMIT = 10;
  *
  * @returns true si la requête est autorisée, false si la limite est dépassée.
  */
-export async function checkRateLimit(key: string, limit: number = DEFAULT_LIMIT): Promise<boolean> {
+export async function checkRateLimit(
+  key: string,
+  limit: number = DEFAULT_LIMIT,
+  windowSeconds: number = WINDOW_SECONDS,
+): Promise<boolean> {
   try {
     const count = await redisCache.incr(key);
     if (count === 1) {
       // Première requête dans la fenêtre — définir le TTL
-      await redisCache.expire(key, WINDOW_SECONDS);
+      await redisCache.expire(key, windowSeconds);
     }
     return count <= limit;
   } catch (err: unknown) {

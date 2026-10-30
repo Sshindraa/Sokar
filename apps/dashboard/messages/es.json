@@ -46,9 +46,6 @@
     "expand": "Mostrar grupos de navegación",
     "collapse": "Ocultar grupos de navegación",
     "close": "Cerrar",
-    "comingSoon": "Próximamente",
-    "companionSoon": "Companion llegará pronto",
-    "companionSoonDescription": "Un espacio compartido para preparar el servicio, seguir las prioridades y actuar con su equipo desde un mismo lugar.",
     "admin": "Admin Sokar",
     "settings": "Ajustes",
     "health": "Salud"
@@ -79,6 +76,23 @@
     "notFound": "Página no encontrada",
     "notFoundDescription": "La página que busca no existe o ha sido movida.",
     "goHome": "Volver al inicio"
+  },
+  "companion": {
+    "title": "Companion",
+    "greeting": "Soy el asistente de IA de Sokar. Leo las cifras de su restaurante, sin datos de clientes.",
+    "suggestions": {
+      "week": "¿Cómo se presentan los próximos 7 días?",
+      "noShows": "¿Cómo van mis no-shows?",
+      "bookings": "¿Cuántas reservas hay esta semana?"
+    },
+    "placeholder": "Haga una pregunta sobre sus cifras",
+    "send": "Enviar",
+    "thinking": "Analizando…",
+    "retry": "Reintentar",
+    "newConversation": "Nueva conversación",
+    "disclaimer": "Respuestas generadas por IA, a verificar. No introduzca datos de contacto de clientes.",
+    "openSource": "Ver en el panel",
+    "genericError": "El asistente no puede responder por el momento. Inténtelo de nuevo en un momento."
   },
   "languageSwitcher": {
     "label": "Idioma",

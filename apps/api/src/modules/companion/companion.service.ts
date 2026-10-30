@@ -1,0 +1,234 @@
+/**
+ * Companion : une réponse de l'assistant du dashboard, par OpenRouter. Le modèle lit les chiffres par
+ * les outils (companion.tools.ts) et ne voit jamais de donnée client. Une requête par tour, 20 s
+ * chacune, 4 tours d'outils au plus : le tour suivant part sans outils pour obtenir la réponse finale.
+ */
+import type { FastifyBaseLogger } from 'fastify';
+import { z } from 'zod';
+import { env } from '../../env';
+import { COMPANION_TOOLS, runCompanionTool } from './companion.tools';
+
+const REQUEST_TIMEOUT_MS = 20_000;
+const MAX_TOOL_ROUNDS = 4;
+const MAX_OUTPUT_TOKENS = 1024;
+
+export interface CompanionMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface CompanionAnswer {
+  reply: string;
+  sources: Array<{ tool: string; href: string }>;
+}
+
+/** OpenRouter en échec, lent ou illisible : la route répond 502. */
+export class CompanionUpstreamError extends Error {}
+
+interface ToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+}
+
+const completionSchema = z.object({
+  choices: z
+    .array(
+      z.object({
+        message: z.object({
+          content: z.string().nullish(),
+          tool_calls: z
+            .array(
+              z.object({
+                id: z.string(),
+                type: z.literal('function').default('function'),
+                function: z.object({ name: z.string(), arguments: z.string() }),
+              }),
+            )
+            .optional(),
+        }),
+      }),
+    )
+    .min(1),
+  usage: z
+    .object({
+      prompt_tokens: z.number().int().nonnegative(),
+      completion_tokens: z.number().int().nonnegative(),
+    })
+    .optional(),
+});
+
+const dayFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Paris',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+const longDateFormatter = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: 'Europe/Paris',
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+});
+
+/** Jour AAAA-MM-JJ à Paris : clé du plafond quotidien et date injectée au modèle. */
+export function companionDayKey(now: Date): string {
+  return dayFormatter.format(now);
+}
+
+export function companionSystemPrompt(now: Date): string {
+  return [
+    `Vous êtes l'assistant IA de Sokar, au service de l'équipe de direction de ce restaurant. Vous répondez à partir des chiffres du tableau de bord, que vous obtenez par vos outils.`,
+    `Aujourd'hui, nous sommes le ${longDateFormatter.format(now)} (${companionDayKey(now)}, fuseau Europe/Paris).`,
+    '',
+    'Règles :',
+    '- Vouvoyez toujours votre interlocuteur. Répondez en français, en quelques phrases courtes.',
+    "- Tout chiffre que vous donnez vient d'un outil de cette conversation. Si les outils ne le fournissent pas, dites que vous ne l'avez pas.",
+    '- Les montants (chiffre d’affaires, économies, coûts évités) sont des estimations : dites-le.',
+    "- Périmètre : les réservations prises pendant une période, les jours à venir (réservations et couverts prévus), les no-shows des 90 derniers jours, le retour sur investissement d'un mois. Les jours passés par date de service ne sont pas disponibles : dites-le plutôt que d'estimer.",
+    "- Une rédaction (message à un client, relance) est un brouillon : rien n'est envoyé, et vous ne dites jamais l'avoir envoyé.",
+    '- Pas de conseil juridique, fiscal ni comptable : orientez vers un professionnel.',
+    "- Vous n'avez accès à aucune coordonnée ni à aucun nom de client : ne les demandez pas.",
+    '- Texte simple, sans Markdown : ni gras (**), ni titre (#), ni tableau. Les listes utilisent un tiret « - ».',
+    '- Ne supposez aucune cause ni aucune action absente des données. Ne suggérez donc aucune vérification (canal de réservation, synchronisation, réglage) : constatez ce que disent les chiffres, puis dites ce que vous ne savez pas.',
+    "- Vos réponses précédentes figurent dans la conversation : pour rappeler un chiffre que vous avez déjà donné, reprenez-le sans vous désavouer. Pour toute question chiffrée nouvelle ou contestée, interrogez de nouveau l'outil : les chiffres changent pendant la journée.",
+  ].join('\n');
+}
+
+type AssistantMessage = z.infer<typeof completionSchema>['choices'][number]['message'];
+
+async function requestTurn(
+  conversation: ChatMessage[],
+  withTools: boolean,
+  trace: CompanionTrace,
+  fetcher: typeof fetch,
+): Promise<AssistantMessage> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  trace.turns++;
+  try {
+    const response = await fetcher(
+      `${env.OPENROUTER_BASE_URL.replace(/\/+$/, '')}/chat/completions`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: env.COMPANION_LLM_MODEL,
+          // Pas de conservation des données par le fournisseur : les messages du gérant y transitent.
+          provider: { data_collection: 'deny' },
+          messages: conversation,
+          ...(withTools ? { tools: COMPANION_TOOLS, tool_choice: 'auto' } : {}),
+          max_tokens: MAX_OUTPUT_TOKENS,
+        }),
+        signal: controller.signal,
+      },
+    );
+    if (!response.ok) throw new CompanionUpstreamError(`http_${response.status}`);
+    const parsed = completionSchema.safeParse(await response.json());
+    if (!parsed.success) throw new CompanionUpstreamError('invalid_response');
+    trace.inputTokens += parsed.data.usage?.prompt_tokens ?? 0;
+    trace.outputTokens += parsed.data.usage?.completion_tokens ?? 0;
+    return parsed.data.choices[0].message;
+  } catch (error) {
+    if (error instanceof CompanionUpstreamError) throw error;
+    throw new CompanionUpstreamError(
+      error instanceof Error && error.name === 'AbortError' ? 'timeout' : 'network_error',
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+interface CompanionTrace {
+  turns: number;
+  tools: string[];
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export async function answerCompanion(input: {
+  restaurantId: string;
+  messages: CompanionMessage[];
+  log: FastifyBaseLogger;
+  fetcher?: typeof fetch;
+}): Promise<CompanionAnswer> {
+  const started = performance.now();
+  const fetcher = input.fetcher ?? fetch;
+  const trace: CompanionTrace = { turns: 0, tools: [], inputTokens: 0, outputTokens: 0 };
+  const sources: CompanionAnswer['sources'] = [];
+  const conversation: ChatMessage[] = [
+    { role: 'system', content: companionSystemPrompt(new Date()) },
+    ...input.messages,
+  ];
+  let outcome = 'ok';
+  let reason: string | undefined;
+
+  try {
+    for (let round = 0; ; round++) {
+      const withTools = round < MAX_TOOL_ROUNDS;
+      const message = await requestTurn(conversation, withTools, trace, fetcher);
+      if (!withTools || !message.tool_calls?.length) {
+        const reply = message.content?.trim() ?? '';
+        if (!reply) throw new CompanionUpstreamError('empty_reply');
+        return { reply, sources };
+      }
+
+      conversation.push({
+        role: 'assistant',
+        content: message.content ?? null,
+        tool_calls: message.tool_calls,
+      });
+      for (const call of message.tool_calls) {
+        const result = await runCompanionTool(
+          call.function.name,
+          call.function.arguments,
+          input.restaurantId,
+        );
+        trace.tools.push(call.function.name);
+        if (result.source && !sources.some((source) => source.tool === result.source?.tool)) {
+          sources.push(result.source);
+        }
+        conversation.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: JSON.stringify(result.content),
+        });
+      }
+    }
+  } catch (error) {
+    if (error instanceof CompanionUpstreamError) {
+      outcome = 'upstream_error';
+      reason = error.message;
+    } else {
+      outcome = 'error';
+    }
+    throw error;
+  } finally {
+    // Ni le contenu des messages ni les résultats d'outils : seulement la forme de l'appel.
+    input.log.info(
+      {
+        model: env.COMPANION_LLM_MODEL,
+        outcome,
+        reason,
+        turns: trace.turns,
+        tools: trace.tools,
+        input_tokens: trace.inputTokens,
+        output_tokens: trace.outputTokens,
+        latency_ms: Math.round(performance.now() - started),
+      },
+      'companion chat',
+    );
+  }
+}

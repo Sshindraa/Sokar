@@ -440,6 +440,16 @@ Latences p50/p95/p99 STT/LLM/TTS.
 
 ---
 
+## Companion
+
+Module : `apps/api/src/modules/companion/`
+
+### POST /companion/chat
+
+Assistant du dashboard (OWNER, MANAGER, ORG_MEMBER ; STAFF et READ_ONLY : 403). Corps : `messages` (1 à 20, le dernier de l'utilisateur, 4000 caractères max). Réponse JSON : `reply`, `sources` (`tool`, `href`). 503 sans clé OpenRouter, 429 au-delà de 100 messages par jour, 502 si OpenRouter échoue.
+
+---
+
 ## Voice (Telnyx)
 
 Module : `apps/api/src/modules/voice/telnyx.pipeline.ts`

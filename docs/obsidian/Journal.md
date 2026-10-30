@@ -3112,3 +3112,23 @@ Vérification d’identité et export rouverts après qualification SMS en stagi
 ### 2026-10-30 — Rollback staging : dépendances restaurées
 
 Le test de rollback de Sshindraa/Sokar#577 échouait : l'artefact de la release précédente exige `zod-to-json-schema`, retiré par la PR (passage à Zod 4), donc absent de node_modules après le déploiement. Correctif : chaque snapshot garde le lockfile et les package.json de son commit (`deps/`), et le rollback réinstalle via `pnpm install --frozen-lockfile` avant de redémarrer. Une release sans lockfile est refusée avant d'arrêter les services. Non validé sur le VPS : la prochaine exécution de staging le vérifiera (le pré-build utilise `.latest-hash`).
+
+### 2026-10-30 — Companion, phase 1 : API de chat (sans UI)
+
+Ajout de `POST /companion/chat` (`apps/api/src/modules/companion/`) : réponse JSON `{ reply, sources }`, modèle `COMPANION_LLM_MODEL` (défaut `anthropic/claude-haiku-5.5`, slug vérifié sur OpenRouter le 30/10). Quatre outils en lecture seule (`reservation_stats`, `upcoming_days`, `no_shows`, `monthly_roi`) appellent en process les calculs des routes dashboard, extraits en fonctions exportées dans `dashboard.routes.ts` (sortie inchangée, tests dashboard verts sans modification) ; `monthly_roi` reprend `computeRoi`. Plafond 100 messages par jour et par restaurant via `checkRateLimit`, dont la fenêtre devient un paramètre optionnel. Rôles : STAFF et READ_ONLY reçoivent 403 de la politique existante, qui n'a pas été modifiée. Décisions ouvertes : pas de SSE, 4 tours d'outils puis une réponse finale sans outils, quota fail-open si Redis tombe (convention de `checkRateLimit`), et `href` vers `/dashboard` pour `monthly_roi` faute d'écran qui consomme `/analytics/roi`. Correctif : chaque requête porte `provider.data_collection: deny` (test sur les cinq corps d'une boucle complète). Clé `OPENROUTER_API_KEY` de `apps/api/.env` renouvelée (auth/key 200) ; deux curls en 200 sur l'API dev. Fichiers : `apps/api/src/modules/companion/*`, `dashboard.routes.ts`, `rate-limit.ts`, `env.ts`, `main.ts`, `docs/runbooks/environment.md`.
+
+### 2026-10-30 — Companion, phase 2 : panneau dashboard et prompt
+
+Panneau `CompanionPanel` dans le dialog Companion (`apps/dashboard/src/features/companion/`) : historique par site en sessionStorage (`sokar.companion.<siteId>`), « Nouvelle conversation », trois suggestions d'accueil, sources dédoublonnées, erreurs de l'API avec Réessayer. Bouton masqué pour STAFF et READ_ONLY ; libellés en fr, en, es, it. Prompt : texte sans Markdown, aucune cause ni vérification suggérée hors données, et rappel que les résultats d'outils des questions précédentes ne sont pas visibles (sans lui, le modèle se désavouait). Descriptions d'outils précisées (7d/30d inclus, zéros non cités, seuil de 20 réservations pour les no-shows). Écart ouvert : les résultats d'outils ne voyagent pas d'un tour à l'autre, l'historique client ne garde que le texte ; correctif structurel à décider. Captures (1024 px, clair et sombre) faites sur le dashboard dev de l'autre session (port 3110, API 4000), Next refusant un second `next dev` dans le dossier.
+
+### 2026-10-30 — Companion : résultats d'outils réinjectés
+
+Contrat `POST /companion/chat` étendu, sans rupture : chaque message peut porter `toolRuns` (`name`, `arguments`, `result`, bornés par `ToolRunSchema`), et la réponse renvoie les `toolRuns` du tour. Le serveur les rejoue au modèle (appel d'outil puis résultat, avant la réponse) sans les réexécuter. Le client les stocke dans sa conversation de session. Un tour est plafonné à 40 appels d'outils ; au-delà, l'appel reçoit `too_many_tool_calls`. Vérifié en navigateur : quatrième question sur des chiffres donnés plus tôt, réponse cohérente, sans désaveu. Point ouvert : les `toolRuns` viennent du client et ne sont pas signés ; le serveur les traite comme des données passées, jamais comme des consignes, et ne lit aucune donnée d'un autre restaurant à partir d'eux. Prompt : les résultats des questions précédentes figurent dans la conversation.
+
+### 2026-10-30 — Companion : retrait de toolRuns
+
+Retrait de `toolRuns` (API, panneau, doc) : l'historique redevient `{ role, content }` ; les entrées sessionStorage anciennes restent lisibles, sans ce champ.
+
+### 2026-10-30 — Companion : panneau monté même fermé
+
+Le dialog Companion reste monté quand il est fermé (`hidden`) : fermer le panneau pendant une question ne perd plus l'attente, la réponse ni l'erreur avec Réessayer. Test du layout : panneau fermé présent mais invisible.
