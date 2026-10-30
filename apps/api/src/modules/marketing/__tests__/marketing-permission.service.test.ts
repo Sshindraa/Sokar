@@ -11,6 +11,8 @@ import {
 
 vi.mock('../../../shared/db/client', () => ({
   db: {
+    $queryRaw: vi.fn(),
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(db)),
     customer: { findFirst: vi.fn(), findUnique: vi.fn() },
     customerConsent: { findMany: vi.fn() },
     marketingPermission: { upsert: vi.fn(), findMany: vi.fn() },
@@ -176,7 +178,7 @@ describe('marketing permission projection', () => {
       expect(optOut().upsert).not.toHaveBeenCalled();
     });
 
-    it('never fails the permission change when the register cannot be updated', async () => {
+    it('reports failure while keeping the existing profile opted out when the register fails', async () => {
       optOut().upsert.mockRejectedValue(new Error('db down for alice@example.com'));
       await expect(
         withdrawMarketingPermission({
@@ -184,8 +186,34 @@ describe('marketing permission projection', () => {
           customerId: 'customer-1',
           channel: 'EMAIL',
         }),
-      ).resolves.toMatchObject({ id: 'permission-1' });
+      ).rejects.toThrow('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+      expect(db.marketingPermission.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ update: expect.objectContaining({ status: 'OPTED_OUT' }) }),
+      );
       expect(db.marketingPermissionEvent.create).toHaveBeenCalled();
+    });
+
+    it('reports failure when the key or channel address is missing', async () => {
+      vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', '');
+      await expect(
+        withdrawMarketingPermission({
+          restaurantId: 'restaurant-1',
+          customerId: 'customer-1',
+          channel: 'EMAIL',
+        }),
+      ).rejects.toThrow('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+      vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+      vi.mocked(db.customer.findFirst).mockResolvedValue({
+        ...contact,
+        emailNormalized: null,
+      } as never);
+      await expect(
+        withdrawMarketingPermission({
+          restaurantId: 'restaurant-1',
+          customerId: 'customer-1',
+          channel: 'EMAIL',
+        }),
+      ).rejects.toThrow('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
     });
 
     it('keeps the exact proof text and the author in the event ledger, not in the permission row', async () => {

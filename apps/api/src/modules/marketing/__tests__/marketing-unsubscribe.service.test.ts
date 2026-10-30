@@ -13,9 +13,15 @@ import {
 
 vi.mock('../../../shared/db/client', () => ({
   db: {
+    $queryRaw: vi.fn(),
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(db)),
     customer: { findFirst: vi.fn(), findUnique: vi.fn() },
     marketingPermission: { upsert: vi.fn() },
     marketingPermissionEvent: { create: vi.fn() },
+    marketingOptOut: {
+      upsert: vi.fn().mockResolvedValue({}),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     customerTimelineEvent: { create: vi.fn(), findUnique: vi.fn() },
     reservation: { findFirst: vi.fn() },
   },
@@ -25,8 +31,12 @@ describe('marketing unsubscribe token', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.MARKETING_UNSUBSCRIBE_SECRET = 'u'.repeat(48);
+    process.env.MARKETING_OPTOUT_HASH_SECRET = 'o'.repeat(48);
     process.env.MARKETING_UNSUBSCRIBE_BASE_URL = 'https://api.sokar.test/marketing/unsubscribe';
-    vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'customer-1',
+      emailNormalized: 'client@example.test',
+    } as never);
     vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: 'restaurant-1' } as never);
     vi.mocked(db.customerTimelineEvent.create).mockResolvedValue({ id: 'timeline-1' } as never);
     vi.mocked(db.marketingPermission.upsert).mockResolvedValue({
@@ -73,7 +83,10 @@ describe('marketing unsubscribe token', () => {
     });
     expect(db.marketingPermission.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { customerId_channel: { customerId: 'customer-1', channel: 'EMAIL' } },
+        where: {
+          customerId_channel: { customerId: 'customer-1', channel: 'EMAIL' },
+          restaurantId: 'restaurant-1',
+        },
         create: expect.objectContaining({ status: MarketingPermissionStatus.OPTED_OUT }),
       }),
     );
