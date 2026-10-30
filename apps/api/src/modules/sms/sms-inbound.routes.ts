@@ -3,9 +3,9 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { telnyxWebhookGuard } from '../voice/telnyx.guard';
 import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
-import { handleReply } from './reply-handler';
 import { telnyxMessagingEventsTotal } from '../../shared/observability/metrics';
 import { applyMarketingProviderEvent } from '../marketing/marketing-provider.service';
+import { queueInboundReplyReview } from './inbound-review';
 
 const TelnyxFromSchema = z.union([z.string(), z.object({ phone_number: z.string() })]);
 
@@ -65,8 +65,7 @@ function normalizeMessagingStatus(eventType: string, status?: string): Messaging
 /**
  * Handler pour les SMS entrants de Telnyx (réponses clients).
  *
- * Délègue le parsing OUI/NON et la logique métier à reply-handler.ts,
- * partagé avec le webhook WhatsApp inbound.
+ * Suspend les réponses tant que leur réservation ne peut pas être identifiée.
  */
 
 export async function smsInboundRoutes(app: FastifyInstance) {
@@ -123,7 +122,11 @@ export async function smsInboundRoutes(app: FastifyInstance) {
     const from = typeof fromObj === 'string' ? fromObj : fromObj?.phone_number;
     const text = data.payload.text;
 
-    if (!from || !text || !data.payload.id) {
+    if (!data.payload.id) {
+      req.log.warn('sms inbound: missing message ID');
+      return reply.status(503).send({ result: 'temporarily_unavailable' });
+    }
+    if (!from || !text) {
       req.log.warn(
         { hasFrom: Boolean(from), hasText: !!text, hasId: Boolean(data.payload.id) },
         'sms inbound: missing from, text or message ID',
@@ -133,8 +136,13 @@ export async function smsInboundRoutes(app: FastifyInstance) {
 
     req.log.info({ hasFrom: true, textLength: text.length }, 'sms inbound received');
 
-    await handleReply(from, text, 'sms', data.payload.id);
-
+    // A shared sender cannot identify the reservation; retain an opaque reference for review.
+    try {
+      await queueInboundReplyReview('sms', data.payload.id);
+    } catch {
+      req.log.error('sms inbound: review queue unavailable');
+      return reply.status(503).send({ result: 'temporarily_unavailable' });
+    }
     return reply.send({ result: 'ok' });
   });
 }

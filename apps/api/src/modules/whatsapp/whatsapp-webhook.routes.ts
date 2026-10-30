@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { FastifyInstance } from 'fastify';
 import { telnyxWebhookGuard } from '../voice/telnyx.guard';
 import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
-import { handleReply } from '../sms/reply-handler';
 import { applyMarketingProviderEvent } from '../marketing/marketing-provider.service';
+import { queueInboundReplyReview } from '../sms/inbound-review';
 
 interface TelnyxFromObject {
   phone_number?: string;
@@ -34,8 +34,7 @@ interface TelnyxWebhookBody {
  * Telnyx envoie tous les messages entrants au même format :
  * { data: { event_type: "message.received", payload: { text, from, type, ... } } }
  *
- * Le parsing OUI/NON est partagé avec le webhook SMS via reply-handler.ts.
- * Un client qui répond "NON" sur WhatsApp annule sa résa, exactement comme SMS.
+ * Les réponses sont suspendues tant que leur réservation ne peut pas être identifiée.
  *
  * Configuration côté Telnyx Mission Control :
  * - Messaging → Profiles → ton profile → Webhooks → Add URL
@@ -75,7 +74,11 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
     const from = typeof fromObj === 'string' ? fromObj : fromObj?.phone_number;
     const text = payload.text;
 
-    if (!from || !text || !payload.id) {
+    if (!payload.id) {
+      req.log.warn('whatsapp inbound: missing message ID');
+      return reply.status(503).send({ result: 'temporarily_unavailable' });
+    }
+    if (!from || !text) {
       req.log.warn(
         { hasFrom: Boolean(from), hasText: !!text, hasId: Boolean(payload.id) },
         'whatsapp inbound: missing from, text or message ID',
@@ -85,9 +88,13 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
 
     req.log.info({ hasFrom: true, textLength: text.length }, 'whatsapp inbound received');
 
-    // Même handler que SMS — parse OUI/NON et agit sur la résa
-    await handleReply(from, text, 'whatsapp', payload.id);
-
+    // A shared sender cannot identify the reservation; retain an opaque reference for review.
+    try {
+      await queueInboundReplyReview('whatsapp', payload.id);
+    } catch {
+      req.log.error('whatsapp inbound: review queue unavailable');
+      return reply.status(503).send({ result: 'temporarily_unavailable' });
+    }
     return reply.send({ result: 'ok' });
   });
 }
