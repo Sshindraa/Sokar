@@ -57,6 +57,7 @@ packages/**/*.d.ts.map
 
 # Dossiers temporaires de scratch et logs
 apps/api/scratch/
+apps/api/scripts/companion-bench/results/
 private/
 *.log
 *.mp3
