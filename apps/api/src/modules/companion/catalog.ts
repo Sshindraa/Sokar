@@ -57,6 +57,8 @@ export interface Measure {
 
 export interface Dimension {
   label: string;
+  /** Nom du filtre généré pour cette dimension (défaut : le nom de la dimension). */
+  filter?: string;
   /** Valeur de regroupement et de filtre, dérivée de l'élément. */
   key: (item: Item) => Scalar;
   /** Valeurs possibles, pour la validation des filtres. */
@@ -69,9 +71,9 @@ export interface Dimension {
   requiresHours?: boolean;
 }
 
+/** Filtre généré : une dimension à valeurs fermées, list pour une liste, flag pour vrai ou faux. */
 export interface Filter {
   dimension: string;
-  /** list : une liste de valeurs ; flag : vrai ou faux. */
   kind: 'list' | 'flag';
 }
 
@@ -101,7 +103,6 @@ export interface Source {
   guard?: (restaurantId: string) => Promise<void>;
   measures: Readonly<Record<string, Measure>>;
   dimensions: Readonly<Record<string, Dimension>>;
-  filters: Readonly<Record<string, Filter>>;
   read: (args: ReadArgs) => Promise<Item[]>;
 }
 
@@ -169,6 +170,7 @@ export const SOURCES = {
       channel: {
         label:
           'par où arrivent les clients : phone = téléphone, website = site du restaurant, google, ai = assistants IA, team = saisie par l’équipe',
+        filter: 'channels',
         key: (item) => item.fields.channel,
         values: RESERVATION_CHANNEL_GROUPS,
       },
@@ -181,9 +183,6 @@ export const SOURCES = {
         label: 'taille du groupe',
         key: (item) => item.fields.partySize,
       },
-    },
-    filters: {
-      channels: { dimension: 'channel', kind: 'list' },
     },
     read: async ({ restaurantId, dateField, range, states }) => {
       const rows = await db.reservation.findMany({
@@ -226,11 +225,13 @@ export const SOURCES = {
     dimensions: {
       intent: {
         label: 'intention',
+        filter: 'intents',
         key: (item) => item.fields.intent ?? 'unknown',
         values: CALL_INTENTS,
       },
       outcome: {
         label: 'résultat (unfinished = appel non terminé)',
+        filter: 'outcomes',
         key: (item) => item.fields.outcome ?? 'unfinished',
         values: CALL_OUTCOMES,
       },
@@ -241,11 +242,6 @@ export const SOURCES = {
         labels: { true: 'hors horaires', false: 'pendant les horaires' },
         requiresHours: true,
       },
-    },
-    filters: {
-      intents: { dimension: 'intent', kind: 'list' },
-      outcomes: { dimension: 'outcome', kind: 'list' },
-      after_hours: { dimension: 'after_hours', kind: 'flag' },
     },
     read: async ({ restaurantId, range, openingHours }) => {
       const rows = await db.call.findMany({
@@ -297,7 +293,6 @@ export const SOURCES = {
         key: (item) => item.fields.partySize,
       },
     },
-    filters: {},
     guard: async (restaurantId) => {
       const settings = await db.restaurantExposureSettings.findUnique({
         where: { restaurantId },
@@ -351,7 +346,6 @@ export const SOURCES = {
         values: RECOVERY_VALUES,
       },
     },
-    filters: {},
     read: async ({ restaurantId, range }) => {
       const rows = await db.reputationFeedback.findMany({
         where: { restaurantId, submittedAt: range },
@@ -366,3 +360,18 @@ export const SOURCES = {
 } satisfies Record<string, Source>;
 
 export type SourceName = keyof typeof SOURCES;
+
+/**
+ * Filtres d'une source : chaque dimension à valeurs fermées en a un, sous son nom de filtre.
+ * Une dimension sans valeurs fermées (taille du groupe) n'en a pas.
+ */
+export function filtersOf(source: Source): Record<string, Filter> {
+  return Object.fromEntries(
+    Object.entries(source.dimensions).flatMap(([key, dimension]) => {
+      const values = dimension.values;
+      if (!values) return [];
+      const kind = values.every((value) => typeof value === 'boolean') ? 'flag' : 'list';
+      return [[dimension.filter ?? key, { dimension: key, kind }]];
+    }),
+  );
+}

@@ -154,6 +154,25 @@ describe('computeTonight', () => {
     expect(states).not.toContain('NO_SHOW');
   });
 
+  it('exclut les réservations de test de chaque lecture de réservations', async () => {
+    mockDb({
+      day: [reservation({ customerId: 'c1' })],
+      noShows: [{ customerId: 'c1' }],
+      honored: [{ customerId: 'c1', _count: { _all: 3 } }],
+    });
+
+    await computeTonight('r1', LUNCH_MORNING);
+
+    const reads = [
+      ...vi.mocked(db.reservation.findMany).mock.calls.map(([args]) => args),
+      ...vi.mocked(db.reservation.groupBy).mock.calls.map(([args]) => args),
+    ];
+    expect(reads.length).toBeGreaterThanOrEqual(4);
+    for (const args of reads) {
+      expect(args).toMatchObject({ where: { isTest: false } });
+    }
+  });
+
   it('calcule les couverts habituels du même service et du même jour de semaine', async () => {
     mockDb({
       usual: [

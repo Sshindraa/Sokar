@@ -128,3 +128,60 @@ describe('computeQueryData : liste d’attente et avis', () => {
     expect(result).toMatchObject({ total: 4.3 });
   });
 });
+
+describe('computeQueryData : filtres générés depuis les dimensions fermées', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(evaluateCapability).mockResolvedValue({ allowed: true } as never);
+    vi.mocked(db.reputationFeedback.findMany).mockResolvedValue([] as never);
+  });
+
+  it('accepte un filtre sur la dimension fermée de la note, sans filtre déclaré', async () => {
+    const result = await computeQueryData('r1', {
+      entity: 'feedback',
+      metric: 'count',
+      from: '2026-10-01',
+      to: '2026-10-31',
+      filters: { score: [1, 2] },
+    });
+
+    expect(result).not.toMatchObject({ error: 'invalid_query' });
+    expect(db.reputationFeedback.findMany).toHaveBeenCalled();
+  });
+
+  it('refuse une note hors de la liste fermée', async () => {
+    const result = await computeQueryData('r1', {
+      entity: 'feedback',
+      metric: 'count',
+      from: '2026-10-01',
+      to: '2026-10-31',
+      filters: { score: [7] },
+    });
+
+    expect(result).toMatchObject({ error: 'invalid_query' });
+    expect(db.reputationFeedback.findMany).not.toHaveBeenCalled();
+  });
+
+  it('filtre la liste de notes sur sa dimension', async () => {
+    const feedback = (score: number) => ({
+      score,
+      submittedAt: new Date('2026-10-24T19:00:00Z'),
+      recoveryTask: null,
+    });
+    vi.mocked(db.reputationFeedback.findMany).mockResolvedValue([
+      feedback(1),
+      feedback(2),
+      feedback(5),
+    ] as never);
+
+    const result = await computeQueryData('r1', {
+      entity: 'feedback',
+      metric: 'count',
+      from: '2026-10-24',
+      to: '2026-10-24',
+      filters: { score: [1, 2] },
+    });
+
+    expect(result).toMatchObject({ total: 2 });
+  });
+});

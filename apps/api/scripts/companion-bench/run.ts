@@ -469,7 +469,7 @@ const QUESTIONS: Question[] = [
   },
   {
     n: 30,
-    text: 'Combien de demandes en liste d’attente ont été obtenues le mois dernier ?',
+    text: 'Combien de demandes en liste d’attente ont été obtenues sur les créneaux du mois dernier ?',
     expected: async (id) => {
       const [from, to] = monthBounds(previousMonth());
       return count((await waitlistBetween(id, 'slotStart', from, to, 'PROMOTED')).length);

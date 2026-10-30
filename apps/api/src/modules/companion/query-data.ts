@@ -11,6 +11,7 @@ import { evaluateCapability } from '../entitlements/entitlement.service';
 import {
   RESERVATION_STATES,
   SOURCES,
+  filtersOf,
   type Item,
   type Measure,
   type Scalar,
@@ -117,19 +118,25 @@ const DateSchema = z
   .refine(isRealDay, 'date inexistante');
 const WeekdaySchema = z.number().int().min(0).max(6);
 const enumOf = (values: readonly string[]) => z.enum(values as [string, ...string[]]);
+// Valeurs fermées d'une dimension : texte, nombre ou booléen, chacun exact.
+const literalUnion = (values: readonly Scalar[]) =>
+  z.union(
+    values.map((value) => z.literal(value as string | number | boolean)) as unknown as [
+      z.ZodLiteral,
+      z.ZodLiteral,
+      ...z.ZodLiteral[],
+    ],
+  );
 
 // Un schéma par source, à partir de sa fiche : seuls les champs de la fiche sont acceptés.
 function sourceSchema(name: string, source: Source) {
   const dates = Object.keys(source.dates);
   const filters: Record<string, z.ZodType> = { weekdays: z.array(WeekdaySchema).optional() };
   if (source.states) filters.states = z.array(enumOf(source.states.values)).optional();
-  for (const [filterName, filter] of Object.entries(source.filters)) {
+  for (const [filterName, filter] of Object.entries(filtersOf(source))) {
+    const values = source.dimensions[filter.dimension].values ?? [];
     filters[filterName] =
-      filter.kind === 'flag'
-        ? z.boolean().optional()
-        : z
-            .array(enumOf(source.dimensions[filter.dimension].values as readonly string[]))
-            .optional();
+      filter.kind === 'flag' ? z.boolean().optional() : z.array(literalUnion(values)).optional();
   }
   return z
     .object({
@@ -300,10 +307,8 @@ export async function computeQueryData(
       : undefined;
 
   // Les horaires ne se lisent que si une dimension ou un filtre les demande.
-  const hoursDimension = [
-    groupBy,
-    ...Object.keys(filters).map((name) => source.filters[name]?.dimension),
-  ]
+  const specs = filtersOf(source);
+  const hoursDimension = [groupBy, ...Object.keys(filters).map((name) => specs[name]?.dimension)]
     .map((name) => (name ? source.dimensions[name] : undefined))
     .find((dim) => dim?.requiresHours);
   let openingHours: unknown;
@@ -319,7 +324,7 @@ export async function computeQueryData(
   }
 
   const states = source.states
-    ? ((filters.states as string[] | undefined) ?? [...source.states.default])
+    ? ((filters.states ?? filters.state ?? [...source.states.default]) as string[])
     : [];
   const range = { gte: parisMidnight(query.from), lt: parisMidnight(addDays(query.to, 1)) };
   const items = await source.read({ restaurantId, dateField, range, states, openingHours });
@@ -330,7 +335,7 @@ export async function computeQueryData(
       if (name === 'weekdays') {
         return (value as number[]).includes(parisParts(item.dates[dateField]).weekday);
       }
-      const filter = source.filters[name];
+      const filter = specs[name];
       const key = source.dimensions[filter.dimension].key(item);
       return filter.kind === 'flag' ? key === value : (value as Scalar[]).includes(key);
     });
@@ -391,7 +396,7 @@ export function queryDataDescription(): string {
     )
     .join(' ; ');
   const filterNames = sources
-    .flatMap(([, source]) => Object.keys(source.filters))
+    .flatMap(([, source]) => Object.keys(filtersOf(source)))
     .concat(sources.some(([, source]) => source.states) ? ['states'] : [], ['weekdays']);
   const stateNotes = sources.flatMap(([, source]) => (source.states ? [source.states.note] : []));
   return [
@@ -423,8 +428,6 @@ export function queryScope(): string {
 
 /** Paramètres JSON de query_data, générés depuis le catalogue. */
 export function queryDataParameters() {
-  const dimensionValues = (name: string) =>
-    sources.flatMap(([, source]) => (source.dimensions[name]?.values ?? []) as string[]);
   const filterProperties: Record<string, unknown> = {
     weekdays: { type: 'array', items: { type: 'integer', minimum: 0, maximum: 6 } },
   };
@@ -435,13 +438,14 @@ export function queryDataParameters() {
     };
   }
   for (const [, source] of sources) {
-    for (const [name, filter] of Object.entries(source.filters)) {
+    for (const [name, filter] of Object.entries(filtersOf(source))) {
+      const values = source.dimensions[filter.dimension].values ?? [];
       filterProperties[name] =
         filter.kind === 'flag'
           ? { type: 'boolean' }
           : {
               type: 'array',
-              items: { type: 'string', enum: unique(dimensionValues(filter.dimension)) },
+              items: { type: typeof values[0] === 'number' ? 'integer' : 'string', enum: values },
             };
     }
   }

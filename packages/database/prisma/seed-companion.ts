@@ -161,7 +161,8 @@ function bookingMinute(period: Period): number {
 }
 
 // Environ un appel sur cinq tombe hors des heures d'ouverture. Jamais dans le futur.
-function callInstant(dayKey: string, periods: Period[], now: Date): Date {
+// Instant d'un appel, ancré sur minuit du jour : indépendant de l'heure à laquelle le seed tourne.
+function callInstant(dayKey: string, periods: Period[]): Date {
   let minute: number;
   if (periods.length > 0 && rnd() < 0.8) {
     const period = pick(periods);
@@ -170,9 +171,7 @@ function callInstant(dayKey: string, periods: Period[], now: Date): Date {
   } else {
     minute = pick([randInt(0, 659), randInt(1380, 1439)]);
   }
-  const at = parisInstant(dayKey, minute);
-  const shift = randInt(1, 120) * 60_000;
-  return at > now ? new Date(now.getTime() - shift) : at;
+  return parisInstant(dayKey, minute);
 }
 
 // Vendredi et samedi pleins, jeudi moyen, le reste plus calme.
@@ -339,7 +338,7 @@ async function main() {
       if (createdDay > today) createdDay = addDays(today, -randInt(0, 21));
       const createdAt = new Date(
         Math.min(
-          callInstant(createdDay, periodsOn(createdDay, hours), now).getTime(),
+          callInstant(createdDay, periodsOn(createdDay, hours)).getTime(),
           reservedAt.getTime() - 60 * 60_000,
         ),
       );
@@ -396,7 +395,7 @@ async function main() {
         intent: outcome.intent,
         outcome: outcome.outcome,
         carrier: 'telnyx',
-        createdAt: reservation ? (reservation.createdAt as Date) : callInstant(day, periods, now),
+        createdAt: reservation ? (reservation.createdAt as Date) : callInstant(day, periods),
       });
     }
   }
@@ -412,7 +411,9 @@ async function main() {
       const slotStart = parisInstant(day, bookingMinute(period));
       const customer = pick(customers);
       const [firstName, ...lastNames] = customer.name.split(' ');
-      const status: WaitingListStatus = slotStart > now ? 'PENDING' : weighted(WAITLIST_PAST);
+      // Tirage fait dans tous les cas : la suite du seed ne dépend pas de l'heure.
+      const pastStatus = weighted(WAITLIST_PAST);
+      const status: WaitingListStatus = slotStart > now ? 'PENDING' : pastStatus;
       waitlist.push({
         id: randomUUID(),
         restaurantId,
@@ -443,7 +444,8 @@ async function main() {
   const recoveries: Prisma.ReputationRecoveryTaskCreateManyInput[] = [];
   for (const reservation of reservations) {
     const reservedAt = reservation.reservedAt as Date;
-    if (reservation.state !== 'HONORED' || reservedAt > now || rnd() > 0.35) continue;
+    const sampled = rnd() <= 0.35;
+    if (!sampled || reservation.state !== 'HONORED' || reservedAt > now) continue;
     const requestedAt = new Date(reservedAt.getTime() + 86_400_000);
     const submittedAt = new Date(requestedAt.getTime() + randInt(0, 2) * 86_400_000);
     if (submittedAt > now) continue;

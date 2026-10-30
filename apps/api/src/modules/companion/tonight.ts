@@ -70,6 +70,8 @@ export async function computeTonight(restaurantId: string, now: Date): Promise<T
     db.reservation.findMany({
       where: {
         restaurantId,
+        // Réservations de test du dashboard : jamais lues par le Companion.
+        isTest: false,
         state: { in: [...SERVICE_STATES] },
         reservedAt: { gte: dayStart, lt: dayEnd },
       },
@@ -89,6 +91,8 @@ export async function computeTonight(restaurantId: string, now: Date): Promise<T
     db.reservation.findMany({
       where: {
         restaurantId,
+        // Réservations de test du dashboard : jamais lues par le Companion.
+        isTest: false,
         state: { in: [...COUNTED_RESERVATION_STATES] },
         reservedAt: { gte: usualStart, lt: dayStart },
       },
@@ -124,6 +128,8 @@ export async function computeTonight(restaurantId: string, now: Date): Promise<T
       db.reservation.findMany({
         where: {
           restaurantId,
+          // Réservations de test du dashboard : jamais lues par le Companion.
+          isTest: false,
           customerId: { in: customerIds },
           state: 'NO_SHOW',
           reservedAt: { gte: yearAgoStart, lt: dayStart },
@@ -135,6 +141,8 @@ export async function computeTonight(restaurantId: string, now: Date): Promise<T
         by: ['customerId'],
         where: {
           restaurantId,
+          // Réservations de test du dashboard : jamais lues par le Companion.
+          isTest: false,
           customerId: { in: customerIds },
           state: 'HONORED',
           reservedAt: { lt: dayStart },
