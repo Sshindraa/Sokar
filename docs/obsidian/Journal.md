@@ -3100,3 +3100,10 @@ Sokar lancé sur iPad (A16, iOS 27.0) : même liste du 2026-10-29, mise en page 
 ### 2026-10-30 — iOS : onglet Appels
 
 TabView avec Réservations (écran inchangé) et Appels. Ajouts : `Call.swift` (champs demandés, enveloppe `data`, libellés repris du dashboard), `CallsView.swift` (liste, états, tirer-pour-rafraîchir, ligne d en-tête partagée), `CallDetailView.swift` (même en-tête, transcription sélectionnable ou « Aucune transcription »). Build `iphonesimulator` réussi, sans avertissement. Vérifié à l écran sur iPhone 17 : liste des 3 appels de staging (heures Paris, m:ss), détail avec transcription, détail sans transcription. Non vérifié : tirer-pour-rafraîchir, états vide et erreur de la liste. Aucun commit.
+### 2026-10-29 — Incident RGPD : gel de la livraison et lot isolé
+
+Production : routes RGPD bloquées en Nginx, workflow Deploy Production suspendu ; staging reste actif. Lot séparé depuis 88549d48 : preuve SMS, refus des anciens jetons, masquage des liens, protection Nginx maintenue en production et test de concurrence PostgreSQL. Qualification du SMS, des secrets effectivement chargés et du staging requise avant toute réouverture ; traitement manuel via privacy@sokar.tech.
+
+### 2026-10-29 — RGPD : réouverture partielle
+
+Vérification d’identité et export rouverts après qualification SMS en staging ; effacement et opposition marketing restent en 503 car leurs correctifs ne sont pas encore livrés. Configuration Nginx restrictive, liens non journalisés ; requêtes de contrôle sur les hôtes et le proxy. Les demandes concernées restent traitées manuellement via privacy@sokar.tech.

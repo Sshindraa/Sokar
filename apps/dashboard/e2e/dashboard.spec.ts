@@ -67,8 +67,12 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
     await expect(
       page.getByRole('article', { name: 'Indicateur Réservations', exact: true }),
     ).toBeVisible();
-    await expect(page.getByRole('article', { name: 'Indicateur Couverts' })).toBeVisible();
-    await expect(page.getByRole('article', { name: 'Indicateur CA estimé' })).toBeVisible();
+    await expect(
+      page.getByRole('article', { name: 'Indicateur Couverts', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('article', { name: 'Indicateur CA estimé', exact: true }),
+    ).toBeVisible();
 
     const phoneReservations = page.getByRole('article', {
       name: 'Indicateur Réservations téléphone',

@@ -357,7 +357,7 @@ export class IdentityVerificationService {
     try {
       await sendSms(phone, message);
     } catch (err) {
-      logger.error({ err, phone, intent }, 'Failed to send OTP SMS');
+      logger.error({ err, intent }, 'Failed to send OTP SMS');
       throw err;
     }
   }
