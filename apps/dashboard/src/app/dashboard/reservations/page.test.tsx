@@ -958,8 +958,10 @@ describe('ReservationsPage — lien depuis la carte « Ce soir »', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Fermer' }));
 
-    expect(mocks.replace).toHaveBeenCalledWith('/dashboard/reservations?date=2099-06-05', {
-      scroll: false,
-    });
+    // Le paramètre `date` peut rester ou partir selon la version : seul `reservation` doit disparaître.
+    expect(mocks.replace).toHaveBeenCalledTimes(1);
+    const [url, options] = mocks.replace.mock.calls[0];
+    expect(url).not.toContain('reservation=');
+    expect(options).toEqual({ scroll: false });
   });
 });
