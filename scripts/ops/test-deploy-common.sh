@@ -124,4 +124,36 @@ test -f "$TMP_ROOT/apps/connect/.next/standalone/apps/connect/server.js"
 clean_stale_next_types connect # idempotent : rien à supprimer, pas d'erreur
 clean_stale_next_types dashboard
 
+# Dépendances : le lockfile d'une release suit son commit, pas le checkout courant.
+DEPS_REPO="$TMP_ROOT/deps-repo"
+mkdir -p "$DEPS_REPO/apps/api/src" "$DEPS_REPO/packages/config"
+printf 'lockfileVersion: v1\n' > "$DEPS_REPO/pnpm-lock.yaml"
+printf 'packages:\n  - apps/*\n' > "$DEPS_REPO/pnpm-workspace.yaml"
+printf '{"name":"root"}\n' > "$DEPS_REPO/package.json"
+printf '{"name":"api"}\n' > "$DEPS_REPO/apps/api/package.json"
+printf '{"name":"config"}\n' > "$DEPS_REPO/packages/config/package.json"
+printf 'export {}\n' > "$DEPS_REPO/apps/api/src/index.ts"
+git -C "$DEPS_REPO" init -q
+git -C "$DEPS_REPO" add -A
+git -C "$DEPS_REPO" -c user.name=test -c user.email=test@example.com commit -q -m v1
+COMMIT_V1="$(git -C "$DEPS_REPO" rev-parse HEAD)"
+printf 'lockfileVersion: v2\n' > "$DEPS_REPO/pnpm-lock.yaml"
+git -C "$DEPS_REPO" -c user.name=test -c user.email=test@example.com commit -q -am v2
+(
+  SOKAR_ROOT="$DEPS_REPO"
+  snapshot_dependencies "$TMP_ROOT/release-v1" "$COMMIT_V1"
+)
+test "$(cat "$TMP_ROOT/release-v1/deps/pnpm-lock.yaml")" = 'lockfileVersion: v1'
+test -f "$TMP_ROOT/release-v1/deps/pnpm-workspace.yaml"
+test -f "$TMP_ROOT/release-v1/deps/apps/api/package.json"
+test -f "$TMP_ROOT/release-v1/deps/packages/config/package.json"
+test ! -e "$TMP_ROOT/release-v1/deps/apps/api/src/index.ts"
+mkdir -p "$TMP_ROOT/restore-root"
+(
+  SOKAR_ROOT="$TMP_ROOT/restore-root"
+  restore_release_manifests "$TMP_ROOT/release-v1"
+)
+test "$(cat "$TMP_ROOT/restore-root/pnpm-lock.yaml")" = 'lockfileVersion: v1'
+test -f "$TMP_ROOT/restore-root/apps/api/package.json"
+
 echo 'deploy-common release activation/rollback: OK'
