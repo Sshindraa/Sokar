@@ -8,6 +8,8 @@
 
 ## TODOs actifs
 
+- [ ] Réponses SMS/WhatsApp Telnyx : protéger les réponses non corrélées ; revue par référence fournisseur en préparation, sans numéro ni contenu. La consultation Telnyx et le traitement opérateur restent à qualifier ; la disponibilité et la durée de reprise fournisseur ne sont pas garanties. Voir `docs/runbooks/inbound-reply-review.md`.
+
 - [ ] Incident RGPD : vérification SMS et export rouverts en production ; effacement et opposition marketing restent bloqués (503) jusqu’à correction. Correctif SMS livré et qualifié en staging ; examiner les anciens journaux. Les demandes manuelles passent par privacy@sokar.tech.
 
 - [ ] Notifications : #484 qualifiée staging/off prod; WEB/outbox/WhatsApp locaux. Annulation/modification #485–#487 actives et qualifiées staging; liens off prod. Après délai : contact, aucun frais auto.

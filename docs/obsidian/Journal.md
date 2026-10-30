@@ -3107,3 +3107,13 @@ Production : routes RGPD bloquées en Nginx, workflow Deploy Production suspendu
 ### 2026-10-29 — RGPD : réouverture partielle
 
 Vérification d’identité et export rouverts après qualification SMS en staging ; effacement et opposition marketing restent en 503 car leurs correctifs ne sont pas encore livrés. Configuration Nginx restrictive, liens non journalisés ; requêtes de contrôle sur les hôtes et le proxy. Les demandes concernées restent traitées manuellement via privacy@sokar.tech.
+
+### 2026-10-30 — RGPD : export et opposition manuelle en staging
+
+Export : réservation synthétique créée dans une transaction staging annulée ; confirmation du code synthétique, contenu exact de l’export et refus du rejeu vérifiés. Opposition : retrait manuel par canal, exclusion de campagne puis recréation du profil testés en transaction annulée. Échec simulé du registre : le retrait répond positivement et exclut la fiche existante, mais un profil recréé peut redevenir éligible ; routes RGPD sensibles restent fermées. La boîte privacy est consultée par Hamza.
+
+### 2026-10-30 — Réponses entrantes non corrélées : correctif local
+
+Les réponses Telnyx SMS et WhatsApp sont dirigées vers une revue non rejouable par identifiant fournisseur, sans numéro ni contenu en file, au lieu de modifier une réservation ; les statuts de livraison restent traités. Déduplication testée sur Redis local. Une panne de file ou l’absence d’identifiant renvoie 503. L’accès aux messages dans Telnyx et les délais de reprise restent à vérifier ; sans cette qualification aucune garantie de traitement manuel.
+
+- 2026-10-30 — Réponses entrantes : PR #619 mise en brouillon. La documentation Telnyx indique que le portail ne constitue pas une boîte de réception SMS ; la référence fournisseur seule ne garantit pas la consultation du contenu. Avant livraison, prévoir et tester une conservation sécurisée et un accès opérateur. Aucun webhook réel client consulté.

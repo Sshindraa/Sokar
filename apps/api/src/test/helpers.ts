@@ -1246,6 +1246,7 @@ vi.mock('../shared/redis/client', () => {
 
 vi.mock('../shared/queue/queues', () => ({
   queues: {
+    deadLetter: { add: vi.fn().mockResolvedValue({}) },
     eveningReport: {
       upsertJobScheduler: vi.fn(),
     },

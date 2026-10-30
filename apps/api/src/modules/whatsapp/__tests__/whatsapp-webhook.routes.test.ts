@@ -21,6 +21,7 @@ vi.mock('../../sms/reply-handler', () => ({
 }));
 
 import { getApp, closeApp } from '../../../test/helpers';
+import { queues } from '../../../shared/queue/queues';
 import { handleReply } from '../../sms/reply-handler';
 
 const mockHandleReply = vi.mocked(handleReply);
@@ -37,7 +38,7 @@ describe('POST /whatsapp/webhook', () => {
     await closeApp();
   });
 
-  it('renvoie 200 et dispatche handleReply avec channel=whatsapp', async () => {
+  it('bloque une réponse dont la réservation ne peut pas être identifiée', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/whatsapp/webhook',
@@ -50,7 +51,50 @@ describe('POST /whatsapp/webhook', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.payload)).toEqual({ result: 'ok' });
-    expect(mockHandleReply).toHaveBeenCalledWith('+336****5678', 'OUI', 'whatsapp', 'message-1');
+    expect(mockHandleReply).not.toHaveBeenCalled();
+    expect(queues.deadLetter.add).toHaveBeenCalledWith(
+      'inbound-reply-review',
+      expect.objectContaining({
+        payloadVersion: 0,
+        data: null,
+        originalQueue: 'inbound-reply-review',
+      }),
+      expect.objectContaining({
+        jobId: expect.stringMatching(/^inbound_reply_review_[0-9a-f]{64}$/),
+      }),
+    );
+    const saved = JSON.stringify(vi.mocked(queues.deadLetter.add).mock.calls[0][1]);
+    expect(saved).not.toContain('+336****5678');
+    expect(saved).not.toContain('OUI');
+  });
+
+  it('renvoie 503 si la file de revue est indisponible', async () => {
+    vi.mocked(queues.deadLetter.add).mockRejectedValueOnce(new Error('queue unavailable'));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/whatsapp/webhook',
+      payload: {
+        data: {
+          event_type: 'message.received',
+          payload: { id: 'message-queue', from: 'sender', text: 'NON' },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(503);
+    expect(mockHandleReply).not.toHaveBeenCalled();
+  });
+
+  it('renvoie 503 lorsque l’identifiant du message manque', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/whatsapp/webhook',
+      payload: {
+        data: { event_type: 'message.received', payload: { from: 'sender', text: 'NON' } },
+      },
+    });
+    expect(res.statusCode).toBe(503);
+    expect(queues.deadLetter.add).not.toHaveBeenCalled();
+    expect(mockHandleReply).not.toHaveBeenCalled();
   });
 
   it('ignore les events de statut (sent, delivered, etc.)', async () => {
@@ -66,44 +110,46 @@ describe('POST /whatsapp/webhook', () => {
     expect(mockHandleReply).not.toHaveBeenCalled();
   });
 
-  it('ignore si payload manquant', async () => {
+  it('ne confirme pas un message sans payload', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/whatsapp/webhook',
       payload: { data: { event_type: 'message.received' } },
     });
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(503);
     expect(mockHandleReply).not.toHaveBeenCalled();
   });
 
-  it("renvoie ok sans dispatcher si 'from' est manquant", async () => {
+  it("conserve une référence pour la revue si 'from' est manquant", async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/whatsapp/webhook',
       payload: {
         data: {
           event_type: 'message.received',
-          payload: { text: 'OUI' },
+          payload: { id: 'message-missing-from', text: 'OUI' },
         },
       },
     });
     expect(res.statusCode).toBe(200);
     expect(mockHandleReply).not.toHaveBeenCalled();
+    expect(queues.deadLetter.add).toHaveBeenCalledOnce();
   });
 
-  it("renvoie ok sans dispatcher si 'text' est manquant", async () => {
+  it("conserve une référence pour la revue si 'text' est manquant", async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/whatsapp/webhook',
       payload: {
         data: {
           event_type: 'message.received',
-          payload: { from: '+336****5678' },
+          payload: { id: 'message-missing-text', from: '+336****5678' },
         },
       },
     });
     expect(res.statusCode).toBe(200);
     expect(mockHandleReply).not.toHaveBeenCalled();
+    expect(queues.deadLetter.add).toHaveBeenCalledOnce();
   });
 
   it('supporte from en objet {phone_number}', async () => {
@@ -118,6 +164,7 @@ describe('POST /whatsapp/webhook', () => {
       },
     });
     expect(res.statusCode).toBe(200);
-    expect(mockHandleReply).toHaveBeenCalledWith('+336****9999', 'NON', 'whatsapp', 'message-2');
+    expect(mockHandleReply).not.toHaveBeenCalled();
+    expect(queues.deadLetter.add).toHaveBeenCalledOnce();
   });
 });
