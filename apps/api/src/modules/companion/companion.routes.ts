@@ -23,7 +23,21 @@ const ChatBodySchema = z.object({
     }),
 });
 
+// strictObject : un champ en trop (un commentaire libre, par exemple) fait échouer la requête.
+const FeedbackBodySchema = z.strictObject({
+  responseId: z.uuid(),
+  rating: z.enum(['up', 'down']),
+});
+
 export async function companionRoutes(app: FastifyInstance) {
+  // Avis sur une réponse : aucun texte libre, et seulement en logs.
+  // shortcut: avis en logs seulement, table dédiée si le volume le justifie.
+  app.post('/companion/feedback', { preHandler: requireOrg() }, async (req, reply) => {
+    const body = FeedbackBodySchema.parse(req.body);
+    req.log.info({ responseId: body.responseId, rating: body.rating }, 'companion feedback');
+    return reply.status(204).send();
+  });
+
   // Lecture seule côté serveur : la politique de rôles refuse STAFF et READ_ONLY (403).
   app.post('/companion/chat', { preHandler: requireOrg() }, async (req, reply) => {
     const body = ChatBodySchema.parse(req.body);

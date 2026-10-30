@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, RotateCcw, Send, Sparkles } from 'lucide-react';
+import { Loader2, RotateCcw, Send, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api-error';
 import { useApi } from '@/lib/api';
@@ -18,15 +18,21 @@ interface Source {
   href: string;
 }
 
+type Rating = 'up' | 'down';
+
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   sources?: Source[];
+  /** Absent sur les réponses enregistrées avant les avis : elles n'ont pas de boutons. */
+  responseId?: string;
+  rating?: Rating;
 }
 
 interface CompanionReply {
   reply: string;
   sources: Source[];
+  responseId: string;
 }
 
 const SUGGESTION_KEYS = ['week', 'noShows', 'bookings'] as const;
@@ -48,9 +54,15 @@ function readHistory(siteId: string): Message[] {
   try {
     const raw = window.sessionStorage.getItem(historyKey(siteId));
     const parsed: unknown = raw ? JSON.parse(raw) : [];
-    // Les entrées écrites par une version antérieure (champs en trop, comme toolRuns) sont lues sans ces champs.
+    // Les champs en trop d'une version antérieure (comme toolRuns) sont ignorés.
     return Array.isArray(parsed)
-      ? parsed.filter(isMessage).map(({ role, content, sources }) => ({ role, content, sources }))
+      ? parsed.filter(isMessage).map(({ role, content, sources, responseId, rating }) => ({
+          role,
+          content,
+          sources,
+          responseId,
+          rating,
+        }))
       : [];
   } catch {
     return [];
@@ -94,9 +106,28 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
     if (thread) thread.scrollTop = thread.scrollHeight;
   }, [messages, pending, error]);
 
-  function commit(next: Message[]) {
-    setMessages(next);
-    if (siteId) writeHistory(siteId, next);
+  // Chaque changement est enregistré, avis compris.
+  useEffect(() => {
+    if (siteId) writeHistory(siteId, messages);
+  }, [messages, siteId]);
+
+  /** Met à jour l'avis d'une réponse par son identifiant, sans dépendre de l'état au moment du clic. */
+  function setRating(responseId: string, rating: Rating | undefined) {
+    setMessages((previous) =>
+      previous.map((message) =>
+        message.responseId === responseId ? { ...message, rating } : message,
+      ),
+    );
+  }
+
+  async function rate(responseId: string, rating: Rating) {
+    setRating(responseId, rating);
+    try {
+      await post('companion/feedback', { responseId, rating });
+    } catch {
+      // Avis non enregistré : silencieux, les boutons redeviennent disponibles.
+      setRating(responseId, undefined);
+    }
   }
 
   async function request(history: Message[]) {
@@ -107,9 +138,14 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
         messages: history.slice(-SENT_HISTORY).map(({ role, content }) => ({ role, content })),
       };
       const reply = await post<CompanionReply>('companion/chat', body);
-      commit([
+      setMessages([
         ...history,
-        { role: 'assistant', content: reply.reply, sources: uniqueSources(reply.sources) },
+        {
+          role: 'assistant',
+          content: reply.reply,
+          sources: uniqueSources(reply.sources),
+          responseId: reply.responseId,
+        },
       ]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t('genericError'));
@@ -122,13 +158,13 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
     const text = question.trim();
     if (!text || pending) return;
     const next: Message[] = [...messages, { role: 'user', content: text }];
-    commit(next);
+    setMessages(next);
     setDraft('');
     void request(next);
   }
 
   function startNewConversation() {
-    commit([]);
+    setMessages([]);
     setError(null);
     setDraft('');
   }
@@ -137,6 +173,42 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
     ask(draft);
+  }
+
+  function feedbackButtons(responseId: string, rating: Rating | undefined) {
+    const rated = rating !== undefined;
+    const buttonClass = (chosen: boolean) =>
+      cn('h-7 w-7 transition-all duration-200', chosen && 'text-primary disabled:opacity-100');
+    return (
+      <div className="mt-2 flex items-center gap-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          title={t('helpful')}
+          aria-label={t('helpful')}
+          aria-pressed={rating === 'up'}
+          disabled={rated}
+          onClick={() => void rate(responseId, 'up')}
+          className={buttonClass(rating === 'up')}
+        >
+          <ThumbsUp size={14} />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          title={t('unhelpful')}
+          aria-label={t('unhelpful')}
+          aria-pressed={rating === 'down'}
+          disabled={rated}
+          onClick={() => void rate(responseId, 'down')}
+          className={buttonClass(rating === 'down')}
+        >
+          <ThumbsDown size={14} />
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -207,6 +279,9 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
                   {t('openSource')}
                 </Link>
               ))}
+              {message.role === 'assistant' &&
+                message.responseId &&
+                feedbackButtons(message.responseId, message.rating)}
             </div>
           ))
         )}

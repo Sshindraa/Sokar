@@ -14,6 +14,7 @@ vi.mock('@/lib/api', () => ({
 }));
 
 const WEEK_QUESTION = 'Comment se présentent les 7 prochains jours ?';
+const RESPONSE_ID = '3f2b8c1e-5d4a-4b7e-9c1f-2a6d8e0b7c45';
 
 function renderPanel() {
   return render(
@@ -150,6 +151,65 @@ describe('CompanionPanel', () => {
         { role: 'user', content: 'Et la suite ?' },
       ],
     });
+  });
+
+  it('pouce bas : envoie l’avis avec le responseId, puis verrouille les boutons', async () => {
+    mocks.post.mockResolvedValueOnce({
+      reply: 'Sept jours.',
+      sources: [],
+      responseId: RESPONSE_ID,
+    });
+    mocks.post.mockResolvedValueOnce(undefined);
+    renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: WEEK_QUESTION }));
+    await screen.findByText('Sept jours.');
+    fireEvent.click(screen.getByRole('button', { name: 'Réponse peu utile' }));
+
+    expect(mocks.post).toHaveBeenLastCalledWith('companion/feedback', {
+      responseId: RESPONSE_ID,
+      rating: 'down',
+    });
+    expect(screen.getByRole('button', { name: 'Réponse peu utile' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Réponse peu utile' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Réponse utile' })).toBeDisabled();
+  });
+
+  it('échec de l’avis : silencieux, les boutons redeviennent disponibles', async () => {
+    mocks.post.mockResolvedValueOnce({
+      reply: 'Sept jours.',
+      sources: [],
+      responseId: RESPONSE_ID,
+    });
+    mocks.post.mockRejectedValueOnce(new ApiError('Erreur réseau', 500, null));
+    renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: WEEK_QUESTION }));
+    await screen.findByText('Sept jours.');
+    fireEvent.click(screen.getByRole('button', { name: 'Réponse utile' }));
+
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Réponse utile' })).toBeEnabled(),
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('une entrée sans responseId n’affiche pas de boutons d’avis', () => {
+    window.sessionStorage.setItem(
+      'sokar.companion.site_1',
+      JSON.stringify([
+        { role: 'user', content: 'Question ancienne' },
+        { role: 'assistant', content: 'Réponse ancienne', sources: [] },
+      ]),
+    );
+    renderPanel();
+
+    expect(screen.getByText('Réponse ancienne')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Réponse utile' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Réponse peu utile' })).not.toBeInTheDocument();
   });
 
   it('Nouvelle conversation vide l’historique du site', () => {

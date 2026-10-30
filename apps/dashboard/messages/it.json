@@ -92,6 +92,8 @@
     "newConversation": "Nuova conversazione",
     "disclaimer": "Risposte generate dall'IA, da verificare. Non inserisca dati di contatto dei clienti.",
     "openSource": "Vedi nella dashboard",
+    "helpful": "Risposta utile",
+    "unhelpful": "Risposta poco utile",
     "genericError": "L'assistente non può rispondere al momento. Riprovi tra poco."
   },
   "languageSwitcher": {

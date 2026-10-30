@@ -3,6 +3,7 @@
  * les outils (companion.tools.ts) et ne voit jamais de donnée client. Une requête par tour, 20 s
  * chacune, 4 tours d'outils au plus : le tour suivant part sans outils pour obtenir la réponse finale.
  */
+import { randomUUID } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
 import { env } from '../../env';
@@ -20,6 +21,8 @@ export interface CompanionMessage {
 export interface CompanionAnswer {
   reply: string;
   sources: Array<{ tool: string; href: string }>;
+  /** Identifiant de cette réponse, pour rattacher un avis (POST /companion/feedback). */
+  responseId: string;
 }
 
 /** OpenRouter en échec, lent ou illisible : la route répond 502. */
@@ -165,6 +168,7 @@ export async function answerCompanion(input: {
   fetcher?: typeof fetch;
 }): Promise<CompanionAnswer> {
   const started = performance.now();
+  const responseId = randomUUID();
   const fetcher = input.fetcher ?? fetch;
   const trace: CompanionTrace = { turns: 0, tools: [], inputTokens: 0, outputTokens: 0 };
   const sources: CompanionAnswer['sources'] = [];
@@ -182,7 +186,7 @@ export async function answerCompanion(input: {
       if (!withTools || !message.tool_calls?.length) {
         const reply = message.content?.trim() ?? '';
         if (!reply) throw new CompanionUpstreamError('empty_reply');
-        return { reply, sources };
+        return { reply, sources, responseId };
       }
 
       conversation.push({
@@ -219,6 +223,7 @@ export async function answerCompanion(input: {
     // Ni le contenu des messages ni les résultats d'outils : seulement la forme de l'appel.
     input.log.info(
       {
+        responseId,
         model: env.COMPANION_LLM_MODEL,
         outcome,
         reason,

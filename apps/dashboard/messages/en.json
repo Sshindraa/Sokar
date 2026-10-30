@@ -93,6 +93,8 @@
     "newConversation": "New conversation",
     "disclaimer": "AI-generated answers, to be checked. Do not enter customer contact details.",
     "openSource": "View in the dashboard",
+    "helpful": "Helpful answer",
+    "unhelpful": "Unhelpful answer",
     "genericError": "The assistant cannot answer right now. Please try again shortly."
   },
   "languageSwitcher": {

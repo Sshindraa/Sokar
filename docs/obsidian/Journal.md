@@ -3132,3 +3132,7 @@ Retrait de `toolRuns` (API, panneau, doc) : l'historique redevient `{ role, cont
 ### 2026-10-30 — Companion : panneau monté même fermé
 
 Le dialog Companion reste monté quand il est fermé (`hidden`) : fermer le panneau pendant une question ne perd plus l'attente, la réponse ni l'erreur avec Réessayer. Test du layout : panneau fermé présent mais invisible.
+
+### 2026-10-30 — Companion phase 3 : avis sur les réponses
+
+Chaque réponse porte un `responseId` (UUID, aussi dans le log « companion chat »). `POST /companion/feedback` reçoit `{ responseId, rating: 'up' | 'down' }` (corps strict, 204, avis en logs seulement : shortcut, table dédiée si le volume le justifie). Le panneau affiche deux boutons sous les réponses récentes ; un avis verrouille les boutons, un échec d'envoi les rétablit sans message. Les réponses enregistrées avant cette phase n'ont pas de boutons. Branche feat/companion-v1.

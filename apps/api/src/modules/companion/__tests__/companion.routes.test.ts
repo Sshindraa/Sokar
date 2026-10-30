@@ -5,6 +5,8 @@ import { checkRateLimit } from '../../../shared/redis/rate-limit';
 import { env } from '../../../env';
 
 const CHAT_URL = '/companion/chat';
+const FEEDBACK_URL = '/companion/feedback';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const AUTH = { authorization: 'Bearer test' };
 const userMessage = { role: 'user', content: 'Combien de couverts ces 7 prochains jours ?' };
 
@@ -148,6 +150,7 @@ describe('POST /companion/chat', () => {
     expect(res.json()).toEqual({
       reply: 'Vous avez 5 appels.',
       sources: [{ tool: 'reservation_stats', href: '/dashboard' }],
+      responseId: expect.stringMatching(UUID_PATTERN),
     });
     expect(fetchSpy).toHaveBeenCalledTimes(2);
 
@@ -277,5 +280,62 @@ describe('POST /companion/chat', () => {
 
     expect(res.statusCode).toBe(502);
     expect(res.json()).toMatchObject({ error: 'COMPANION_UPSTREAM' });
+  });
+});
+
+describe('POST /companion/feedback', () => {
+  const responseId = '3f2b8c1e-5d4a-4b7e-9c1f-2a6d8e0b7c45';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterAll(async () => {
+    await closeApp();
+  });
+
+  it('accepte un avis pouce haut ou pouce bas avec 204, sans appeler OpenRouter', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const app = await getApp();
+
+    for (const rating of ['up', 'down']) {
+      const res = await app.inject({
+        method: 'POST',
+        url: FEEDBACK_URL,
+        headers: AUTH,
+        payload: { responseId, rating },
+      });
+      expect(res.statusCode).toBe(204);
+      expect(res.body).toBe('');
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it.each([
+    ['identifiant qui n’est pas un UUID', { responseId: 'pas-un-uuid', rating: 'up' }],
+    ['note inconnue', { responseId, rating: 'meh' }],
+    ['texte libre', { responseId, rating: 'up', comment: 'Très bien' }],
+    ['identifiant absent', { rating: 'up' }],
+  ])('refuse un avis invalide (%s) avec 400', async (_label, payload) => {
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: FEEDBACK_URL,
+      headers: AUTH,
+      payload,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it.each(['STAFF', 'READ_ONLY'])('refuse le rôle %s avec 403', async (role) => {
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: FEEDBACK_URL,
+      headers: { ...AUTH, 'x-test-site-role': role, 'x-test-enforce-role-policy': '1' },
+      payload: { responseId, rating: 'down' },
+    });
+    expect(res.statusCode).toBe(403);
   });
 });

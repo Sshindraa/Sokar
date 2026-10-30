@@ -446,7 +446,11 @@ Module : `apps/api/src/modules/companion/`
 
 ### POST /companion/chat
 
-Assistant du dashboard (OWNER, MANAGER, ORG_MEMBER ; STAFF et READ_ONLY : 403). Corps : `messages` (1 à 20, le dernier de l'utilisateur, 4000 caractères max). Réponse JSON : `reply`, `sources` (`tool`, `href`). 503 sans clé OpenRouter, 429 au-delà de 100 messages par jour, 502 si OpenRouter échoue.
+Assistant du dashboard (OWNER, MANAGER, ORG_MEMBER ; STAFF et READ_ONLY : 403). Corps : `messages` (1 à 20, le dernier de l'utilisateur, 4000 caractères max). Réponse JSON : `reply`, `sources` (`tool`, `href`), `responseId` (UUID de cette réponse). 503 sans clé OpenRouter, 429 au-delà de 100 messages par jour, 502 si OpenRouter échoue.
+
+### POST /companion/feedback
+
+Avis sur une réponse (OWNER, MANAGER, ORG_MEMBER ; STAFF et READ_ONLY : 403). Corps strict : `responseId` (UUID renvoyé par `/companion/chat`) et `rating` (`up` ou `down`). Aucun texte libre. Réponse 204, sans corps ; 400 si un champ manque, est inconnu ou invalide. L'avis n'est écrit que dans les logs (`companion feedback`).
 
 ---
 
