@@ -59,7 +59,15 @@ type Expected =
   | { kind: 'any'; value: number[] }
   | { kind: 'first'; value: string[]; others: string[] }
   | { kind: 'unavailable' }
-  | { kind: 'investigation'; value: number[]; tolerance: number };
+  | { kind: 'readings'; readings: Reading[]; tolerance: number; explain: boolean };
+
+// Une lecture possible de la question : ce que la réponse doit dire pour la montrer (mesure, date,
+// référence), et les valeurs qui la chiffrent. Une réponse est juste si elle nomme une lecture et
+// donne toutes ses valeurs. explain : enquête, qui doit passer par explain_change.
+interface Reading {
+  says: RegExp[];
+  values: number[];
+}
 
 interface Question {
   n: number;
@@ -260,12 +268,45 @@ function unfinishedCallsBetween(restaurantId: string, from: string, to: string):
     },
   });
 }
-// Enquête : couverts moyens d'un même jour de semaine, sur les 4 semaines précédentes.
-async function usualCoversOf(restaurantId: string, dayKey: string): Promise<number> {
+// Enquête : nombre de réservations d'une plage, par date de service (reservedAt) ou de prise.
+async function reservationCountBetween(
+  restaurantId: string,
+  from: string,
+  to: string,
+  dateField: 'reservedAt' | 'createdAt' = 'reservedAt',
+) {
+  return (await reservationsBetween(restaurantId, dateField, from, to)).length;
+}
+// Enquête : couverts, réservations et part des couverts du site web d'une plage, par date donnée.
+async function siteFiguresBetween(
+  restaurantId: string,
+  dateField: 'reservedAt' | 'createdAt',
+  from: string,
+  to: string,
+) {
+  const rows = await reservationsBetween(restaurantId, dateField, from, to);
+  const site = rows.filter((row) => benchChannel(row) === 'website');
+  const covers = sumCovers(site);
+  const total = sumCovers(rows);
+  return {
+    covers,
+    reservations: site.length,
+    share: total === 0 ? 0 : roundOne((100 * covers) / total),
+  };
+}
+// Enquête : nombre de demandes de liste d'attente d'une plage, par date de demande.
+async function waitlistCountBetween(
+  restaurantId: string,
+  from: string,
+  to: string,
+  status?: 'PROMOTED',
+): Promise<number> {
+  return (await waitlistBetween(restaurantId, 'createdAt', from, to, status)).length;
+}
+// Enquête : moyenne d'un même jour de semaine, sur les 4 semaines précédentes.
+async function usualOf(dayKey: string, totalOf: (day: string) => Promise<number>): Promise<number> {
   const totals = await Promise.all(
-    [7, 14, 21, 28].map((weeks) =>
-      coversBetween(restaurantId, shiftDay(dayKey, -weeks), shiftDay(dayKey, -weeks)),
-    ),
+    [7, 14, 21, 28].map((weeks) => totalOf(shiftDay(dayKey, -weeks))),
   );
   return totals.reduce((sum, total) => sum + total, 0) / 4;
 }
@@ -280,6 +321,79 @@ async function averageScoreBetween(
 }
 // Jour de l'anomalie planté par le seed : mardi 20 octobre 2026.
 const ANOMALY_DAY = '2026-10-20';
+// Mois en cours, du 1er jour à aujourd'hui (Paris).
+const thisMonth = (): [string, string] => [`${today().slice(0, 7)}-01`, today()];
+
+// Repères d'une lecture : ce que la réponse doit dire pour la montrer. Chacun doit figurer dans la
+// réponse. Une question sans repère (ni mesure, ni date) n'a pas de lecture à désigner.
+const COVERS = /couvert/i;
+const RESERVATIONS = /réservation|réservé/i;
+const SERVICE = /service|prévu|réservés? pour|réservations? pour|date de réservation/i;
+const CREATION = /créée?s?|saisies?|enregistrées?|prises?|reçues?/i;
+const USUAL_DAY = /habituel|d['’]habitude|d['’]ordinaire|moyenne|en général|mardis précédents/i;
+const PREVIOUS_WEEK = /mardi dernier|semaine dernière|semaine précédente|13 octobre/i;
+const ATTENTE = /attente/i;
+const LAST_30 = /30 (derniers )?jours|30 jours/i;
+const FRENCH_MONTHS = [
+  'janvier',
+  'février',
+  'mars',
+  'avril',
+  'mai',
+  'juin',
+  'juillet',
+  'août',
+  'septembre',
+  'octobre',
+  'novembre',
+  'décembre',
+];
+const CURRENT_MONTH = /ce mois|depuis le 1er|début du mois/i;
+const APPELS = /appel/i;
+const LAST_7 = /7 (derniers )?jours|sept (derniers )?jours|cette semaine/i;
+const SITE = /site|internet|en ligne|web/i;
+const LAST_YEAR = /an dernier|année dernière|2025/i;
+const SHARE = /part|pourcentage|%|pour cent|proportion/i;
+const AVIS = /avis|note/i;
+
+// Question sans période : la question ne dit pas laquelle. Chaque fenêtre naturelle est une lecture
+// (7 jours, 30 jours, mois en cours), comparée à la fenêtre précédente de même longueur.
+interface OpenWindow {
+  says: RegExp;
+  current: () => [string, string];
+  previous: () => [string, string];
+}
+const OPEN_WINDOWS: OpenWindow[] = [
+  {
+    says: LAST_7,
+    current: () => [shiftDay(today(), -6), today()],
+    previous: () => [shiftDay(today(), -13), shiftDay(today(), -7)],
+  },
+  {
+    says: LAST_30,
+    current: () => [shiftDay(today(), -29), today()],
+    previous: () => [shiftDay(today(), -59), shiftDay(today(), -30)],
+  },
+  {
+    says: CURRENT_MONTH,
+    current: thisMonth,
+    previous: () => monthBounds(previousMonth()),
+  },
+];
+// Date de référence d'une réservation : service (reservedAt) ou prise (createdAt).
+const BASES = [
+  { field: 'reservedAt', says: SERVICE },
+  { field: 'createdAt', says: CREATION },
+] as const;
+// Même date un an plus tôt (AAAA-MM-JJ).
+const shiftYear = (dayKey: string) => `${Number(dayKey.slice(0, 4)) - 1}${dayKey.slice(4)}`;
+// Une fenêtre est nommée par son libellé, ou par une de ses dates : « du 2 au 31 octobre » suffit.
+const dayMonth = (dayKey: string) =>
+  `\\b${Number(dayKey.slice(8))}(?:er)?\\s+${FRENCH_MONTHS[Number(dayKey.slice(5, 7)) - 1]}\\b`;
+function windowSays(window: OpenWindow): RegExp {
+  const [from, to] = window.current();
+  return new RegExp(`${window.says.source}|${dayMonth(from)}|${dayMonth(to)}`, 'i');
+}
 
 const QUESTIONS: Question[] = [
   {
@@ -342,7 +456,21 @@ const QUESTIONS: Question[] = [
   {
     n: 10,
     text: 'Combien de couverts le mois dernier ?',
-    expected: async (id) => count((await computeRoi(id, previousMonth())).totalCouverts),
+    expected: async (id) => {
+      const [from, to] = monthBounds(previousMonth());
+      return {
+        kind: 'readings',
+        readings: [
+          { says: [COVERS, SERVICE], values: [await coversBetween(id, from, to)] },
+          {
+            says: [COVERS, CREATION],
+            values: [(await computeRoi(id, previousMonth())).totalCouverts],
+          },
+        ],
+        tolerance: 0,
+        explain: false,
+      };
+    },
   },
   {
     n: 11,
@@ -620,27 +748,81 @@ const QUESTIONS: Question[] = [
   {
     n: 42,
     text: 'Pourquoi le mardi 20 octobre était-il si calme ?',
-    expected: async (id) => ({
-      kind: 'investigation',
-      value: [
-        await coversBetween(id, ANOMALY_DAY, ANOMALY_DAY),
-        await usualCoversOf(id, ANOMALY_DAY),
+    expected: async (id) => {
+      const covers = await coversBetween(id, ANOMALY_DAY, ANOMALY_DAY);
+      const reservations = await reservationCountBetween(id, ANOMALY_DAY, ANOMALY_DAY);
+      const facts = [
         await unfinishedCallsBetween(id, ANOMALY_DAY, ANOMALY_DAY),
         (await waitlistBetween(id, 'slotStart', ANOMALY_DAY, ANOMALY_DAY)).length,
-      ],
-      tolerance: 0.5,
-    }),
+      ];
+      const previousTuesday = shiftDay(ANOMALY_DAY, -7);
+      const usualCovers = await usualOf(ANOMALY_DAY, (day) => coversBetween(id, day, day));
+      const usualReservations = await usualOf(ANOMALY_DAY, (day) =>
+        reservationCountBetween(id, day, day),
+      );
+      return {
+        kind: 'readings',
+        readings: [
+          { says: [COVERS, USUAL_DAY], values: [covers, usualCovers, ...facts] },
+          {
+            says: [COVERS, PREVIOUS_WEEK],
+            values: [covers, await coversBetween(id, previousTuesday, previousTuesday), ...facts],
+          },
+          { says: [RESERVATIONS, USUAL_DAY], values: [reservations, usualReservations, ...facts] },
+          {
+            says: [RESERVATIONS, PREVIOUS_WEEK],
+            values: [
+              reservations,
+              await reservationCountBetween(id, previousTuesday, previousTuesday),
+              ...facts,
+            ],
+          },
+        ],
+        tolerance: 0.5,
+        explain: true,
+      };
+    },
   },
   {
     n: 43,
     text: 'Ce mois-ci, ça marche mieux que le mois dernier ?',
     expected: async (id) => {
-      const current = await coversBetween(id, `${today().slice(0, 7)}-01`, today());
-      const [from, to] = monthBounds(previousMonth());
+      const [from, to] = thisMonth();
+      const [previousFrom, previousTo] = monthBounds(previousMonth());
       return {
-        kind: 'investigation',
-        value: [current, await coversBetween(id, from, to)],
+        kind: 'readings',
+        readings: [
+          {
+            says: [COVERS, SERVICE],
+            values: [
+              await coversBetween(id, from, to),
+              await coversBetween(id, previousFrom, previousTo),
+            ],
+          },
+          {
+            says: [COVERS, CREATION],
+            values: [
+              (await computeRoi(id, today().slice(0, 7))).totalCouverts,
+              (await computeRoi(id, previousMonth())).totalCouverts,
+            ],
+          },
+          {
+            says: [RESERVATIONS, SERVICE],
+            values: [
+              await reservationCountBetween(id, from, to),
+              await reservationCountBetween(id, previousFrom, previousTo),
+            ],
+          },
+          {
+            says: [RESERVATIONS, CREATION],
+            values: [
+              await reservationCountBetween(id, from, to, 'createdAt'),
+              await reservationCountBetween(id, previousFrom, previousTo, 'createdAt'),
+            ],
+          },
+        ],
         tolerance: 0.5,
+        explain: true,
       };
     },
   },
@@ -648,53 +830,83 @@ const QUESTIONS: Question[] = [
     n: 44,
     text: "La liste d'attente, ça sert à quelque chose ?",
     expected: async (id) => {
-      const current = (await waitlistBetween(id, 'createdAt', shiftDay(today(), -29), today()))
-        .length;
-      const previous = (
-        await waitlistBetween(id, 'createdAt', shiftDay(today(), -59), shiftDay(today(), -30))
-      ).length;
-      const obtained = (
-        await waitlistBetween(id, 'createdAt', shiftDay(today(), -29), today(), 'PROMOTED')
-      ).length;
-      return { kind: 'investigation', value: [current, previous, obtained], tolerance: 0.5 };
+      const readings: Reading[] = [];
+      for (const window of OPEN_WINDOWS) {
+        const [from, to] = window.current();
+        const [previousFrom, previousTo] = window.previous();
+        readings.push({
+          says: [ATTENTE, windowSays(window)],
+          values: [
+            await waitlistCountBetween(id, from, to),
+            await waitlistCountBetween(id, previousFrom, previousTo),
+            await waitlistCountBetween(id, from, to, 'PROMOTED'),
+          ],
+        });
+      }
+      return { kind: 'readings', readings, tolerance: 0.5, explain: true };
     },
   },
   {
     n: 45,
     text: "Qu'est-ce qui cloche avec les appels ?",
-    expected: async (id) => ({
-      kind: 'investigation',
-      value: [await unfinishedCallsBetween(id, `${today().slice(0, 7)}-01`, today())],
-      tolerance: 0.5,
-    }),
+    expected: async (id) => {
+      const readings: Reading[] = [];
+      for (const window of OPEN_WINDOWS) {
+        const [from, to] = window.current();
+        readings.push({
+          says: [APPELS, windowSays(window)],
+          values: [await unfinishedCallsBetween(id, from, to)],
+        });
+      }
+      return { kind: 'readings', readings, tolerance: 0.5, explain: true };
+    },
   },
   {
     n: 46,
     text: "Mes clients viennent-ils plus par le site que l'an dernier ?",
     expected: async (id) => {
-      const [from, to] = [`${today().slice(0, 7)}-01`, today()];
-      const lastYear = (day: string) => `${Number(day.slice(0, 4)) - 1}${day.slice(4)}`;
-      return {
-        kind: 'investigation',
-        value: [
-          await coversBetween(id, from, to, 'website'),
-          await coversBetween(id, lastYear(from), lastYear(to), 'website'),
-        ],
-        tolerance: 0.5,
-      };
+      const readings: Reading[] = [];
+      for (const window of OPEN_WINDOWS) {
+        const [from, to] = window.current();
+        for (const basis of BASES) {
+          const current = await siteFiguresBetween(id, basis.field, from, to);
+          const lastYear = await siteFiguresBetween(
+            id,
+            basis.field,
+            shiftYear(from),
+            shiftYear(to),
+          );
+          const says = [SITE, LAST_YEAR, windowSays(window), basis.says];
+          readings.push(
+            { says: [COVERS, ...says], values: [current.covers, lastYear.covers] },
+            {
+              says: [RESERVATIONS, ...says],
+              values: [current.reservations, lastYear.reservations],
+            },
+            { says: [SHARE, ...says], values: [current.share, lastYear.share] },
+          );
+        }
+      }
+      return { kind: 'readings', readings, tolerance: 0.5, explain: true };
     },
   },
   {
     n: 47,
     text: "Les avis clients s'améliorent-ils ?",
     expected: async (id) => {
-      const current = await averageScoreBetween(id, `${today().slice(0, 7)}-01`, today());
-      const [from, to] = monthBounds(previousMonth());
-      return {
-        kind: 'investigation',
-        value: [current, await averageScoreBetween(id, from, to)],
-        tolerance: 0.05,
-      };
+      const readings: Reading[] = [];
+      for (const window of OPEN_WINDOWS) {
+        const [from, to] = window.current();
+        const [previousFrom, previousTo] = window.previous();
+        readings.push({
+          says: [AVIS, windowSays(window)],
+          values: [
+            await averageScoreBetween(id, from, to),
+            await averageScoreBetween(id, previousFrom, previousTo),
+          ],
+        });
+      }
+      return { kind: 'readings', readings, tolerance: 0.05, explain: true };
     },
   },
 ];
@@ -731,6 +943,17 @@ function percentagesIn(reply: string): number[] {
 // Zéro s'écrit aussi « aucune » ou « zéro » : une réponse sans chiffre peut être juste.
 const ZERO_WORDS = /\b(aucune?|zéro)\b/i;
 
+// Une lecture est juste si la réponse la nomme (repères) et donne chacune de ses valeurs, à la tolérance près.
+function readingFound(reply: string, reading: Reading, tolerance: number): boolean {
+  if (!reading.says.every((marker) => marker.test(reply))) return false;
+  const figures = numbersIn(reply);
+  return reading.values.every(
+    (value) =>
+      (value === 0 && ZERO_WORDS.test(reply)) ||
+      figures.some((figure) => Math.abs(figure - value) <= tolerance + 1e-9),
+  );
+}
+
 function valueFound(reply: string, expected: Expected): boolean {
   if (
     expected.kind === 'count' &&
@@ -740,14 +963,8 @@ function valueFound(reply: string, expected: Expected): boolean {
   ) {
     return true;
   }
-  if (expected.kind === 'investigation') {
-    // Chaque chiffre clé de l'anomalie figure dans la réponse, à sa tolérance près.
-    const figures = numbersIn(reply);
-    return expected.value.every(
-      (value) =>
-        (value === 0 && ZERO_WORDS.test(reply)) ||
-        figures.some((figure) => Math.abs(figure - value) <= expected.tolerance + 1e-9),
-    );
+  if (expected.kind === 'readings') {
+    return expected.readings.some((reading) => readingFound(reply, reading, expected.tolerance));
   }
   if (expected.kind === 'unavailable') {
     // Source hors formule : la réponse le dit, sans annoncer zéro.
@@ -802,7 +1019,10 @@ function valueFound(reply: string, expected: Expected): boolean {
 function formatExpected(expected: Expected | undefined): string {
   if (!expected) return '';
   if (expected.kind === 'unavailable') return 'non incluse dans la formule';
-  if (expected.kind === 'investigation') return `${expected.value.join(' et ')} (enquête)`;
+  if (expected.kind === 'readings') {
+    const lectures = expected.readings.map((reading) => reading.values.join(' et ')).join(' | ');
+    return expected.explain ? `${lectures} (enquête)` : lectures;
+  }
   if (expected.kind === 'day') return expected.value.join(' / ');
   if (expected.kind === 'all') return expected.value.join(' et ');
   if (expected.kind === 'any') return expected.value.join(' ou ');
@@ -900,7 +1120,7 @@ const usageLog = {
 
 // Outil : au moins un appel ; pour une enquête, un appel à explain_change.
 function toolUsedFor(expected: Expected | undefined, calls: ToolCall[]): boolean {
-  if (expected?.kind !== 'investigation') return calls.length > 0;
+  if (expected?.kind !== 'readings' || !expected.explain) return calls.length > 0;
   return calls.some((call) => call.name === 'explain_change');
 }
 
@@ -1023,21 +1243,54 @@ function option(name: string): string | undefined {
   return index === -1 ? undefined : process.argv[index + 1];
 }
 
-// Renote l'ancrage d'un fichier de résultats déjà joué, sans appeler le modèle : mêmes réponses,
-// règle d'ancrage courante. Écrit <fichier>-rescored.json à côté du fichier d'origine.
-function rescoreFile(file: string): void {
+// Valeurs chiffrées d'une valeur attendue : forme enregistrée (ancienne ou lectures) ou recalculée.
+function figuresOf(expected: unknown): number[] {
+  const { kind, value, readings } = expected as {
+    kind?: string;
+    value?: unknown;
+    readings?: Reading[];
+  };
+  if (kind === 'readings') return (readings ?? []).flatMap((reading) => reading.values);
+  if (typeof value === 'number') return [value];
+  return Array.isArray(value)
+    ? value.filter((item): item is number => typeof item === 'number')
+    : [];
+}
+
+// Renote l'ancrage et le chiffre d'un fichier déjà joué, sans appeler le modèle : mêmes réponses,
+// critères courants. Les valeurs attendues sont recalculées dans la base. Si une valeur enregistrée
+// n'en fait plus partie (base ou date changées), le chiffre de la question reste tel quel : dérive
+// signalée. Écrit <fichier>-rescored.json à côté du fichier d'origine, avec les valeurs recalculées
+// (expectedNow) pour pouvoir relire chaque lecture.
+async function rescoreFile(
+  file: string,
+  restaurantId: string,
+  withoutPlanId: string,
+): Promise<void> {
   const data = JSON.parse(readFileSync(file, 'utf-8')) as {
     questions: Array<{
       n: number;
-      expected?: Expected | null;
+      expected?: unknown;
+      expectedNow?: unknown;
       trials: Array<Trial & { error?: string }>;
     }>;
   };
+  const drifted: number[] = [];
   let ok = 0;
   let total = 0;
   let figuresOk = 0;
   let scored = 0;
   for (const question of data.questions) {
+    const definition = QUESTIONS.find((item) => item.n === question.n);
+    const targetId = definition?.restaurant === 'withoutPlan' ? withoutPlanId : restaurantId;
+    const fresh = definition?.expected ? await definition.expected(targetId) : undefined;
+    const drift =
+      fresh !== undefined &&
+      question.expected !== undefined &&
+      question.expected !== null &&
+      !figuresOf(question.expected).every((value) => figuresOf(fresh).includes(value));
+    if (drift) drifted.push(question.n);
+    question.expectedNow = fresh ?? null;
     for (const trial of question.trials) {
       total++;
       if (trial.error) {
@@ -1049,11 +1302,12 @@ function rescoreFile(file: string): void {
       trial.anchorOk = anchor.ok;
       trial.unanchored = anchor.unanchored;
       if (anchor.ok) ok++;
-      const expected = (question as { expected?: Expected | null }).expected ?? undefined;
-      if (expected) {
+      if (fresh && !drift) {
         trial.valueOk =
-          valueFound(trial.reply, expected) &&
-          (expected.kind !== 'first' || firstChannelIsTop(trial.reply, trial.calls));
+          valueFound(trial.reply, fresh) &&
+          (fresh.kind !== 'first' || firstChannelIsTop(trial.reply, trial.calls));
+      }
+      if (fresh) {
         scored++;
         if (trial.valueOk) figuresOk++;
       }
@@ -1063,25 +1317,31 @@ function rescoreFile(file: string): void {
   writeFileSync(out, JSON.stringify(data, null, 2) + '\n');
   // eslint-disable-next-line no-console -- renotage du banc, lu dans le terminal
   console.log(`Renoté : ancrage ${ok}/${total}, chiffre ${figuresOk}/${scored}. Fichier : ${out}`);
+  if (drifted.length > 0) {
+    // eslint-disable-next-line no-console -- dérive du renotage, lue dans le terminal
+    console.log(`Dérive : question(s) ${drifted.join(', ')}, chiffre non renoté.`);
+  }
 }
 
 async function main() {
-  const rescorePath = option('--rescore');
-  if (rescorePath) {
-    rescoreFile(rescorePath);
-    return;
-  }
   if (process.env.NODE_ENV === 'production' || !isLocalDatabase(process.env.DATABASE_URL)) {
     throw new Error('banc refusé : NODE_ENV=production ou DATABASE_URL hors localhost.');
   }
   const restaurantId = process.env.DEMO_RESTAURANT_ID;
   if (!restaurantId) throw new Error('DEMO_RESTAURANT_ID absent (apps/api/.env).');
-  if (!env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY absente (apps/api/.env).');
   const restaurant = await db.restaurant.findUnique({
     where: { id: restaurantId },
     select: { name: true },
   });
   if (!restaurant) throw new Error(`restaurant ${restaurantId} introuvable dans cette base.`);
+
+  const withoutPlanId = await findWithoutPlanRestaurant();
+  const rescorePath = option('--rescore');
+  if (rescorePath) {
+    await rescoreFile(rescorePath, restaurantId, withoutPlanId);
+    return;
+  }
+  if (!env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY absente (apps/api/.env).');
 
   const trialCount = Number(option('--trials') ?? 1);
   if (!Number.isInteger(trialCount) || trialCount < 1) throw new Error('--trials : entier ≥ 1.');
@@ -1092,7 +1352,6 @@ async function main() {
   const selected = QUESTIONS.filter((question) => !onlyNumbers || onlyNumbers.includes(question.n));
 
   const startedAt = new Date().toISOString();
-  const withoutPlanId = await findWithoutPlanRestaurant();
   const results = [];
   for (const question of selected) {
     const targetId = question.restaurant === 'withoutPlan' ? withoutPlanId : restaurantId;
@@ -1141,11 +1400,11 @@ async function main() {
         : Math.round(list.reduce((sum, trial) => sum + trial[key], 0) / list.length);
     return `${average('input_tokens')} entrée (dont ${average('cached_input_tokens')} du cache) par essai`;
   };
-  const isInvestigation = (result: { expected: unknown }) =>
-    (result.expected as { kind?: string } | null)?.kind === 'investigation';
+  const isEnquiry = (result: { expected: Expected | null }) =>
+    result.expected?.kind === 'readings' && result.expected.explain;
   // eslint-disable-next-line no-console -- résultats du banc, lus dans le terminal
   console.log(
-    `Tokens moyens, question simple : ${averageTokens(results.filter((r) => r.expected && !isInvestigation(r)).flatMap((r) => r.trials))} ; enquête : ${averageTokens(results.filter((r) => isInvestigation(r)).flatMap((r) => r.trials))}.`,
+    `Tokens moyens, question simple : ${averageTokens(results.filter((r) => r.expected && !isEnquiry(r)).flatMap((r) => r.trials))} ; enquête : ${averageTokens(results.filter((r) => isEnquiry(r)).flatMap((r) => r.trials))}.`,
   );
 
   const trials = results.flatMap((result) => result.trials);

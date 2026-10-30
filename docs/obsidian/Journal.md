@@ -3220,3 +3220,15 @@ Les enquêtes 42 à 47 ont été réécrites comme un gérant les pose, avec leu
 Banc complet, 47 questions, 3 essais : outil 113/123, chiffre 103/123, ancrage 140/141. Enquêtes (18 essais) : outil 8/18, chiffres clés 5/18, ancrage 17/18. Écarts : le modèle choisit souvent les réservations plutôt que les couverts, et une période de sept jours plutôt que le mois (42, 43, 45, 46) ; il n'appelle pas explain_change sur deux questions d'évolution (44, 47) ; Q10 oppose la définition ROI (date de prise) et `query_data` (date de service) ; Q33 ne change pas avec la fiche.
 
 Tokens : 1 802 931 en entrée, dont 1 704 585 lus du cache (95 %), et 77 759 en sortie, 141 essais. Par essai : question simple 12 828 en entrée (12 190 du cache) ; enquête 14 461 (13 291 du cache).
+
+### 2026-10-31 — Companion : lectures possibles pour les questions 10 et 42 à 47 (phase B3, critères)
+
+Critères corrigés avant tout essai de la phase B3. Une question qui ne précise pas sa mesure, sa date ou sa période a plusieurs lectures : chacune a ses valeurs, calculées dans la base, et les repères que la réponse doit employer pour dire laquelle elle a choisie. Une réponse est juste si elle nomme une lecture et donne toutes ses valeurs, à la tolérance de la question. Les intitulés ne changent pas. Les questions sans période (44 à 47) comptent 7 jours, 30 jours et le mois en cours ; une fenêtre se nomme par son libellé ou par une de ses dates.
+
+Avant ce commit, le critère ne retenait qu'une lecture par question. Q10 le montre : les trois réponses B2 disent « 1 026 couverts, sur la date de service », et l'ancien critère n'acceptait que 1 059 (date de prise).
+
+Ajouts faits après la lecture des réponses B2 : fenêtres de 7 et 30 jours (44 à 47), repère par date (« du 2 au 31 octobre »), réservations à côté des couverts (42, 43), date de prise (43, 46), mardi précédent en réservations (42). Ils suivent le principe (toute lecture possible compte), mais ils sont postérieurs aux réponses : leurs gains se lisent avec cette réserve.
+
+Renotage des réponses B2 (`--rescore`, sans appel au modèle). Chiffre par question, avant puis après : Q10 0/3 → 3/3 ; Q42 0/3 → 1/3 ; Q43 0/3 → 0/3 ; Q44 0/3 → 0/3 ; Q45 2/3 → 3/3 ; Q46 0/3 → 3/3 ; Q47 3/3 → 3/3. Total 103/123 → 111/123. Ancrage 140/141 avant et après. Aucune dérive : les valeurs enregistrées se retrouvent dans la base.
+
+À garder en tête. Q46 passe sur « réservations prises, du 2 au 31 octobre » : 136, et une référence de 0 pour l'an dernier. Le seed n'a pas de données de l'an dernier, donc cette comparaison ne peut pas donner d'écart chiffré, et le critère accepte la réponse qui le constate. Q43 : les chiffres donnés ne correspondent à aucune lecture complète. Q44 : aucun appel à explain_change dans les trois essais B2.
