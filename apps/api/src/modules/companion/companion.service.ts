@@ -42,9 +42,16 @@ interface ToolCall {
   function: { name: string; arguments: string };
 }
 
+/** Bloc de contenu : seul le début fixe (consignes) porte un point de cache. */
+interface ContentBlock {
+  type: 'text';
+  text: string;
+  cache_control?: { type: 'ephemeral' };
+}
+
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
+  content: string | null | ContentBlock[];
   tool_calls?: ToolCall[];
   tool_call_id?: string;
 }
@@ -72,6 +79,10 @@ const completionSchema = z.object({
     .object({
       prompt_tokens: z.number().int().nonnegative(),
       completion_tokens: z.number().int().nonnegative(),
+      // Présent quand le fournisseur signale les lectures du cache.
+      prompt_tokens_details: z
+        .object({ cached_tokens: z.number().int().nonnegative().optional() })
+        .nullish(),
     })
     .optional(),
 });
@@ -96,10 +107,10 @@ export function companionDayKey(now: Date): string {
   return dayFormatter.format(now);
 }
 
-export function companionSystemPrompt(now: Date): string {
+/** Consignes fixes, mises en cache : sans date, pour que le cache tienne d'un jour à l'autre. */
+export function companionSystemPrompt(): string {
   return [
     `Vous êtes l'assistant IA de Sokar, au service de l'équipe de direction de ce restaurant. Vous répondez à partir des chiffres du tableau de bord, que vous obtenez par vos outils.`,
-    `Aujourd'hui, nous sommes le ${longDateFormatter.format(now)} (${companionDayKey(now)}, fuseau Europe/Paris).`,
     '',
     'Règles :',
     '- Vouvoyez toujours votre interlocuteur. Répondez en français, en quelques phrases courtes.',
@@ -120,6 +131,11 @@ export function companionSystemPrompt(now: Date): string {
     '- Ne supposez aucune cause ni aucune action absente des données. Ne suggérez donc aucune vérification (canal de réservation, synchronisation, réglage) : constatez ce que disent les chiffres, puis dites ce que vous ne savez pas.',
     "- Vos réponses précédentes figurent dans la conversation : pour rappeler un chiffre que vous avez déjà donné, reprenez-le sans vous désavouer. Pour toute question chiffrée nouvelle ou contestée, interrogez de nouveau l'outil : les chiffres changent pendant la journée.",
   ].join('\n');
+}
+
+/** Date du jour, hors du cache : elle change chaque jour, les consignes non. */
+export function companionDatePrompt(now: Date): string {
+  return `Aujourd'hui, nous sommes le ${longDateFormatter.format(now)} (${companionDayKey(now)}, fuseau Europe/Paris).`;
 }
 
 type AssistantMessage = z.infer<typeof completionSchema>['choices'][number]['message'];
@@ -158,6 +174,7 @@ async function requestTurn(
     if (!parsed.success) throw new CompanionUpstreamError('invalid_response');
     trace.inputTokens += parsed.data.usage?.prompt_tokens ?? 0;
     trace.outputTokens += parsed.data.usage?.completion_tokens ?? 0;
+    trace.cachedInputTokens += parsed.data.usage?.prompt_tokens_details?.cached_tokens ?? 0;
     return parsed.data.choices[0].message;
   } catch (error) {
     if (error instanceof CompanionUpstreamError) throw error;
@@ -174,6 +191,7 @@ interface CompanionTrace {
   tools: string[];
   inputTokens: number;
   outputTokens: number;
+  cachedInputTokens: number;
 }
 
 export async function answerCompanion(input: {
@@ -186,10 +204,22 @@ export async function answerCompanion(input: {
   const started = performance.now();
   const responseId = randomUUID();
   const fetcher = input.fetcher ?? fetch;
-  const trace: CompanionTrace = { turns: 0, tools: [], inputTokens: 0, outputTokens: 0 };
+  const trace: CompanionTrace = {
+    turns: 0,
+    tools: [],
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedInputTokens: 0,
+  };
   const sources: CompanionAnswer['sources'] = [];
   const conversation: ChatMessage[] = [
-    { role: 'system', content: companionSystemPrompt(new Date()) },
+    {
+      role: 'system',
+      content: [
+        { type: 'text', text: companionSystemPrompt(), cache_control: { type: 'ephemeral' } },
+      ],
+    },
+    { role: 'system', content: companionDatePrompt(new Date()) },
     ...input.messages,
   ];
   let outcome = 'ok';
@@ -251,6 +281,7 @@ export async function answerCompanion(input: {
         turns: trace.turns,
         tools: trace.tools,
         input_tokens: trace.inputTokens,
+        cached_input_tokens: trace.cachedInputTokens,
         output_tokens: trace.outputTokens,
         latency_ms: Math.round(performance.now() - started),
       },

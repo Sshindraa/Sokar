@@ -30,13 +30,21 @@ function toolCallMessage(name: string, args: unknown, id = 'call_1') {
 }
 
 /** Corps envoyé au n-ième appel OpenRouter. */
+type SentContent = string | null | Array<{ type: string; text: string; cache_control?: unknown }>;
+
+/** Texte du message système, qu'il soit une chaîne ou des blocs (consignes en cache). */
+function systemText(message: { content: SentContent } | undefined): string {
+  const content = message?.content ?? '';
+  return typeof content === 'string' ? content : content.map((block) => block.text).join('\n');
+}
+
 function sentBody(fetchSpy: ReturnType<typeof vi.spyOn>, index: number) {
   const init = fetchSpy.mock.calls[index][1] as RequestInit;
   return JSON.parse(String(init.body)) as {
     model: string;
     messages: Array<{
       role: string;
-      content: string | null;
+      content: SentContent;
       tool_call_id?: string;
     }>;
     tools?: unknown[];
@@ -162,7 +170,7 @@ describe('POST /companion/chat', () => {
 
     const toolMessage = sentBody(fetchSpy, 1).messages.find((m) => m.role === 'tool');
     expect(toolMessage?.tool_call_id).toBe('call_1');
-    expect(JSON.parse(toolMessage?.content ?? '{}')).toMatchObject({ total_calls: 5 });
+    expect(JSON.parse(String(toolMessage?.content ?? '{}'))).toMatchObject({ total_calls: 5 });
   });
 
   it('renvoie une erreur d’argument au modèle sans échouer la requête', async () => {
@@ -181,7 +189,9 @@ describe('POST /companion/chat', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ reply: 'Période non reconnue.', sources: [] });
     const toolMessage = sentBody(fetchSpy, 1).messages.find((m) => m.role === 'tool');
-    expect(JSON.parse(toolMessage?.content ?? '{}')).toEqual({ error: 'invalid_arguments' });
+    expect(JSON.parse(String(toolMessage?.content ?? '{}'))).toEqual({
+      error: 'invalid_arguments',
+    });
   });
 
   it('demande au modèle un texte sans Markdown et sans cause non constatée', async () => {
@@ -195,7 +205,13 @@ describe('POST /companion/chat', () => {
       payload: { messages: [userMessage] },
     });
 
-    const system = sentBody(fetchSpy, 0).messages[0].content ?? '';
+    const instructions = sentBody(fetchSpy, 0).messages[0];
+    expect(instructions.content).toEqual([
+      expect.objectContaining({ type: 'text', cache_control: { type: 'ephemeral' } }),
+    ]);
+    expect(systemText(sentBody(fetchSpy, 0).messages[1])).toMatch(/^Aujourd’hui|^Aujourd'hui/);
+    expect(JSON.stringify(instructions)).not.toMatch(/Aujourd/);
+    const system = systemText(sentBody(fetchSpy, 0).messages[0]);
     expect(system).toContain('sans Markdown');
     expect(system).toContain('Ne supposez aucune cause');
     expect(system).toContain('Vos réponses précédentes figurent dans la conversation');
@@ -212,7 +228,7 @@ describe('POST /companion/chat', () => {
       payload: { messages: [userMessage] },
     });
 
-    const system = sentBody(fetchSpy, 0).messages[0].content ?? '';
+    const system = systemText(sentBody(fetchSpy, 0).messages[0]);
     expect(system).toContain(
       "Le mois en cours n'est pas terminé : si vous citez ses chiffres, dites qu'ils sont partiels (arrêtés à aujourd'hui).",
     );
@@ -307,7 +323,7 @@ describe('POST /companion/chat', () => {
     });
 
     const toolMessage = sentBody(fetchSpy, 1).messages.find((m) => m.role === 'tool');
-    const content = toolMessage?.content ?? '';
+    const content = String(toolMessage?.content ?? '');
     const keys = keysDeep(JSON.parse(content));
     for (const forbidden of ['name', 'firstName', 'lastName', 'phone', 'email', 'notes']) {
       expect(keys).not.toContain(forbidden);

@@ -736,14 +736,19 @@ interface Trial {
   valueOk: boolean | null;
   input_tokens: number;
   output_tokens: number;
+  cached_input_tokens: number;
   error?: string;
 }
 
 // answerCompanion ne renvoie pas les tokens : ils sont dans la ligne de journal de chaque appel.
-let lastUsage = { input_tokens: 0, output_tokens: 0 };
+let lastUsage = { input_tokens: 0, output_tokens: 0, cached_input_tokens: 0 };
 const usageLog = {
-  info: (fields: { input_tokens: number; output_tokens: number }) => {
-    lastUsage = { input_tokens: fields.input_tokens, output_tokens: fields.output_tokens };
+  info: (fields: { input_tokens: number; output_tokens: number; cached_input_tokens: number }) => {
+    lastUsage = {
+      input_tokens: fields.input_tokens,
+      output_tokens: fields.output_tokens,
+      cached_input_tokens: fields.cached_input_tokens,
+    };
   },
 } as unknown as FastifyBaseLogger;
 
@@ -752,7 +757,7 @@ async function runTrial(
   expected: Expected | undefined,
   restaurantId: string,
 ): Promise<Trial> {
-  lastUsage = { input_tokens: 0, output_tokens: 0 };
+  lastUsage = { input_tokens: 0, output_tokens: 0, cached_input_tokens: 0 };
   const calls: ToolCall[] = [];
   try {
     const answer = await answerCompanion({
@@ -794,6 +799,12 @@ function isLocalDatabase(rawUrl: string | undefined): boolean {
   }
 }
 
+// Options : --trials N (essais par question, 1 par défaut) et --only 3,7,12 (questions seules).
+function option(name: string): string | undefined {
+  const index = process.argv.indexOf(name);
+  return index === -1 ? undefined : process.argv[index + 1];
+}
+
 async function main() {
   if (process.env.NODE_ENV === 'production' || !isLocalDatabase(process.env.DATABASE_URL)) {
     throw new Error('banc refusé : NODE_ENV=production ou DATABASE_URL hors localhost.');
@@ -807,14 +818,22 @@ async function main() {
   });
   if (!restaurant) throw new Error(`restaurant ${restaurantId} introuvable dans cette base.`);
 
+  const trialCount = Number(option('--trials') ?? 1);
+  if (!Number.isInteger(trialCount) || trialCount < 1) throw new Error('--trials : entier ≥ 1.');
+  const onlyNumbers = option('--only')?.split(',').map(Number);
+  const unknown = (onlyNumbers ?? []).filter((n) => !QUESTIONS.some((q) => q.n === n));
+  if (unknown.length > 0)
+    throw new Error(`--only : question(s) inconnue(s) ${unknown.join(', ')}.`);
+  const selected = QUESTIONS.filter((question) => !onlyNumbers || onlyNumbers.includes(question.n));
+
   const startedAt = new Date().toISOString();
   const withoutPlanId = await findWithoutPlanRestaurant();
   const results = [];
-  for (const question of QUESTIONS) {
+  for (const question of selected) {
     const targetId = question.restaurant === 'withoutPlan' ? withoutPlanId : restaurantId;
     const expected = question.expected ? await question.expected(targetId) : undefined;
     const trials: Trial[] = [];
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < trialCount; attempt++) {
       trials.push(await runTrial(question, expected, targetId));
     }
     results.push({
@@ -842,6 +861,7 @@ async function main() {
   const trials = results.flatMap((result) => result.trials);
   const tokens = {
     input_tokens: trials.reduce((sum, trial) => sum + trial.input_tokens, 0),
+    cached_input_tokens: trials.reduce((sum, trial) => sum + trial.cached_input_tokens, 0),
     output_tokens: trials.reduce((sum, trial) => sum + trial.output_tokens, 0),
   };
   mkdirSync(RESULTS_DIR, { recursive: true });
@@ -856,7 +876,7 @@ async function main() {
   );
   // eslint-disable-next-line no-console -- résumé du banc, lu dans le terminal
   console.log(
-    `Tokens : ${tokens.input_tokens} entrée, ${tokens.output_tokens} sortie (${trials.length} appels).`,
+    `Tokens : ${tokens.input_tokens} entrée (dont ${tokens.cached_input_tokens} lus du cache), ${tokens.output_tokens} sortie (${trials.length} appels).`,
   );
   // eslint-disable-next-line no-console -- chemin du fichier de résultats
   console.log(`Résultats : ${file}`);
