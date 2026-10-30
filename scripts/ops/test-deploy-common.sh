@@ -156,4 +156,20 @@ mkdir -p "$TMP_ROOT/restore-root"
 test "$(cat "$TMP_ROOT/restore-root/pnpm-lock.yaml")" = 'lockfileVersion: v1'
 test -f "$TMP_ROOT/restore-root/apps/api/package.json"
 
+# Redémarrages PM2 : une seule fois par app remplacée, l'API seulement si elle a changé.
+PM2_API=sokar-api PM2_WORKERS=sokar-workers PM2_DASH=sokar-dashboard PM2_CONNECT=sokar-connect
+ECOSYSTEM_FILE=eco.js PRIVILEGED_WRAPPER=/bin/true HAS_LOCALSTACK=false
+PM2_CALLS="$TMP_ROOT/pm2-calls.log"
+pm2() { echo "pm2 $*" >> "$PM2_CALLS"; }
+sudo() { :; }
+: > "$PM2_CALLS"
+NEXT_BUILD_ACTIVATED_DASHBOARD=false NEXT_BUILD_ACTIVATED_CONNECT=false NEED_API=false restart_services >/dev/null
+test "$(cat "$PM2_CALLS")" = 'pm2 save'
+: > "$PM2_CALLS"
+NEXT_BUILD_ACTIVATED_DASHBOARD=true NEXT_BUILD_ACTIVATED_CONNECT=false NEED_API=false restart_services >/dev/null
+test "$(cat "$PM2_CALLS")" = "$(printf 'pm2 stop sokar-dashboard\npm2 start eco.js --only sokar-dashboard\npm2 save')"
+: > "$PM2_CALLS"
+NEXT_BUILD_ACTIVATED_DASHBOARD=false NEXT_BUILD_ACTIVATED_CONNECT=false NEED_API=true restart_services >/dev/null
+test "$(cat "$PM2_CALLS")" = "$(printf 'pm2 start eco.js --only sokar-api\npm2 start eco.js --only sokar-workers\npm2 save')"
+
 echo 'deploy-common release activation/rollback: OK'
