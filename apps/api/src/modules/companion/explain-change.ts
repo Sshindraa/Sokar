@@ -5,7 +5,7 @@
  * simultanée n'est jamais une cause, et le modèle ne calcule aucun écart.
  */
 import { z } from 'zod';
-import { SOURCES, type Dimension } from './catalog';
+import { SOURCES, type Dimension, type Source } from './catalog';
 import {
   COMPARE_MODES,
   DateSchema,
@@ -29,7 +29,7 @@ const TIME_DIMENSIONS = [
 const ExplainArgs = z
   .object({
     source: z.enum(Object.keys(SOURCES) as [string, ...string[]]),
-    measure: z.string(),
+    measure: z.string().optional(),
     date_field: z.string().optional(),
     compare: z.enum(COMPARE_MODES),
     from: DateSchema,
@@ -56,16 +56,23 @@ export interface Alongside {
   delta_pct: number;
 }
 
+/** Explication d'une mesure de la fiche. */
+export interface MeasureExplanation {
+  measure: string;
+  total: Compared;
+  drivers: Driver[];
+  low_volume: boolean;
+}
+
 export interface Explanation {
   source: string;
-  measure: string;
   compare: string;
   from: string;
   to: string;
-  total: Compared;
-  drivers: Driver[];
+  /** Une entrée par mesure demandée, ou par mesure de la fiche si aucune n'est donnée. */
+  measures: MeasureExplanation[];
+  /** Variations simultanées des autres fiches : elles ne sont pas des causes. */
   alongside: Alongside[];
-  low_volume: boolean;
 }
 
 const isResult = (value: QueryResult | QueryUnavailable | QueryError): value is QueryResult =>
@@ -76,24 +83,16 @@ const roundTo = (value: number, decimals: number) => {
   return Math.round(value * factor) / factor;
 };
 
-export async function explainChange(
+/** Le total, les drivers et le volume d'une mesure, depuis le moteur de query_data. */
+async function explainMeasure(
   restaurantId: string,
-  input: unknown,
-): Promise<Explanation | QueryUnavailable | QueryError> {
-  const parsed = ExplainArgs.safeParse(input);
-  if (!parsed.success) {
-    return {
-      error: 'invalid_query',
-      detail: parsed.error.issues
-        .map((issue) => `${issue.path.join('.') || 'requête'} : ${issue.message}`)
-        .join(' ; '),
-    };
-  }
-  const args = parsed.data;
-  const source = SOURCES[args.source as keyof typeof SOURCES];
+  args: { source: string; date_field?: string; compare: string; from: string; to: string },
+  measure: string,
+): Promise<MeasureExplanation | QueryUnavailable | QueryError> {
+  const source = SOURCES[args.source as keyof typeof SOURCES] as Source;
   const base = {
     entity: args.source,
-    metric: args.measure,
+    metric: measure,
     date_field: args.date_field,
     compare: args.compare,
     from: args.from,
@@ -135,7 +134,40 @@ export async function explainChange(
   }
   drivers.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
+  return {
+    measure,
+    total: totalCompared,
+    drivers: drivers.slice(0, DRIVER_LIMIT),
+    low_volume: totalCompared.reference === null || totalCompared.reference < LOW_VOLUME_REFERENCE,
+  };
+}
+
+export async function explainChange(
+  restaurantId: string,
+  input: unknown,
+): Promise<Explanation | QueryUnavailable | QueryError> {
+  const parsed = ExplainArgs.safeParse(input);
+  if (!parsed.success) {
+    return {
+      error: 'invalid_query',
+      detail: parsed.error.issues
+        .map((issue) => `${issue.path.join('.') || 'requête'} : ${issue.message}`)
+        .join(' ; '),
+    };
+  }
+  const args = parsed.data;
+  const source = SOURCES[args.source as keyof typeof SOURCES] as Source;
+  const measures = args.measure !== undefined ? [args.measure] : Object.keys(source.measures);
+
+  const explained: MeasureExplanation[] = [];
+  for (const measure of measures) {
+    const result = await explainMeasure(restaurantId, args, measure);
+    if (!('measure' in result)) return result;
+    explained.push(result);
+  }
+
   // Alongside : le nombre d'éléments de chaque autre source sur les mêmes dates, avec le même compare.
+  // Il ne dépend pas de la mesure : on le calcule une fois.
   const alongside: Alongside[] = [];
   for (const [name, other] of Object.entries(SOURCES)) {
     if (name === args.source) continue;
@@ -172,14 +204,11 @@ export async function explainChange(
 
   return {
     source: args.source,
-    measure: args.measure,
     compare: args.compare,
     from: args.from,
     to: args.to,
-    total: totalCompared,
-    drivers: drivers.slice(0, DRIVER_LIMIT),
+    measures: explained,
     alongside,
-    low_volume: totalCompared.reference === null || totalCompared.reference < LOW_VOLUME_REFERENCE,
   };
 }
 
@@ -192,8 +221,8 @@ export function explainChangeDescription(): string {
     .join(' ; ');
   return [
     `Explique un écart entre une période et sa référence (compare, même sens que query_data). Sources (source) : ${sources}.`,
-    'Le résultat donne le total avec sa référence, un écart et un pourcentage calculés par le serveur ; les groupes qui portent l’écart (drivers, avec leur part de l’écart total, cinq au plus) ; et les autres sources qui varient dans le même temps (alongside, seulement si l’écart est d’au moins 25 % et la référence d’au moins 5).',
-    'low_volume vrai signifie une référence inférieure à 5 : ne concluez rien alors.',
+    'measure est facultatif : sans lui, le résultat explique chaque mesure de la fiche. Pour chaque mesure, measures donne le total avec sa référence, un écart et un pourcentage calculés par le serveur, et les groupes qui portent l’écart (drivers, avec leur part de l’écart total, cinq au plus).',
+    'alongside donne les autres sources qui varient dans le même temps (seulement si l’écart est d’au moins 25 % et la référence d’au moins 5). low_volume vrai signifie une référence inférieure à 5 : ne concluez rien alors.',
     'Les variations simultanées ne sont pas des causes. date_field est obligatoire si la source a plusieurs dates.',
   ].join(' ');
 }
@@ -217,7 +246,7 @@ export function explainChangeParameters() {
       from: { type: 'string', description: 'Premier jour inclus, AAAA-MM-JJ (heure de Paris).' },
       to: { type: 'string', description: 'Dernier jour inclus, AAAA-MM-JJ (heure de Paris).' },
     },
-    required: ['source', 'measure', 'compare', 'from', 'to'],
+    required: ['source', 'compare', 'from', 'to'],
     additionalProperties: false,
   };
 }

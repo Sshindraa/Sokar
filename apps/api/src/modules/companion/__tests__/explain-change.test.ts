@@ -49,6 +49,10 @@ const call = (when: Date) => ({
   durationSec: 30,
 });
 
+// Le résultat d'une seule mesure : la requête donne measure, donc une entrée.
+const firstMeasure = (result: unknown) =>
+  (result as { measures: Array<Record<string, unknown>> }).measures[0];
+
 const reservationsQuery = {
   source: 'reservations',
   measure: 'count',
@@ -87,8 +91,10 @@ describe('explainChange : total et drivers', () => {
 
     const result = await explainChange('r1', reservationsQuery);
 
-    expect(result).toMatchObject({ total: { value: 6, reference: 2, delta: 4, delta_pct: 200 } });
-    const drivers = (result as unknown as { drivers: Array<Record<string, unknown>> }).drivers;
+    expect(firstMeasure(result)).toMatchObject({
+      total: { value: 6, reference: 2, delta: 4, delta_pct: 200 },
+    });
+    const drivers = firstMeasure(result).drivers as Array<Record<string, unknown>>;
     expect(drivers[0]).toMatchObject({ dimension: 'state', key: 'HONORED', delta: 4, share: 1 });
     expect(drivers).toEqual(
       expect.arrayContaining([
@@ -108,9 +114,7 @@ describe('explainChange : total et drivers', () => {
 
     const result = await explainChange('r1', reservationsQuery);
 
-    const drivers = (
-      result as unknown as { drivers: Array<{ share: number | null; delta: number }> }
-    ).drivers;
+    const drivers = firstMeasure(result).drivers as Array<{ share: number | null; delta: number }>;
     expect(drivers.length).toBeGreaterThan(0);
     expect(drivers.every((driver) => driver.delta === 0 && driver.share === null)).toBe(true);
   });
@@ -119,12 +123,41 @@ describe('explainChange : total et drivers', () => {
     vi.mocked(db.reservation.findMany).mockImplementation(
       serve([reservation(at(6)), reservation(at(5))]),
     );
-    expect(await explainChange('r1', reservationsQuery)).toMatchObject({ low_volume: true });
+    expect(firstMeasure(await explainChange('r1', reservationsQuery))).toMatchObject({
+      low_volume: true,
+    });
 
     vi.mocked(db.reservation.findMany).mockImplementation(
       serve([reservation(at(6)), ...Array.from({ length: 5 }, () => reservation(at(5)))]),
     );
-    expect(await explainChange('r1', reservationsQuery)).toMatchObject({ low_volume: false });
+    expect(firstMeasure(await explainChange('r1', reservationsQuery))).toMatchObject({
+      low_volume: false,
+    });
+  });
+});
+
+describe('explainChange : sans measure', () => {
+  it('explique chaque mesure de la fiche, couverts compris', async () => {
+    vi.mocked(db.reservation.findMany).mockImplementation(
+      serve([reservation(at(6), 'PHONE'), reservation(at(6)), reservation(at(5))]),
+    );
+
+    const result = (await explainChange('r1', {
+      source: 'reservations',
+      compare: 'previous_period',
+      date_field: 'service',
+      from: '2026-10-06',
+      to: '2026-10-06',
+    })) as { measures: Array<{ measure: string; total: { value: number } }> };
+
+    expect(result.measures.map((entry) => entry.measure)).toEqual([
+      'count',
+      'covers',
+      'estimated_revenue',
+    ]);
+    const [count, covers] = result.measures;
+    expect(count.total.value).toBe(2);
+    expect(covers.total.value).toBe(4);
   });
 });
 
