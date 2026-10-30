@@ -40,14 +40,21 @@ const dayFormat = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 });
 
+// alt : second nombre accepté. rates : seuls pourcentages permis, ceux que renvoie un outil.
 type Expected =
-  | { kind: 'count' | 'amount' | 'rate'; value: number; unit?: string }
+  | {
+      kind: 'count' | 'amount' | 'rate';
+      value: number;
+      unit?: string;
+      alt?: number;
+      rates?: number[];
+    }
   | { kind: 'day'; value: string[] };
 
 interface Question {
   n: number;
   text: string;
-  tool?: string;
+  tool?: string | string[];
   expected?: (restaurantId: string) => Promise<Expected>;
 }
 
@@ -75,17 +82,17 @@ const QUESTIONS: Question[] = [
   {
     n: 3,
     text: "Combien d'appels sur les 30 derniers jours ?",
-    tool: 'reservation_stats',
+    tool: ['reservation_stats', 'call_stats'],
     expected: async (id) => count((await computeDashboardStats(id, '30d')).total_calls),
   },
   {
     n: 4,
     text: 'Quel est le taux de conversion des appels sur 7 jours ?',
-    tool: 'reservation_stats',
-    expected: async (id) => ({
-      kind: 'rate',
-      value: (await computeDashboardStats(id, '7d')).conversion_rate,
-    }),
+    tool: ['reservation_stats', 'call_stats'],
+    expected: async (id) => {
+      const rate = (await computeDashboardStats(id, '7d')).conversion_rate;
+      return { kind: 'rate', value: rate, rates: [rate] };
+    },
   },
   {
     n: 5,
@@ -167,7 +174,16 @@ const QUESTIONS: Question[] = [
     n: 19,
     text: "Combien d'appels ont abouti à une réservation cette semaine ?",
     tool: 'call_stats',
-    expected: async (id) => count((await computeCallStats(id, '7d')).byOutcome.RESERVED),
+    expected: async (id) => {
+      const calls = await computeCallStats(id, '7d');
+      const dashboard = await computeDashboardStats(id, '7d');
+      return {
+        kind: 'count',
+        value: calls.byOutcome.RESERVED,
+        alt: dashboard.call_reservations,
+        rates: [dashboard.conversion_rate],
+      };
+    },
   },
 ];
 
@@ -192,6 +208,13 @@ function numbersIn(reply: string): number[] {
   return tokens.map((token) => Number(token.replace(/[\s  ]/g, '').replace(',', '.')));
 }
 
+// Pourcentages cités : nombre suivi de « % » ou de « pour cent ».
+function percentagesIn(reply: string): number[] {
+  return [...reply.matchAll(/(\d+(?:[,.]\d+)?)\s*(?:%|pour cent)/gi)].map(([, value]) =>
+    Number(value.replace(',', '.')),
+  );
+}
+
 // Compte exact ; montant à l'euro près ; taux à 0,1 près ; jour : nom complet, sans accent ni casse.
 function valueFound(reply: string, expected: Expected): boolean {
   if (expected.kind === 'day') {
@@ -210,13 +233,29 @@ function valueFound(reply: string, expected: Expected): boolean {
       return (NUMBER_WORDS[key] ?? Number(key)) === expected.value;
     });
   }
+  // Un pourcentage qu'aucun outil n'a renvoyé est un taux calculé par le modèle : KO.
+  const rates = expected.rates;
+  if (
+    rates &&
+    percentagesIn(reply).some((p) => !rates.some((rate) => Math.abs(p - rate) <= 0.05))
+  ) {
+    return false;
+  }
+  const wanted = [expected.value, expected.alt].filter(
+    (value): value is number => value !== undefined,
+  );
   const tolerance = { count: 0, amount: 0.5, rate: 0.05 }[expected.kind];
-  return numbersIn(reply).some((n) => Math.abs(n - expected.value) <= tolerance + 1e-9);
+  return numbersIn(reply).some((n) =>
+    wanted.some((value) => Math.abs(n - value) <= tolerance + 1e-9),
+  );
 }
 
 function formatExpected(expected: Expected | undefined): string {
   if (!expected) return '';
-  return expected.kind === 'day' ? expected.value.join(' / ') : String(expected.value);
+  if (expected.kind === 'day') return expected.value.join(' / ');
+  return expected.alt === undefined
+    ? String(expected.value)
+    : `${expected.value} ou ${expected.alt}`;
 }
 
 interface Trial {
@@ -253,7 +292,7 @@ async function runTrial(
     return {
       reply: answer.reply,
       sources,
-      toolOk: question.tool ? sources.includes(question.tool) : null,
+      toolOk: question.tool ? [question.tool].flat().some((tool) => sources.includes(tool)) : null,
       valueOk: expected ? valueFound(answer.reply, expected) : null,
       ...lastUsage,
     };

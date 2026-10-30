@@ -219,6 +219,9 @@ describe('POST /companion/chat', () => {
       "Un brouillon ne contient aucun fait absent des données : ni table libérée, ni promotion, ni prix, ni horaire, ni disponibilité. Mettez [à compléter] à la place et dites ce qu'il faut vérifier. Toute formule de disponibilité ou d'urgence va entre crochets : « table disponible », « places limitées », « dernières places », « vient de se libérer ».",
     );
     expect(system).toContain("les appels reçus par l'assistant téléphonique");
+    expect(system).toContain(
+      "Ne calculez jamais vous-même un taux, un pourcentage ni une moyenne : reprenez celui que donne un outil. S'il n'existe pas, donnez les deux nombres sans le ratio.",
+    );
   });
 
   it('s’arrête à 4 tours d’outils puis demande la réponse finale sans outils', async () => {

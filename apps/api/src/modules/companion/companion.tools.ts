@@ -22,7 +22,7 @@ export const COMPANION_TOOLS = [
     function: {
       name: 'reservation_stats',
       description:
-        'Réservations PRISES pendant la période (date de création), appels, couverts, CA estimé. 7d = 7 derniers jours, aujourd’hui compris ; 30d = 30 derniers jours, aujourd’hui compris.',
+        'Réservations PRISES pendant la période (date de création), appels, couverts, CA estimé. 7d = 7 derniers jours, aujourd’hui compris ; 30d = 30 derniers jours, aujourd’hui compris. conversion_rate = taux de conversion affiché au tableau de bord (réservations encore valables liées à un appel / appels). C’est la source pour toute question de taux de conversion.',
       parameters: {
         type: 'object',
         properties: {
@@ -42,7 +42,7 @@ export const COMPANION_TOOLS = [
     function: {
       name: 'call_stats',
       description:
-        'Appels reçus par l’assistant téléphonique Léa : intention, résultat, hors horaires, durée moyenne. 7d = 7 derniers jours, aujourd’hui compris ; 30d = 30 derniers jours, aujourd’hui compris.',
+        'Appels reçus par l’assistant téléphonique Léa : intention, résultat, hors horaires, durée moyenne. 7d = 7 derniers jours, aujourd’hui compris ; 30d = 30 derniers jours, aujourd’hui compris. byOutcome.RESERVED = appels terminés par une réservation, y compris celles annulées depuis ou non honorées. Le tableau de bord compte seulement celles encore valables (reservation_stats.call_reservations) : si vous citez les deux, nommez la différence.',
       parameters: {
         type: 'object',
         properties: {
