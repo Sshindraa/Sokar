@@ -947,6 +947,7 @@ vi.mock('../shared/db/client', () => {
     },
     call: {
       create: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
       upsert: vi.fn(),

@@ -320,6 +320,7 @@ export class ErasureService {
         where: { customerPhone: args.subject },
         data: { customerPhone: null, customerName: 'ANON' },
       });
+      // tenant-scoping: global — effacement RGPD d'un sujet sur tous les restaurants.
       const callResult = await tx.call.updateMany({
         where: { callerPhone: args.subject },
         data: { callerPhone: null },

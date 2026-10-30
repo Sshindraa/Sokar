@@ -755,6 +755,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           },
         });
         if (!existing) return reply.status(409).send({ error: 'Confirmation cannot be replayed' });
+        // tenant-scoping: global — table Restaurant, id déjà résolu.
         const restaurantTz = await db.restaurant.findUnique({
           where: { id: restaurant.id },
           select: { timezone: true },

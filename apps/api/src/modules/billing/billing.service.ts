@@ -1906,8 +1906,10 @@ async function billingEventRestaurantId(event: Stripe.Event): Promise<string | u
   const subscription = event.data.object as SubscriptionObject;
   if (subscription.metadata?.restaurantId) return subscription.metadata.restaurantId;
   return (
-    await db.restaurantBilling.findUnique({ where: { stripeSubscriptionId: subscription.id } })
-  )?.restaurantId;
+    // tenant-scoping: global — lookup par ID d'abonnement Stripe (webhook signé).
+    (await db.restaurantBilling.findUnique({ where: { stripeSubscriptionId: subscription.id } }))
+      ?.restaurantId
+  );
 }
 
 async function billingAnchorId(

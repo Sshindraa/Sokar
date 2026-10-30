@@ -325,6 +325,7 @@ export async function transferOwnership(input: {
       } catch (error) {
         throw unavailable(error);
       }
+      // tenant-scoping: global — membre vérifié par accountId dans la même transaction.
       await tx.restaurantAccountMembership.update({
         where: { id: target.id },
         data: { role: 'OWNER' },

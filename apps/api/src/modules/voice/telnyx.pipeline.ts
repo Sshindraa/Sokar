@@ -294,8 +294,8 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             );
             // Continue: la session sera tout de même créée et l'appel répondu
             // (le webhook est un retry, le call existe déjà en DB).
-            const existingCall = await app.db.call.findUnique({
-              where: { callSid: payload.call_leg_id },
+            const existingCall = await app.db.call.findFirst({
+              where: { callSid: payload.call_leg_id, restaurantId: ctx.id },
               select: { outcome: true, durationSec: true },
             });
             if (existingCall?.outcome || existingCall?.durationSec != null) {

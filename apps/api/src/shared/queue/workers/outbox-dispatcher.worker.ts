@@ -25,6 +25,7 @@ async function retryFailedNotifications(log: ReturnType<typeof jobLogger>): Prom
     let moved = 0;
     for (const job of jobs) {
       if (!job.finishedOn || job.finishedOn > cutoff || !job.data?.outboxEventId) continue;
+      // tenant-scoping: global — tâche système par ID d'événement interne.
       const event = await db.outboxEvent.findUnique({
         where: { id: job.data.outboxEventId },
         select: { topic: true },

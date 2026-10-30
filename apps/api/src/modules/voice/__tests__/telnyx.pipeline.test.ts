@@ -379,7 +379,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
     vi.mocked(db.call.create).mockRejectedValueOnce(
       Object.assign(new Error('duplicate'), { code: 'P2002' }),
     );
-    vi.mocked(db.call.findUnique).mockResolvedValueOnce({
+    vi.mocked(db.call.findFirst).mockResolvedValueOnce({
       outcome: null,
       durationSec: null,
     } as never);
@@ -389,6 +389,9 @@ describe('POST /voice/telnyx — call.initiated', () => {
       payload: makeInitiatedPayload(),
     });
     expect(replay.statusCode).toBe(200);
+    expect(vi.mocked(db.call.findFirst)).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { callSid: 'leg-1', restaurantId: 'rest-1' } }),
+    );
     expect(CallSessionManager.getInstance().get('cc-1')).toBe(original);
     expect(original.transcript).toBe('conversation en cours');
   });
@@ -591,6 +594,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
     const dupError = new Error('Unique constraint failed') as Error & { code: string };
     dupError.code = 'P2002';
     vi.mocked(db.call.create).mockRejectedValueOnce(dupError);
+    vi.mocked(db.call.findFirst).mockResolvedValueOnce(undefined as never);
 
     const res = await app.inject({
       method: 'POST',
