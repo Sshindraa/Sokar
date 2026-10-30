@@ -39,8 +39,7 @@ export async function companionRoutes(app: FastifyInstance) {
     return reply.status(204).send();
   });
 
-  // Carte « Ce soir » : calculée ici, jamais envoyée au modèle. La politique de rôles refuse STAFF (403) :
-  // la route n'est dans aucune règle de l'équipe de service.
+  // Carte « Ce soir » : calculée ici, jamais envoyée au modèle. La politique de rôles refuse STAFF et READ_ONLY (403).
   app.get('/companion/tonight', { preHandler: requireOrg() }, async (req, reply) => {
     return reply.send(await computeTonight(req.restaurantId as string, new Date()));
   });

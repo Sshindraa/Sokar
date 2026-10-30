@@ -413,15 +413,18 @@ describe('GET /companion/tonight', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('refuse le rôle STAFF avec 403, sans appeler le modèle', async () => {
-    const app = await getApp();
-    const res = await app.inject({
-      method: 'GET',
-      url: '/companion/tonight',
-      headers: { ...AUTH, 'x-test-site-role': 'STAFF', 'x-test-enforce-role-policy': '1' },
-    });
+  it.each(['STAFF', 'READ_ONLY'])(
+    'refuse le rôle %s avec 403, sans appeler le modèle',
+    async (role) => {
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/companion/tonight',
+        headers: { ...AUTH, 'x-test-site-role': role, 'x-test-enforce-role-policy': '1' },
+      });
 
-    expect(res.statusCode).toBe(403);
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
+      expect(res.statusCode).toBe(403);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    },
+  );
 });

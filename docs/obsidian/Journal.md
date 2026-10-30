@@ -3178,3 +3178,7 @@ Décision : `READ_ONLY` garde la lecture de la carte, comme `/reservations` : la
 ### 2026-10-30 — Companion : la carte ouvre la réservation du jour
 
 Le lien de la carte « Ce soir » mène à `/dashboard/reservations?date=AAAA-MM-JJ&reservation=<id>`. La page prend ce jour, même quand elle est déjà ouverte, et ouvre le détail de la réservation dès que la liste du jour est chargée. Fermer le détail retire le paramètre de l'URL, pour qu'un nouveau clic rouvre la même réservation. Aucune route API ajoutée : seule la page des réservations lit ces paramètres.
+
+### 2026-10-30 — Companion : direction seule et panneau fermé à la navigation
+
+La politique de rôles (`role-policy.ts`) refuse la lecture seule sur `/companion/*` (`DIRECTION_ONLY_RULES`), comme l'équipe de service. `READ_ONLY` lit toujours le reste, dont `/reservations`. Le panneau Companion se ferme quand la page ou ses paramètres changent. Vérifié dans le navigateur, en dev local avec API et dashboard séparés : clic sur « Adrien Richard » dans « Ce soir », panneau fermé, détail du 30 octobre à 18 h 15 ouvert, alors que la page était sur le 29 octobre.

@@ -212,6 +212,8 @@ export function DashboardModeSwitcher({
   const companionAvailable = activeSite?.role !== 'STAFF' && activeSite?.role !== 'READ_ONLY';
   const [companionOpen, setCompanionOpen] = useState(false);
   const [sallePlanOpen, setSallePlanOpen] = useState(false);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const companionDialogId = useId();
   const sallePlanMenuId = useId();
   const switcherRef = useRef<HTMLDivElement>(null);
@@ -244,6 +246,11 @@ export function DashboardModeSwitcher({
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [companionOpen, sallePlanOpen]);
+
+  // Une ligne de la carte « Ce soir » change de page : le panneau se referme pour laisser le détail visible.
+  useEffect(() => {
+    setCompanionOpen(false);
+  }, [pathname, searchParams]);
 
   const selectFloorPlan = (floorPlanId: string) => {
     onSelectFloorPlan?.(floorPlanId);

@@ -95,6 +95,19 @@ describe('équipe de service (STAFF)', () => {
 });
 
 describe('autres rôles', () => {
+  it('READ_ONLY ne lit pas les routes de direction, Companion compris', () => {
+    expect(decide('READ_ONLY', 'GET', '/companion/tonight')).toEqual({
+      allowed: false,
+      code: 'ROLE_FORBIDDEN',
+    });
+    expect(decide('READ_ONLY', 'POST', '/companion/chat')).toEqual({
+      allowed: false,
+      code: 'READ_ONLY_ACCESS',
+    });
+    expect(decide('OWNER', 'GET', '/companion/tonight')).toEqual({ allowed: true });
+    expect(decide('MANAGER', 'GET', '/companion/tonight')).toEqual({ allowed: true });
+  });
+
   it('READ_ONLY lit tout et n’écrit rien', () => {
     expect(decide('READ_ONLY', 'GET', '/customers')).toEqual({ allowed: true });
     expect(decide('READ_ONLY', 'HEAD', '/calls')).toEqual({ allowed: true });
