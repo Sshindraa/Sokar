@@ -148,7 +148,7 @@ export const UpdateOnboardingSchema = z.object({
   task: z.enum(ONBOARDING_TASK_KEYS).optional(),
   status: z.enum(ONBOARDING_STATUSES).optional(),
   reason: z.string().max(500).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type UpdateOnboardingInput = z.infer<typeof UpdateOnboardingSchema>;

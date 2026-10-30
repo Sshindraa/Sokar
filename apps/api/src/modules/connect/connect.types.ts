@@ -31,7 +31,7 @@ export type SlugParam = z.infer<typeof SlugParamSchema>;
 export const AvailabilityQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
   partySize: z.coerce.number().int().min(1).max(50),
-  preferredSectionId: z.string().uuid().optional(),
+  preferredSectionId: z.string().guid().optional(),
 });
 export type AvailabilityQuery = z.infer<typeof AvailabilityQuerySchema>;
 
@@ -143,7 +143,7 @@ export const HoldInputSchema = z.object({
   date: z.string().date(),
   time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   partySize: z.number().int().min(1).max(50),
-  preferredSectionId: z.string().uuid().optional(),
+  preferredSectionId: z.string().guid().optional(),
   source: SourceEnum.optional().default('web'),
   // Réservation test : jeton signé du tableau de bord. Format et signature sont
   // vérifiés par la route, pour qu'un jeton mal formé reçoive le même 403 clair.
@@ -171,7 +171,7 @@ export const ConfirmInputSchema = z.object({
     email: z.string().email().optional().or(z.literal('')),
   }),
   specialRequests: z.string().max(500).optional(),
-  idempotencyKey: z.string().uuid().optional(),
+  idempotencyKey: z.string().guid().optional(),
   marketingAttributionToken: z.string().trim().min(20).max(4096).optional(),
   source: SourceEnum.optional().default('web'),
   giftCardCode: z.string().optional(),

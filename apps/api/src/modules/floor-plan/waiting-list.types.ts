@@ -15,7 +15,7 @@ export const WaitingListJoinInputSchema = z.object({
     phone: z.string().regex(/^\+[1-9]\d{7,14}$/, 'phone must be E.164 (e.g. +33612345678)'),
     email: z.union([z.string().email(), z.literal(''), z.undefined()]).optional(),
   }),
-  preferredSectionId: z.string().uuid().optional(),
+  preferredSectionId: z.string().guid().optional(),
   source: z.string().max(40).default('web'),
 });
 export type WaitingListJoinInput = z.infer<typeof WaitingListJoinInputSchema>;

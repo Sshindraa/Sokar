@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 /** Validation UUID pour les paramètres de route /:id */
 export const IdParamSchema = z.object({
-  id: z.string().uuid('Invalid ID format'),
+  id: z.string().guid('Invalid ID format'),
 });
 
 export type IdParam = z.infer<typeof IdParamSchema>;
@@ -13,4 +13,3 @@ export const RestaurantIdParamSchema = z.object({
 });
 
 export type RestaurantIdParam = z.infer<typeof RestaurantIdParamSchema>;
-

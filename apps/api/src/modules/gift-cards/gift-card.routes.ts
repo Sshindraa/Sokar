@@ -98,7 +98,7 @@ const RecommendGiftCardSchema = z.object({
 });
 
 const PaymentIntentSchema = z.object({
-  idempotencyKey: z.string().uuid().optional(),
+  idempotencyKey: z.string().guid().optional(),
   accessToken: z.string().min(32).max(128).optional(),
   restaurantId: z.string(),
   amount: z.coerce.number().positive().optional(),
@@ -125,7 +125,7 @@ const PurchaseWithPaymentSchema = z
   .object({
     restaurantId: z.string(),
     paymentIntentId: z.string().min(1),
-    checkoutId: z.string().uuid().optional(),
+    checkoutId: z.string().guid().optional(),
     accessToken: z.string().min(32).max(128).optional(),
     amount: z.coerce.number().positive().optional(),
     packId: z.string().optional(),
@@ -175,7 +175,7 @@ const CreateCrowdfundingSchema = z.object({
 });
 
 const CrowdfundingPaymentIntentSchema = z.object({
-  idempotencyKey: z.string().uuid().optional(),
+  idempotencyKey: z.string().guid().optional(),
   accessToken: z.string().min(32).max(128).optional(),
   amount: z.coerce.number().positive(),
   contributorName: z.string().min(1).max(100),
@@ -294,7 +294,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/public/gift-cards/checkouts/:id/status', async (req, reply) => {
-    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const { id } = z.object({ id: z.string().guid() }).parse(req.params);
     const { accessToken } = z.object({ accessToken: z.string().min(32).max(128) }).parse(req.body);
     // tenant-scoping: global — Public checkout status: unique ID plus access-token hash required before any response or fulfillment.
     const checkout = await db.giftCardCheckout.findUnique({ where: { id } });

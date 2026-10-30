@@ -15,19 +15,19 @@ export const CreateCustomerSchema = z.object({
 });
 
 export const UpdateCustomerSchema = CreateCustomerSchema.partial()
-  .omit({
-    restaurantId: true,
-    phone: true,
-  })
+  .omit({ restaurantId: true, phone: true })
   // `null` clears the email (and its identity), as the PATCH route already expects.
-  .extend({ email: z.string().email().max(320).nullable().optional() });
+  .extend({
+    isVip: z.boolean().optional(),
+    email: z.string().email().max(320).nullable().optional(),
+  });
 
 export const ToggleVipSchema = z.object({
   isVip: z.boolean(),
 });
 
 export const CustomerParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
 });
 
 export const CustomerQuerySchema = z.object({

@@ -91,7 +91,7 @@ const MergeSourcesSchema = z.object({
 });
 const MergeBodySchema = MergeSourcesSchema.extend({
   preferenceResolution: z
-    .record(z.enum(['target', 'source', 'latest']))
+    .partialRecord(z.enum(['target', 'source', 'latest']), z.unknown())
     .optional()
     .default({}),
 });

@@ -93,18 +93,18 @@ const ReserveBodySchema = z.object({
 const IdempotencyKeySchema = z.string().trim().min(8).max(200);
 const PublicExperienceSlugSchema = z.object({ slug: z.string().trim().min(1).max(160) });
 const PublicExperienceCheckoutParamsSchema = PublicExperienceSlugSchema.extend({
-  checkoutId: z.string().trim().uuid(),
+  checkoutId: z.string().trim().guid(),
 });
 const PublicExperienceCheckoutBodySchema = z.object({
-  experienceId: z.string().trim().uuid(),
-  sessionId: z.string().trim().uuid(),
+  experienceId: z.string().trim().guid(),
+  sessionId: z.string().trim().guid(),
   quantity: z.number().int().min(1).max(20),
 });
 const PublicExperienceCheckoutStatusQuerySchema = z.object({
   session_id: z.string().trim().min(1).max(255),
 });
 const ExperiencePaymentCommissionSchema = z.object({
-  restaurantId: z.string().trim().uuid(),
+  restaurantId: z.string().trim().guid(),
   commissionRate: z.number().min(0).max(1).nullable(),
 });
 
