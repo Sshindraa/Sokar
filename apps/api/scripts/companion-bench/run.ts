@@ -49,7 +49,8 @@ type Expected =
       alt?: number;
       rates?: number[];
     }
-  | { kind: 'day'; value: string[] };
+  | { kind: 'day'; value: string[] }
+  | { kind: 'all'; value: number[] };
 
 interface Question {
   n: number;
@@ -185,6 +186,18 @@ const QUESTIONS: Question[] = [
       };
     },
   },
+  {
+    n: 20,
+    text: 'Par quel moyen les clients réservent-ils, sur 30 jours ?',
+    tool: 'reservation_stats',
+    expected: async (id) => {
+      const channels = (await computeDashboardStats(id, '30d')).by_channel;
+      const reservations = (channel: string) =>
+        channels.find((stat) => stat.channel === channel)?.reservations ?? 0;
+      return { kind: 'all', value: [reservations('phone'), reservations('website')] };
+    },
+  },
+  { n: 21, text: 'Par quel moyen les gens appellent ?' },
 ];
 
 // Nombres en lettres pour la question 7 : « Un seul jour est sous-réservé ».
@@ -217,6 +230,9 @@ function percentagesIn(reply: string): number[] {
 
 // Compte exact ; montant à l'euro près ; taux à 0,1 près ; jour : nom complet, sans accent ni casse.
 function valueFound(reply: string, expected: Expected): boolean {
+  if (expected.kind === 'all') {
+    return expected.value.every((value) => numbersIn(reply).includes(value));
+  }
   if (expected.kind === 'day') {
     const text = reply
       .normalize('NFD')
@@ -253,6 +269,7 @@ function valueFound(reply: string, expected: Expected): boolean {
 function formatExpected(expected: Expected | undefined): string {
   if (!expected) return '';
   if (expected.kind === 'day') return expected.value.join(' / ');
+  if (expected.kind === 'all') return expected.value.join(' et ');
   return expected.alt === undefined
     ? String(expected.value)
     : `${expected.value} ou ${expected.alt}`;
