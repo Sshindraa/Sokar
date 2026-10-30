@@ -343,7 +343,7 @@ describe('carte « Ce soir »', () => {
     expect(screen.getByText('14 couverts · habituellement 16 couverts')).toBeInTheDocument();
     expect(screen.getByText('Léa Martin').closest('a')).toHaveAttribute(
       'href',
-      '/dashboard/reservations',
+      '/dashboard/reservations?date=2026-10-30&reservation=res-1',
     );
   });
 

@@ -142,7 +142,7 @@ export function TonightCard() {
               {rows.map((row) => (
                 <li key={row.reservationId}>
                   <Link
-                    href="/dashboard/reservations"
+                    href={`/dashboard/reservations?${new URLSearchParams({ date: data.date, reservation: row.reservationId })}`}
                     className="flex items-start justify-between gap-3 rounded-xl py-2 transition-all duration-200 hover:bg-accent"
                   >
                     <span className="min-w-0 space-y-1">

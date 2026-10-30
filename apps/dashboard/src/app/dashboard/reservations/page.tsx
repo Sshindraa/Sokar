@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { StatusBadge as StatusPill } from '@/components/StatusBadge';
 import { useEffect, useState, useCallback, useRef, type CSSProperties } from 'react';
 import { toast } from 'sonner';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { normalizePhone } from '@sokar/shared';
 import { addDays, format, isSameDay, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -160,6 +161,13 @@ function mapWaitingListEntries(data: unknown[]): WaitingListEntry[] {
   });
 }
 
+/** Jour demandé par l'URL, AAAA-MM-JJ ; null si absent ou inexistant. */
+function requestedDay(value: string | null): Date | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const day = parseISO(value);
+  return Number.isNaN(day.getTime()) ? null : day;
+}
+
 export default function ReservationsPage() {
   const { get, post, patch, del, orgId } = useApi();
   const isMobile = useIsMobile();
@@ -178,8 +186,36 @@ export default function ReservationsPage() {
   const [waitingList, setWaitingList] = useState<WaitingListEntry[]>([]);
   const [waitingListLoading, setWaitingListLoading] = useState(false);
   // Jour affiché, partagé par les réservations et la file d'attente : le service du jour d'abord.
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  // Un lien avec `?date=` (carte « Ce soir ») le remplace, même quand la page est déjà ouverte.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const urlDate = searchParams.get('date');
+  const [appliedUrlDate, setAppliedUrlDate] = useState(urlDate);
+  const [selectedDate, setSelectedDate] = useState<Date>(() => requestedDay(urlDate) ?? new Date());
+  if (urlDate !== appliedUrlDate) {
+    setAppliedUrlDate(urlDate);
+    const day = requestedDay(urlDate);
+    if (day) setSelectedDate(day);
+  }
   const dateParam = format(selectedDate, 'yyyy-MM-dd');
+
+  // Réservation demandée par l'URL (`?reservation=`) : elle s'ouvre dès que la liste du jour est chargée.
+  const requestedReservationId = searchParams.get('reservation');
+  const requestedReservation = reservations.find(
+    (reservation) => reservation.id === requestedReservationId,
+  );
+  const drawerReservation = selectedReservation ?? requestedReservation ?? null;
+
+  function closeReservation() {
+    setSelectedReservation(null);
+    if (!requestedReservationId) return;
+    // Sans ce paramètre, un nouveau clic sur la même carte rouvrirait rien.
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('reservation');
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
 
   const [error, setError] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -939,12 +975,12 @@ export default function ReservationsPage() {
         />
       )}
 
-      {selectedReservation && (
+      {drawerReservation && (
         <ReservationDetails
-          reservation={selectedReservation}
-          onClose={() => setSelectedReservation(null)}
+          reservation={drawerReservation}
+          onClose={closeReservation}
           onSaved={async () => {
-            setSelectedReservation(null);
+            closeReservation();
             await fetchReservations();
           }}
           post={post}
