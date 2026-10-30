@@ -1067,6 +1067,11 @@ cleaned up 2026-09-21). Use the opt-in for staging only, never for production.
   et comptes connectés, liste séparée par des virgules), `DASHBOARD_URL` HTTPS,
   `CONNECT_URL` pour les liens envoyés par la voix.
 - Connect : `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, injecté à la compilation.
+- Parcours intégré expérimental : `STRIPE_MANAGED_CONNECT_TEST_ENABLED=true` et
+  `STRIPE_MANAGED_CONNECT_TEST_RESTAURANTS` (IDs séparés par des virgules). Désactivé
+  par défaut ; le serveur exige également `STRIPE_SECRET_KEY` et
+  `STRIPE_PUBLISHABLE_KEY` en mode test. Ne pas utiliser de données réelles pour
+  l'acceptation fictive ; ce chemin ne peut pas être activé avec des clés live.
 - PDF : `GIFT_CARD_IMAGE_ORIGINS`, liste d'origines HTTPS de CDN maîtrisés ; vide désactive
   les téléchargements d'images personnalisées. Aucun domaine fourni par le client.
 - Tests locaux uniquement : `GIFT_CARD_FINANCE_TEST_DATABASE_URL`, base dédiée sur localhost.

@@ -17,6 +17,12 @@ import {
   createConnectedAccount,
   createConnectedAccountLink,
   createConnectedAccountSession,
+  managedConnectTestEnabled,
+  managedConnectTestPublicKey,
+  createManagedTestAccount,
+  configureManagedTestAccount,
+  createManagedTestSession,
+  isManagedTestAccount,
 } from './stripe.service';
 import { GiftCardPaymentConflictError, GiftCardPaymentService } from './gift-card-payment.service';
 import { GiftCardCheckoutService } from './gift-card-checkout.service';
@@ -401,6 +407,9 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
             'Renseigner les informations de votre établissement et votre compte bancaire',
           ],
           deadline: null,
+          ...(req.siteRole === 'OWNER' && managedConnectTestEnabled(id)
+            ? { managedTestPublishableKey: managedConnectTestPublicKey(id) }
+            : {}),
         });
       const account = await retrieveConnectedAccount(restaurant.giftCardStripeAccountId);
       return reply.send({
@@ -424,8 +433,17 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(403).send({ error: 'Accès réservé au propriétaire' });
       const restaurant = await db.restaurant.findUniqueOrThrow({
         where: { id: req.restaurantId },
-        select: { giftCardStripeAccountId: true, managerEmail: true },
+        select: {
+          giftCardStripeAccountId: true,
+          giftCardStripePendingAccountId: true,
+          managerEmail: true,
+        },
       });
+      if (
+        !restaurant.giftCardStripeAccountId &&
+        (restaurant.giftCardStripePendingAccountId || managedConnectTestEnabled(id))
+      )
+        return reply.status(409).send({ error: 'Utilisez la configuration intégrée.' });
       const accountId =
         restaurant.giftCardStripeAccountId ??
         (await createConnectedAccount(id, restaurant.managerEmail));
@@ -444,8 +462,17 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(403).send({ error: 'Accès réservé au propriétaire' });
       const restaurant = await db.restaurant.findUniqueOrThrow({
         where: { id: req.restaurantId },
-        select: { giftCardStripeAccountId: true, managerEmail: true },
+        select: {
+          giftCardStripeAccountId: true,
+          giftCardStripePendingAccountId: true,
+          managerEmail: true,
+        },
       });
+      if (
+        !restaurant.giftCardStripeAccountId &&
+        (restaurant.giftCardStripePendingAccountId || managedConnectTestEnabled(id))
+      )
+        return reply.status(409).send({ error: 'Utilisez la configuration intégrée.' });
       const accountId =
         restaurant.giftCardStripeAccountId ??
         (await createConnectedAccount(id, restaurant.managerEmail));
@@ -456,7 +483,78 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
         });
       }
       reply.header('Cache-Control', 'no-store');
-      return reply.send(await createConnectedAccountSession(accountId));
+      return reply.send(
+        (await isManagedTestAccount(id, accountId))
+          ? await createManagedTestSession(id, accountId)
+          : await createConnectedAccountSession(accountId),
+      );
+    },
+  );
+
+  app.post(
+    '/restaurants/:id/gift-cards/stripe-connect/managed-test',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      if (id !== req.restaurantId || req.siteRole !== 'OWNER')
+        return reply.status(403).send({ error: 'Accès réservé au propriétaire' });
+      if (!managedConnectTestEnabled(id)) return reply.status(404).send({ error: 'Indisponible' });
+      const parsed = z
+        .object({
+          accountToken: z
+            .string()
+            .regex(/^accttok_[A-Za-z0-9_]+$/)
+            .max(128),
+        })
+        .safeParse(req.body);
+      if (!parsed.success) return reply.status(400).send({ error: 'Jeton invalide' });
+      try {
+        const pendingId = await db.$transaction(
+          async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`gift-card-connect:${id}`}, 0))`;
+            const restaurant = await tx.restaurant.findUniqueOrThrow({
+              where: { id: req.restaurantId },
+              select: { giftCardStripeAccountId: true, giftCardStripePendingAccountId: true },
+            });
+            if (restaurant.giftCardStripeAccountId) return restaurant.giftCardStripeAccountId;
+            if (restaurant.giftCardStripePendingAccountId)
+              return restaurant.giftCardStripePendingAccountId;
+            const accountId = await createManagedTestAccount(id);
+            await tx.restaurant.update({
+              where: { id: req.restaurantId },
+              data: { giftCardStripePendingAccountId: accountId },
+            });
+            return accountId;
+          },
+          { timeout: 30000 },
+        );
+        const accountId = await db.$transaction(
+          async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`gift-card-connect:${id}`}, 0))`;
+            const restaurant = await tx.restaurant.findUniqueOrThrow({
+              where: { id: req.restaurantId },
+              select: { giftCardStripeAccountId: true, giftCardStripePendingAccountId: true },
+            });
+            if (restaurant.giftCardStripeAccountId) return restaurant.giftCardStripeAccountId;
+            if (restaurant.giftCardStripePendingAccountId !== pendingId)
+              throw new Error('Compte en attente modifié.');
+            await configureManagedTestAccount(id, pendingId, parsed.data.accountToken);
+            await tx.restaurant.update({
+              where: { id: req.restaurantId },
+              data: { giftCardStripeAccountId: pendingId, giftCardStripePendingAccountId: null },
+            });
+            return pendingId;
+          },
+          { timeout: 30000 },
+        );
+        if (!(await isManagedTestAccount(id, accountId)))
+          return reply.status(409).send({ error: 'Compte incompatible.' });
+        reply.header('Cache-Control', 'no-store');
+        return reply.send(await createManagedTestSession(id, accountId));
+      } catch {
+        req.log.error('La configuration des paiements de test a échoué.');
+        return reply.status(503).send({ error: 'Configuration indisponible. Veuillez réessayer.' });
+      }
     },
   );
 

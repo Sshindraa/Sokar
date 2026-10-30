@@ -3109,6 +3109,11 @@ Production : routes RGPD bloquées en Nginx, workflow Deploy Production suspendu
 
 Vérification d’identité et export rouverts après qualification SMS en staging ; effacement et opposition marketing restent en 503 car leurs correctifs ne sont pas encore livrés. Configuration Nginx restrictive, liens non journalisés ; requêtes de contrôle sur les hôtes et le proxy. Les demandes concernées restent traitées manuellement via privacy@sokar.tech.
 
+2026-10-30 — Stripe Connect : qualification sandbox du parcours en deux phases : compte fictif vide, ajout de la configuration marchand par jeton v2, puis session embarquée sans authentification Stripe ; compte fermé. Intégration Sokar et test navigateur restent à réaliser avant activation ; conserver les comptes existants.
+
+2026-10-30 — Stripe Connect : prototype local sandbox avec acceptation explicite et jeton v2, compte en attente conservé par migration additive, verrou PostgreSQL et reprise après erreur. Tests ciblés API/dashboard et deux tests concurrents/reprise PostgreSQL local validés ; création de jeton vérifiée depuis un navigateur sur l’origine staging. Fonction désactivée par défaut, limitée aux clés et établissements de test ; CI, formulaire complet staging, coûts et activation production restent à qualifier.
+
+2026-10-30 — Stripe Connect #622 : CI verte au premier commit. Qualification combinée PostgreSQL local + Stripe test réelle : création et reprise réussies, compte fictif fermé ; correction du format des jetons v2 découvert pendant le test. Création de jeton navigateur vérifiée ; formulaire automatisé sans étape visible, paiement complet toujours à qualifier. Aucun déploiement ni activation.
 ### 2026-10-30 — Rollback staging : dépendances restaurées
 
 Le test de rollback de Sshindraa/Sokar#577 échouait : l'artefact de la release précédente exige `zod-to-json-schema`, retiré par la PR (passage à Zod 4), donc absent de node_modules après le déploiement. Correctif : chaque snapshot garde le lockfile et les package.json de son commit (`deps/`), et le rollback réinstalle via `pnpm install --frozen-lockfile` avant de redémarrer. Une release sans lockfile est refusée avant d'arrêter les services. Non validé sur le VPS : la prochaine exécution de staging le vérifiera (le pré-build utilise `.latest-hash`).

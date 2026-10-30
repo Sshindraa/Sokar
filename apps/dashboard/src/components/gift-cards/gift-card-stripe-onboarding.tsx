@@ -13,17 +13,55 @@ type Session = { clientSecret: string; publishableKey: string };
 export function GiftCardStripeOnboarding({
   restaurantId,
   onClose,
+  managedTestPublishableKey,
 }: {
   restaurantId: string;
   onClose: () => void;
+  managedTestPublishableKey?: string;
 }) {
   const { post } = useApi();
   const [instance, setInstance] = useState<StripeConnectInstance | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [accepted, setAccepted] = useState(false);
+  const [initialSession, setInitialSession] = useState<Session | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const container = useRef<HTMLDivElement>(null);
 
+  async function acceptAndStart() {
+    if (!accepted || !managedTestPublishableKey?.startsWith('pk_test_')) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const response = await fetch('https://api.stripe.com/v2/core/account_tokens', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${managedTestPublishableKey}`,
+          'Content-Type': 'application/json',
+          'Stripe-Version': '2026-08-26.dahlia',
+        },
+        body: JSON.stringify({
+          identity: {
+            attestations: { terms_of_service: { account: { shown_and_accepted: true } } },
+          },
+        }),
+      });
+      const token: { id?: string } = await response.json();
+      if (!response.ok || !token.id) throw new Error('Impossible de préparer la configuration.');
+      const session = await post<Session>(
+        `restaurants/${restaurantId}/gift-cards/stripe-connect/managed-test`,
+        { accountToken: token.id },
+      );
+      setInitialSession(session);
+    } catch {
+      setError('Impossible de préparer la configuration. Veuillez réessayer.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   useEffect(() => {
+    if (managedTestPublishableKey && !initialSession) return;
     let active = true;
     let connect: StripeConnectInstance | undefined;
     const abort = new AbortController();
@@ -39,7 +77,7 @@ export function GiftCardStripeOnboarding({
       try {
         const [{ loadConnectAndInitialize }, session] = await Promise.all([
           import('@stripe/connect-js/pure'),
-          fetchSession(),
+          initialSession && attempt === 0 ? Promise.resolve(initialSession) : fetchSession(),
         ]);
         if (!active) return;
         let firstSecret: string | undefined = session.clientSecret;
@@ -96,7 +134,7 @@ export function GiftCardStripeOnboarding({
       abort.abort();
       void connect?.logout().catch(() => undefined);
     };
-  }, [restaurantId, post, attempt]);
+  }, [restaurantId, post, attempt, initialSession, managedTestPublishableKey]);
 
   return (
     <div
@@ -114,7 +152,37 @@ export function GiftCardStripeOnboarding({
         progression est enregistrée par Stripe. Une fenêtre peut s’ouvrir pour vérifier votre
         connexion.
       </p>
-      {error ? (
+      {managedTestPublishableKey && !initialSession ? (
+        <div className="space-y-3">
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={accepted}
+              onChange={(event) => setAccepted(event.target.checked)}
+            />
+            <span>
+              Je représente cet établissement et j’accepte les{' '}
+              <a
+                className="underline"
+                href="https://stripe.com/connect-account/legal/full"
+                target="_blank"
+                rel="noreferrer"
+              >
+                conditions Stripe pour les comptes connectés
+              </a>
+              .
+            </span>
+          </label>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <Button disabled={!accepted || submitting} onClick={() => void acceptAndStart()}>
+            {submitting ? 'Préparation…' : 'Continuer'}
+          </Button>
+        </div>
+      ) : error ? (
         <div className="space-y-3">
           <p role="alert" className="text-sm text-destructive">
             {error}

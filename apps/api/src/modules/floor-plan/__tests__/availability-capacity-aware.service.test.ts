@@ -114,6 +114,7 @@ function makeRestaurant(
     giftCardMinimumAmount: overrides.giftCardMinimumAmount ?? null,
     giftCardCommissionRate: (overrides.giftCardCommissionRate ?? 0.05) as unknown as Prisma.Decimal,
     giftCardStripeAccountId: null,
+    giftCardStripePendingAccountId: null,
     giftCardEnabled: overrides.giftCardEnabled ?? false,
     experienceStripeAccountId: overrides.experienceStripeAccountId ?? null,
     experienceCommissionRate: (overrides.experienceCommissionRate ??

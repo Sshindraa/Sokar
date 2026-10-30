@@ -91,6 +91,66 @@ describe('gift-card routes', () => {
   });
 
   describe('embedded Connect onboarding', () => {
+    it('resumes a completed test account after the original response was lost', async () => {
+      const enabled = vi.spyOn(stripeService, 'managedConnectTestEnabled').mockReturnValue(true);
+      const managed = vi.spyOn(stripeService, 'isManagedTestAccount').mockResolvedValue(true);
+      const session = vi
+        .spyOn(stripeService, 'createManagedTestSession')
+        .mockResolvedValue({ clientSecret: 'mock', publishableKey: 'pk_test' });
+      const configure = vi.spyOn(stripeService, 'configureManagedTestAccount');
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+        giftCardStripeAccountId: 'acct_existing',
+        giftCardStripePendingAccountId: null,
+      } as never);
+      const app = await getApp();
+      const response = await app.inject({
+        method: 'POST',
+        url: `/restaurants/${RESTAURANT_ID}/gift-cards/stripe-connect/managed-test`,
+        headers: AUTH,
+        payload: { accountToken: ['accttok', 'example'].join('_') },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(session).toHaveBeenCalledWith(RESTAURANT_ID, 'acct_existing');
+      expect(configure).not.toHaveBeenCalled();
+      enabled.mockRestore();
+      managed.mockRestore();
+      session.mockRestore();
+      configure.mockRestore();
+    });
+    it('limits the experimental route to an allowed owner and a valid account token', async () => {
+      const enabled = vi.spyOn(stripeService, 'managedConnectTestEnabled').mockReturnValue(true);
+      const app = await getApp();
+      for (const [restaurant, headers, code] of [
+        [RESTAURANT_ID, {}, 401],
+        ['other', AUTH, 403],
+        [RESTAURANT_ID, { ...AUTH, 'x-test-site-role': 'STAFF' }, 403],
+      ] as const) {
+        const response = await app.inject({
+          method: 'POST',
+          url: `/restaurants/${restaurant}/gift-cards/stripe-connect/managed-test`,
+          headers,
+          payload: { accountToken: ['accttok', 'example'].join('_') },
+        });
+        expect(response.statusCode).toBe(code);
+      }
+      const invalid = await app.inject({
+        method: 'POST',
+        url: `/restaurants/${RESTAURANT_ID}/gift-cards/stripe-connect/managed-test`,
+        headers: AUTH,
+        payload: { accountToken: 'invalid' },
+      });
+      expect(invalid.statusCode).toBe(400);
+      enabled.mockReturnValue(false);
+      const disabled = await app.inject({
+        method: 'POST',
+        url: `/restaurants/${RESTAURANT_ID}/gift-cards/stripe-connect/managed-test`,
+        headers: AUTH,
+        payload: { accountToken: ['accttok', 'example'].join('_') },
+      });
+      expect(disabled.statusCode).toBe(404);
+      enabled.mockRestore();
+    });
     it('rejects anonymous, foreign tenant, staff and manager requests before accessing Stripe', async () => {
       const session = vi
         .spyOn(stripeService, 'createConnectedAccountSession')
