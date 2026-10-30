@@ -252,7 +252,10 @@ export async function upsertMarketingPermission(
     permission = await db.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM customers WHERE id = ${input.customerId} AND restaurant_id = ${input.restaurantId} FOR UPDATE`;
       const contact = await assertCustomerTenant(input.customerId, input.restaurantId, tx);
-      const permission = await tx.marketingPermission.upsert(permissionArgs);
+      const permission = await tx.marketingPermission.upsert({
+        ...permissionArgs,
+        where: { ...permissionArgs.where, restaurantId: input.restaurantId },
+      });
       await tx.marketingPermissionEvent.create({
         data: {
           restaurantId: input.restaurantId,
@@ -291,7 +294,10 @@ export async function upsertMarketingPermission(
   } catch (error) {
     if (registerFailed && input.status === MarketingPermissionStatus.OPTED_OUT) {
       // Keep the current profile blocked even if the durable register failed.
-      await db.marketingPermission.upsert(permissionArgs);
+      await db.marketingPermission.upsert({
+        ...permissionArgs,
+        where: { ...permissionArgs.where, restaurantId: input.restaurantId },
+      });
     }
     throw error;
   }
