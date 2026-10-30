@@ -253,4 +253,85 @@ describe('reservation payment foundation routes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().resultingStatus).toBe('FAILED');
   });
+  it.each([
+    ['montant', { amount: 900, payment_intent: 'pi_ok' }, null, 'PAYMENT_AMOUNT_MISMATCH'],
+    ['identité', { amount: 1000, payment_intent: 'pi_wrong' }, null, 'PAYMENT_PROVIDER_MISMATCH'],
+    [
+      'compte',
+      { amount: 1000, payment_intent: 'pi_ok' },
+      'acct_wrong',
+      'PAYMENT_PROVIDER_MISMATCH',
+    ],
+  ])(
+    'refuse le webhook de remboursement avec %s incohérent',
+    async (_label, charge, account, code) => {
+      vi.stubEnv('RESERVATION_PAYMENTS_ENABLED', 'true');
+      vi.mocked(constructWebhookEvent).mockResolvedValue({
+        id: 'evt_invalid',
+        created: 1_789_000_000,
+        type: 'charge.refunded',
+        account,
+        data: {
+          object: {
+            ...charge,
+            amount_refunded: 300,
+            currency: 'eur',
+            metadata: { restaurantId: 'test-rest-1', reservationPaymentId: 'payment-1' },
+          },
+        },
+      } as never);
+      vi.mocked(db.reservationPaymentEvent.findUnique).mockResolvedValue(null);
+      vi.mocked(db.reservationPayment.findFirst).mockResolvedValue({
+        id: 'payment-1',
+        restaurantId: 'test-rest-1',
+        reservationId: 'reservation-1',
+        status: 'CAPTURED',
+        amount: new Prisma.Decimal('10'),
+        currency: 'EUR',
+        stripeAccountId: null,
+        stripePaymentIntentId: 'pi_ok',
+        stripeSetupIntentId: null,
+        lastProviderEventAt: null,
+      } as never);
+      const app = await getApp();
+      const response = await app.inject({
+        method: 'POST',
+        url: '/webhooks/stripe/reservation-payments',
+        headers: { 'stripe-signature': 't=1,v1=test', 'content-type': 'application/json' },
+        payload: '{}',
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error).toBe(code);
+      expect(db.reservationPayment.updateMany).not.toHaveBeenCalled();
+      expect(db.reservationPaymentEvent.create).not.toHaveBeenCalled();
+    },
+  );
+  it('garde une erreur serveur pour une panne technique', async () => {
+    vi.stubEnv('RESERVATION_PAYMENTS_ENABLED', 'true');
+    vi.mocked(constructWebhookEvent).mockResolvedValue({
+      id: 'evt_db_failure',
+      created: 1789000000,
+      type: 'charge.refunded',
+      data: {
+        object: {
+          amount: 1000,
+          amount_refunded: 300,
+          currency: 'eur',
+          payment_intent: 'pi_ok',
+          metadata: { restaurantId: 'test-rest-1', reservationPaymentId: 'payment-1' },
+        },
+      },
+    } as never);
+    vi.mocked(db.reservationPaymentEvent.findUnique).mockRejectedValueOnce(
+      new Error('database unavailable'),
+    );
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/webhooks/stripe/reservation-payments',
+      headers: { 'stripe-signature': 't=1,v1=test', 'content-type': 'application/json' },
+      payload: '{}',
+    });
+    expect(response.statusCode).toBe(500);
+  });
 });
