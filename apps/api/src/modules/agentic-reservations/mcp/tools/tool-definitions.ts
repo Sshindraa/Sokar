@@ -186,8 +186,20 @@ export function getToolOutputSchema(toolName: string): z.ZodTypeAny | undefined 
 // pas correctement les schémas Zod 4 et produit des objets vides.
 const toJsonSchema = z.toJSONSchema as unknown as (
   schema: z.ZodTypeAny,
-  options: { target: 'openapi-3.0'; io: 'input' },
+  options: typeof JSON_SCHEMA_OPTIONS,
 ) => Record<string, unknown>;
+
+const JSON_SCHEMA_OPTIONS = {
+  target: 'openapi-3.0',
+  io: 'input',
+  // Contrat MCP publié : chaque objet refuse les champs en plus, comme avant Zod 4
+  // (le mode strict des clients, OpenAI compris, l'exige).
+  override: ({ jsonSchema }: { jsonSchema: Record<string, unknown> }) => {
+    if (jsonSchema.type === 'object' && jsonSchema.additionalProperties === undefined) {
+      jsonSchema.additionalProperties = false;
+    }
+  },
+} as const;
 
 // Les définitions ne font pas partie de la réponse MCP que nous exposons.
 function cleanJsonSchema(schema: Record<string, unknown>): Record<string, unknown> {
@@ -199,8 +211,8 @@ export const TOOL_LIST = TOOL_DEFINITIONS.map((def) => ({
   name: def.name,
   title: def.title,
   description: def.description,
-  inputSchema: cleanJsonSchema(toJsonSchema(def.schema, { target: 'openapi-3.0', io: 'input' })),
-  outputSchema: cleanJsonSchema(toJsonSchema(def.output, { target: 'openapi-3.0', io: 'input' })),
+  inputSchema: cleanJsonSchema(toJsonSchema(def.schema, JSON_SCHEMA_OPTIONS)),
+  outputSchema: cleanJsonSchema(toJsonSchema(def.output, JSON_SCHEMA_OPTIONS)),
   securitySchemes: [{ type: 'oauth2' as const, scopes: [def.requiredScope] }],
   annotations: def.annotations,
 }));
