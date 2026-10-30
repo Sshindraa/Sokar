@@ -3107,3 +3107,7 @@ Production : routes RGPD bloquées en Nginx, workflow Deploy Production suspendu
 ### 2026-10-29 — RGPD : réouverture partielle
 
 Vérification d’identité et export rouverts après qualification SMS en staging ; effacement et opposition marketing restent en 503 car leurs correctifs ne sont pas encore livrés. Configuration Nginx restrictive, liens non journalisés ; requêtes de contrôle sur les hôtes et le proxy. Les demandes concernées restent traitées manuellement via privacy@sokar.tech.
+
+### 2026-10-30 — Webhook paiement : erreurs métier explicites
+
+Correctif isolé : les erreurs de cohérence du webhook paiement de réservation utilisent la réponse métier existante (400, 404 ou 409 selon le cas), tandis qu'une panne technique reste en 500. Les événements non acceptés ne sont pas acquittés et Stripe peut les retransmettre. Tests de route des trois incohérences et d'une panne, suite API 4 786 réussis / 107 ignorés, typecheck et garde tenant verts. Paiements de réservation toujours désactivés ; compte connecté staging incomplet et qualification réelle restante.
