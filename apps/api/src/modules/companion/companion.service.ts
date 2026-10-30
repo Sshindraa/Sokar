@@ -144,11 +144,18 @@ export function companionDatePrompt(now: Date): string {
 
 type AssistantMessage = z.infer<typeof completionSchema>['choices'][number]['message'];
 
+/** Modèle d'une réponse : celui de production par défaut ; le banc peut en demander un autre. */
+export interface CompanionModelChoice {
+  id: string;
+  reasoningEffort?: 'low' | 'medium' | 'high';
+}
+
 async function requestTurn(
   conversation: ChatMessage[],
   withTools: boolean,
   trace: CompanionTrace,
   fetcher: typeof fetch,
+  model: CompanionModelChoice,
 ): Promise<AssistantMessage> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -163,12 +170,13 @@ async function requestTurn(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: env.COMPANION_LLM_MODEL,
+          model: model.id,
           // Pas de conservation des données par le fournisseur : les messages du gérant y transitent.
           provider: { data_collection: 'deny' },
           messages: conversation,
           ...(withTools ? { tools: COMPANION_TOOLS, tool_choice: 'auto' } : {}),
           max_tokens: MAX_OUTPUT_TOKENS,
+          ...(model.reasoningEffort ? { reasoning: { effort: model.reasoningEffort } } : {}),
         }),
         signal: controller.signal,
       },
@@ -204,10 +212,17 @@ export async function answerCompanion(input: {
   log: FastifyBaseLogger;
   fetcher?: typeof fetch;
   onToolCall?: (call: CompanionToolCall) => void;
+  /** Identifiant OpenRouter d'un autre modèle, pour le banc. Absent : le modèle de production. */
+  model?: string;
+  reasoningEffort?: CompanionModelChoice['reasoningEffort'];
 }): Promise<CompanionAnswer> {
   const started = performance.now();
   const responseId = randomUUID();
   const fetcher = input.fetcher ?? fetch;
+  const model: CompanionModelChoice = {
+    id: input.model ?? env.COMPANION_LLM_MODEL,
+    reasoningEffort: input.reasoningEffort,
+  };
   const trace: CompanionTrace = {
     turns: 0,
     tools: [],
@@ -232,7 +247,7 @@ export async function answerCompanion(input: {
   try {
     for (let round = 0; ; round++) {
       const withTools = round < MAX_TOOL_ROUNDS && trace.inputTokens < INPUT_TOKEN_BUDGET;
-      const message = await requestTurn(conversation, withTools, trace, fetcher);
+      const message = await requestTurn(conversation, withTools, trace, fetcher, model);
       if (!withTools || !message.tool_calls?.length) {
         const reply = message.content?.replaceAll('**', '').trim() ?? '';
         if (!reply) throw new CompanionUpstreamError('empty_reply');
@@ -279,7 +294,7 @@ export async function answerCompanion(input: {
     input.log.info(
       {
         responseId,
-        model: env.COMPANION_LLM_MODEL,
+        model: model.id,
         outcome,
         reason,
         turns: trace.turns,

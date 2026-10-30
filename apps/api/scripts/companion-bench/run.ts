@@ -1103,6 +1103,8 @@ interface Trial {
   input_tokens: number;
   output_tokens: number;
   cached_input_tokens: number;
+  /** Durée de la réponse complète (outils compris), en ms. */
+  latency_ms: number;
   error?: string;
 }
 
@@ -1117,6 +1119,18 @@ const usageLog = {
     };
   },
 } as unknown as FastifyBaseLogger;
+
+// Modèle du banc : celui de production par défaut, ou celui demandé par --model et --reasoning.
+interface ModelChoice {
+  id: string;
+  reasoningEffort?: 'low' | 'medium' | 'high';
+}
+
+function parseEffort(value: string | undefined): ModelChoice['reasoningEffort'] {
+  if (value === undefined) return undefined;
+  if (value === 'low' || value === 'medium' || value === 'high') return value;
+  throw new Error('--reasoning : low, medium ou high.');
+}
 
 // Outil : au moins un appel ; pour une enquête, un appel à explain_change.
 function toolUsedFor(expected: Expected | undefined, calls: ToolCall[]): boolean {
@@ -1189,8 +1203,10 @@ async function runTrial(
   question: Question,
   expected: Expected | undefined,
   restaurantId: string,
+  choice: ModelChoice,
 ): Promise<Trial> {
   lastUsage = { input_tokens: 0, output_tokens: 0, cached_input_tokens: 0 };
+  const started = performance.now();
   const calls: ToolCall[] = [];
   try {
     const answer = await answerCompanion({
@@ -1198,6 +1214,8 @@ async function runTrial(
       messages: [{ role: 'user', content: question.text }],
       log: usageLog,
       onToolCall: (call) => calls.push(call),
+      model: choice.id,
+      reasoningEffort: choice.reasoningEffort,
     });
     const sources = answer.sources.map((source) => source.tool);
     const anchor = anchoredIn(answer.reply, calls);
@@ -1212,6 +1230,7 @@ async function runTrial(
         : null,
       anchorOk: anchor.ok,
       unanchored: anchor.unanchored,
+      latency_ms: Math.round(performance.now() - started),
       ...lastUsage,
     };
   } catch (error) {
@@ -1224,6 +1243,7 @@ async function runTrial(
       anchorOk: false,
       unanchored: [],
       error: error instanceof Error ? error.message : String(error),
+      latency_ms: Math.round(performance.now() - started),
       ...lastUsage,
     };
   }
@@ -1351,6 +1371,17 @@ async function main() {
     throw new Error(`--only : question(s) inconnue(s) ${unknown.join(', ')}.`);
   const selected = QUESTIONS.filter((question) => !onlyNumbers || onlyNumbers.includes(question.n));
 
+  const modelChoice: ModelChoice = {
+    id: option('--model') ?? env.COMPANION_LLM_MODEL,
+    reasoningEffort: parseEffort(option('--reasoning')),
+  };
+  if (!/^[a-z0-9-]+\/[a-z0-9.-]+$/.test(modelChoice.id)) {
+    throw new Error('--model : identifiant OpenRouter, par exemple anthropic/claude-sonnet-5.5.');
+  }
+  // eslint-disable-next-line no-console -- modèle du banc, lu dans le terminal
+  console.log(
+    `Modèle : ${modelChoice.id}, effort : ${modelChoice.reasoningEffort ?? 'aucun (production)'}.`,
+  );
   const startedAt = new Date().toISOString();
   const results = [];
   for (const question of selected) {
@@ -1358,7 +1389,7 @@ async function main() {
     const expected = question.expected ? await question.expected(targetId) : undefined;
     const trials: Trial[] = [];
     for (let attempt = 0; attempt < trialCount; attempt++) {
-      trials.push(await runTrial(question, expected, targetId));
+      trials.push(await runTrial(question, expected, targetId, modelChoice));
     }
     results.push({
       n: question.n,
@@ -1413,12 +1444,26 @@ async function main() {
     cached_input_tokens: trials.reduce((sum, trial) => sum + trial.cached_input_tokens, 0),
     output_tokens: trials.reduce((sum, trial) => sum + trial.output_tokens, 0),
   };
+  const latencies = trials.map((trial) => trial.latency_ms).sort((a, b) => a - b);
+  const middle = Math.floor(latencies.length / 2);
+  const median =
+    latencies.length % 2 === 1
+      ? latencies[middle]
+      : Math.round((latencies[middle - 1] + latencies[middle]) / 2);
+  // eslint-disable-next-line no-console -- latence du banc, lue dans le terminal
+  console.log(`Latence par réponse : médiane ${median} ms, max ${latencies.at(-1)} ms.`);
   mkdirSync(RESULTS_DIR, { recursive: true });
   const file = path.join(RESULTS_DIR, `${startedAt.replace(/[:.]/g, '-')}.json`);
   writeFileSync(
     file,
     JSON.stringify(
-      { startedAt, model: env.COMPANION_LLM_MODEL, tokens, questions: results },
+      {
+        startedAt,
+        model: modelChoice.id,
+        reasoningEffort: modelChoice.reasoningEffort ?? null,
+        tokens,
+        questions: results,
+      },
       null,
       2,
     ) + '\n',
