@@ -200,6 +200,26 @@ describe('POST /companion/chat', () => {
     expect(system).toContain('Vos réponses précédentes figurent dans la conversation');
   });
 
+  it('demande des chiffres partiels pour le mois en cours et aucun fait absent dans un brouillon', async () => {
+    fetchSpy.mockResolvedValueOnce(completion({ role: 'assistant', content: 'OK.' }));
+
+    const app = await getApp();
+    await app.inject({
+      method: 'POST',
+      url: CHAT_URL,
+      headers: AUTH,
+      payload: { messages: [userMessage] },
+    });
+
+    const system = sentBody(fetchSpy, 0).messages[0].content ?? '';
+    expect(system).toContain(
+      "Le mois en cours n'est pas terminé : si vous citez ses chiffres, dites qu'ils sont partiels (arrêtés à aujourd'hui).",
+    );
+    expect(system).toContain(
+      "Un brouillon ne contient aucun fait absent des données : ni table libérée, ni promotion, ni prix, ni horaire, ni disponibilité. Mettez [à compléter] à la place et dites ce qu'il faut vérifier.",
+    );
+  });
+
   it('s’arrête à 4 tours d’outils puis demande la réponse finale sans outils', async () => {
     const restaurant = { openingHours: null };
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(restaurant as never);

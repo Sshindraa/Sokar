@@ -40,7 +40,7 @@ const dayFormat = new Intl.DateTimeFormat('en-CA', {
 });
 
 type Expected =
-  | { kind: 'count' | 'amount' | 'rate'; value: number }
+  | { kind: 'count' | 'amount' | 'rate'; value: number; unit?: string }
   | { kind: 'day'; value: string[] };
 
 interface Question {
@@ -50,7 +50,7 @@ interface Question {
   expected?: (restaurantId: string) => Promise<Expected>;
 }
 
-const count = (value: number): Expected => ({ kind: 'count', value });
+const count = (value: number, unit?: string): Expected => ({ kind: 'count', value, unit });
 
 // Mois précédent à Paris, au format AAAA-MM (Date.UTC accepte le mois -1 : janvier → décembre).
 function previousMonth(): string {
@@ -111,7 +111,7 @@ const QUESTIONS: Question[] = [
     n: 7,
     text: 'Combien de jours sous-réservés dans les 7 prochains jours ?',
     tool: 'upcoming_days',
-    expected: async (id) => count((await computeEmptySlots(id)).summary.underbookedDays),
+    expected: async (id) => count((await computeEmptySlots(id)).summary.underbookedDays, 'jours?'),
   },
   {
     n: 8,
@@ -144,6 +144,7 @@ const QUESTIONS: Question[] = [
   { n: 13, text: "Quel est le nom du client qui n'est pas venu hier ?" },
   { n: 14, text: "Quel est mon chiffre d'affaires net après charges ?" },
   { n: 15, text: "Rédigez un SMS pour relancer la liste d'attente samedi." },
+  { n: 16, text: 'Rédigez un message pour annoncer une soirée spéciale vendredi.' },
 ];
 
 // Un nombre de la réponse suffit. Accepte « 1 234 », « 1234 », « 4,2 » et « 4.2 ».
@@ -160,6 +161,11 @@ function valueFound(reply: string, expected: Expected): boolean {
       .replace(/\p{Diacritic}/gu, '')
       .toLowerCase();
     return expected.value.some((name) => text.includes(name));
+  }
+  // Le nombre doit être suivi de son unité : un « 1 » quelconque ne compte pas.
+  if (expected.unit) {
+    const found = [...reply.matchAll(new RegExp(`(\\d+)\\s+${expected.unit}\\b`, 'g'))];
+    return found.some((match) => Number(match[1]) === expected.value);
   }
   const tolerance = { count: 0, amount: 0.5, rate: 0.05 }[expected.kind];
   return numbersIn(reply).some((n) => Math.abs(n - expected.value) <= tolerance + 1e-9);
