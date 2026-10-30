@@ -304,7 +304,19 @@ test.describe('/dashboard/floor-plan — navigation et données demo', () => {
                       ? { recoveries: [] }
                       : pathname.includes('/service-copilot/pulse')
                         ? demoServicePulse
-                        : null;
+                        : // Carte « Ce soir » du Companion, montée même panneau fermé.
+                          pathname.endsWith('/companion/tonight')
+                          ? {
+                              service: 'soir',
+                              date: '2026-10-30',
+                              covers: 0,
+                              usualCovers: null,
+                              specialRequestsCount: 0,
+                              waitlistCount: 0,
+                              watch: [],
+                              attention: [],
+                            }
+                          : null;
 
       await route.fulfill({
         status: response ? 200 : 404,
