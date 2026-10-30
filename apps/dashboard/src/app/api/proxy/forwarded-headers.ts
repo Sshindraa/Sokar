@@ -65,3 +65,12 @@ export async function authenticatedHeaders(req: NextRequest) {
 
   return headers;
 }
+
+/**
+ * Headers de la réponse API à renvoyer au navigateur quand le proxy reconstruit le JSON.
+ * Sans `Retry-After`, un client limité (429) ne connaît pas le délai et réessaie trop tôt.
+ */
+export function upstreamResponseHeaders(res: Response): Record<string, string> {
+  const retryAfter = res.headers.get('retry-after');
+  return retryAfter ? { 'Retry-After': retryAfter } : {};
+}

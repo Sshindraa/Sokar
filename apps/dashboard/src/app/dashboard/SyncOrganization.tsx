@@ -24,6 +24,7 @@ export function SyncOrganization() {
       controller = request;
       const timeout = setTimeout(() => request.abort(), 10_000);
       let retryable = true;
+      let retryAfterMs: number | undefined;
       try {
         const res = await fetch('/api/auth/sync', {
           method: 'POST',
@@ -38,6 +39,8 @@ export function SyncOrganization() {
           return;
         }
         retryable = res.status >= 500 || res.status === 429;
+        const retryAfterSeconds = Number(res.headers.get('retry-after'));
+        if (retryAfterSeconds > 0) retryAfterMs = retryAfterSeconds * 1_000;
       } catch {
         // Une erreur réseau ou un délai dépassé ne valide jamais la synchronisation.
       } finally {
@@ -45,7 +48,11 @@ export function SyncOrganization() {
       }
       if (cancelled) return;
       if (retryable && attempt < 2) {
-        retryTimer = setTimeout(() => void sync(attempt + 1), 1_000 * (attempt + 1));
+        // Le délai annoncé par l'API (429) prime sur la reprise par défaut.
+        retryTimer = setTimeout(
+          () => void sync(attempt + 1),
+          retryAfterMs ?? 1_000 * (attempt + 1),
+        );
       } else {
         setFailure({ organizationId: organizationId!, retry });
       }

@@ -3620,7 +3620,8 @@ export function FloorPlanCanvas({
       }
     };
 
-    startPolling();
+    // Un onglet ouvert en arrière-plan ne lance son intervalle qu'au retour au premier plan.
+    if (!document.hidden) startPolling();
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       pollAbortRef.current?.abort();

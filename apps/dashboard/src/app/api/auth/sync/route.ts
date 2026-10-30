@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { authenticatedHeaders } from '../../proxy/forwarded-headers';
+import { authenticatedHeaders, upstreamResponseHeaders } from '../../proxy/forwarded-headers';
 
 export async function POST(req: NextRequest) {
   const API_URL = process.env.API_URL || 'http://127.0.0.1:4000';
@@ -13,5 +13,5 @@ export async function POST(req: NextRequest) {
   });
 
   const data = await res.json();
-  return Response.json(data, { status: res.status });
+  return Response.json(data, { status: res.status, headers: upstreamResponseHeaders(res) });
 }
