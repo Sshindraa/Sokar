@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { FastifyBaseLogger } from 'fastify';
-import { env } from '../../../env';
 import { answerCompanion } from '../companion.service';
 
 const log = { info: vi.fn() } as unknown as FastifyBaseLogger;
@@ -30,15 +29,15 @@ async function sentBody(options: { model?: string; reasoningEffort?: 'low' | 'me
 }
 
 describe('answerCompanion : choix du modèle', () => {
-  it('garde le modèle de production et ne joint aucun effort de raisonnement par défaut', async () => {
+  it('par défaut, le modèle de production et un raisonnement bas', async () => {
     const body = await sentBody({});
-    expect(body.model).toBe(env.COMPANION_LLM_MODEL);
-    expect(body).not.toHaveProperty('reasoning');
-  });
-
-  it('envoie le modèle demandé et son effort de raisonnement', async () => {
-    const body = await sentBody({ model: 'anthropic/claude-sonnet-5.5', reasoningEffort: 'low' });
     expect(body.model).toBe('anthropic/claude-sonnet-5.5');
     expect(body.reasoning).toEqual({ effort: 'low' });
+  });
+
+  it('envoie le modèle demandé et l’effort demandé', async () => {
+    const body = await sentBody({ model: 'anthropic/claude-haiku-5.5', reasoningEffort: 'high' });
+    expect(body.model).toBe('anthropic/claude-haiku-5.5');
+    expect(body.reasoning).toEqual({ effort: 'high' });
   });
 });

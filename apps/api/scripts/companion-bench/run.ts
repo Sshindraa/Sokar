@@ -16,7 +16,10 @@ import type { ReservationState } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 import { env } from '../../src/env';
 import { db } from '../../src/shared/db/client';
-import { answerCompanion } from '../../src/modules/companion/companion.service';
+import {
+  COMPANION_REASONING_EFFORT,
+  answerCompanion,
+} from '../../src/modules/companion/companion.service';
 import { computeRoi } from '../../src/modules/analytics/roi.service';
 import { computeCallStats } from '../../src/modules/calls/call-stats';
 import { evaluateCapability } from '../../src/modules/entitlements/entitlement.service';
@@ -390,9 +393,13 @@ const shiftYear = (dayKey: string) => `${Number(dayKey.slice(0, 4)) - 1}${dayKey
 // Une fenêtre est nommée par son libellé, ou par une de ses dates : « du 2 au 31 octobre » suffit.
 const dayMonth = (dayKey: string) =>
   `\\b${Number(dayKey.slice(8))}(?:er)?\\s+${FRENCH_MONTHS[Number(dayKey.slice(5, 7)) - 1]}\\b`;
+// Un mois nommé avec son année (« octobre 2026 ») désigne aussi la fenêtre.
+const monthYear = (dayKey: string) =>
+  `${FRENCH_MONTHS[Number(dayKey.slice(5, 7)) - 1]}\\s+${dayKey.slice(0, 4)}`;
 function windowSays(window: OpenWindow): RegExp {
   const [from, to] = window.current();
-  return new RegExp(`${window.says.source}|${dayMonth(from)}|${dayMonth(to)}`, 'i');
+  const dates = [dayMonth(from), dayMonth(to), monthYear(from), monthYear(to)];
+  return new RegExp([window.says.source, ...dates].join('|'), 'i');
 }
 
 const QUESTIONS: Question[] = [
@@ -1154,6 +1161,14 @@ function figuresIn(reply: string): number[] {
       ' ',
     )
     .replace(/\bentre\s+le\s+\d{1,2}(?:er)?\s+et\s+le\s+\d{1,2}(?:er)?\b/gi, ' ')
+    // Intervalle de jours suivi d'un mois : « 25 au 31 octobre », « 25 au 31 octobre 2026 ».
+    .replace(
+      new RegExp(
+        `\\b\\d{1,2}(?:er)?\\s+au\\s+\\d{1,2}(?:er)?\\s+(?:${MONTHS})(?:\\s+\\d{4})?\\b`,
+        'gi',
+      ),
+      ' ',
+    )
     // Listes de jours suivies d'un mois : « les 5, 6 et 7 septembre ».
     .replace(
       new RegExp(`\\b(?:\\d{1,2}(?:,\\s*|\\s+et\\s+))+\\d{1,2}\\s+(?:${MONTHS})\\b`, 'gi'),
@@ -1373,7 +1388,7 @@ async function main() {
 
   const modelChoice: ModelChoice = {
     id: option('--model') ?? env.COMPANION_LLM_MODEL,
-    reasoningEffort: parseEffort(option('--reasoning')),
+    reasoningEffort: parseEffort(option('--reasoning')) ?? COMPANION_REASONING_EFFORT,
   };
   if (!/^[a-z0-9-]+\/[a-z0-9.-]+$/.test(modelChoice.id)) {
     throw new Error('--model : identifiant OpenRouter, par exemple anthropic/claude-sonnet-5.5.');

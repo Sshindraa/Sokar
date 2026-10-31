@@ -13,10 +13,13 @@ pnpm exec tsx scripts/companion-bench/run.ts                       # toutes les 
 pnpm exec tsx scripts/companion-bench/run.ts --trials 3            # toutes les questions, 3 essais
 pnpm exec tsx scripts/companion-bench/run.ts --only 3,7,12         # 3, 7 et 12 seulement, 1 essai
 pnpm exec tsx scripts/companion-bench/run.ts --only 3,7 --trials 3 # combinaison
+pnpm exec tsx scripts/companion-bench/run.ts --model anthropic/claude-haiku-5.5 --reasoning medium
 ```
 
 - `--trials N` : essais par question, 1 par défaut.
 - `--only 3,7,12` : seules ces questions. Un numéro inconnu arrête le banc.
+- `--model <id>` : identifiant OpenRouter. Absent : le modèle de production (`COMPANION_LLM_MODEL`).
+- `--reasoning low|medium|high` : effort de raisonnement. Absent : celui de production (bas).
 - `--rescore <fichier>` : renote l'ancrage et le chiffre d'un fichier de `results/`, sans appeler le
   modèle (mêmes réponses, critères courants). Les valeurs sont recalculées dans la base et rangées
   dans `expectedNow`. Si une valeur enregistrée ne se retrouve plus, la question est signalée en

@@ -3232,3 +3232,26 @@ Ajouts faits après la lecture des réponses B2 : fenêtres de 7 et 30 jours (44
 Renotage des réponses B2 (`--rescore`, sans appel au modèle). Chiffre par question, avant puis après : Q10 0/3 → 3/3 ; Q42 0/3 → 1/3 ; Q43 0/3 → 0/3 ; Q44 0/3 → 0/3 ; Q45 2/3 → 3/3 ; Q46 0/3 → 3/3 ; Q47 3/3 → 3/3. Total 103/123 → 111/123. Ancrage 140/141 avant et après. Aucune dérive : les valeurs enregistrées se retrouvent dans la base.
 
 À garder en tête. Q46 passe sur « réservations prises, du 2 au 31 octobre » : 136, et une référence de 0 pour l'an dernier. Le seed n'a pas de données de l'an dernier, donc cette comparaison ne peut pas donner d'écart chiffré, et le critère accepte la réponse qui le constate. Q43 : les chiffres donnés ne correspondent à aucune lecture complète. Q44 : aucun appel à explain_change dans les trois essais B2.
+
+### 2026-10-31 — Companion : Sonnet 5.5 en production, raisonnement bas
+
+Condition vérifiée avant la bascule, sur le banc complet Sonnet (47 questions, 3 essais, `--reasoning low`) et le banc complet Haiku de la passe B2, renoté hors ligne sans appel au modèle :
+- questions simples (1 à 41 ; 35 sont notées, 105 essais) : chiffre Sonnet 105/105, Haiku 101/105 ; outil 105/105 chacun ; aucune question à 3/3 sous Haiku tombée à 1/3 ou moins sous Sonnet ;
+- ancrage sur les 141 réponses : Sonnet 139/141 (98,6 %), Haiku 140/141.
+- enquêtes (42 à 47, 18 essais) : outil Haiku 8/18, Sonnet 15/18 ; chiffre Haiku 10/18, Sonnet 12/18.
+
+Correcteur, deux artefacts corrigés. Un intervalle de jours suivi d'un mois (« 25 au 31 octobre », avec ou sans « du ») n'est plus compté comme nombre à ancrer. Un mois nommé avec son année (« octobre 2026 ») désigne la fenêtre. Renotage avant/après :
+- banc Sonnet à huit questions (`23-45-50`) : ancrage 23/24 → 24/24 (Q45 essai 1), chiffre 17/24 → 18/24 (Q46 essai 2) ;
+- banc Sonnet complet : ancrage 139/141 et chiffre 117/123, inchangés ;
+- banc Haiku complet (passe B2) : ancrage 140/141 et chiffre 111/123, inchangés ;
+- banc Haiku à huit questions (`23-43-22`) : ancrage 24/24 et chiffre 12/24, inchangés.
+
+Restent sans correction, hors du périmètre. Q45 essai 1 (Sonnet) : « 89 % de l'écart ». Le modèle écrit en pourcentage la part 0,89 renvoyée par `explain_change`, et le correcteur ne convertit pas un ratio. Q19 essai 3 (Sonnet) : « Les 4 autres », calcul du modèle qu'aucun outil ne renvoie.
+
+Bascule. `COMPANION_LLM_MODEL` vaut `anthropic/claude-sonnet-5.5` par défaut (`env.ts`). `answerCompanion` envoie `reasoning: { effort: 'low' }` quand rien d'autre n'est demandé (`COMPANION_REASONING_EFFORT`). Aucun réglage par restaurant, aucun aiguillage entre modèles. Le défaut du banc est le modèle de production, raisonnement bas. Tests : le corps par défaut porte Sonnet 5.5 et `reasoning.effort: low` ; la route teste le même modèle. Runbook `environment.md` mis à jour ; README du banc avec `--model` et `--reasoning`.
+
+Cache vérifié, banc à deux questions, un essai, configuration de production : Q10, 12 026 tokens lus du cache sur 12 583 en entrée ; Q42, 12 026 sur 14 962 ; outil, chiffre et ancrage 2/2.
+
+Banc complet Sonnet (141 réponses) : outil 120/123, chiffre 117/123, ancrage 139/141 ; entrée 1 727 826 tokens dont 1 623 510 lus du cache ; sortie 50 115 ; latence médiane 3 029 ms, maximum 7 918 ms.
+
+Limites. La référence Haiku est le banc complet de la passe B2, joué sur un code antérieur à la mesure facultative d'`explain_change`. Je n'ai pas relancé de banc complet Haiku, pour respecter la règle d'un seul banc complet, sur le meilleur modèle. La bascule n'atteint la production qu'au déploiement de la PR, après fusion, qui reste une décision humaine. Si le `.env` de production fixe `COMPANION_LLM_MODEL` à Haiku, il faut le changer à ce moment-là ; je n'ai pas accès au VPS. `Context.md` dépasse 8 Ko (10 431 octets, contre 10 143 avant cette ligne) ; à réduire dans une passe dédiée.

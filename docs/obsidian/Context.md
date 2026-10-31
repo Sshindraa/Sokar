@@ -49,6 +49,8 @@
 
 ## Décisions récentes
 
+- 2026-10-31 — [Companion] Modèle de production : Claude Sonnet 5.5 (`anthropic/claude-sonnet-5.5`), raisonnement bas, pour tous les restaurants ; aucun réglage par restaurant ni aiguillage entre modèles. Banc : questions simples 105/105 contre 101/105 pour Haiku, ancrage 139/141.
+
 - 2026-10-28 — [Fidélité et intégrations] Fidélité manuelle ouverte à Pro/Multi-site après livraison ; POS et groupes restent coupés jusqu’au premier client L’Addition / multi-site.
 
 - 2026-10-25 — [Intégrations] Google Agenda retiré complètement (code, UI, offre, colonnes DB) : peu utile aux restaurateurs et synchro partielle (téléphone seulement).

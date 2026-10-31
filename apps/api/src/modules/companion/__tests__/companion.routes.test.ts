@@ -164,7 +164,7 @@ describe('POST /companion/chat', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
 
     const first = sentBody(fetchSpy, 0);
-    expect(first.model).toBe('anthropic/claude-haiku-5.5');
+    expect(first.model).toBe('anthropic/claude-sonnet-5.5');
     expect(first.tool_choice).toBe('auto');
     expect(first.messages[0].role).toBe('system');
 

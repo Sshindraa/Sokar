@@ -150,6 +150,9 @@ export interface CompanionModelChoice {
   reasoningEffort?: 'low' | 'medium' | 'high';
 }
 
+/** Raisonnement du modèle de production : bas, pour tous les restaurants. */
+export const COMPANION_REASONING_EFFORT = 'low' as const;
+
 async function requestTurn(
   conversation: ChatMessage[],
   withTools: boolean,
@@ -221,7 +224,7 @@ export async function answerCompanion(input: {
   const fetcher = input.fetcher ?? fetch;
   const model: CompanionModelChoice = {
     id: input.model ?? env.COMPANION_LLM_MODEL,
-    reasoningEffort: input.reasoningEffort,
+    reasoningEffort: input.reasoningEffort ?? COMPANION_REASONING_EFFORT,
   };
   const trace: CompanionTrace = {
     turns: 0,

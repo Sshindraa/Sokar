@@ -932,8 +932,8 @@ des agrégats. Chaque requête OpenRouter demande `provider.data_collection: den
 messages du gérant.
 
 ```dotenv
-# Modèle du Companion. Défaut : Claude Haiku 5.5 (slug OpenRouter vérifié le 30/10/2026).
-COMPANION_LLM_MODEL="anthropic/claude-haiku-5.5"
+# Modèle du Companion. Défaut : Claude Sonnet 5.5, raisonnement bas (slug OpenRouter vérifié le 31/10/2026).
+COMPANION_LLM_MODEL="anthropic/claude-sonnet-5.5"
 ```
 
 ## Voice STT (Deepgram)
