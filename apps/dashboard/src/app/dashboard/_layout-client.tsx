@@ -9,7 +9,6 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   CalendarCheck,
   Settings,
-  Sparkles,
   Moon,
   Sun,
   Radio,
@@ -32,6 +31,7 @@ import { OnboardingAccessBoundary } from '@/features/onboarding/onboarding-acces
 import { OnboardingProvider } from '@/features/onboarding/onboarding-provider';
 import { DashboardThemeProvider, useDashboardTheme } from '@/features/theme/dashboard-theme';
 import { useApi } from '@/lib/api';
+import { CompanionPanel } from '@/features/companion/CompanionPanel';
 import { SubscribeFromPricing } from './SubscribeFromPricing';
 import { SiteProvider, SiteSwitcher, useSiteSelection } from '@/features/sites/site-context';
 import { SERVICE_STAFF_HOME, canOpenDashboardPath, isServiceStaff } from '@/features/team/roles';
@@ -191,7 +191,7 @@ function SettingsButton({ active = false }: { active?: boolean }) {
   );
 }
 
-function DashboardModeSwitcher({
+export function DashboardModeSwitcher({
   salleMode,
   compact = false,
   floorPlans = [],
@@ -207,8 +207,13 @@ function DashboardModeSwitcher({
   onSelectFloorPlan?: (floorPlanId: string) => void;
 }) {
   const tNav = useTranslations('nav');
+  const { activeSite } = useSiteSelection();
+  // Le Companion lit les chiffres : l'équipe de service et la lecture seule n'y ont pas accès.
+  const companionAvailable = activeSite?.role !== 'STAFF' && activeSite?.role !== 'READ_ONLY';
   const [companionOpen, setCompanionOpen] = useState(false);
   const [sallePlanOpen, setSallePlanOpen] = useState(false);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const companionDialogId = useId();
   const sallePlanMenuId = useId();
   const switcherRef = useRef<HTMLDivElement>(null);
@@ -241,6 +246,11 @@ function DashboardModeSwitcher({
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [companionOpen, sallePlanOpen]);
+
+  // Une ligne de la carte « Ce soir » change de page : le panneau se referme pour laisser le détail visible.
+  useEffect(() => {
+    setCompanionOpen(false);
+  }, [pathname, searchParams]);
 
   const selectFloorPlan = (floorPlanId: string) => {
     onSelectFloorPlan?.(floorPlanId);
@@ -349,7 +359,7 @@ function DashboardModeSwitcher({
           Salle
         </Link>
       )}
-      {!compact && (
+      {!compact && companionAvailable && (
         <button
           type="button"
           aria-expanded={companionOpen}
@@ -362,14 +372,6 @@ function DashboardModeSwitcher({
           )}
         >
           <span>Companion</span>
-          <span
-            className={cn(
-              'dashboard-mode-switcher__coming-soon rounded-full border border-border/80 bg-background/70 font-semibold text-muted-foreground transition-colors group-hover:border-foreground/20 group-hover:text-foreground',
-              'px-1.5 py-0.5 text-[9px]',
-            )}
-          >
-            {tNav('comingSoon')}
-          </span>
         </button>
       )}
     </nav>
@@ -385,31 +387,19 @@ function DashboardModeSwitcher({
       )}
     >
       {modeNav}
-      {companionOpen && (
+      {/* Monté même fermé : une question en cours garde sa réponse, son attente et son erreur. */}
+      {!compact && companionAvailable && (
         <div
           id={companionDialogId}
           role="dialog"
-          aria-label={tNav('companionSoon')}
-          className="dashboard-mode-switcher__dialog absolute left-1/2 top-14 w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-border bg-card/95 p-4 shadow-2xl shadow-background/40 backdrop-blur-xl"
+          aria-label="Companion"
+          hidden={!companionOpen}
+          className={cn(
+            'dashboard-mode-switcher__dialog absolute left-1/2 top-14 max-h-[70vh] w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 flex-col rounded-2xl border border-border bg-card/95 p-4 shadow-2xl shadow-background/40 backdrop-blur-xl',
+            companionOpen ? 'flex' : 'hidden',
+          )}
         >
-          <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Sparkles size={17} />
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground">{tNav('companionSoon')}</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                {tNav('companionSoonDescription')}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setCompanionOpen(false)}
-            className="mt-3 w-full rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {tNav('close')}
-          </button>
+          <CompanionPanel />
         </div>
       )}
     </div>

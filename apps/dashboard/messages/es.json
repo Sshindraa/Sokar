@@ -46,9 +46,6 @@
     "expand": "Mostrar grupos de navegación",
     "collapse": "Ocultar grupos de navegación",
     "close": "Cerrar",
-    "comingSoon": "Próximamente",
-    "companionSoon": "Companion llegará pronto",
-    "companionSoonDescription": "Un espacio compartido para preparar el servicio, seguir las prioridades y actuar con su equipo desde un mismo lugar.",
     "admin": "Admin Sokar",
     "settings": "Ajustes",
     "health": "Salud"
@@ -79,6 +76,47 @@
     "notFound": "Página no encontrada",
     "notFoundDescription": "La página que busca no existe o ha sido movida.",
     "goHome": "Volver al inicio"
+  },
+  "companion": {
+    "title": "Companion",
+    "greeting": "Soy el asistente de IA de Sokar. Leo las cifras de su restaurante, sin datos de clientes.",
+    "suggestions": {
+      "week": "¿Cómo se presentan los próximos 7 días?",
+      "noShows": "¿Cómo van mis no-shows?",
+      "bookings": "¿Cuántas reservas hay esta semana?"
+    },
+    "placeholder": "Haga una pregunta sobre sus cifras",
+    "send": "Enviar",
+    "thinking": "Analizando…",
+    "retry": "Reintentar",
+    "newConversation": "Nueva conversación",
+    "disclaimer": "Respuestas generadas por IA, a verificar. No introduzca datos de contacto de clientes.",
+    "openSource": "Ver en el panel",
+    "helpful": "Respuesta útil",
+    "unhelpful": "Respuesta poco útil",
+    "genericError": "El asistente no puede responder por el momento. Inténtelo de nuevo en un momento.",
+    "tonight": {
+      "title": "Este servicio",
+      "midi": "Mediodía de hoy",
+      "soir": "Esta noche",
+      "loading": "Cargando el servicio…",
+      "error": "No se puede cargar el servicio por el momento.",
+      "retry": "Reintentar",
+      "empty": "No hay reservas para este servicio",
+      "nothingToWatch": "Nada que señalar en este servicio.",
+      "covers": "{count, plural, one {# comensal} other {# comensales}}",
+      "usual": "habitualmente {usual} comensales",
+      "specialRequests": "{count, plural, one {# petición especial} other {# peticiones especiales}}",
+      "waitlist": "{count, plural, one {# persona en lista de espera} other {# personas en lista de espera}}",
+      "reasons": {
+        "unconfirmed": "Sin confirmar",
+        "noTable": "Sin mesa",
+        "largeParty": "Grupo grande",
+        "pastNoShow": "Ausencia anterior",
+        "vip": "VIP",
+        "regular": "Cliente habitual"
+      }
+    }
   },
   "languageSwitcher": {
     "label": "Idioma",

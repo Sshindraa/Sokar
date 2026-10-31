@@ -3112,3 +3112,146 @@ Vérification d’identité et export rouverts après qualification SMS en stagi
 ### 2026-10-30 — Rollback staging : dépendances restaurées
 
 Le test de rollback de Sshindraa/Sokar#577 échouait : l'artefact de la release précédente exige `zod-to-json-schema`, retiré par la PR (passage à Zod 4), donc absent de node_modules après le déploiement. Correctif : chaque snapshot garde le lockfile et les package.json de son commit (`deps/`), et le rollback réinstalle via `pnpm install --frozen-lockfile` avant de redémarrer. Une release sans lockfile est refusée avant d'arrêter les services. Non validé sur le VPS : la prochaine exécution de staging le vérifiera (le pré-build utilise `.latest-hash`).
+
+### 2026-10-30 — Companion, phase 1 : API de chat (sans UI)
+
+Ajout de `POST /companion/chat` (`apps/api/src/modules/companion/`) : réponse JSON `{ reply, sources }`, modèle `COMPANION_LLM_MODEL` (défaut `anthropic/claude-haiku-5.5`, slug vérifié sur OpenRouter le 30/10). Quatre outils en lecture seule (`reservation_stats`, `upcoming_days`, `no_shows`, `monthly_roi`) appellent en process les calculs des routes dashboard, extraits en fonctions exportées dans `dashboard.routes.ts` (sortie inchangée, tests dashboard verts sans modification) ; `monthly_roi` reprend `computeRoi`. Plafond 100 messages par jour et par restaurant via `checkRateLimit`, dont la fenêtre devient un paramètre optionnel. Rôles : STAFF et READ_ONLY reçoivent 403 de la politique existante, qui n'a pas été modifiée. Décisions ouvertes : pas de SSE, 4 tours d'outils puis une réponse finale sans outils, quota fail-open si Redis tombe (convention de `checkRateLimit`), et `href` vers `/dashboard` pour `monthly_roi` faute d'écran qui consomme `/analytics/roi`. Correctif : chaque requête porte `provider.data_collection: deny` (test sur les cinq corps d'une boucle complète). Clé `OPENROUTER_API_KEY` de `apps/api/.env` renouvelée (auth/key 200) ; deux curls en 200 sur l'API dev. Fichiers : `apps/api/src/modules/companion/*`, `dashboard.routes.ts`, `rate-limit.ts`, `env.ts`, `main.ts`, `docs/runbooks/environment.md`.
+
+### 2026-10-30 — Companion, phase 2 : panneau dashboard et prompt
+
+Panneau `CompanionPanel` dans le dialog Companion (`apps/dashboard/src/features/companion/`) : historique par site en sessionStorage (`sokar.companion.<siteId>`), « Nouvelle conversation », trois suggestions d'accueil, sources dédoublonnées, erreurs de l'API avec Réessayer. Bouton masqué pour STAFF et READ_ONLY ; libellés en fr, en, es, it. Prompt : texte sans Markdown, aucune cause ni vérification suggérée hors données, et rappel que les résultats d'outils des questions précédentes ne sont pas visibles (sans lui, le modèle se désavouait). Descriptions d'outils précisées (7d/30d inclus, zéros non cités, seuil de 20 réservations pour les no-shows). Écart ouvert : les résultats d'outils ne voyagent pas d'un tour à l'autre, l'historique client ne garde que le texte ; correctif structurel à décider. Captures (1024 px, clair et sombre) faites sur le dashboard dev de l'autre session (port 3110, API 4000), Next refusant un second `next dev` dans le dossier.
+
+### 2026-10-30 — Companion : résultats d'outils réinjectés
+
+Contrat `POST /companion/chat` étendu, sans rupture : chaque message peut porter `toolRuns` (`name`, `arguments`, `result`, bornés par `ToolRunSchema`), et la réponse renvoie les `toolRuns` du tour. Le serveur les rejoue au modèle (appel d'outil puis résultat, avant la réponse) sans les réexécuter. Le client les stocke dans sa conversation de session. Un tour est plafonné à 40 appels d'outils ; au-delà, l'appel reçoit `too_many_tool_calls`. Vérifié en navigateur : quatrième question sur des chiffres donnés plus tôt, réponse cohérente, sans désaveu. Point ouvert : les `toolRuns` viennent du client et ne sont pas signés ; le serveur les traite comme des données passées, jamais comme des consignes, et ne lit aucune donnée d'un autre restaurant à partir d'eux. Prompt : les résultats des questions précédentes figurent dans la conversation.
+
+### 2026-10-30 — Companion : retrait de toolRuns
+
+Retrait de `toolRuns` (API, panneau, doc) : l'historique redevient `{ role, content }` ; les entrées sessionStorage anciennes restent lisibles, sans ce champ.
+
+### 2026-10-30 — Companion : panneau monté même fermé
+
+Le dialog Companion reste monté quand il est fermé (`hidden`) : fermer le panneau pendant une question ne perd plus l'attente, la réponse ni l'erreur avec Réessayer. Test du layout : panneau fermé présent mais invisible.
+
+### 2026-10-30 — Companion phase 3 : avis sur les réponses
+
+Chaque réponse porte un `responseId` (UUID, aussi dans le log « companion chat »). `POST /companion/feedback` reçoit `{ responseId, rating: 'up' | 'down' }` (corps strict, 204, avis en logs seulement : shortcut, table dédiée si le volume le justifie). Le panneau affiche deux boutons sous les réponses récentes ; un avis verrouille les boutons, un échec d'envoi les rétablit sans message. Les réponses enregistrées avant cette phase n'ont pas de boutons. Correctif de course : un avis donné pendant qu'une question est en cours n'est plus effacé par la réponse suivante (mise à jour fonctionnelle de la liste). Branche feat/companion-v1.
+
+### 2026-10-30 — Companion : données de test et banc de questions
+
+Seed `packages/database/prisma/seed-companion.ts` (`pnpm --filter @sokar/database seed:companion`) : 1471 réservations, 853 appels et 60 clients fictifs sur `DEMO_RESTAURANT_ID` (Carmelo, dans `sokar_preview`, la base que l'API lit en dev), de J-95 à J+14. Marquage : `createdByClient = 'seed-companion'`, `callSid` préfixé `seed-companion-`, `customers.notes = 'seed-companion'` ; une relance ne supprime que ces lignes. Garde-fou : refus si `NODE_ENV=production` ou base hors localhost. Banc `apps/api/scripts/companion-bench/run.ts` : 15 questions × 3 essais contre `answerCompanion` (OpenRouter réel), chiffres attendus recalculés avec les fonctions des outils ; résultats dans `results/`, ignorés par git. Premier passage : outil et chiffre OK sur 33/33 essais (questions 1 à 11). Coût : 160 032 tokens en entrée, 14 987 en sortie.
+
+### 2026-10-30 — Companion : brouillons sans fait absent, mois partiel
+
+Le prompt précise deux règles : le mois en cours est partiel quand on cite ses chiffres, et un brouillon ne contient aucun fait absent des données (ce qui manque est mis entre crochets `[à compléter]`). Test ajouté dans `companion.routes.test.ts`. Banc relancé avec la question 16 (soirée spéciale, à relire) ; la question 7 exige désormais le nombre suivi de « jour » ou « jours ». Résultat sur les questions 1 à 11 : outil 33/33, chiffre 30/33. La question 7 échoue 3/3 : le modèle écrit « Un seul jour », en lettres. Tokens : 169 725 en entrée, 17 939 en sortie.
+
+### 2026-10-30 — Companion : outil call_stats, formules entre crochets
+
+Nouvel outil `call_stats` (`apps/api/src/modules/calls/call-stats.ts`) : appels par intention et par résultat, hors horaires d'ouverture (heure de Paris, fermeture après minuit comprise) et durée moyenne. Il ne lit que la date, l'intention, le résultat et la durée. `periodStart` est exporté de `dashboard.routes.ts`, comportement inchangé. Prompt : appels dans le périmètre, formules de disponibilité entre crochets dans les brouillons. Banc : questions 17 à 19 ; question 7 accepte les nombres en lettres. Résultat sur les questions notées : outil 36/42, chiffre 39/42. Écart à traiter : pour les questions 3 et 4 le modèle prend `call_stats`, et le taux de conversion diffère de celui du tableau de bord (appels « réservé » contre réservations liées à un appel, deux écarts sur 7 jours). Tokens : 236 442 en entrée, 19 009 en sortie.
+
+### 2026-10-30 — Companion : taux repris des outils, deux définitions
+
+Le prompt interdit au modèle de calculer un taux, un pourcentage ou une moyenne : il reprend celui d'un outil, ou donne les deux nombres sans ratio. Les descriptions de `reservation_stats` (`conversion_rate`, source des taux de conversion) et de `call_stats` (`byOutcome.RESERVED`, à distinguer de `call_reservations`) précisent la définition de chacun. Banc : les questions 3 et 4 acceptent l'un ou l'autre outil ; la question 4 attend 55, tout autre pourcentage est KO ; la question 19 accepte 26 ou 24, tout pourcentage autre que 55 est KO. Une première relance comptait à tort le 55 % du tableau de bord comme un taux en trop ; corrigé, puis relancé une fois. Résultat final : outil 42/42, chiffre 42/42. Tokens de la relance finale : 257 531 en entrée, 18 089 en sortie.
+
+### 2026-10-30 — Companion : canaux de réservation, chiffres rattachés
+
+Description de `reservation_stats` : `by_channel` (phone, website, google, ai, team). Description de `call_stats` : `avgDurationSec` porte sur tous les appels de la période, pas sur les seuls appels hors horaires. Prompt : répondre d'abord à la question posée, ne pas dérouler de chiffres non demandés, ne jamais rattacher un chiffre à un groupe qui ne le contient pas. Banc : question 20 (réservations par téléphone et par site, attendu 134 et 142), question 21 à relire. Résultat sur les questions notées : outil 45/45, chiffre 45/45. Constat : aux trois essais de la question 20, le modèle liste tous les canaux, et l'essai 1 ajoute le chiffre d'affaires ; la règle « répondre d'abord » n'est pas respectée, et le banc ne la note pas. Tokens : 313 518 en entrée, 20 386 en sortie.
+
+### 2026-10-30 — Companion : requête unique query_data
+
+Nouvel outil `query_data` (`apps/api/src/modules/companion/query-data.ts`) : le modèle compose une requête (réservations ou appels, mesure, date de service ou de prise, regroupement, filtres, plage en jours de Paris). Le serveur valide (schéma strict, plage de 400 jours au plus, regroupement par jour de 62 jours au plus), borne la requête au restaurant, calcule et ne renvoie que des totaux. Les champs lus sont fixés : ni nom, téléphone, e-mail, note ni transcription. Prompt : indicateurs du tableau de bord par l'outil dédié, sinon query_data ; date de service ou de prise selon la question ; dates relatives converties et citées ; réponse d'abord. La phrase sur les jours passés par date de service est retirée. Banc : question 12 notée, questions 22 à 27 calculées en Prisma dans le banc, questions 21 et 28 à relire. Résultat sur les questions notées : outil 62/66, chiffre 65/66. Écarts : questions 2 et 10, le modèle prend query_data pour des couverts (outils attendus reservation_stats et monthly_roi) ; question 24, un essai donne 383 au lieu de 380 et met le chiffre en gras. Tokens : 664 441 en entrée, 41 038 en sortie.
+
+### 2026-10-30 — Companion : aucun calcul par le modèle, appels d'outils enregistrés
+
+Le prompt interdit au modèle tout calcul (somme, différence, moyenne, taux, pourcentage) : il demande un total à `query_data` sans `group_by` et cite les nombres tels que les outils les renvoient. `query_data` précise que, sans `filters.states`, seules les réservations confirmées, installées ou honorées comptent ; cette liste figure dans le champ `query` renvoyé. Le gras Markdown est retiré de la réponse finale. Le banc enregistre, pour chaque essai, les appels d'outils avec leurs arguments et les agrégats renvoyés. Questions 2 et 10 : `query_data` accepté. Question 26 : le canal attendu doit être le premier nommé. Résultat sur les questions notées : outil 60/66, chiffre 66/66. Écarts : questions 5 et 18, le prompt pousse le modèle vers `query_data` pour les totaux (outils attendus `upcoming_days` et `call_stats`). Question 24, le 383 du passage précédent n'est pas reproduit : trois essais donnent 380, et les arguments de ce passage ne sont pas enregistrés. Tokens : 677 049 en entrée, 37 237 en sortie.
+
+### 2026-10-30 — Companion : banc, critère d'outil générique
+
+Le critère « outil » du banc devient « au moins un outil appelé » pour toutes les questions notées : le nom d'outil attendu par question est retiré. Les appels d'outils (arguments et résultats) restent enregistrés par essai. Question 26 : le premier canal nommé doit aussi être celui dont la valeur est la plus haute dans un résultat d'outil enregistré (groupes par canal de `query_data` ou `by_channel`). Résultat sur les questions notées, trois essais chacune : outil 66/66, chiffre 66/66. Tokens : 672 780 en entrée, 37 641 en sortie.
+
+### 2026-10-30 — Companion : carte « Ce soir »
+
+`GET /companion/tonight` calcule le service en cours à Paris (midi avant 16 h, soir à partir de 16 h) : couverts, couverts habituels (même service et même jour de semaine, sur les 4 semaines précédentes, moyenne des jours qui ont des réservations valables), demandes spéciales (comptées, jamais le texte), liste d'attente, et deux listes de réservations avec leurs motifs (`watch` : non confirmée, sans table, grande tablée, absence passée ; `attention` : VIP, client régulier). Requêtes groupées (jour, historique, liste d'attente, puis absences et fidélité par client). Le modèle n'est pas appelé. Fichiers : `apps/api/src/modules/companion/tonight.ts`, `companion.routes.ts`, `query-data.ts` (deux fonctions exportées, sans duplication), `apps/dashboard/src/features/companion/TonightCard.tsx`, puis le panneau et ses messages (fr, en, es, it).
+
+Décision : `READ_ONLY` garde la lecture de la carte, comme `/reservations` : la politique de rôles lit toutes les routes en GET. Le clic sur une ligne mène à `/dashboard/reservations`, faute de route qui ouvre une réservation par son identifiant (point ouvert).
+
+### 2026-10-30 — Companion : la carte ouvre la réservation du jour
+
+Le lien de la carte « Ce soir » mène à `/dashboard/reservations?date=AAAA-MM-JJ&reservation=<id>`. La page prend ce jour, même quand elle est déjà ouverte, et ouvre le détail de la réservation dès que la liste du jour est chargée. Fermer le détail retire le paramètre de l'URL, pour qu'un nouveau clic rouvre la même réservation. Aucune route API ajoutée : seule la page des réservations lit ces paramètres.
+
+### 2026-10-30 — Companion : direction seule et panneau fermé à la navigation
+
+La politique de rôles (`role-policy.ts`) refuse la lecture seule sur `/companion/*` (`DIRECTION_ONLY_RULES`), comme l'équipe de service. `READ_ONLY` lit toujours le reste, dont `/reservations`. Le panneau Companion se ferme quand la page ou ses paramètres changent. Vérifié dans le navigateur, en dev local avec API et dashboard séparés : clic sur « Adrien Richard » dans « Ce soir », panneau fermé, détail du 30 octobre à 18 h 15 ouvert, alors que la page était sur le 29 octobre.
+
+### 2026-10-30 — Companion : catalogue de données générique (phase A)
+
+Les sources viennent d'un catalogue (`companion/catalog.ts`) : réservations, appels, liste d'attente et avis. Le moteur (`query-data.ts`) construit la validation, le calcul, la description et les paramètres de `query_data`, ainsi que la ligne « Périmètre » du prompt. Une lecture ne sélectionne que les champs de sa fiche, et un test refuse les champs personnels. Les réservations de test (`isTest`) sont exclues ; sans effet sur les données actuelles. Liste d'attente : désactivée, `{ unavailable: 'disabled' }` (garde-fou `WaitingListDisabledError`). Avis : sans `reputation.feedback`, `{ unavailable: 'plan' }`. Le seed ajoute liste d'attente, avis et tâches de récupération, et active la liste d'attente du restaurant de démo (dev seulement).
+
+Banc : 41 questions (13 nouvelles), 3 essais. Outil : 105/105. Chiffre : 99/105. Q30 (demandes obtenues le mois dernier) : le modèle a pris la date de demande, la question ne la précise pas. Q37 (note de 2 ou moins) : le catalogue n'a pas de filtre sur la note ; le modèle donne les deux valeurs et refuse de les additionner. Avant la phase A, 66/66 sur les 22 questions notées. Tokens : 672 039 entrée et 36 480 sortie (84 appels) avant ; 1 209 365 entrée et 60 541 sortie (123 appels) après.
+
+### 2026-10-30 — Companion : cache du modèle et banc économe
+
+Les consignes fixes et la description des outils portent un point de cache (`cache_control` éphémère). La date du jour passe dans un message système à part, après ce cache. OpenRouter renvoie `prompt_tokens_details.cached_tokens` : sur trois questions, la deuxième requête d'une réponse lit 4 567 tokens du cache, et la trace du journal les compte dans `cached_input_tokens`. Le banc accepte `--trials N` (défaut 1) et `--only 3,7,12` ; son README décrit la règle d'usage.
+
+Mesure, cinq questions à un essai (1, 5, 9, 24, 36). Avant le cache : 48 683 tokens en entrée, 1 491 en sortie. Après : 48 673 en entrée, dont 45 670 lus du cache, et 1 353 en sortie. Le total brut ne baisse pas, car OpenRouter compte les lectures dans `prompt_tokens` ; c'est le tarif des lectures qui baisse. Question 24 : KO après le cache (383 au lieu de 380), la date de prise choisie par le modèle, comme déjà observé.
+
+### 2026-10-30 — Companion : filtres générés, isTest dans la carte, seed des appels stable
+
+Chaque dimension à valeurs fermées devient un filtre généré (`filtersOf`) : channels, intents, outcomes, state, status, score, recovery, et after_hours (vrai ou faux). Les `filters` déclarés à la main sont supprimés ; `states` (défaut en base) reste. Si `filters.state` est donné sans `filters.states`, la lecture prend ces états. Un test vérifie qu'une fiche sans filtre déclaré accepte sa dimension fermée et refuse une valeur hors liste. `tonight.ts` exclut `isTest` sur ses quatre lectures de réservations, avec un test. Seed : les appels sont ancrés sur minuit, sans l'heure du seed, et les tirages ne dépendent plus de l'heure ; deux seeds successifs donnent les mêmes compteurs (1 423 réservations, 927 appels, 138 demandes en liste d'attente, 394 avis, 93 tâches de récupération). Banc : Q30 dit « sur les créneaux du mois dernier », notation inchangée.
+
+Banc `--only 18,24,30,37 --trials 3` : outil et chiffre 3/3 sur les quatre. Q37 passe avec `score: [1, 2]`. Tokens : 122 752 en entrée, dont 111 251 lus du cache, et 4 951 en sortie (12 appels). Q18 attend 76 avec ce seed : les anciennes valeurs (70, puis 66) venaient d'un seed dépendant de l'heure.
+
+### 2026-10-30 — Companion : phase B, comparaison et enquête
+
+`query_data` accepte `compare` (`previous_period`, `last_year`, `usual`) sur toutes les fiches. Le serveur renvoie, pour le total et pour chaque groupe, `value`, `reference`, `delta` et `delta_pct` (null si la référence vaut 0). `usual` ne s'applique qu'à une période d'un jour ou d'une semaine. La boucle permet 8 tours d'outils et s'arrête à 60 000 tokens d'entrée. Le prompt demande d'explorer 2 à 4 angles pour une question ouverte, remplace la règle « ne supposez aucune cause » par une règle de liens prudents, et limite la réponse à 3 à 5 phrases. Le seed plante une anomalie fixe le mardi 20 octobre 2026 : couverts à la moitié de la moyenne des 4 mardis précédents, 40 appels sans issue, aucune liste d'attente ce jour-là.
+
+Banc, 47 questions, 3 essais : outil 114/123, chiffre 112/123, ancrage 141/141. Les enquêtes (42 à 47) : outil 9/18, chiffre 14/18, ancrage 18/18. Pendant le réglage, Q42 et Q46 ont reçu « en couverts » (et « repas prévus » pour Q46), des synonymes ont été ajoutés aux motifs de faits, et l'angle est défini comme source plus regroupement. Le premier calcul de l'ancrage donnait 127/141 ; une règle d'arrondi et les dates en intervalle corrigées, les mêmes réponses ont été renotées (`--rescore`).
+
+Écarts : Q10 mesure les couverts du mois par date de prise (ROI) alors que `query_data` par défaut par date de service ; Q33 compte des réservations au lieu des demandes ; Q42 ne cite pas la liste d'attente vide ; Q43, Q46 et Q47 n'ont qu'un angle ou pas de `compare`.
+
+Tokens : 1 542 407 en entrée, dont 1 448 289 lus du cache (94 %), 78 579 en sortie, 141 essais. Par essai : question simple 11 041 en entrée (10 431 du cache), enquête 11 530 (10 382).
+
+### 2026-10-31 — Companion : explain_change et enquêtes réécrites (phase B2)
+
+Outil `explain_change`, construit sur le moteur de `query_data` : le total avec sa référence, les cinq groupes qui portent le plus l'écart avec leur part, les autres sources qui varient dans le même temps (au moins 25 % et une référence d'au moins 5), et `low_volume` sous une référence de 5. Le prompt pose le principe seul (« Quand la question porte sur un écart, une évolution ou une comparaison, appelez d'abord explain_change »), sans liste de formulations, et aucun routage par mots-clés n'est écrit dans le code. La fiche de liste d'attente dit qu'une entrée est une demande, distincte d'une réservation.
+
+Les enquêtes 42 à 47 ont été réécrites comme un gérant les pose, avec leurs critères figés avant le premier essai (commit `f96e950f`). Correction du correcteur : « aucune » ou « zéro » comptent comme zéro. Chiffre : 100/123 avant, 103/123 après, sur les mêmes réponses (renotage avec `--rescore`).
+
+Banc complet, 47 questions, 3 essais : outil 113/123, chiffre 103/123, ancrage 140/141. Enquêtes (18 essais) : outil 8/18, chiffres clés 5/18, ancrage 17/18. Écarts : le modèle choisit souvent les réservations plutôt que les couverts, et une période de sept jours plutôt que le mois (42, 43, 45, 46) ; il n'appelle pas explain_change sur deux questions d'évolution (44, 47) ; Q10 oppose la définition ROI (date de prise) et `query_data` (date de service) ; Q33 ne change pas avec la fiche.
+
+Tokens : 1 802 931 en entrée, dont 1 704 585 lus du cache (95 %), et 77 759 en sortie, 141 essais. Par essai : question simple 12 828 en entrée (12 190 du cache) ; enquête 14 461 (13 291 du cache).
+
+### 2026-10-31 — Companion : lectures possibles pour les questions 10 et 42 à 47 (phase B3, critères)
+
+Critères corrigés avant tout essai de la phase B3. Une question qui ne précise pas sa mesure, sa date ou sa période a plusieurs lectures : chacune a ses valeurs, calculées dans la base, et les repères que la réponse doit employer pour dire laquelle elle a choisie. Une réponse est juste si elle nomme une lecture et donne toutes ses valeurs, à la tolérance de la question. Les intitulés ne changent pas. Les questions sans période (44 à 47) comptent 7 jours, 30 jours et le mois en cours ; une fenêtre se nomme par son libellé ou par une de ses dates.
+
+Avant ce commit, le critère ne retenait qu'une lecture par question. Q10 le montre : les trois réponses B2 disent « 1 026 couverts, sur la date de service », et l'ancien critère n'acceptait que 1 059 (date de prise).
+
+Ajouts faits après la lecture des réponses B2 : fenêtres de 7 et 30 jours (44 à 47), repère par date (« du 2 au 31 octobre »), réservations à côté des couverts (42, 43), date de prise (43, 46), mardi précédent en réservations (42). Ils suivent le principe (toute lecture possible compte), mais ils sont postérieurs aux réponses : leurs gains se lisent avec cette réserve.
+
+Renotage des réponses B2 (`--rescore`, sans appel au modèle). Chiffre par question, avant puis après : Q10 0/3 → 3/3 ; Q42 0/3 → 1/3 ; Q43 0/3 → 0/3 ; Q44 0/3 → 0/3 ; Q45 2/3 → 3/3 ; Q46 0/3 → 3/3 ; Q47 3/3 → 3/3. Total 103/123 → 111/123. Ancrage 140/141 avant et après. Aucune dérive : les valeurs enregistrées se retrouvent dans la base.
+
+À garder en tête. Q46 passe sur « réservations prises, du 2 au 31 octobre » : 136, et une référence de 0 pour l'an dernier. Le seed n'a pas de données de l'an dernier, donc cette comparaison ne peut pas donner d'écart chiffré, et le critère accepte la réponse qui le constate. Q43 : les chiffres donnés ne correspondent à aucune lecture complète. Q44 : aucun appel à explain_change dans les trois essais B2.
+
+### 2026-10-31 — Companion : Sonnet 5.5 en production, raisonnement bas
+
+Condition vérifiée avant la bascule, sur le banc complet Sonnet (47 questions, 3 essais, `--reasoning low`) et le banc complet Haiku de la passe B2, renoté hors ligne sans appel au modèle :
+- questions simples (1 à 41 ; 35 sont notées, 105 essais) : chiffre Sonnet 105/105, Haiku 101/105 ; outil 105/105 chacun ; aucune question à 3/3 sous Haiku tombée à 1/3 ou moins sous Sonnet ;
+- ancrage sur les 141 réponses : Sonnet 139/141 (98,6 %), Haiku 140/141.
+- enquêtes (42 à 47, 18 essais) : outil Haiku 8/18, Sonnet 15/18 ; chiffre Haiku 10/18, Sonnet 12/18.
+
+Correcteur, deux artefacts corrigés. Un intervalle de jours suivi d'un mois (« 25 au 31 octobre », avec ou sans « du ») n'est plus compté comme nombre à ancrer. Un mois nommé avec son année (« octobre 2026 ») désigne la fenêtre. Renotage avant/après :
+- banc Sonnet à huit questions (`23-45-50`) : ancrage 23/24 → 24/24 (Q45 essai 1), chiffre 17/24 → 18/24 (Q46 essai 2) ;
+- banc Sonnet complet : ancrage 139/141 et chiffre 117/123, inchangés ;
+- banc Haiku complet (passe B2) : ancrage 140/141 et chiffre 111/123, inchangés ;
+- banc Haiku à huit questions (`23-43-22`) : ancrage 24/24 et chiffre 12/24, inchangés.
+
+Restent sans correction, hors du périmètre. Q45 essai 1 (Sonnet) : « 89 % de l'écart ». Le modèle écrit en pourcentage la part 0,89 renvoyée par `explain_change`, et le correcteur ne convertit pas un ratio. Q19 essai 3 (Sonnet) : « Les 4 autres », calcul du modèle qu'aucun outil ne renvoie.
+
+Bascule. `COMPANION_LLM_MODEL` vaut `anthropic/claude-sonnet-5.5` par défaut (`env.ts`). `answerCompanion` envoie `reasoning: { effort: 'low' }` quand rien d'autre n'est demandé (`COMPANION_REASONING_EFFORT`). Aucun réglage par restaurant, aucun aiguillage entre modèles. Le défaut du banc est le modèle de production, raisonnement bas. Tests : le corps par défaut porte Sonnet 5.5 et `reasoning.effort: low` ; la route teste le même modèle. Runbook `environment.md` mis à jour ; README du banc avec `--model` et `--reasoning`.
+
+Cache vérifié, banc à deux questions, un essai, configuration de production : Q10, 12 026 tokens lus du cache sur 12 583 en entrée ; Q42, 12 026 sur 14 962 ; outil, chiffre et ancrage 2/2.
+
+Banc complet Sonnet (141 réponses) : outil 120/123, chiffre 117/123, ancrage 139/141 ; entrée 1 727 826 tokens dont 1 623 510 lus du cache ; sortie 50 115 ; latence médiane 3 029 ms, maximum 7 918 ms.
+
+Limites. La référence Haiku est le banc complet de la passe B2, joué sur un code antérieur à la mesure facultative d'`explain_change`. Je n'ai pas relancé de banc complet Haiku, pour respecter la règle d'un seul banc complet, sur le meilleur modèle. La bascule n'atteint la production qu'au déploiement de la PR, après fusion, qui reste une décision humaine. Si le `.env` de production fixe `COMPANION_LLM_MODEL` à Haiku, il faut le changer à ce moment-là ; je n'ai pas accès au VPS. `Context.md` dépasse 8 Ko (10 431 octets, contre 10 143 avant cette ligne) ; à réduire dans une passe dédiée.

@@ -6,7 +6,7 @@ import type { RestaurantSiteRole } from './site-context';
  * - `OWNER`, `MANAGER` et `ORG_MEMBER` (comptes historiques sans rôle enregistré) : tout ce que
  *   les routes autorisent. Les actions réservées au propriétaire (facturation, établissements,
  *   équipe) vérifient `OWNER` dans leur propre route.
- * - `READ_ONLY` : lecture seule, sur toutes les routes.
+ * - `READ_ONLY` : lecture seule, sur toutes les routes sauf celles de DIRECTION_ONLY_RULES.
  * - `STAFF` (équipe de service) : refus par défaut. Seules les routes ci-dessous passent, celles
  *   d'un service : réservations, plan de salle, liste d'attente, copilote de service. Une nouvelle
  *   route est donc fermée à l'équipe tant qu'on ne l'a pas ajoutée ici.
@@ -55,6 +55,15 @@ export const STAFF_RULES: readonly Rule[] = [
   { path: '/restaurants/:id/service-copilot', below: true },
 ];
 
+/**
+ * Routes de direction : la lecture seule ne les voit pas non plus, car elles affichent des chiffres
+ * et des noms de clients. L'équipe de service est déjà refusée par défaut (pas de règle ci-dessus).
+ */
+export const DIRECTION_ONLY_RULES: readonly Rule[] = [
+  // Companion : la carte « Ce soir » et le chat. Le chat refuse déjà l'écriture à la lecture seule.
+  { path: '/companion', below: true },
+];
+
 function matches(rule: Rule, method: string, route: string): boolean {
   if (rule.methods && !rule.methods.includes(method)) return false;
   return rule.below
@@ -71,9 +80,11 @@ export function evaluateRolePolicy(input: {
   const method = input.method.toUpperCase();
 
   if (input.role === 'READ_ONLY') {
-    return SAFE_METHODS.has(method)
-      ? { allowed: true }
-      : { allowed: false, code: 'READ_ONLY_ACCESS' };
+    if (!SAFE_METHODS.has(method)) return { allowed: false, code: 'READ_ONLY_ACCESS' };
+    const directionOnly = DIRECTION_ONLY_RULES.some(
+      (rule) => input.route !== undefined && matches(rule, method, input.route),
+    );
+    return directionOnly ? { allowed: false, code: 'ROLE_FORBIDDEN' } : { allowed: true };
   }
 
   if (input.role === 'STAFF') {
