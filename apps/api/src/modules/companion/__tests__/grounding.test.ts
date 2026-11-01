@@ -26,6 +26,13 @@ describe('anchoredIn', () => {
     expect(anchoredIn('Il y a 89 % de l’écart.', [{ result: { share: 0.89 } }]).ok).toBe(false);
   });
 
+  it('reconnaît un intervalle « (1er au 30) » : les deux jours ne sont pas des chiffres', () => {
+    expect(anchoredIn('La semaine (1er au 30 octobre) est en hausse.', [{ result: {} }])).toEqual({
+      ok: true,
+      unanchored: [],
+    });
+  });
+
   it('ne compte ni les dates, ni les intervalles, ni les mois AAAA-MM, ni les heures', () => {
     expect(anchoredIn('Du 25 au 31 octobre, à 19 h 30, « 2026-09 ».', [{ result: {} }])).toEqual({
       ok: true,

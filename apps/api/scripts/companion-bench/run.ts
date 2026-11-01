@@ -204,6 +204,17 @@ function topKeys<K>(totals: Map<K, number>): K[] {
   const max = Math.max(...totals.values());
   return [...totals].filter(([, value]) => value === max).map(([key]) => key);
 }
+// Appels ayant abouti à une réservation, créés entre deux jours de Paris (bornes incluses).
+function callsReservedBetween(restaurantId: string, from: string, to: string): Promise<number> {
+  return db.call.count({
+    where: {
+      restaurantId,
+      outcome: 'RESERVED',
+      createdAt: { gte: parisStart(from), lt: parisStart(shiftDay(to, 1)) },
+    },
+  });
+}
+
 function sumCovers(rows: Array<{ partySize: number }>): number {
   return rows.reduce((sum, row) => sum + row.partySize, 0);
 }
@@ -342,6 +353,8 @@ const COVERS = /couvert/i;
 const RESERVATIONS = /réservation|réservé/i;
 const SERVICE = /service|prévu|réservés? pour|réservations? pour|date de réservation/i;
 const CREATION = /créée?s?|saisies?|enregistrées?|prises?|reçues?/i;
+// Date du repas : une réponse qui dit « date du repas » donne la date de service.
+const SERVICE_OR_MEAL = /service|repas|prévu/i;
 const USUAL_DAY = /habituel|d['’]habitude|d['’]ordinaire|moyenne|en général|mardis précédents/i;
 const PREVIOUS_WEEK = /mardi dernier|semaine dernière|semaine précédente|13 octobre/i;
 const ATTENTE = /attente/i;
@@ -363,6 +376,9 @@ const FRENCH_MONTHS = [
 const CURRENT_MONTH = /ce mois|depuis le 1er|début du mois/i;
 const APPELS = /appel/i;
 const LAST_7 = /7 (derniers )?jours|sept (derniers )?jours|cette semaine/i;
+// Q19 : sept jours glissants, ou semaine civile (du lundi au jour de référence).
+const ROLLING_7 = /7 (derniers )?jours|sept (derniers )?jours/i;
+const WEEK_CIVIL = /cette semaine|semaine|lundi/i;
 const SITE = /site|internet|en ligne|web/i;
 const LAST_YEAR = /an dernier|année dernière|2025/i;
 const SHARE = /part|pourcentage|%|pour cent|proportion/i;
@@ -557,11 +573,19 @@ const QUESTIONS: Question[] = [
     expected: async (id) => {
       const calls = await computeCallStats(id, '7d', COMPANION_REFERENCE_NOW);
       const dashboard = await computeDashboardStats(id, '7d', COMPANION_REFERENCE_NOW);
+      // Semaine civile : du lundi au jour de référence.
+      const weekday = new Date(`${today()}T12:00:00Z`).getUTCDay();
+      const monday = shiftDay(today(), -((weekday + 6) % 7));
+      const civil = await callsReservedBetween(id, monday, today());
       return {
-        kind: 'count',
-        value: calls.byOutcome.RESERVED,
-        alt: dashboard.call_reservations,
-        rates: [dashboard.conversion_rate],
+        kind: 'readings',
+        readings: [
+          { says: [ROLLING_7], values: [calls.byOutcome.RESERVED] },
+          { says: [ROLLING_7], values: [dashboard.call_reservations] },
+          { says: [WEEK_CIVIL], values: [civil] },
+        ],
+        tolerance: 0.5,
+        explain: false,
       };
     },
   },
@@ -608,8 +632,21 @@ const QUESTIONS: Question[] = [
     text: 'Combien de couverts via le site web le mois dernier ?',
     expected: async (id) => {
       const [from, to] = monthBounds(previousMonth());
-      const rows = await reservationsBetween(id, 'reservedAt', from, to);
-      return count(sumCovers(rows.filter((row) => benchChannel(row) === 'website')));
+      // Date de service ou date de prise : les deux lectures sont acceptées si la réponse dit laquelle.
+      const website = (
+        rows: Array<{ channel: string; source: string | null; partySize: number }>,
+      ) => sumCovers(rows.filter((row) => benchChannel(row) === 'website'));
+      const byService = await reservationsBetween(id, 'reservedAt', from, to);
+      const byCreation = await reservationsBetween(id, 'createdAt', from, to);
+      return {
+        kind: 'readings',
+        readings: [
+          { says: [SITE, SERVICE_OR_MEAL], values: [website(byService)] },
+          { says: [SITE, CREATION], values: [website(byCreation)] },
+        ],
+        tolerance: 0.5,
+        explain: false,
+      };
     },
   },
   {

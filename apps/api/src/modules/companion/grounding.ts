@@ -51,6 +51,8 @@ export function figuresIn(reply: string): number[] {
       /\b\d+\s+(?:derniers?|dernières?|prochains?|prochaines?)?\s*(?:jours?|semaines?|mois|heures?|minutes?|lundis|mardis|mercredis|jeudis|vendredis|samedis|dimanches)\b/gi,
       ' ',
     )
+    // Intervalle « (1er au 30) » : les deux jours sont des dates, pas des chiffres à ancrer.
+    .replace(/\b1er\s+au\s+\d{1,2}\b/gi, ' ')
     .replace(/\b1er\b/gi, ' ')
     .replace(/\bsur\s+5\b/gi, ' ');
   return numbersIn(text);
