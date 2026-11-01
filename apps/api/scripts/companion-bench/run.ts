@@ -63,7 +63,14 @@ type Expected =
   | { kind: 'any'; value: number[] }
   | { kind: 'first'; value: string[]; others: string[] }
   | { kind: 'unavailable' }
-  | { kind: 'readings'; readings: Reading[]; tolerance: number; explain: boolean };
+  | {
+      kind: 'readings';
+      readings: Reading[];
+      tolerance: number;
+      explain: boolean;
+      /** Un outil quelconque suffit (query_data ou explain_change) : la lecture sans comparaison compte. */
+      anyTool?: boolean;
+    };
 
 // Une lecture possible de la question : ce que la réponse doit dire pour la montrer (mesure, date,
 // référence), et les valeurs qui la chiffrent. Une réponse est juste si elle nomme une lecture et
@@ -864,8 +871,16 @@ const QUESTIONS: Question[] = [
             await waitlistCountBetween(id, from, to, 'PROMOTED'),
           ],
         });
+        // Lecture sans comparaison : les chiffres de la période seule suffisent à répondre.
+        readings.push({
+          says: [ATTENTE, windowSays(window)],
+          values: [
+            await waitlistCountBetween(id, from, to),
+            await waitlistCountBetween(id, from, to, 'PROMOTED'),
+          ],
+        });
       }
-      return { kind: 'readings', readings, tolerance: 0.5, explain: true };
+      return { kind: 'readings', readings, tolerance: 0.5, explain: true, anyTool: true };
     },
   },
   {
@@ -1150,7 +1165,8 @@ function parseEffort(value: string | undefined): ModelChoice['reasoningEffort'] 
 
 // Outil : au moins un appel ; pour une enquête, un appel à explain_change.
 function toolUsedFor(expected: Expected | undefined, calls: ToolCall[]): boolean {
-  if (expected?.kind !== 'readings' || !expected.explain) return calls.length > 0;
+  if (expected?.kind !== 'readings' || !expected.explain || expected.anyTool)
+    return calls.length > 0;
   return calls.some((call) => call.name === 'explain_change');
 }
 
