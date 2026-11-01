@@ -323,7 +323,7 @@ describe('computeBrief : langue du tableau de bord', () => {
 
     await computeBrief({ restaurantId: 'r1', now: new Date(), log, fetcher });
 
-    expect(sentBody(fetcher)).toContain('Rédigez les points en français,');
+    expect(sentBody(fetcher)).toContain('Rédigez les points en français.');
   });
 
   it.each([
@@ -335,7 +335,7 @@ describe('computeBrief : langue du tableau de bord', () => {
 
     await computeBrief({ restaurantId: 'r1', now: new Date(), language, log, fetcher });
 
-    expect(sentBody(fetcher)).toContain(`Rédigez les points en ${name},`);
+    expect(sentBody(fetcher)).toContain(`Rédigez les points en ${name}.`);
     expect(redisCache.get).toHaveBeenCalledWith(`companion:brief:r1:2026-10-31:soir:${language}`);
   });
 

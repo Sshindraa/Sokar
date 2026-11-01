@@ -3427,3 +3427,21 @@ Banc (`brief-2026-11-01T20-12-11-577Z.json`, trois scénarios, trois essais, fr)
 | point attendu exact | 6/9 (9/9 au passage précédent) |
 
 Points : 65 proposés, 0 écarté (ni trop longs, ni chiffre absent), 27 retenus (trois par résumé, 9 résumés sur 9), 38 non retenus faute de place. Le point attendu manque dans les trois essais du scénario 3 (sans la formule Avis) : le chiffre des couverts (32) n'y figure pas, car les trois points retenus portent sur les réservations à surveiller. Longueur des phrases : médiane 15 mots, maximum 27. Latence du tour modèle : médiane 3 108 ms (3 870 au passage précédent), maximum 3 789 ms. Coût : entrée 12 855 tokens, soit environ 1 428 par résumé, dont 4 488 lus du cache ; sortie 2 732 tokens, soit environ 304 par résumé.
+
+### 2026-11-01 — Companion : le modèle choisit ses trois points
+
+`maxItems` est accepté sans erreur (HTTP 200) mais n'est pas respecté : à une demande de six faits avec `maxItems: 3`, Sonnet 5.5 a renvoyé six points, trois fois sur trois, sur des appels réels. Le schéma reste donc sans `maxItems`. La limite passe par la consigne (« choisissez les trois points les plus utiles avant le service »), et le serveur garde la coupe à trois comme filet.
+
+Consigne : « ce soir d'abord, puis hier » dans les points, et le choix des trois points les plus utiles avant le service. Pas de liste de formulations.
+
+Banc (`brief-2026-11-01T20-24-35-484Z.json`, trois scénarios, trois essais, fr). Critères inchangés :
+
+| Critère | Résultat |
+|---|---|
+| ancrage | 9/9 |
+| au plus trois phrases | 9/9 |
+| au plus 30 mots par phrase | 9/9 |
+| aucun nom | 9/9 |
+| point attendu exact | 9/9 (6/9 au passage précédent : le scénario sans Avis mentionne de nouveau les couverts) |
+
+Points proposés : trois par résumé, 27 au total. Points écartés : un, dans l'essai 3.1, qui laisse un résumé à deux phrases. Latence du tour modèle : médiane 2 431 ms (3 108 au passage précédent), maximum 2 655 ms. Coût : entrée 12 882 tokens, soit environ 1 431 par résumé, dont 4 512 lus du cache ; sortie 1 600 tokens, soit environ 178 par résumé.
