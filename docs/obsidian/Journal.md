@@ -3445,3 +3445,19 @@ Banc (`brief-2026-11-01T20-24-35-484Z.json`, trois scénarios, trois essais, fr)
 | point attendu exact | 9/9 (6/9 au passage précédent : le scénario sans Avis mentionne de nouveau les couverts) |
 
 Points proposés : trois par résumé, 27 au total. Points écartés : un, dans l'essai 3.1, qui laisse un résumé à deux phrases. Latence du tour modèle : médiane 2 431 ms (3 108 au passage précédent), maximum 2 655 ms. Coût : entrée 12 882 tokens, soit environ 1 431 par résumé, dont 4 512 lus du cache ; sortie 1 600 tokens, soit environ 178 par résumé.
+
+### 2026-11-01 — Companion : comparaison calendaire, banc à date fixe
+
+Référence `previous_period` (query_data et explain_change, même code) : un mois civil complet se compare au mois civil précédent ; un mois en cours (du 1er au jour J) à son intervalle du mois précédent, borné à la fin de ce mois ; une semaine lundi-dimanche à la semaine précédente ; une seule journée et les autres périodes gardent la même durée juste avant. La réponse donne `reference_from` et `reference_to` (aussi pour `last_year`), et la description générée le dit. Tests : mois complet, mois en cours, 31 → 30, février (y compris bissextile), semaine, période quelconque, journée seule.
+
+Banc Q44 : une lecture sans comparaison (chiffres de la période seule) compte à côté de la lecture avec comparaison ; `query_data` ou `explain_change` suffisent (`anyTool`). Correction de critère : le texte de la question est inchangé.
+
+Date fixe : `now` est injecté dans `answerCompanion`, `runCompanionTool`, les statistiques du tableau de bord, des appels et des no-shows, et la liste des créneaux ; le défaut reste `new Date()` en production. `COMPANION_REFERENCE_NOW` (31 octobre 2026, 12 h à Paris) est lu par le banc et par le seed (`apps/api/seed.ts`). L'horodatage des fichiers de résultats reste l'heure réelle : ce n'est pas une entrée.
+
+Bug trouvé au premier passage à date fixe : quatorze attentes du banc appelaient les fonctions du tableau de bord sans `now`, donc à l'heure réelle, alors que l'outil recevait la date de référence. Le renotage ne le voyait pas (il recalcule à la même heure réelle). Corrigé dans `0cb5d945`. Le premier passage complet avait 8 questions en dérive au renotage (2, 3, 4, 5, 17, 18, 19, 20) : ses chiffres sont invalides.
+
+Résultats (banc corrigé, `2026-11-01T20-57-50-719Z.json`, trois essais) :
+- Enquêtes 42 à 47 (`2026-11-01T20-56-13-710Z.json`) : outil 18/18, chiffre 18/18, ancrage 17/18. Le raté d'ancrage est un faux négatif du banc : « (1er au 30) » n'est pas reconnu comme un intervalle, donc le 30 compte comme chiffre absent.
+- Banc complet : outil 123/123, chiffre 118/123, ancrage 141/141. Échecs de chiffre : Q19 (deux essais), Q24 (trois essais). Q19 attend sept jours glissants (25–31 octobre) ; le modèle a répondu avec la semaine civile (lundi 26 au samedi 31). Q24 attend la date de service ; le modèle a répondu avec la date de prise, 407 couverts au lieu de 388. Ce sont des lectures défendables : la question est ambiguë, à arbitrer dans le critère.
+- Dérive au renotage : nulle sur les deux fichiers corrigés.
+- Tokens, banc complet : 1 796 917 en entrée, dont 1 692 395 lus du cache ; 49 938 en sortie. Enquêtes : 254 806 en entrée, dont 224 820 du cache ; 10 811 en sortie. Latence médiane 3 498 ms, maximum 6 759 ms.
