@@ -3368,3 +3368,21 @@ Longueur des phrases : médiane 20 mots, maximum 29. Latence du tour modèle : m
 Navigateur, sans cache (vidé avant), tableau de bord en français, panneau Companion ouvert : la carte et « Résumé en préparation… » sont là à 281 ms ; le résumé s'affiche à 2 128 ms. Captures en clair et en sombre, en fin de chargement.
 
 Constat : la carte est montée même fermée, donc le résumé se calcule à chaque chargement du tableau de bord, une fois par restaurant, langue et service toutes les 30 min, même si Companion n'est pas ouvert.
+
+### 2026-11-01 — Companion : consigne de longueur, deuxième passe
+
+Une seule modification, de principe : la consigne fixe un budget (trois phrases, vingt mots par phrase, soixante mots en tout) et demande de choisir les points qui comptent le plus, puis de couper une phrase trop longue plutôt que d'en ajouter une. Aucun cas, aucune formulation, modèle inchangé. Tests : brief 12/12, tsc sans erreur.
+
+Banc (`brief-2026-11-01T19-39-24-295Z.json`, trois scénarios, trois essais, fr), comparé au premier passage (`brief-2026-11-01T19-30-10-443Z.json`) :
+
+| Critère | Premier passage | Deuxième passage |
+|---|---|---|
+| ancrage | 9/9 | 9/9 |
+| point attendu exact | 9/9 | 9/9 |
+| aucun nom | 9/9 | 9/9 |
+| au plus trois phrases | 6/9 | 5/9 |
+| au plus 20 mots par phrase | 2/9 | 7/9 |
+
+Mots par phrase : médiane 20 → 15, maximum 29 → 26. Latence du tour modèle : médiane 2 097 → 1 813 ms, maximum 2 637 → 2 320 ms. Coût : entrée 10 794 → 11 253 tokens (environ 1 250 par résumé), aucun lu du cache ; sortie 1 630 → 1 286 tokens (environ 143 par résumé).
+
+Reste : quatre essais sur neuf dépassent trois phrases (quatre à cinq). Le modèle coupe en phrases plus courtes au lieu de réduire le contenu. Non corrigé dans cette passe : à trancher, accepter quatre phrases ou appliquer le plafond en production.
