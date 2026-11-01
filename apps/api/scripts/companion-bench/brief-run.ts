@@ -10,7 +10,7 @@ import path from 'node:path';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { env } from '../../src/env';
 import { db } from '../../src/shared/db/client';
-import { briefFacts, modelBrief } from '../../src/modules/companion/brief';
+import { briefFacts, composeBrief, modelBrief } from '../../src/modules/companion/brief';
 import { computeTonight } from '../../src/modules/companion/tonight';
 import { BRIEF_CRITERIA, BRIEF_SCENARIOS, scoreBrief, sentenceWords } from './brief-scenarios';
 
@@ -34,7 +34,12 @@ function isLocalDatabase(rawUrl: string | undefined): boolean {
 interface Run {
   scenario: number;
   trial: number;
+  /** Texte retenu par le serveur : les points valides, joints. Vide si aucun n'est valide. */
   reply: string;
+  /** Réponse brute du modèle (JSON). */
+  raw: string;
+  points_discarded: number;
+  invalid: boolean;
   expected: number[];
   score: ReturnType<typeof scoreBrief>;
   model: string;
@@ -69,11 +74,26 @@ async function main() {
       const card = await computeTonight(restaurantId, new Date(scenario.now));
       const facts = await briefFacts(restaurantId, card, { recovery: scenario.recovery });
       const answer = await modelBrief(facts, 'fr');
-      const score = scoreBrief({ reply: answer.text, facts, expected, names });
+      const composed = composeBrief(facts, answer.text);
+      const reply = composed.text ?? '';
+      const score =
+        composed.text === null
+          ? {
+              anchored: false,
+              sentences: 0,
+              withinSentences: false,
+              withinWords: false,
+              point: false,
+              names: [] as string[],
+            }
+          : scoreBrief({ reply, facts, expected, names });
       runs.push({
         scenario: scenario.n,
         trial,
-        reply: answer.text,
+        reply,
+        raw: answer.text,
+        points_discarded: composed.discarded,
+        invalid: composed.invalid,
         expected,
         score,
         model: answer.model,
@@ -84,7 +104,7 @@ async function main() {
       });
       // eslint-disable-next-line no-console -- banc : bilan lu dans le terminal
       console.log(
-        `[${scenario.n}.${trial}] ancré ${score.anchored}, ${score.sentences} phrases, point ${score.point}, noms ${score.names.length} : ${answer.text}`,
+        `[${scenario.n}.${trial}] ancré ${score.anchored}, ${score.sentences} phrases, point ${score.point}, noms ${score.names.length}, écartés ${composed.discarded} : ${reply}`,
       );
     }
   }
@@ -97,6 +117,8 @@ async function main() {
     wordsPerSentenceMedian: median(runs.flatMap((run) => sentenceWords(run.reply))),
     wordsPerSentenceMax: Math.max(...runs.flatMap((run) => sentenceWords(run.reply))),
     point: count((run) => run.score.point),
+    pointsDiscarded: runs.reduce((sum, run) => sum + run.points_discarded, 0),
+    invalidReplies: runs.filter((run) => run.invalid).length,
     noName: count((run) => run.score.names.length <= BRIEF_CRITERIA.maxNames),
     latencyMedianMs: median(runs.map((run) => run.latency_ms as number)),
     latencyMaxMs: Math.max(...runs.map((run) => run.latency_ms as number)),

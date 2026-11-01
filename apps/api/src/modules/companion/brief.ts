@@ -1,10 +1,12 @@
 /**
- * Résumé IA de la carte « Ce soir » : trois phrases au plus, à partir de données que le serveur a
- * déjà calculées (tonight.ts, explain_change, avis en récupération). Le modèle ne reçoit ni nom, ni
- * texte client, et ne calcule rien. Un chiffre absent des données, une erreur ou un délai de 8 s :
+ * Résumé IA de la carte « Ce soir » : trois points au plus, à partir de données que le serveur a
+ * déjà calculées (tonight.ts, explain_change, avis en récupération). Le modèle répond par une liste
+ * de points ; le serveur ne garde que ceux qui sont courts et dont les chiffres sont dans les données.
+ * Le modèle ne reçoit ni nom, ni texte client, et ne calcule rien. Une erreur ou un délai de 8 s :
  * pas de résumé, et seule une trace sans donnée personnelle est écrite.
  */
 import type { FastifyBaseLogger } from 'fastify';
+import { z } from 'zod';
 import { redisCache } from '../../shared/redis/client';
 import {
   CompanionUpstreamError,
@@ -19,6 +21,24 @@ import { computeTonight, type TonightCard, type TonightRow } from './tonight';
 const BRIEF_TIMEOUT_MS = 8_000;
 const BRIEF_CACHE_SECONDS = 1_800;
 const RECOVERY_DAYS = 30;
+const BRIEF_POINTS = 3;
+const POINT_MAX_WORDS = 20;
+
+// Forme imposée au fournisseur : la liste de points. Validée ensuite par Zod, point par point.
+const BRIEF_RESPONSE_FORMAT = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'brief_points',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: { points: { type: 'array', items: { type: 'string' } } },
+      required: ['points'],
+      additionalProperties: false,
+    },
+  },
+} as const;
+const briefReplySchema = z.object({ points: z.array(z.string()) });
 
 interface ExplanationSummary {
   total: Compared;
@@ -150,15 +170,16 @@ export function briefSystemPrompt(language: BriefLanguage): string {
     "Vous êtes l'assistant IA de Sokar. Vous rédigez le résumé de la carte « Ce soir » d'un restaurant, à partir des données fournies.",
     '',
     'Règles :',
-    `- Rédigez le résumé en ${LANGUAGE_NAMES[language]}. Trois phrases au plus, vingt mots au plus par phrase, soixante mots en tout : choisissez les points qui comptent le plus, et coupez une phrase trop longue plutôt que d’en ajouter une. Adressez-vous au lecteur avec la politesse de cette langue. Texte simple, sans Markdown.`,
+    `- Rédigez les points en ${LANGUAGE_NAMES[language]}, du plus utile au moins utile, chacun en une phrase courte. Adressez-vous au lecteur avec la politesse de cette langue.`,
     "- Mettez d'abord ce qui demande une action ou sort de l'habitude : ce soir, puis hier.",
     "- Ne citez que les chiffres des données, tels qu'ils y figurent. Ne calculez rien : ni somme, ni écart, ni pourcentage.",
     '- Reliez seulement ce que les données montrent ensemble, en « en même temps ». Jamais une cause extérieure aux données, jamais « à cause de ». Dites ce que vous ne savez pas.',
     "- Vous ne recevez aucun nom de client : n'en écrivez aucun.",
+    '- Répondez par un objet JSON de la forme {"points": ["…"]}, sans Markdown.',
   ].join('\n');
 }
 
-/** Un tour du modèle sur les données : le texte, sans contrôle d'ancrage. Le banc et computeBrief s'en servent. */
+/** Un tour du modèle sur les données : la réponse brute (JSON), sans validation. Le banc et computeBrief s'en servent. */
 export function modelBrief(
   facts: BriefFacts,
   language: BriefLanguage,
@@ -168,8 +189,54 @@ export function modelBrief(
     system: briefSystemPrompt(language),
     user: `Données de la carte (JSON) :\n${JSON.stringify(facts)}`,
     timeoutMs: BRIEF_TIMEOUT_MS,
+    responseFormat: BRIEF_RESPONSE_FORMAT,
     fetcher,
   });
+}
+
+export interface ComposedBrief {
+  /** Les points retenus, une phrase par point ; null sans point valide. */
+  text: string | null;
+  /** Points écartés : plus de vingt mots, ou un chiffre absent des données. */
+  discarded: number;
+  /** Chiffres absents des données, dans les points écartés. */
+  unanchored: number[];
+  /** Réponse sans JSON valide : rien n'est retenu, et rien n'est gardé en cache. */
+  invalid: boolean;
+}
+
+/** Valide la réponse du modèle point par point, et garde les trois premiers points valides. */
+export function composeBrief(facts: BriefFacts, raw: string): ComposedBrief {
+  let points: string[];
+  try {
+    const parsed = briefReplySchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) return { text: null, discarded: 0, unanchored: [], invalid: true };
+    points = parsed.data.points;
+  } catch {
+    return { text: null, discarded: 0, unanchored: [], invalid: true };
+  }
+
+  const kept: string[] = [];
+  const unanchored: number[] = [];
+  let discarded = 0;
+  for (const point of points) {
+    const text = point.trim();
+    const words = text.split(/\s+/).filter(Boolean).length;
+    const missing = anchoredIn(text, [{ result: facts }]).unanchored;
+    if (words === 0 || words > POINT_MAX_WORDS || missing.length > 0) {
+      discarded++;
+      unanchored.push(...missing);
+    } else if (kept.length < BRIEF_POINTS) {
+      kept.push(text);
+    }
+  }
+  const sentences = kept.map((point) => (/[.!?]$/.test(point) ? point : `${point}.`));
+  return {
+    text: sentences.length > 0 ? sentences.join(' ') : null,
+    discarded,
+    unanchored,
+    invalid: false,
+  };
 }
 
 const cacheKey = (
@@ -207,8 +274,8 @@ export async function cachedBrief(
 }
 
 /**
- * Le résumé de « Ce soir » pour ce moment : du cache si possible, sinon le modèle. Null si un
- * chiffre n'est pas dans les données, si le modèle échoue ou dépasse 8 s.
+ * Le résumé de « Ce soir » pour ce moment : du cache si possible, sinon le modèle. Null si aucun
+ * point n'est valide, si la réponse n'est pas du JSON, si le modèle échoue ou dépasse 8 s.
  */
 export async function computeBrief(input: {
   restaurantId: string;
@@ -229,13 +296,14 @@ export async function computeBrief(input: {
       recovery: input.recovery ?? true,
     });
     const answer = await modelBrief(facts, language, input.fetcher);
-    const unanchored = anchoredIn(answer.text, [{ result: facts }]).unanchored;
-    const brief = unanchored.length === 0 ? answer.text : null;
+    const composed = composeBrief(facts, answer.text);
+    const brief = composed.text;
     input.log.info(
       {
         restaurantId: input.restaurantId,
-        outcome: brief ? 'ok' : 'ungrounded',
-        unanchored,
+        outcome: composed.invalid ? 'invalid' : brief ? 'ok' : 'no_valid_point',
+        points_discarded: composed.discarded,
+        unanchored: composed.unanchored,
         model: answer.model,
         latency_ms: answer.latencyMs,
         input_tokens: answer.inputTokens,
@@ -244,7 +312,7 @@ export async function computeBrief(input: {
       },
       'companion brief',
     );
-    await writeCache(key, brief);
+    if (!composed.invalid) await writeCache(key, brief);
     return brief;
   } catch (error) {
     // Ni le texte du modèle ni les données ne sont journalisés : seulement la cause.

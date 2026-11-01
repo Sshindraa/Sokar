@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { FastifyBaseLogger } from 'fastify';
 import { redisCache } from '../../../shared/redis/client';
-import { cachedBrief, computeBrief } from '../brief';
+import { cachedBrief, composeBrief, computeBrief, type BriefFacts } from '../brief';
 import { explainChange } from '../explain-change';
 import { computeQueryData } from '../query-data';
 import { computeTonight } from '../tonight';
@@ -71,14 +71,31 @@ const RECOVERY = {
   ],
 };
 
+// Les chiffres de ces données sont ceux des mocks ci-dessus : 32, 28,5, 14, 9, 2.
+const FACTS = {
+  covers: 32,
+  usualCovers: 28.5,
+  yesterday: { reservations: { total: { value: 14, reference: 9 } } },
+  recovery: { days: 30, statuses: [{ status: 'OPEN', count: 2 }] },
+} as unknown as BriefFacts;
+
+const GROUNDED_POINTS = [
+  'Ce soir, 32 couverts, contre 28,5 habituellement.',
+  'Hier, 14 réservations contre 9 habituellement.',
+  'En même temps, 2 tâches de récupération sont ouvertes.',
+];
+const GROUNDED = GROUNDED_POINTS.join(' ');
+
 const log = { info: vi.fn(), warn: vi.fn() } as unknown as FastifyBaseLogger;
 
-function fetcherReplying(content: string) {
+/** Réponse du fournisseur : le contenu renvoyé, tel quel (JSON attendu, sauf texte donné). */
+function fetcherReplying(content: string | { points: string[] }) {
+  const text = typeof content === 'string' ? content : JSON.stringify(content);
   return vi.fn(
     async (_url: string | URL | Request, _init?: RequestInit) =>
       new Response(
         JSON.stringify({
-          choices: [{ message: { role: 'assistant', content } }],
+          choices: [{ message: { role: 'assistant', content: text } }],
           usage: {
             prompt_tokens: 900,
             completion_tokens: 40,
@@ -94,9 +111,6 @@ function fetcherReplying(content: string) {
 const sentBody = (fetcher: ReturnType<typeof fetcherReplying>) =>
   String((fetcher.mock.calls[0][1] as RequestInit).body);
 
-const GROUNDED =
-  'Ce soir, 32 couverts, contre 28,5 habituellement. Hier, 14 réservations contre 9 habituellement ; en même temps, 2 tâches de récupération sont ouvertes.';
-
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(computeTonight).mockResolvedValue(CARD as never);
@@ -106,14 +120,15 @@ beforeEach(() => {
   vi.mocked(redisCache.set).mockResolvedValue('OK' as never);
 });
 
-describe('computeBrief : résumé ancré', () => {
-  it('rend le résumé quand chaque chiffre figure dans les données, sans nom envoyé au modèle', async () => {
-    const fetcher = fetcherReplying(GROUNDED);
+describe('computeBrief : points ancrés', () => {
+  it('rend les points joints quand chacun est valide, sans nom envoyé au modèle', async () => {
+    const fetcher = fetcherReplying({ points: GROUNDED_POINTS });
 
     const brief = await computeBrief({ restaurantId: 'r1', now: new Date(), log, fetcher });
 
     expect(brief).toBe(GROUNDED);
     expect(sentBody(fetcher)).not.toContain('Marie');
+    expect(sentBody(fetcher)).toContain('brief_points');
     expect(redisCache.set).toHaveBeenCalledWith(
       'companion:brief:r1:2026-10-31:soir:fr',
       JSON.stringify({ brief: GROUNDED }),
@@ -124,7 +139,7 @@ describe('computeBrief : résumé ancré', () => {
 
   it('envoie les données sans la formule Avis : recovery reste null', async () => {
     vi.mocked(computeQueryData).mockResolvedValue({ unavailable: 'plan' } as never);
-    const fetcher = fetcherReplying(GROUNDED.replace(/, 2 tâches.*$/, '.'));
+    const fetcher = fetcherReplying({ points: GROUNDED_POINTS.slice(0, 2) });
 
     await computeBrief({ restaurantId: 'r1', now: new Date(), recovery: true, log, fetcher });
 
@@ -132,15 +147,78 @@ describe('computeBrief : résumé ancré', () => {
   });
 });
 
+describe('composeBrief : validation point par point', () => {
+  const raw = (points: string[]) => JSON.stringify({ points });
+
+  it('garde les trois premiers points valides, dans l’ordre, et ignore le reste', () => {
+    const composed = composeBrief(
+      FACTS,
+      raw([...GROUNDED_POINTS, 'Hier, 14 réservations contre 9 habituellement.']),
+    );
+
+    expect(composed).toEqual({ text: GROUNDED, discarded: 0, unanchored: [], invalid: false });
+  });
+
+  it('écarte un point de plus de vingt mots', () => {
+    const long = Array.from({ length: 21 }, () => 'mot').join(' ');
+
+    const composed = composeBrief(FACTS, raw([long, GROUNDED_POINTS[0]]));
+
+    expect(composed.discarded).toBe(1);
+    expect(composed.text).toBe(GROUNDED_POINTS[0]);
+  });
+
+  it('écarte un point dont un chiffre n’est pas dans les données, et le signale', () => {
+    const composed = composeBrief(FACTS, raw(['Ce soir, 40 couverts.', GROUNDED_POINTS[1]]));
+
+    expect(composed).toEqual({
+      text: GROUNDED_POINTS[1],
+      discarded: 1,
+      unanchored: [40],
+      invalid: false,
+    });
+  });
+
+  it('écarte un point vide, et ajoute le point final s’il manque', () => {
+    const composed = composeBrief(FACTS, raw(['   ', 'Ce soir, 32 couverts']));
+
+    expect(composed.discarded).toBe(1);
+    expect(composed.text).toBe('Ce soir, 32 couverts.');
+  });
+
+  it('rend null sans aucun point valide', () => {
+    const composed = composeBrief(FACTS, raw(['Ce soir, 40 couverts.']));
+
+    expect(composed).toEqual({ text: null, discarded: 1, unanchored: [40], invalid: false });
+  });
+
+  it('marque une réponse qui n’est pas du JSON valide', () => {
+    expect(composeBrief(FACTS, 'Ce soir, 32 couverts.')).toEqual({
+      text: null,
+      discarded: 0,
+      unanchored: [],
+      invalid: true,
+    });
+    expect(composeBrief(FACTS, '{"texte": "pas de points"}').invalid).toBe(true);
+  });
+});
+
 describe('computeBrief : pas de résumé', () => {
-  it('refuse le résumé quand un chiffre n’est pas dans les données, et trace le nombre sans nom', async () => {
-    const fetcher = fetcherReplying('Ce soir, 40 couverts, contre 28,5 habituellement.');
+  it('rend null quand aucun point n’est valide, et trace le nombre écarté sans nom', async () => {
+    const fetcher = fetcherReplying({
+      points: ['Ce soir, 40 couverts, contre 28,5 habituellement.'],
+    });
 
     const brief = await computeBrief({ restaurantId: 'r1', now: new Date(), log, fetcher });
 
     expect(brief).toBeNull();
     expect(log.info).toHaveBeenCalledWith(
-      expect.objectContaining({ restaurantId: 'r1', outcome: 'ungrounded', unanchored: [40] }),
+      expect.objectContaining({
+        restaurantId: 'r1',
+        outcome: 'no_valid_point',
+        points_discarded: 1,
+        unanchored: [40],
+      }),
       'companion brief',
     );
     expect(JSON.stringify(vi.mocked(log.info).mock.calls)).not.toContain('Marie');
@@ -150,6 +228,19 @@ describe('computeBrief : pas de résumé', () => {
       'EX',
       1800,
     );
+  });
+
+  it('rend null sur une réponse sans JSON, sans écrire en cache', async () => {
+    const fetcher = fetcherReplying('Ce soir, 32 couverts.');
+
+    const brief = await computeBrief({ restaurantId: 'r1', now: new Date(), log, fetcher });
+
+    expect(brief).toBeNull();
+    expect(log.info).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'invalid' }),
+      'companion brief',
+    );
+    expect(redisCache.set).not.toHaveBeenCalled();
   });
 
   it('rend null au délai dépassé, sans écrire en cache', async () => {
@@ -194,7 +285,7 @@ describe('computeBrief : pas de résumé', () => {
 describe('computeBrief : cache', () => {
   it('sert le résumé en cache sans appeler le modèle', async () => {
     vi.mocked(redisCache.get).mockResolvedValue(JSON.stringify({ brief: 'Résumé en cache.' }));
-    const fetcher = fetcherReplying(GROUNDED);
+    const fetcher = fetcherReplying({ points: GROUNDED_POINTS });
 
     const brief = await computeBrief({ restaurantId: 'r1', now: new Date(), log, fetcher });
 
@@ -211,23 +302,23 @@ describe('computeBrief : cache', () => {
 
 describe('computeBrief : langue du tableau de bord', () => {
   it('écrit en français quand aucune langue n’est demandée', async () => {
-    const fetcher = fetcherReplying(GROUNDED);
+    const fetcher = fetcherReplying({ points: GROUNDED_POINTS });
 
     await computeBrief({ restaurantId: 'r1', now: new Date(), log, fetcher });
 
-    expect(sentBody(fetcher)).toContain('Rédigez le résumé en français.');
+    expect(sentBody(fetcher)).toContain('Rédigez les points en français,');
   });
 
   it.each([
     ['en', 'anglais'],
     ['es', 'espagnol'],
     ['it', 'italien'],
-  ] as const)('demande le résumé en %s, avec son cache propre', async (language, name) => {
-    const fetcher = fetcherReplying(GROUNDED);
+  ] as const)('demande les points en %s, avec son cache propre', async (language, name) => {
+    const fetcher = fetcherReplying({ points: GROUNDED_POINTS });
 
     await computeBrief({ restaurantId: 'r1', now: new Date(), language, log, fetcher });
 
-    expect(sentBody(fetcher)).toContain(`Rédigez le résumé en ${name}.`);
+    expect(sentBody(fetcher)).toContain(`Rédigez les points en ${name},`);
     expect(redisCache.get).toHaveBeenCalledWith(`companion:brief:r1:2026-10-31:soir:${language}`);
   });
 

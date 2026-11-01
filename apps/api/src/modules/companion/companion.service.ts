@@ -160,6 +160,7 @@ async function requestTurn(
   fetcher: typeof fetch,
   model: CompanionModelChoice,
   timeoutMs: number = REQUEST_TIMEOUT_MS,
+  responseFormat?: unknown,
 ): Promise<AssistantMessage> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -181,6 +182,7 @@ async function requestTurn(
           ...(withTools ? { tools: COMPANION_TOOLS, tool_choice: 'auto' } : {}),
           max_tokens: MAX_OUTPUT_TOKENS,
           ...(model.reasoningEffort ? { reasoning: { effort: model.reasoningEffort } } : {}),
+          ...(responseFormat ? { response_format: responseFormat } : {}),
         }),
         signal: controller.signal,
       },
@@ -225,6 +227,8 @@ export async function completeWithoutTools(input: {
   system: string;
   user: string;
   timeoutMs: number;
+  /** Forme de réponse imposée au fournisseur (json_schema), quand il la prend en charge. */
+  responseFormat?: unknown;
   fetcher?: typeof fetch;
 }): Promise<CompletionAnswer> {
   const started = performance.now();
@@ -252,6 +256,7 @@ export async function completeWithoutTools(input: {
     input.fetcher ?? fetch,
     model,
     input.timeoutMs,
+    input.responseFormat,
   );
   const text = message.content?.replaceAll('**', '').trim() ?? '';
   if (!text) throw new CompanionUpstreamError('empty_reply');

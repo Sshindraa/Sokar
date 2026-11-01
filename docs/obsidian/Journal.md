@@ -3386,3 +3386,19 @@ Banc (`brief-2026-11-01T19-39-24-295Z.json`, trois scénarios, trois essais, fr)
 Mots par phrase : médiane 20 → 15, maximum 29 → 26. Latence du tour modèle : médiane 2 097 → 1 813 ms, maximum 2 637 → 2 320 ms. Coût : entrée 10 794 → 11 253 tokens (environ 1 250 par résumé), aucun lu du cache ; sortie 1 630 → 1 286 tokens (environ 143 par résumé).
 
 Reste : quatre essais sur neuf dépassent trois phrases (quatre à cinq). Le modèle coupe en phrases plus courtes au lieu de réduire le contenu. Non corrigé dans cette passe : à trancher, accepter quatre phrases ou appliquer le plafond en production.
+
+### 2026-11-01 — Companion : résumé en points validés par le serveur
+
+Sortie structurée : `json_schema` (`points: string[]`) envoyé à `anthropic/claude-sonnet-5.5`. Vérifié avant emploi : les métadonnées OpenRouter listent `response_format` et `structured_outputs` pour ce modèle, et un appel réel répond en 200 avec un contenu conforme au schéma. La réponse est tout de même validée par Zod.
+
+Serveur : les trois premiers points valides sont gardés, dans l'ordre du modèle. Un point est valide s'il fait vingt mots au plus et si ses chiffres sont dans les données. Aucun point valide : pas de résumé, gardé en cache. Réponse sans JSON valide : pas de résumé, non gardé en cache. Le texte est la suite des points, avec un point final ajouté s'il manque. La trace donne le nombre de points écartés et les chiffres absents, sans nom.
+
+Consigne : principe seul (points courts, les plus utiles d'abord, réponse en JSON). Les limites chiffrées sont retirées de la consigne.
+
+Tests : companion 106/106, dont trois premiers points, point trop long, chiffre absent, point vide, aucun point valide, JSON invalide, délai et cache.
+
+Banc (`brief-2026-11-01T19-46-19-019Z.json`, trois scénarios, trois essais, fr). Critères inchangés : ancrage, au plus trois phrases, au plus vingt mots par phrase, point attendu et aucun nom, tous à 9/9. Longueur des phrases : médiane 17 mots, maximum 20. Points écartés : 31 sur 51 proposés, tous parce qu'ils dépassent vingt mots ; aucun pour chiffre absent. Aucune réponse sans JSON valide. Latence du tour modèle : médiane 3 870 ms (1 813 au passage précédent), maximum 5 301 ms. Coût : entrée 12 783 tokens, soit environ 1 420 par résumé, dont 4 424 lus du cache ; sortie 3 285 tokens, soit environ 365 par résumé.
+
+Constat : le modèle écrit encore des points de trente à quarante mots, et ce sont souvent les plus utiles qui sont écartés. Dans le scénario 2, un essai ne garde qu'un point, sur la réservation du soir ; la surveillance des réservations et la veille sont écartées. La consigne seule ne suffit pas. À décider : relever la limite (correction de critère notée ici) ou autre forme de sortie.
+
+Navigateur, cache vidé, tableau de bord en français : la carte et « Résumé en préparation… » sont là à 978 ms, le résumé s'affiche à 4 590 ms. Captures en clair et en sombre, avec le résumé à un seul point.
