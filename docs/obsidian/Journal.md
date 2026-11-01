@@ -3461,3 +3461,19 @@ Résultats (banc corrigé, `2026-11-01T20-57-50-719Z.json`, trois essais) :
 - Banc complet : outil 123/123, chiffre 118/123, ancrage 141/141. Échecs de chiffre : Q19 (deux essais), Q24 (trois essais). Q19 attend sept jours glissants (25–31 octobre) ; le modèle a répondu avec la semaine civile (lundi 26 au samedi 31). Q24 attend la date de service ; le modèle a répondu avec la date de prise, 407 couverts au lieu de 388. Ce sont des lectures défendables : la question est ambiguë, à arbitrer dans le critère.
 - Dérive au renotage : nulle sur les deux fichiers corrigés.
 - Tokens, banc complet : 1 796 917 en entrée, dont 1 692 395 lus du cache ; 49 938 en sortie. Enquêtes : 254 806 en entrée, dont 224 820 du cache ; 10 811 en sortie. Latence médiane 3 498 ms, maximum 6 759 ms.
+
+### 2026-11-01 — Companion : seed, lectures Q19 et Q24, consommation
+
+Seed : `apps/api/seed.ts` revient à l'heure réelle. `COMPANION_REFERENCE_NOW` vit dans `@sokar/config` (source unique, `dist` reconstruit, non suivi) ; `seed-companion.ts` part de cette date. Seed companion relancé en local, après sauvegarde de `sokar_preview`. Renotage du banc complet `2026-11-01T20-57-50-719Z.json` après relance : dérive sur 30 questions. Ce banc a été joué sur des données que la relance a remplacées (le seed reste déterministe, mulberry32) ; une dérive nulle exige un banc complet neuf sur la nouvelle base, non lancé dans cette passe.
+
+Lectures Q19 et Q24 : Q19 accepte sept jours glissants ou semaine civile (lundi au jour de référence), Q24 date de service ou date de prise, si la réponse dit laquelle ; « date du repas » vaut date de service. Texte des questions inchangé. Ancrage : « (1er au 30) » est un intervalle de dates. Renotage des réponses Q19 et Q24 (`2026-11-01T21-14-00-200Z.json`) : chiffre 6/6.
+
+Consommation, sous-ensemble 10, 33, 42-47, trois essais :
+
+| Configuration | Outil | Chiffre | Ancrage | Entrée hors cache | Sortie | Résultats d'outils |
+|---|---|---|---|---|---|---|
+| Initiale (`…21-14-52`) | 23/24 | 22/24 | 23/24 | 33 739 | 13 157 | 44 751 car. |
+| Résultats allégés (`…21-18-11`) | 24/24 | 22/24 | 24/24 | 38 532 | 14 574 | 38 276 car. |
+| + effort minimal entre les outils (`…21-21-16`) | 24/24 | 22/24 | 24/24 | 32 053 | 14 374 | — |
+
+Résultats allégés : libellé de chaque dimension une fois (`labels`), groupes à zéro non renvoyés. Effort minimal : Sonnet 5.5 ne peut pas désactiver son raisonnement, OpenRouter répond 400 (« Reasoning is mandatory for this endpoint and cannot be disabled ») pour `none` et `enabled: false` ; `minimal` est accepté. Premier tour en `low`, tours suivants en `minimal`. Les deux changements sont gardés : outil, chiffre et ancrage ne baissent pas. Gain de tokens non établi : un seul passage par configuration, et la sortie de la dernière configuration dépasse l'initiale.
