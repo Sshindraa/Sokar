@@ -7,10 +7,15 @@
  * Options : --only 1,3 (scénarios). Résultats dans results/, ignoré par git.
  */
 import path from 'node:path';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { env } from '../../src/env';
 import { db } from '../../src/shared/db/client';
-import { briefFacts, composeBrief, modelBrief } from '../../src/modules/companion/brief';
+import {
+  briefFacts,
+  composeBrief,
+  modelBrief,
+  type BriefFacts,
+} from '../../src/modules/companion/brief';
 import { computeTonight } from '../../src/modules/companion/tonight';
 import { BRIEF_CRITERIA, BRIEF_SCENARIOS, scoreBrief, sentenceWords } from './brief-scenarios';
 
@@ -49,6 +54,45 @@ interface Run {
   output_tokens: number;
 }
 
+// Renote les points d'un fichier déjà joué, sans appeler le modèle : mêmes réponses, seuil variable.
+async function rescoreFile(file: string, restaurantId: string): Promise<void> {
+  const data = JSON.parse(readFileSync(file, 'utf8')) as {
+    runs: Array<{ scenario: number; raw: string }>;
+  };
+  const factsByScenario = new Map<number, BriefFacts>();
+  for (const scenario of BRIEF_SCENARIOS) {
+    const card = await computeTonight(restaurantId, new Date(scenario.now));
+    factsByScenario.set(
+      scenario.n,
+      await briefFacts(restaurantId, card, { recovery: scenario.recovery }),
+    );
+  }
+  for (const maxWords of [25, 30]) {
+    let proposed = 0;
+    let discarded = 0;
+    const keptPerSummary: number[] = [];
+    for (const run of data.runs) {
+      const facts = factsByScenario.get(run.scenario);
+      if (!facts) continue;
+      const composed = composeBrief(facts, run.raw, maxWords);
+      proposed += (JSON.parse(run.raw) as { points: string[] }).points.length;
+      discarded += composed.discarded;
+      keptPerSummary.push(composed.kept);
+    }
+    const mean = keptPerSummary.reduce((sum, kept) => sum + kept, 0) / keptPerSummary.length;
+    // eslint-disable-next-line no-console -- renotage : bilan lu dans le terminal
+    console.log(
+      JSON.stringify({
+        maxWords,
+        pointsProposed: proposed,
+        pointsKeptPercent: Math.round(((proposed - discarded) / proposed) * 1000) / 10,
+        keptPerSummaryMean: Math.round(mean * 100) / 100,
+        keptPerSummary,
+      }),
+    );
+  }
+}
+
 const median = (values: number[]) => {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)];
@@ -62,6 +106,11 @@ async function main() {
   const restaurantId = process.env.DEMO_RESTAURANT_ID;
   if (!restaurantId) throw new Error('DEMO_RESTAURANT_ID absent (apps/api/.env).');
 
+  const rescorePath = option('--rescore');
+  if (rescorePath) {
+    await rescoreFile(rescorePath, restaurantId);
+    return;
+  }
   const trials = Number(option('--trials') ?? 1);
   const only = option('--only')?.split(',').map(Number);
   const scenarios = BRIEF_SCENARIOS.filter((scenario) => !only || only.includes(scenario.n));

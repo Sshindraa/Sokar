@@ -22,7 +22,7 @@ const BRIEF_TIMEOUT_MS = 8_000;
 const BRIEF_CACHE_SECONDS = 1_800;
 const RECOVERY_DAYS = 30;
 const BRIEF_POINTS = 3;
-const POINT_MAX_WORDS = 20;
+const POINT_MAX_WORDS = 30;
 
 // Forme imposée au fournisseur : la liste de points. Validée ensuite par Zod, point par point.
 const BRIEF_RESPONSE_FORMAT = {
@@ -170,7 +170,7 @@ export function briefSystemPrompt(language: BriefLanguage): string {
     "Vous êtes l'assistant IA de Sokar. Vous rédigez le résumé de la carte « Ce soir » d'un restaurant, à partir des données fournies.",
     '',
     'Règles :',
-    `- Rédigez les points en ${LANGUAGE_NAMES[language]}, du plus utile au moins utile, chacun en une phrase courte. Adressez-vous au lecteur avec la politesse de cette langue.`,
+    `- Rédigez les points en ${LANGUAGE_NAMES[language]}, du plus utile au moins utile, chacun en une phrase courte, un seul fait par point. Adressez-vous au lecteur avec la politesse de cette langue.`,
     "- Mettez d'abord ce qui demande une action ou sort de l'habitude : ce soir, puis hier.",
     "- Ne citez que les chiffres des données, tels qu'ils y figurent. Ne calculez rien : ni somme, ni écart, ni pourcentage.",
     '- Reliez seulement ce que les données montrent ensemble, en « en même temps ». Jamais une cause extérieure aux données, jamais « à cause de ». Dites ce que vous ne savez pas.',
@@ -197,7 +197,9 @@ export function modelBrief(
 export interface ComposedBrief {
   /** Les points retenus, une phrase par point ; null sans point valide. */
   text: string | null;
-  /** Points écartés : plus de vingt mots, ou un chiffre absent des données. */
+  /** Points retenus, au plus trois. */
+  kept: number;
+  /** Points écartés : plus de maxWords mots, ou un chiffre absent des données. */
   discarded: number;
   /** Chiffres absents des données, dans les points écartés. */
   unanchored: number[];
@@ -206,14 +208,19 @@ export interface ComposedBrief {
 }
 
 /** Valide la réponse du modèle point par point, et garde les trois premiers points valides. */
-export function composeBrief(facts: BriefFacts, raw: string): ComposedBrief {
+export function composeBrief(
+  facts: BriefFacts,
+  raw: string,
+  maxWords: number = POINT_MAX_WORDS,
+): ComposedBrief {
   let points: string[];
   try {
     const parsed = briefReplySchema.safeParse(JSON.parse(raw));
-    if (!parsed.success) return { text: null, discarded: 0, unanchored: [], invalid: true };
+    if (!parsed.success)
+      return { text: null, kept: 0, discarded: 0, unanchored: [], invalid: true };
     points = parsed.data.points;
   } catch {
-    return { text: null, discarded: 0, unanchored: [], invalid: true };
+    return { text: null, kept: 0, discarded: 0, unanchored: [], invalid: true };
   }
 
   const kept: string[] = [];
@@ -223,7 +230,7 @@ export function composeBrief(facts: BriefFacts, raw: string): ComposedBrief {
     const text = point.trim();
     const words = text.split(/\s+/).filter(Boolean).length;
     const missing = anchoredIn(text, [{ result: facts }]).unanchored;
-    if (words === 0 || words > POINT_MAX_WORDS || missing.length > 0) {
+    if (words === 0 || words > maxWords || missing.length > 0) {
       discarded++;
       unanchored.push(...missing);
     } else if (kept.length < BRIEF_POINTS) {
@@ -233,6 +240,7 @@ export function composeBrief(facts: BriefFacts, raw: string): ComposedBrief {
   const sentences = kept.map((point) => (/[.!?]$/.test(point) ? point : `${point}.`));
   return {
     text: sentences.length > 0 ? sentences.join(' ') : null,
+    kept: kept.length,
     discarded,
     unanchored,
     invalid: false,

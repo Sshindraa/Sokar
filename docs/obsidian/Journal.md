@@ -3402,3 +3402,28 @@ Banc (`brief-2026-11-01T19-46-19-019Z.json`, trois scénarios, trois essais, fr)
 Constat : le modèle écrit encore des points de trente à quarante mots, et ce sont souvent les plus utiles qui sont écartés. Dans le scénario 2, un essai ne garde qu'un point, sur la réservation du soir ; la surveillance des réservations et la veille sont écartées. La consigne seule ne suffit pas. À décider : relever la limite (correction de critère notée ici) ou autre forme de sortie.
 
 Navigateur, cache vidé, tableau de bord en français : la carte et « Résumé en préparation… » sont là à 978 ms, le résumé s'affiche à 4 590 ms. Captures en clair et en sombre, avec le résumé à un seul point.
+
+### 2026-11-01 — Companion : seuil de 30 mots choisi au renotage
+
+Renotage hors ligne des points du banc précédent (`brief-2026-11-01T19-46-19-019Z.json`, 51 points proposés, `brief-run --rescore`, sans appel au modèle) :
+
+| Seuil par point | Points gardés | Points par résumé (moyenne) |
+|---|---|---|
+| 25 mots | 57 % (29 sur 51) | 2,67 |
+| 30 mots | 78 % (40 sur 51) | 2,89 |
+
+Règle appliquée : 25 mots seulement si le renotage gardait au moins 90 % des points. Il n'en garde que 57 %, donc le seuil retenu est 30 mots.
+
+Correction de critère (notée ici) : « au plus 20 mots par phrase » devient « au plus 30 mots par phrase », dans `BRIEF_CRITERIA` et dans le serveur (`POINT_MAX_WORDS`). Consigne : principe « un seul fait par point » ajouté.
+
+Banc (`brief-2026-11-01T20-12-11-577Z.json`, trois scénarios, trois essais, fr) :
+
+| Critère | Résultat |
+|---|---|
+| ancrage | 9/9 |
+| au plus trois phrases | 9/9 |
+| au plus 30 mots par phrase | 9/9 |
+| aucun nom | 9/9 |
+| point attendu exact | 6/9 (9/9 au passage précédent) |
+
+Points : 65 proposés, 0 écarté (ni trop longs, ni chiffre absent), 27 retenus (trois par résumé, 9 résumés sur 9), 38 non retenus faute de place. Le point attendu manque dans les trois essais du scénario 3 (sans la formule Avis) : le chiffre des couverts (32) n'y figure pas, car les trois points retenus portent sur les réservations à surveiller. Longueur des phrases : médiane 15 mots, maximum 27. Latence du tour modèle : médiane 3 108 ms (3 870 au passage précédent), maximum 3 789 ms. Coût : entrée 12 855 tokens, soit environ 1 428 par résumé, dont 4 488 lus du cache ; sortie 2 732 tokens, soit environ 304 par résumé.

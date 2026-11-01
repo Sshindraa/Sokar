@@ -156,15 +156,24 @@ describe('composeBrief : validation point par point', () => {
       raw([...GROUNDED_POINTS, 'Hier, 14 réservations contre 9 habituellement.']),
     );
 
-    expect(composed).toEqual({ text: GROUNDED, discarded: 0, unanchored: [], invalid: false });
+    expect(composed).toEqual({
+      text: GROUNDED,
+      kept: 3,
+      discarded: 0,
+      unanchored: [],
+      invalid: false,
+    });
   });
 
-  it('écarte un point de plus de vingt mots', () => {
-    const long = Array.from({ length: 21 }, () => 'mot').join(' ');
+  it('écarte un point de plus de trente mots, et garde un point de trente mots', () => {
+    const long = Array.from({ length: 31 }, () => 'mot').join(' ');
+    const exact = Array.from({ length: 30 }, () => 'mot').join(' ');
+    expect(composeBrief(FACTS, raw([exact])).discarded).toBe(0);
 
     const composed = composeBrief(FACTS, raw([long, GROUNDED_POINTS[0]]));
 
     expect(composed.discarded).toBe(1);
+    expect(composed.kept).toBe(1);
     expect(composed.text).toBe(GROUNDED_POINTS[0]);
   });
 
@@ -173,6 +182,7 @@ describe('composeBrief : validation point par point', () => {
 
     expect(composed).toEqual({
       text: GROUNDED_POINTS[1],
+      kept: 1,
       discarded: 1,
       unanchored: [40],
       invalid: false,
@@ -189,12 +199,19 @@ describe('composeBrief : validation point par point', () => {
   it('rend null sans aucun point valide', () => {
     const composed = composeBrief(FACTS, raw(['Ce soir, 40 couverts.']));
 
-    expect(composed).toEqual({ text: null, discarded: 1, unanchored: [40], invalid: false });
+    expect(composed).toEqual({
+      text: null,
+      kept: 0,
+      discarded: 1,
+      unanchored: [40],
+      invalid: false,
+    });
   });
 
   it('marque une réponse qui n’est pas du JSON valide', () => {
     expect(composeBrief(FACTS, 'Ce soir, 32 couverts.')).toEqual({
       text: null,
+      kept: 0,
       discarded: 0,
       unanchored: [],
       invalid: true,

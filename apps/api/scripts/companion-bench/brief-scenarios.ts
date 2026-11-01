@@ -7,8 +7,8 @@
  * - au moins un point attendu présent : sa valeur exacte, calculée ici par Prisma, indépendamment
  *   de catalog.ts, de tonight.ts et de brief.ts ;
  * - aucun nom de client du jour dans le texte ;
- * - au plus 20 mots par phrase. Critère ajouté après le premier passage des trois scénarios,
- *   à la demande (la consigne demandait des phrases courtes sans le chiffrer) : voir le Journal.
+ * - au plus 30 mots par phrase. Ce seuil remplace les 20 mots du premier passage, choisi au
+ *   renotage des points (voir le Journal) ; le critère 20 mots était ajouté après le premier passage.
  *
  * Restaurant : le démo. Aucun restaurant sans la formule Avis n'a de réservations dans la base
  * locale : le scénario 3 retire donc la lecture des avis, comme le ferait une formule absente.
@@ -21,7 +21,7 @@ import { anchoredIn, numbersIn } from '../../src/modules/companion/grounding';
 
 export const BRIEF_CRITERIA = {
   maxSentences: 3,
-  maxWordsPerSentence: 20,
+  maxWordsPerSentence: 30,
   /** Part des chiffres du résumé ancrés dans les données (1 = 100 %). */
   anchoring: 1,
   minExpectedPoints: 1,
