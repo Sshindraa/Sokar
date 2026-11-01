@@ -119,4 +119,8 @@ main()
     console.error(error);
     process.exitCode = 1;
   })
-  .finally(() => db.$disconnect());
+  .finally(async () => {
+    await db.$disconnect();
+    // Redis garde la boucle d’événements ouverte : le banc se termine ici.
+    process.exit(process.exitCode ?? 0);
+  });

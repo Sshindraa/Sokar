@@ -3318,3 +3318,29 @@ Renotage hors ligne de tout le banc Sonnet (`--rescore`, aucun appel au modèle)
 | `18-13-55`, Q45 (sorties `share_pct`) | 3/3 → 3/3 | 3/3 → 3/3 |
 
 Attendu, et seul changement : Q45 essai 1 de `23-48-07` et Q45 essais 2 et 3 de `23-52-55` (« 89 % » tiré de 0,89) deviennent non ancrés. Aucun chiffre ne bouge. La dérive ne change pas (27 questions du banc complet, 6 de `23-45-50`, 1 de `23-59-01`).
+
+### 2026-11-01 — Companion : résumé « Ce soir » (phase C)
+
+Le résumé est calculé par `brief.ts` à partir des agrégats de `computeTonight`, de `explain_change` sur la veille contre l'habitude (réservations et appels) et des avis en récupération sur 30 jours, si la formule le permet. Un tour du modèle de production, sans outil, consignes en cache, délai de 8 s. Un chiffre absent des données, une erreur ou un délai : pas de résumé ; la trace ne porte que le restaurant et le nombre non ancré. `GET /companion/tonight` renvoie `brief`, lu dans le cache seulement ; `GET /companion/tonight/brief` le calcule. Cache Redis de 30 min par restaurant, jour et service. La carte affiche le résumé au-dessus des blocs, sans attendre le modèle.
+
+L'ancrage passe dans `grounding.ts`, partagé par le banc et la production. Renotage des cinq fichiers Sonnet : 0 écart sur 174 essais.
+
+Banc `brief-run.ts`, sur `brief-scenarios.ts` ; critères figés dans `bea3077b`, avant le premier essai. Trois scénarios, trois essais, sur le démo :
+
+| Critère | Résultat |
+|---|---|
+| ancrage (chaque chiffre dans les données) | 9/9 |
+| au plus 3 phrases | 9/9 |
+| point attendu exact : 46 appels la veille, 32 couverts ce soir | 9/9 |
+| aucun nom de client du jour | 9/9 |
+
+Coût (9 appels) : entrée 10 479 tokens, soit environ 1 165 par résumé ; lus du cache : 0 ; sortie 2 169 tokens, soit environ 241 par résumé. Latence du tour modèle : médiane 2 608 ms, maximum 2 881 ms. Données de la carte (base locale) : 11 à 31 ms.
+
+Écarts :
+- Scénario 3 : aucun restaurant sans la formule Avis n'a de réservations dans la base locale. Le scénario retire donc la lecture des avis.
+- Le premier affichage de la carte n'a pas de résumé tant que `/tonight/brief` n'a pas répondu, puisque la carte ne lit que le cache.
+- Le résumé est en français pour toutes les langues, comme le chat.
+- Phrases longues : médiane 31 mots, maximum 53. Le critère compte les phrases, pas les mots ; à relire.
+- Le délai de 8 s borne le tour du modèle, pas le calcul des données (non borné, mais 11 à 31 ms en local).
+- Aucun couvert n'est lu du cache du fournisseur. Hypothèse non vérifiée : le prompt de résumé est trop court pour être mis en cache.
+- Le banc ne s'arrêtait pas : Redis garde la boucle ouverte. Il se termine après son bilan.
