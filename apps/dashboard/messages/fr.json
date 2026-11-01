@@ -93,6 +93,7 @@
     "newConversation": "Nouvelle conversation",
     "disclaimer": "Réponses générées par IA, à vérifier. Ne saisissez pas de coordonnées client.",
     "openSource": "Voir dans le tableau de bord",
+    "openCampaign": "Ouvrir dans l'éditeur de campagne",
     "helpful": "Réponse utile",
     "unhelpful": "Réponse peu utile",
     "genericError": "L’assistant ne peut pas répondre pour le moment. Réessayez dans un instant.",

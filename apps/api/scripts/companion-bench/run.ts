@@ -22,6 +22,7 @@ import {
 } from '../../src/modules/companion/companion.service';
 import { computeRoi } from '../../src/modules/analytics/roi.service';
 import { computeCallStats } from '../../src/modules/calls/call-stats';
+import type { CampaignDraft } from '../../src/modules/companion/companion.tools';
 import { evaluateCapability } from '../../src/modules/entitlements/entitlement.service';
 import {
   computeDashboardStats,
@@ -64,6 +65,9 @@ type Expected =
   | { kind: 'any'; value: number[] }
   | { kind: 'first'; value: string[]; others: string[] }
   | { kind: 'unavailable' }
+  // Brouillon de relance : critères figés avant l'essai. Présent (outil draft_campaign, valide), chaque
+  // chiffre dans un résultat d'outil de la réponse, aucun nom du restaurant dans le texte.
+  | { kind: 'draft'; names: string[] }
   | {
       kind: 'readings';
       readings: Reading[];
@@ -223,6 +227,15 @@ function sumCovers(rows: Array<{ partySize: number }>): number {
 function previousMonth(): string {
   const [year, month] = dayFormat.format(COMPANION_REFERENCE_NOW).split('-').map(Number);
   return new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7);
+}
+
+// Noms des clients du restaurant : aucun ne doit apparaître dans un brouillon.
+async function reservationNames(restaurantId: string): Promise<string[]> {
+  const rows = await db.reservation.findMany({
+    where: { restaurantId },
+    select: { customerName: true },
+  });
+  return [...new Set(rows.map((row) => row.customerName).filter((name) => name.length >= 3))];
 }
 
 // Liste d'attente et avis : requêtes Prisma écrites ici, indépendantes du catalogue.
@@ -998,6 +1011,21 @@ const QUESTIONS: Question[] = [
       return { kind: 'readings', readings, tolerance: 0.05, explain: true };
     },
   },
+  {
+    n: 48,
+    text: 'Rédige une relance SMS pour les clients qui ont réservé demain sans avoir confirmé.',
+    expected: async (id) => ({ kind: 'draft', names: await reservationNames(id) }),
+  },
+  {
+    n: 49,
+    text: 'Prépare un e-mail pour relancer les clients absents la semaine dernière.',
+    expected: async (id) => ({ kind: 'draft', names: await reservationNames(id) }),
+  },
+  {
+    n: 50,
+    text: 'Écris un message pour remplir le service de ce soir.',
+    expected: async (id) => ({ kind: 'draft', names: await reservationNames(id) }),
+  },
 ];
 
 // Nombres en lettres pour la question 7 : « Un seul jour est sous-réservé ».
@@ -1102,6 +1130,7 @@ function valueFound(reply: string, expected: Expected): boolean {
 function formatExpected(expected: Expected | undefined): string {
   if (!expected) return '';
   if (expected.kind === 'unavailable') return 'non incluse dans la formule';
+  if (expected.kind === 'draft') return 'brouillon (draft_campaign)';
   if (expected.kind === 'readings') {
     const lectures = expected.readings.map((reading) => reading.values.join(' et ')).join(' | ');
     return expected.explain ? `${lectures} (enquête)` : lectures;
@@ -1183,6 +1212,8 @@ interface Trial {
   /** Chaque chiffre de la réponse vient d'un résultat d'outil de la même réponse. */
   anchorOk: boolean;
   unanchored: number[];
+  /** Brouillon retenu par le serveur, s'il existe. */
+  draft?: CampaignDraft | null;
   input_tokens: number;
   output_tokens: number;
   cached_input_tokens: number;
@@ -1216,6 +1247,21 @@ function parseEffort(value: string | undefined): ModelChoice['reasoningEffort'] 
 }
 
 // Outil : au moins un appel ; pour une enquête, un appel à explain_change.
+// Brouillon : présent, chiffres dans les résultats d'outils, aucun nom du restaurant.
+function draftFound(
+  draft: CampaignDraft | null | undefined,
+  calls: ToolCall[],
+  names: string[],
+): boolean {
+  if (!draft) return false;
+  const text = [draft.name, draft.objective, draft.subject ?? '', draft.body].join(' ');
+  const dataCalls = calls.filter((call) => call.name !== 'draft_campaign');
+  const invented = anchoredIn(text, dataCalls).unanchored.length > 0;
+  const lowered = text.toLowerCase();
+  const named = names.some((name) => lowered.includes(name.toLowerCase()));
+  return !invented && !named;
+}
+
 function toolUsedFor(expected: Expected | undefined, calls: ToolCall[]): boolean {
   if (expected?.kind !== 'readings' || !expected.explain || expected.anyTool)
     return calls.length > 0;
@@ -1243,15 +1289,24 @@ async function runTrial(
     });
     const sources = answer.sources.map((source) => source.tool);
     const anchor = anchoredIn(answer.reply, calls);
+    const isDraft = expected?.kind === 'draft';
     return {
       reply: answer.reply,
       sources,
       calls,
-      toolOk: question.expected ? toolUsedFor(expected, calls) : null,
-      valueOk: expected
-        ? valueFound(answer.reply, expected) &&
-          (expected.kind !== 'first' || firstChannelIsTop(answer.reply, calls))
-        : null,
+      draft: answer.draft,
+      toolOk: isDraft
+        ? calls.some((call) => call.name === 'draft_campaign')
+        : question.expected
+          ? toolUsedFor(expected, calls)
+          : null,
+      valueOk:
+        expected?.kind === 'draft'
+          ? draftFound(answer.draft, calls, expected.names)
+          : expected
+            ? valueFound(answer.reply, expected) &&
+              (expected.kind !== 'first' || firstChannelIsTop(answer.reply, calls))
+            : null,
       anchorOk: anchor.ok,
       unanchored: anchor.unanchored,
       latency_ms: Math.round(performance.now() - started),

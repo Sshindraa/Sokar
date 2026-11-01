@@ -160,6 +160,7 @@ describe('POST /companion/chat', () => {
       reply: 'Vous avez 5 appels.',
       sources: [{ tool: 'reservation_stats', href: '/dashboard' }],
       responseId: expect.stringMatching(UUID_PATTERN),
+      draft: null,
     });
     expect(fetchSpy).toHaveBeenCalledTimes(2);
 

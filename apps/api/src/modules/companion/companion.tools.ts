@@ -113,14 +113,57 @@ export const COMPANION_TOOLS = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'draft_campaign',
+      description:
+        'Brouillon d’une relance ou d’un message à envoyer à des clients, pour l’éditeur de campagne. Rien n’est envoyé. Chaque chiffre doit venir d’un outil de cette conversation ; sinon « [à compléter] ». Aucun nom, aucun destinataire. subject est obligatoire pour un e-mail.',
+      parameters: {
+        type: 'object',
+        properties: {
+          channel: { type: 'string', enum: ['SMS', 'EMAIL'] },
+          name: {
+            type: 'string',
+            description: 'Nom interne de la campagne, 80 caractères au plus.',
+          },
+          objective: {
+            type: 'string',
+            description: 'Objectif en une phrase, 200 caractères au plus.',
+          },
+          subject: { type: 'string', description: 'Objet de l’e-mail, 120 caractères au plus.' },
+          body: { type: 'string', description: 'Texte du message, 1000 caractères au plus.' },
+        },
+        required: ['channel', 'name', 'objective', 'body'],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 const PeriodArgs = z.object({ period: z.enum(['today', '7d', '30d']).default('7d') });
 const NoArgs = z.object({});
 const MonthlyRoiArgs = z.object({ month: z.string().regex(MONTH_PATTERN) });
 
+/** Brouillon de relance pour l'éditeur de campagne : aucun destinataire, aucun nom. */
+export const CampaignDraftSchema = z
+  .object({
+    channel: z.enum(['SMS', 'EMAIL']),
+    name: z.string().trim().min(1).max(80),
+    objective: z.string().trim().min(1).max(200),
+    subject: z.string().trim().min(1).max(120).optional(),
+    body: z.string().trim().min(1).max(1000),
+  })
+  .refine((draft) => draft.channel !== 'EMAIL' || draft.subject !== undefined, {
+    message: 'objet requis pour un e-mail',
+    path: ['subject'],
+  });
+export type CampaignDraft = z.infer<typeof CampaignDraftSchema>;
+
 export interface CompanionToolResult {
   content: unknown;
+  /** Brouillon valide, à garder seulement si ses chiffres sont dans les données de la réponse. */
+  draft?: CampaignDraft;
   /** Présent seulement si l'outil a réussi : l'écran où l'équipe retrouve ces chiffres. */
   source?: { tool: string; href: string };
 }
@@ -183,6 +226,18 @@ export async function runCompanionTool(
       if (!parsed.success) return invalid;
       result = computeRoi(restaurantId, parsed.data.month);
       break;
+    }
+    case 'draft_campaign': {
+      const parsed = CampaignDraftSchema.safeParse(args);
+      if (!parsed.success) {
+        return {
+          content: {
+            error: 'invalid_draft',
+            detail: parsed.error.issues.map((issue) => issue.message).join(' ; '),
+          },
+        };
+      }
+      return { content: { saved: true }, draft: parsed.data };
     }
     default:
       return { content: { error: 'unknown_tool' } };

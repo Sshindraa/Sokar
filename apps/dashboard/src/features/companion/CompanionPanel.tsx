@@ -9,6 +9,7 @@ import { ApiError } from '@/lib/api-error';
 import { useApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { TonightCard } from './TonightCard';
+import { isCampaignDraft, storeCampaignDraft, type CompanionCampaignDraft } from './campaign-draft';
 
 const MAX_CHARS = 4000;
 /** Nombre de messages renvoyés au modèle à chaque question : l'historique complet reste affiché. */
@@ -28,12 +29,15 @@ interface Message {
   /** Absent sur les réponses enregistrées avant les avis : elles n'ont pas de boutons. */
   responseId?: string;
   rating?: Rating;
+  /** Brouillon de relance, présent seulement si Companion en a rédigé un. */
+  draft?: CompanionCampaignDraft;
 }
 
 interface CompanionReply {
   reply: string;
   sources: Source[];
   responseId: string;
+  draft?: CompanionCampaignDraft | null;
 }
 
 const SUGGESTION_KEYS = ['week', 'noShows', 'bookings'] as const;
@@ -57,12 +61,13 @@ function readHistory(siteId: string): Message[] {
     const parsed: unknown = raw ? JSON.parse(raw) : [];
     // Les champs en trop d'une version antérieure (comme toolRuns) sont ignorés.
     return Array.isArray(parsed)
-      ? parsed.filter(isMessage).map(({ role, content, sources, responseId, rating }) => ({
+      ? parsed.filter(isMessage).map(({ role, content, sources, responseId, rating, draft }) => ({
           role,
           content,
           sources,
           responseId,
           rating,
+          draft: isCampaignDraft(draft) ? draft : undefined,
         }))
       : [];
   } catch {
@@ -147,6 +152,7 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
           content: reply.reply,
           sources: uniqueSources(reply.sources),
           responseId: reply.responseId,
+          draft: reply.draft ?? undefined,
         },
       ]);
     } catch (err) {
@@ -175,6 +181,19 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
     ask(draft);
+  }
+
+  // Ouvre l'éditeur de campagne avec le brouillon : il passe par la session, jamais par l'URL.
+  function draftLink(draft: CompanionCampaignDraft) {
+    return (
+      <Link
+        href="/dashboard/marketing/campaigns/new"
+        onClick={() => storeCampaignDraft(draft)}
+        className="mt-2 inline-block text-xs font-medium text-primary underline-offset-4 transition-all duration-200 hover:underline"
+      >
+        {t('openCampaign')}
+      </Link>
+    );
   }
 
   function feedbackButtons(responseId: string, rating: Rating | undefined) {
@@ -282,6 +301,7 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
                   {t('openSource')}
                 </Link>
               ))}
+              {message.role === 'assistant' && message.draft && draftLink(message.draft)}
               {message.role === 'assistant' &&
                 message.responseId &&
                 feedbackButtons(message.responseId, message.rating)}

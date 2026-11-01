@@ -361,3 +361,29 @@ describe('carte « Ce soir »', () => {
     expect(screen.queryByText('Ce soir')).not.toBeInTheDocument();
   });
 });
+
+describe('brouillon de relance dans Companion', () => {
+  it('propose d’ouvrir l’éditeur de campagne, et y garde le brouillon sans URL de données', async () => {
+    mocks.post.mockResolvedValue({
+      reply: 'Relance prête pour l’éditeur.',
+      sources: [],
+      responseId: RESPONSE_ID,
+      draft: {
+        channel: 'SMS',
+        name: 'Relance midi',
+        objective: 'Remplir le service',
+        body: 'Il reste des tables ce midi. {{unsubscribeUrl}}',
+      },
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: WEEK_QUESTION }));
+    const link = await screen.findByRole('link', { name: "Ouvrir dans l'éditeur de campagne" });
+
+    expect(link).toHaveAttribute('href', '/dashboard/marketing/campaigns/new');
+    fireEvent.click(link);
+    expect(
+      JSON.parse(window.sessionStorage.getItem('sokar:campaign-draft') ?? 'null'),
+    ).toMatchObject({ name: 'Relance midi', channel: 'SMS' });
+  });
+});

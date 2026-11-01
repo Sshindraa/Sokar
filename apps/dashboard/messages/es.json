@@ -92,6 +92,7 @@
     "newConversation": "Nueva conversación",
     "disclaimer": "Respuestas generadas por IA, a verificar. No introduzca datos de contacto de clientes.",
     "openSource": "Ver en el panel",
+    "openCampaign": "Abrir en el editor de campañas",
     "helpful": "Respuesta útil",
     "unhelpful": "Respuesta poco útil",
     "genericError": "El asistente no puede responder por el momento. Inténtelo de nuevo en un momento.",

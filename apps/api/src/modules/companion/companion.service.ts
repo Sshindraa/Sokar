@@ -7,7 +7,8 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
 import { env } from '../../env';
-import { COMPANION_TOOLS, runCompanionTool } from './companion.tools';
+import { COMPANION_TOOLS, runCompanionTool, type CampaignDraft } from './companion.tools';
+import { anchoredIn } from './grounding';
 import { queryScope } from './query-data';
 
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -31,6 +32,8 @@ export interface CompanionToolCall {
 export interface CompanionAnswer {
   reply: string;
   sources: Array<{ tool: string; href: string }>;
+  /** Brouillon de relance, s'il a été rédigé avec des chiffres des données : sinon null. */
+  draft: CampaignDraft | null;
   /** Identifiant de cette réponse, pour rattacher un avis (POST /companion/feedback). */
   responseId: string;
 }
@@ -126,6 +129,7 @@ export function companionSystemPrompt(): string {
     "- Le mois en cours n'est pas terminé : si vous citez ses chiffres, dites qu'ils sont partiels (arrêtés à aujourd'hui).",
     `- Périmètre : ${queryScope()}, les jours à venir (réservations et couverts prévus), les no-shows des 90 derniers jours, le retour sur investissement d’un mois.`,
     "- Une rédaction (message à un client, relance) est un brouillon : rien n'est envoyé, et vous ne dites jamais l'avoir envoyé.",
+    '- Pour une relance ou un message à des clients, transmettez aussi le brouillon à draft_campaign, et dites dans votre réponse qu’il est prêt pour l’éditeur de campagne.',
     "- Un brouillon ne contient aucun fait absent des données : ni table libérée, ni promotion, ni prix, ni horaire, ni disponibilité. Mettez [à compléter] à la place et dites ce qu'il faut vérifier. Toute formule de disponibilité ou d'urgence va entre crochets : « table disponible », « places limitées », « dernières places », « vient de se libérer ».",
     '- Pas de conseil juridique, fiscal ni comptable : orientez vers un professionnel.',
     "- Vous n'avez accès à aucune coordonnée ni à aucun nom de client : ne les demandez pas.",
@@ -298,6 +302,9 @@ export async function answerCompanion(input: {
     cachedInputTokens: 0,
   };
   const sources: CompanionAnswer['sources'] = [];
+  // Résultats d'outils de cette réponse : un brouillon ne peut citer que ces chiffres.
+  const toolResults: Array<{ result: unknown }> = [];
+  let draft: CampaignDraft | null = null;
   const conversation: ChatMessage[] = [
     {
       role: 'system',
@@ -318,7 +325,7 @@ export async function answerCompanion(input: {
       if (!withTools || !message.tool_calls?.length) {
         const reply = message.content?.replaceAll('**', '').trim() ?? '';
         if (!reply) throw new CompanionUpstreamError('empty_reply');
-        return { reply, sources, responseId };
+        return { reply, sources, responseId, draft };
       }
 
       conversation.push({
@@ -333,11 +340,29 @@ export async function answerCompanion(input: {
           input.restaurantId,
           now,
         );
+        let content = result.content;
+        if (result.draft) {
+          const text = [
+            result.draft.name,
+            result.draft.objective,
+            result.draft.subject ?? '',
+            result.draft.body,
+          ].join(' ');
+          const unanchored = anchoredIn(text, toolResults).unanchored;
+          if (unanchored.length > 0) {
+            content = { error: 'unanchored_figures', figures: unanchored };
+          } else {
+            draft = result.draft;
+            content = { saved: true };
+          }
+        } else {
+          toolResults.push({ result: content });
+        }
         trace.tools.push(call.function.name);
         input.onToolCall?.({
           name: call.function.name,
           arguments: call.function.arguments,
-          result: result.content,
+          result: content,
         });
         if (result.source && !sources.some((source) => source.tool === result.source?.tool)) {
           sources.push(result.source);
@@ -345,7 +370,7 @@ export async function answerCompanion(input: {
         conversation.push({
           role: 'tool',
           tool_call_id: call.id,
-          content: JSON.stringify(result.content),
+          content: JSON.stringify(content),
         });
       }
     }
