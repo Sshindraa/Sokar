@@ -101,6 +101,7 @@
       "midi": "Today’s lunch",
       "soir": "Tonight",
       "loading": "Loading the service…",
+      "briefLoading": "Summary being prepared…",
       "error": "The service cannot be loaded right now.",
       "retry": "Try again",
       "empty": "No reservations for this service",

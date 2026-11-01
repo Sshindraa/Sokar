@@ -101,6 +101,7 @@
       "midi": "Ce midi",
       "soir": "Ce soir",
       "loading": "Chargement du service…",
+      "briefLoading": "Résumé en préparation…",
       "error": "Impossible de charger le service pour le moment.",
       "retry": "Réessayer",
       "empty": "Aucune réservation pour ce service",

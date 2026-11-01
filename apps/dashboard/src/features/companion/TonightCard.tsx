@@ -26,6 +26,8 @@ interface TonightData {
   waitlistCount: number;
   watch: TonightRow[];
   attention: TonightRow[];
+  /** Résumé déjà en cache, sinon null : il se demande alors à part, la carte ne l'attend pas. */
+  brief: string | null;
 }
 
 type Status = 'loading' | 'ready' | 'error';
@@ -49,6 +51,11 @@ export function TonightCard() {
   const [status, setStatus] = useState<Status>('loading');
 
   const [attempt, setAttempt] = useState(0);
+  // Le résumé : celui de la carte s’il est en cache, sinon un second appel qui ne bloque pas la carte.
+  const [fetchedBrief, setFetchedBrief] = useState<string | null>(null);
+  const [resolvedFor, setResolvedFor] = useState<TonightData | null>(null);
+  const brief = data?.brief ?? (resolvedFor === data ? fetchedBrief : null);
+  const briefLoading = Boolean(data) && !data?.brief && resolvedFor !== data;
 
   useEffect(() => {
     let current = true;
@@ -66,6 +73,24 @@ export function TonightCard() {
       current = false;
     };
   }, [get, attempt]);
+
+  useEffect(() => {
+    if (!data || data.brief) return;
+    let current = true;
+    get<{ brief: string | null }>('companion/tonight/brief').then(
+      (result) => {
+        if (!current) return;
+        setFetchedBrief(result?.brief ?? null);
+        setResolvedFor(data);
+      },
+      () => {
+        if (current) setResolvedFor(data);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [get, data]);
 
   function retry() {
     setStatus('loading');
@@ -113,6 +138,15 @@ export function TonightCard() {
           </Button>
         </div>
       )}
+
+      {status === 'ready' && briefLoading && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 size={14} className="animate-spin" />
+          {t('briefLoading')}
+        </p>
+      )}
+
+      {status === 'ready' && brief && <p className="text-sm text-foreground">{brief}</p>}
 
       {status === 'ready' && data && data.covers === 0 && (
         <p className="text-sm text-muted-foreground">{t('empty')}</p>

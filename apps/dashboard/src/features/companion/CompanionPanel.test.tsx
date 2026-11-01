@@ -324,7 +324,7 @@ describe('carte « Ce soir »', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
 
     expect(await screen.findByText('Léa Martin')).toBeInTheDocument();
-    expect(mocks.get).toHaveBeenCalledTimes(2);
+    expect(mocks.get.mock.calls.filter(([path]) => path === 'companion/tonight')).toHaveLength(2);
     expect(mocks.get).toHaveBeenCalledWith('companion/tonight');
   });
 

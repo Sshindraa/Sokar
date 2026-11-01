@@ -159,9 +159,10 @@ async function requestTurn(
   trace: CompanionTrace,
   fetcher: typeof fetch,
   model: CompanionModelChoice,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<AssistantMessage> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   trace.turns++;
   try {
     const response = await fetcher(
@@ -207,6 +208,61 @@ interface CompanionTrace {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+}
+
+/** Réponse d'un tour sans outil, avec ce qu'il a coûté. */
+export interface CompletionAnswer {
+  text: string;
+  model: string;
+  latencyMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+}
+
+/** Un tour sans outil, pour le résumé « Ce soir » : même modèle, consignes en cache, délai court. */
+export async function completeWithoutTools(input: {
+  system: string;
+  user: string;
+  timeoutMs: number;
+  fetcher?: typeof fetch;
+}): Promise<CompletionAnswer> {
+  const started = performance.now();
+  const model: CompanionModelChoice = {
+    id: env.COMPANION_LLM_MODEL,
+    reasoningEffort: COMPANION_REASONING_EFFORT,
+  };
+  const trace: CompanionTrace = {
+    turns: 0,
+    tools: [],
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedInputTokens: 0,
+  };
+  const message = await requestTurn(
+    [
+      {
+        role: 'system',
+        content: [{ type: 'text', text: input.system, cache_control: { type: 'ephemeral' } }],
+      },
+      { role: 'user', content: input.user },
+    ],
+    false,
+    trace,
+    input.fetcher ?? fetch,
+    model,
+    input.timeoutMs,
+  );
+  const text = message.content?.replaceAll('**', '').trim() ?? '';
+  if (!text) throw new CompanionUpstreamError('empty_reply');
+  return {
+    text,
+    model: model.id,
+    latencyMs: Math.round(performance.now() - started),
+    inputTokens: trace.inputTokens,
+    outputTokens: trace.outputTokens,
+    cachedInputTokens: trace.cachedInputTokens,
+  };
 }
 
 export async function answerCompanion(input: {

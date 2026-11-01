@@ -100,6 +100,7 @@
       "midi": "Pranzo di oggi",
       "soir": "Stasera",
       "loading": "Caricamento del servizio…",
+      "briefLoading": "Riepilogo in preparazione…",
       "error": "Impossibile caricare il servizio al momento.",
       "retry": "Riprova",
       "empty": "Nessuna prenotazione per questo servizio",

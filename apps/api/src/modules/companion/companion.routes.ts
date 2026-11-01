@@ -4,6 +4,7 @@ import { requireOrg } from '../../plugins/clerk';
 import { env } from '../../env';
 import { checkRateLimit } from '../../shared/redis/rate-limit';
 import { answerCompanion, CompanionUpstreamError, companionDayKey } from './companion.service';
+import { cachedBrief, computeBrief } from './brief';
 import { computeTonight } from './tonight';
 
 const DAILY_MESSAGE_LIMIT = 100;
@@ -39,9 +40,23 @@ export async function companionRoutes(app: FastifyInstance) {
     return reply.status(204).send();
   });
 
-  // Carte « Ce soir » : calculée ici, jamais envoyée au modèle. La politique de rôles refuse STAFF et READ_ONLY (403).
+  // Carte « Ce soir » : calculée ici, sans attendre le résumé. Le résumé n'est là que s'il est déjà en
+  // cache ; sinon il vient de GET /companion/tonight/brief. La politique de rôles refuse STAFF et READ_ONLY (403).
   app.get('/companion/tonight', { preHandler: requireOrg() }, async (req, reply) => {
-    return reply.send(await computeTonight(req.restaurantId as string, new Date()));
+    const restaurantId = req.restaurantId as string;
+    const card = await computeTonight(restaurantId, new Date());
+    return reply.send({ ...card, brief: await cachedBrief(restaurantId, card) });
+  });
+
+  // Résumé de la carte, par le modèle s'il n'est pas en cache. Sans clé OpenRouter, pas de résumé.
+  app.get('/companion/tonight/brief', { preHandler: requireOrg() }, async (req, reply) => {
+    if (!env.OPENROUTER_API_KEY?.trim()) return reply.send({ brief: null });
+    const brief = await computeBrief({
+      restaurantId: req.restaurantId as string,
+      now: new Date(),
+      log: req.log,
+    });
+    return reply.send({ brief });
   });
 
   // Lecture seule côté serveur : la politique de rôles refuse STAFF et READ_ONLY (403).

@@ -100,6 +100,7 @@
       "midi": "Mediodía de hoy",
       "soir": "Esta noche",
       "loading": "Cargando el servicio…",
+      "briefLoading": "Resumen en preparación…",
       "error": "No se puede cargar el servicio por el momento.",
       "retry": "Reintentar",
       "empty": "No hay reservas para este servicio",
