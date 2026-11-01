@@ -76,3 +76,7 @@ export const CARRIER_PROVIDERS = ['telnyx'] as const;
 export type CarrierProvider = (typeof CARRIER_PROVIDERS)[number];
 
 export * from './entitlements';
+
+// Horloge de référence du banc du Companion et du seed companion : 31 octobre 2026, 12 h à Paris.
+// Jamais lue en production, où l'heure courante est passée à la place.
+export const COMPANION_REFERENCE_NOW = new Date('2026-10-31T11:00:00Z');

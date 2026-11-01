@@ -1,6 +1,5 @@
 import { PrismaClient } from '@prisma/client';
 import { CARTESIA_MODEL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
-import { COMPANION_REFERENCE_NOW } from './src/modules/companion/reference-clock';
 
 const db = new PrismaClient();
 
@@ -85,8 +84,7 @@ async function seed() {
   console.log(`  ${customers.length} clients créés`);
 
   // 3. Créer des calls
-  // Date de référence fixe : les données relatives à « maintenant » ne dépendent pas du jour du seed.
-  const now = new Date(COMPANION_REFERENCE_NOW);
+  const now = new Date();
   const calls = await Promise.all([
     db.call.create({
       data: {

@@ -31,6 +31,7 @@ import {
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { isLocalDatabaseUrl } from './seed-demo-guard';
+import { COMPANION_REFERENCE_NOW } from '@sokar/config';
 
 const MARKER = 'seed-companion';
 const CALL_SID_PREFIX = 'seed-companion-';
@@ -300,7 +301,8 @@ async function main() {
     where: { restaurantId },
     select: { capacitySpecials: true },
   });
-  const now = new Date();
+  // Date de référence fixe : les réservations, appels et créneaux sont relatifs à ce jour.
+  const now = new Date(COMPANION_REFERENCE_NOW);
   const today = dayKeyOf(now);
   // Jour faible des 7 prochains jours : un seul, avec une ou deux réservations.
   const weakOffset = [2, 3, 4, 5].find(
