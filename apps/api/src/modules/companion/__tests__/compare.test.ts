@@ -161,3 +161,21 @@ describe('computeQueryData : compare', () => {
     expect(db.reservation.findMany).not.toHaveBeenCalled();
   });
 });
+
+describe('previous_period : période de référence renvoyée', () => {
+  it('renvoie le mois civil précédent comme référence d’un mois complet', async () => {
+    serveFrom([
+      ...reservations(['2026-10-05T12:00:00Z']),
+      ...reservations(['2026-09-05T12:00:00Z']),
+    ]);
+
+    const result = await computeQueryData('r1', {
+      ...base,
+      from: '2026-10-01',
+      to: '2026-10-31',
+      compare: 'previous_period',
+    });
+
+    expect(result).toMatchObject({ reference_from: '2026-09-01', reference_to: '2026-09-30' });
+  });
+});

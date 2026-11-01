@@ -190,6 +190,9 @@ export interface QueryResult {
   query: unknown;
   total: number | null | Compared;
   groups?: Array<QueryGroup | (Compared & { key: string | number })>;
+  /** Période de référence utilisée par compare (previous_period, last_year). */
+  reference_from?: string;
+  reference_to?: string;
 }
 /** Source indisponible pour ce restaurant : le modèle le dit, sans annoncer zéro. */
 export interface QueryUnavailable {
@@ -278,6 +281,36 @@ const shiftYears = (dayKey: string, years: number): string => {
   return new Date(Date.UTC(year + years, month - 1, day)).toISOString().slice(0, 10);
 };
 
+const lastDayOf = (yearMonth: string): number => {
+  const [year, month] = yearMonth.split('-').map(Number);
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+};
+
+const monthBefore = (yearMonth: string): string => {
+  const [year, month] = yearMonth.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7);
+};
+
+/**
+ * Référence de previous_period. Un mois civil complet se compare au mois civil précédent ; un mois
+ * en cours (du 1er au jour J) au même intervalle du mois précédent, borné à sa fin ; une semaine
+ * lundi-dimanche à la semaine précédente. Les autres périodes gardent la même durée juste avant.
+ */
+export function previousPeriodOf(from: string, to: string): [string, string] {
+  const days = (Date.parse(to) - Date.parse(from)) / DAY_MS + 1;
+  if (days === 7 && new Date(`${from}T00:00:00Z`).getUTCDay() === 1) {
+    return [addDays(from, -7), addDays(to, -7)];
+  }
+  const month = from.slice(0, 7);
+  if (days > 1 && from.endsWith('-01') && to.slice(0, 7) === month) {
+    const previous = monthBefore(month);
+    const day = Number(to.slice(8));
+    const end = day === lastDayOf(month) ? lastDayOf(previous) : Math.min(day, lastDayOf(previous));
+    return [`${previous}-01`, `${previous}-${String(end).padStart(2, '0')}`];
+  }
+  return [addDays(from, -days), addDays(to, -days)];
+}
+
 // Périodes de référence de compare, pour une période de n jours : null si usual ne s'applique pas.
 function referencePeriods(
   mode: CompareMode,
@@ -286,7 +319,7 @@ function referencePeriods(
 ): Array<[string, string]> | null {
   if (mode === 'last_year') return [[shiftYears(from, -1), shiftYears(to, -1)]];
   const days = (Date.parse(to) - Date.parse(from)) / DAY_MS + 1;
-  if (mode === 'previous_period') return [[addDays(from, -days), addDays(to, -days)]];
+  if (mode === 'previous_period') return [previousPeriodOf(from, to)];
   if (days !== 1 && days !== 7) return null;
   return [1, 2, 3, 4].map((weeks) => [addDays(from, -7 * weeks), addDays(to, -7 * weeks)]);
 }
@@ -457,8 +490,14 @@ export async function computeQueryData(
     return { query: normalized, ...summarize(kept, groupBy, dimension, measureOf, keyOf) };
   }
   const references = await Promise.all(periods!.map(([start, end]) => readFiltered(start, end)));
+  // Période de référence renvoyée pour les modes à une période : le modèle la cite, elle n'est pas calculée.
+  const reference =
+    query.compare === 'usual'
+      ? {}
+      : { reference_from: periods![0][0], reference_to: periods![0][1] };
   return {
     query: normalized,
+    ...reference,
     ...summarizeCompared(kept, references, groupBy, dimension, measureOf, keyOf),
   };
 }
@@ -505,7 +544,7 @@ export function queryDataDescription(): string {
     `Filtres (facultatifs) : ${unique(filterNames).join(', ')} (weekdays : 0 = dimanche … 6 = samedi).`,
     ...stateNotes,
     `from et to : AAAA-MM-JJ, premier et dernier jour inclus, jours de Paris ; écart ≤ ${MAX_SPAN_DAYS} jours ; regroupement par jour ≤ ${MAX_DAY_GROUP_SPAN_DAYS} jours.`,
-    `compare (facultatif) : previous_period = la même durée juste avant ; last_year = les mêmes dates un an avant ; usual = le même jour de semaine sur les 4 semaines précédentes, en moyenne (période d’un jour ou d’une semaine seulement). Avec compare, chaque total et chaque groupe donne value, reference (la référence), delta (la différence) et delta_pct (le pourcentage d’écart, null si la référence vaut 0), tous calculés par le serveur : ne recalculez rien.`,
+    `compare (facultatif) : previous_period = la même durée juste avant, sauf un mois civil (le mois civil précédent), un mois en cours du 1er à un jour J (le même intervalle du mois précédent, borné à sa fin) ou une semaine lundi-dimanche (la semaine précédente) ; last_year = les mêmes dates un an avant ; usual = le même jour de semaine sur les 4 semaines précédentes, en moyenne (période d’un jour ou d’une semaine seulement). Avec compare, chaque total et chaque groupe donne value, reference (la référence), delta (la différence) et delta_pct (le pourcentage d’écart, null si la référence vaut 0), tous calculés par le serveur : ne recalculez rien. Avec previous_period ou last_year, la réponse donne aussi reference_from et reference_to : la période de référence utilisée, à citer.`,
   ].join(' ');
 }
 

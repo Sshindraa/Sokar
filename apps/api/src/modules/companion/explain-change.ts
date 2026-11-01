@@ -62,6 +62,9 @@ export interface MeasureExplanation {
   total: Compared;
   drivers: Driver[];
   low_volume: boolean;
+  /** Période de référence de compare (previous_period, last_year). */
+  reference_from?: string;
+  reference_to?: string;
 }
 
 export interface Explanation {
@@ -73,6 +76,9 @@ export interface Explanation {
   measures: MeasureExplanation[];
   /** Variations simultanées des autres fiches : elles ne sont pas des causes. */
   alongside: Alongside[];
+  /** Période de référence de la première mesure (previous_period, last_year). */
+  reference_from?: string;
+  reference_to?: string;
 }
 
 const isResult = (value: QueryResult | QueryUnavailable | QueryError): value is QueryResult =>
@@ -138,6 +144,8 @@ async function explainMeasure(
     total: totalCompared,
     drivers: drivers.slice(0, DRIVER_LIMIT),
     low_volume: totalCompared.reference === null || totalCompared.reference < LOW_VOLUME_REFERENCE,
+    reference_from: total.reference_from,
+    reference_to: total.reference_to,
   };
 }
 
@@ -208,6 +216,8 @@ export async function explainChange(
     to: args.to,
     measures: explained,
     alongside,
+    reference_from: explained[0]?.reference_from,
+    reference_to: explained[0]?.reference_to,
   };
 }
 
@@ -222,7 +232,7 @@ export function explainChangeDescription(): string {
     `Explique un écart entre une période et sa référence (compare, même sens que query_data). Sources (source) : ${sources}.`,
     'measure est facultatif : sans lui, le résultat explique chaque mesure de la fiche. Pour chaque mesure, measures donne le total avec sa référence, un écart et un pourcentage calculés par le serveur, et les groupes qui portent l’écart (drivers, cinq au plus : delta est leur écart ; share_pct leur part de l’écart total en pour cent, arrondie à l’unité, ou null si cette part sort de 0 à 100, ce qui arrive quand l’écart total est faible ou que les groupes vont en sens opposé).',
     'alongside donne les autres sources qui varient dans le même temps (seulement si l’écart est d’au moins 25 % et la référence d’au moins 5). low_volume vrai signifie une référence inférieure à 5 : ne concluez rien alors.',
-    'Les variations simultanées ne sont pas des causes. date_field est obligatoire si la source a plusieurs dates.',
+    'Les variations simultanées ne sont pas des causes. date_field est obligatoire si la source a plusieurs dates. Avec previous_period, reference_from et reference_to donnent la période de référence : citez-la.',
   ].join(' ');
 }
 
