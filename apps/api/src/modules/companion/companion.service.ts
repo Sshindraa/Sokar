@@ -147,15 +147,11 @@ type AssistantMessage = z.infer<typeof completionSchema>['choices'][number]['mes
 /** Modèle d'une réponse : celui de production par défaut ; le banc peut en demander un autre. */
 export interface CompanionModelChoice {
   id: string;
-  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high';
+  reasoningEffort?: 'low' | 'medium' | 'high';
 }
 
 /** Raisonnement du modèle de production : bas, pour tous les restaurants. */
 export const COMPANION_REASONING_EFFORT = 'low' as const;
-
-// Sonnet ne peut pas désactiver son raisonnement (OpenRouter le refuse) : entre les appels d'outils,
-// le tour suivant part au niveau le plus bas que le fournisseur accepte.
-export const BETWEEN_TOOLS_REASONING_EFFORT = 'minimal' as const;
 
 async function requestTurn(
   conversation: ChatMessage[],
@@ -318,13 +314,7 @@ export async function answerCompanion(input: {
   try {
     for (let round = 0; ; round++) {
       const withTools = round < MAX_TOOL_ROUNDS && trace.inputTokens < INPUT_TOKEN_BUDGET;
-      const message = await requestTurn(
-        conversation,
-        withTools,
-        trace,
-        fetcher,
-        round === 0 ? model : { ...model, reasoningEffort: BETWEEN_TOOLS_REASONING_EFFORT },
-      );
+      const message = await requestTurn(conversation, withTools, trace, fetcher, model);
       if (!withTools || !message.tool_calls?.length) {
         const reply = message.content?.replaceAll('**', '').trim() ?? '';
         if (!reply) throw new CompanionUpstreamError('empty_reply');
