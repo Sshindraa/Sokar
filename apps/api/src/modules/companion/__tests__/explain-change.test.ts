@@ -95,11 +95,16 @@ describe('explainChange : total et drivers', () => {
       total: { value: 6, reference: 2, delta: 4, delta_pct: 200 },
     });
     const drivers = firstMeasure(result).drivers as Array<Record<string, unknown>>;
-    expect(drivers[0]).toMatchObject({ dimension: 'state', key: 'HONORED', delta: 4, share: 1 });
+    expect(drivers[0]).toMatchObject({
+      dimension: 'state',
+      key: 'HONORED',
+      delta: 4,
+      share_pct: 100,
+    });
     expect(drivers).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ dimension: 'channel', key: 'phone', delta: 3, share: 0.75 }),
-        expect.objectContaining({ dimension: 'channel', key: 'website', delta: 1, share: 0.25 }),
+        expect.objectContaining({ dimension: 'channel', key: 'phone', delta: 3, share_pct: 75 }),
+        expect.objectContaining({ dimension: 'channel', key: 'website', delta: 1, share_pct: 25 }),
       ]),
     );
     expect(drivers.find((driver) => driver.dimension === 'channel')).toMatchObject({
@@ -114,9 +119,12 @@ describe('explainChange : total et drivers', () => {
 
     const result = await explainChange('r1', reservationsQuery);
 
-    const drivers = firstMeasure(result).drivers as Array<{ share: number | null; delta: number }>;
+    const drivers = firstMeasure(result).drivers as Array<{
+      share_pct: number | null;
+      delta: number;
+    }>;
     expect(drivers.length).toBeGreaterThan(0);
-    expect(drivers.every((driver) => driver.delta === 0 && driver.share === null)).toBe(true);
+    expect(drivers.every((driver) => driver.delta === 0 && driver.share_pct === null)).toBe(true);
   });
 
   it('signale un volume faible quand la référence totale est inférieure à 5', async () => {

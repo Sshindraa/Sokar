@@ -3255,3 +3255,7 @@ Cache vérifié, banc à deux questions, un essai, configuration de production :
 Banc complet Sonnet (141 réponses) : outil 120/123, chiffre 117/123, ancrage 139/141 ; entrée 1 727 826 tokens dont 1 623 510 lus du cache ; sortie 50 115 ; latence médiane 3 029 ms, maximum 7 918 ms.
 
 Limites. La référence Haiku est le banc complet de la passe B2, joué sur un code antérieur à la mesure facultative d'`explain_change`. Je n'ai pas relancé de banc complet Haiku, pour respecter la règle d'un seul banc complet, sur le meilleur modèle. La bascule n'atteint la production qu'au déploiement de la PR, après fusion, qui reste une décision humaine. Si le `.env` de production fixe `COMPANION_LLM_MODEL` à Haiku, il faut le changer à ce moment-là ; je n'ai pas accès au VPS. `Context.md` dépasse 8 Ko (10 431 octets, contre 10 143 avant cette ligne) ; à réduire dans une passe dédiée.
+
+### 2026-11-01 — Companion : parts en pourcentage
+
+`explain_change` renvoie `share_pct` (part de l'écart total en pour cent, arrondie à l'unité, calculée par le serveur) à la place de `share` (fraction à deux décimales), et la description de l'outil le dit ; `delta_pct` de `query_data` est déjà un pourcentage, rien à changer. Banc Q45 (Sonnet 5.5, raisonnement bas, 3 essais) : outil, chiffre et ancrage 3/3 ; renotage hors ligne sans changement.
