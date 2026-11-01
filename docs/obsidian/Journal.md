@@ -3323,7 +3323,7 @@ Attendu, et seul changement : Q45 essai 1 de `23-48-07` et Q45 essais 2 et 3 de 
 
 Le résumé est calculé par `brief.ts` à partir des agrégats de `computeTonight`, de `explain_change` sur la veille contre l'habitude (réservations et appels) et des avis en récupération sur 30 jours, si la formule le permet. Un tour du modèle de production, sans outil, consignes en cache, délai de 8 s. Un chiffre absent des données, une erreur ou un délai : pas de résumé ; la trace ne porte que le restaurant et le nombre non ancré. `GET /companion/tonight` renvoie `brief`, lu dans le cache seulement ; `GET /companion/tonight/brief` le calcule. Cache Redis de 30 min par restaurant, jour et service. La carte affiche le résumé au-dessus des blocs, sans attendre le modèle.
 
-L'ancrage passe dans `grounding.ts`, partagé par le banc et la production. Renotage des cinq fichiers Sonnet : 0 écart sur 174 essais.
+L'ancrage passe dans `grounding.ts`, partagé par le banc et la production. Renotage des cinq fichiers Sonnet : 0 écart sur 311 essais.
 
 Banc `brief-run.ts`, sur `brief-scenarios.ts` ; critères figés dans `bea3077b`, avant le premier essai. Trois scénarios, trois essais, sur le démo :
 
@@ -3334,7 +3334,7 @@ Banc `brief-run.ts`, sur `brief-scenarios.ts` ; critères figés dans `bea3077b`
 | point attendu exact : 46 appels la veille, 32 couverts ce soir | 9/9 |
 | aucun nom de client du jour | 9/9 |
 
-Coût (9 appels) : entrée 10 479 tokens, soit environ 1 165 par résumé ; lus du cache : 0 ; sortie 2 169 tokens, soit environ 241 par résumé. Latence du tour modèle : médiane 2 608 ms, maximum 2 881 ms. Données de la carte (base locale) : 11 à 31 ms.
+Coût (9 appels) : entrée 10 479 tokens, soit environ 1 164 par résumé ; lus du cache : 0 ; sortie 2 169 tokens, soit environ 241 par résumé. Latence du tour modèle : médiane 2 608 ms, maximum 2 881 ms. Données de la carte (base locale) : 11 à 31 ms.
 
 Écarts :
 - Scénario 3 : aucun restaurant sans la formule Avis n'a de réservations dans la base locale. Le scénario retire donc la lecture des avis.
