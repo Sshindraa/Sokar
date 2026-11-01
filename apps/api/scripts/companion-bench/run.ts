@@ -429,36 +429,42 @@ const QUESTIONS: Question[] = [
   {
     n: 1,
     text: "Combien de réservations ont été prises aujourd'hui ?",
-    expected: async (id) => count((await computeDashboardStats(id, 'today')).total_reservations),
+    expected: async (id) =>
+      count((await computeDashboardStats(id, 'today', COMPANION_REFERENCE_NOW)).total_reservations),
   },
   {
     n: 2,
     text: 'Combien de couverts ont été réservés ces 7 derniers jours ?',
-    expected: async (id) => count((await computeDashboardStats(id, '7d')).covers),
+    expected: async (id) =>
+      count((await computeDashboardStats(id, '7d', COMPANION_REFERENCE_NOW)).covers),
   },
   {
     n: 3,
     text: "Combien d'appels sur les 30 derniers jours ?",
-    expected: async (id) => count((await computeDashboardStats(id, '30d')).total_calls),
+    expected: async (id) =>
+      count((await computeDashboardStats(id, '30d', COMPANION_REFERENCE_NOW)).total_calls),
   },
   {
     n: 4,
     text: 'Quel est le taux de conversion des appels sur 7 jours ?',
     expected: async (id) => {
-      const rate = (await computeDashboardStats(id, '7d')).conversion_rate;
+      const rate = (await computeDashboardStats(id, '7d', COMPANION_REFERENCE_NOW)).conversion_rate;
       return { kind: 'rate', value: rate, rates: [rate] };
     },
   },
   {
     n: 5,
     text: 'Combien de couverts sont prévus demain ?',
-    expected: async (id) => count((await computeEmptySlots(id)).days[1].covers),
+    expected: async (id) =>
+      count((await computeEmptySlots(id, COMPANION_REFERENCE_NOW)).days[1].covers),
   },
   {
     n: 6,
     text: 'Quel est le jour le plus faible des 7 prochains jours ?',
     expected: async (id) => {
-      const open = (await computeEmptySlots(id)).days.filter((day) => day.isOpen);
+      const open = (await computeEmptySlots(id, COMPANION_REFERENCE_NOW)).days.filter(
+        (day) => day.isOpen,
+      );
       const lowest = Math.min(...open.map((day) => day.reservationCount));
       return {
         kind: 'day',
@@ -471,17 +477,24 @@ const QUESTIONS: Question[] = [
   {
     n: 7,
     text: 'Combien de jours sous-réservés dans les 7 prochains jours ?',
-    expected: async (id) => count((await computeEmptySlots(id)).summary.underbookedDays, 'jours?'),
+    expected: async (id) =>
+      count(
+        (await computeEmptySlots(id, COMPANION_REFERENCE_NOW)).summary.underbookedDays,
+        'jours?',
+      ),
   },
   {
     n: 8,
     text: 'Quel est mon taux de no-show ?',
-    expected: async (id) => ({ kind: 'rate', value: (await computeNoShowStats(id)).noShowRate }),
+    expected: async (id) => ({
+      kind: 'rate',
+      value: (await computeNoShowStats(id, COMPANION_REFERENCE_NOW)).noShowRate,
+    }),
   },
   {
     n: 9,
     text: 'Combien de no-shows sur les 90 derniers jours ?',
-    expected: async (id) => count((await computeNoShowStats(id)).noShows),
+    expected: async (id) => count((await computeNoShowStats(id, COMPANION_REFERENCE_NOW)).noShows),
   },
   {
     n: 10,
@@ -525,13 +538,14 @@ const QUESTIONS: Question[] = [
   {
     n: 17,
     text: "Combien d'appels avons-nous reçus ces 7 derniers jours ?",
-    expected: async (id) => count((await computeCallStats(id, '7d')).total),
+    expected: async (id) =>
+      count((await computeCallStats(id, '7d', COMPANION_REFERENCE_NOW)).total),
   },
   {
     n: 18,
     text: "Combien d'appels hors horaires sur 30 jours ?",
     expected: async (id) => {
-      const { afterHours } = await computeCallStats(id, '30d');
+      const { afterHours } = await computeCallStats(id, '30d', COMPANION_REFERENCE_NOW);
       if (afterHours === null)
         throw new Error('horaires absents : appels hors horaires non notables');
       return count(afterHours);
@@ -541,8 +555,8 @@ const QUESTIONS: Question[] = [
     n: 19,
     text: "Combien d'appels ont abouti à une réservation cette semaine ?",
     expected: async (id) => {
-      const calls = await computeCallStats(id, '7d');
-      const dashboard = await computeDashboardStats(id, '7d');
+      const calls = await computeCallStats(id, '7d', COMPANION_REFERENCE_NOW);
+      const dashboard = await computeDashboardStats(id, '7d', COMPANION_REFERENCE_NOW);
       return {
         kind: 'count',
         value: calls.byOutcome.RESERVED,
@@ -555,7 +569,7 @@ const QUESTIONS: Question[] = [
     n: 20,
     text: 'Par quel moyen les clients réservent-ils, sur 30 jours ?',
     expected: async (id) => {
-      const channels = (await computeDashboardStats(id, '30d')).by_channel;
+      const channels = (await computeDashboardStats(id, '30d', COMPANION_REFERENCE_NOW)).by_channel;
       const reservations = (channel: string) =>
         channels.find((stat) => stat.channel === channel)?.reservations ?? 0;
       return { kind: 'all', value: [reservations('phone'), reservations('website')] };
