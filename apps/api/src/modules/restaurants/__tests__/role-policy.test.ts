@@ -108,6 +108,18 @@ describe('autres rôles', () => {
     expect(decide('MANAGER', 'GET', '/companion/tonight')).toEqual({ allowed: true });
   });
 
+  it('remplissage de service : direction seule, l’équipe de service et la lecture seule sont refusées', () => {
+    for (const path of ['/marketing/fill-service/preview', '/marketing/fill-service']) {
+      expect(decide('STAFF', 'POST', path)).toEqual({ allowed: false, code: 'ROLE_FORBIDDEN' });
+      expect(decide('READ_ONLY', 'POST', path)).toEqual({
+        allowed: false,
+        code: 'READ_ONLY_ACCESS',
+      });
+      expect(decide('OWNER', 'POST', path)).toEqual({ allowed: true });
+      expect(decide('MANAGER', 'POST', path)).toEqual({ allowed: true });
+    }
+  });
+
   it('READ_ONLY lit tout et n’écrit rien', () => {
     expect(decide('READ_ONLY', 'GET', '/customers')).toEqual({ allowed: true });
     expect(decide('READ_ONLY', 'HEAD', '/calls')).toEqual({ allowed: true });

@@ -17,6 +17,8 @@ import {
   MAX_CAMPAIGN_AUDIENCE,
   buildAudience,
   createMarketingCampaign,
+  estimateCampaignCost,
+  renderMarketingTemplate,
   type CampaignAudienceMemberDraft,
   type CampaignChannelCode,
 } from './marketing-campaign.service';
@@ -40,7 +42,10 @@ export type ServiceCapacity =
 
 export type ServiceFillPlan =
   | { status: 'CAPACITY_UNKNOWN' }
-  | { status: 'NO_FREE_PLACES'; capacity: number; booked: number }
+  /** Le restaurant n'ouvre pas ce service ce jour-là : aucun créneau n'existe, rien à remplir. */
+  | { status: 'SERVICE_CLOSED' }
+  /** Plein : le moteur de disponibilité ne propose plus aucun créneau pour 2 couverts. */
+  | { status: 'SERVICE_FULL'; capacity: number; booked: number }
   | {
       status: 'PLANNED';
       window: ServiceWindow;
@@ -52,10 +57,19 @@ export type ServiceFillPlan =
       /** Clients après consentement, opposition, fréquence et sans réservation ce jour-là. */
       candidateCount: number;
       excludedSameDay: number;
+      excludedByReason: Record<string, number>;
       seed: number;
       holdoutCount: number;
       members: CampaignAudienceMemberDraft[];
     };
+
+/** Taille de groupe pour laquelle le service est dit « plein » : celle d'un couple. */
+const BOOKABLE_PARTY_SIZE = 2;
+
+/** Texte par défaut : pas de promotion, un lien de réservation et la désinscription obligatoire. */
+export const DEFAULT_FILL_BODY =
+  'Bonjour {{customer.firstName}}, une table est disponible chez {{restaurant.name}} pour ce service. Réservez ici : {{reservationLink}} STOP : {{unsubscribeUrl}}';
+export const DEFAULT_FILL_SUBJECT = 'Une table disponible ce soir-là';
 
 // Même découpage que « Ce soir » : midi avant 16 h (Paris), soir à partir de 16 h.
 function dayBounds(date: string): ServiceWindow {
@@ -97,14 +111,44 @@ export async function serviceCapacity(args: {
   return { known: true, capacity, booked: bookedCovers, free: capacity - bookedCovers };
 }
 
-/** Vrai seulement si la capacité est connue et qu'il ne reste aucune place : une capacité inconnue ne bloque rien. */
+/**
+ * Ce que le moteur de disponibilité (même source que la réservation, rotations comprises) dit du
+ * service pour 2 couverts : des créneaux existent-ils (`open`), et l'un d'eux est-il libre (`bookable`) ?
+ */
+export async function serviceAvailability(args: {
+  restaurantId: string;
+  start: Date;
+  end: Date;
+}): Promise<{ open: boolean; bookable: boolean }> {
+  const date = parisParts(args.start).dayKey;
+  const availability = await new CapacityAwareAvailabilityService(db).getAvailability({
+    restaurantId: args.restaurantId,
+    date,
+    partySize: BOOKABLE_PARTY_SIZE,
+  });
+  const inService = availability.slots.filter((slot) => {
+    const at = zonedTimeToUtc(date, slot.time, DEFAULT_RESTAURANT_TIMEZONE).getTime();
+    return at >= args.start.getTime() && at < args.end.getTime();
+  });
+  return {
+    open: inService.length > 0,
+    bookable: inService.some((slot) => slot.available),
+  };
+}
+
+/**
+ * Vrai si le service est plein. Une capacité inconnue (pas de plan de salle) ne bloque rien : elle ne
+ * prouve pas que le service est plein.
+ */
 export async function isTargetServiceFull(args: {
   restaurantId: string;
   start: Date;
   end: Date;
 }): Promise<boolean> {
-  const capacity = await serviceCapacity(args);
-  return capacity.known && capacity.free <= 0;
+  const tables = await new CapacityAwareAvailabilityService(db).tableRanges(args.restaurantId);
+  if (tables.length === 0) return false;
+  // Service fermé ou complet : rien à envoyer dans les deux cas.
+  return !(await serviceAvailability(args)).bookable;
 }
 
 // Générateur reproductible : la même graine redonne exactement le même témoin.
@@ -133,8 +177,10 @@ export async function planServiceFill(args: {
   const window = serviceWindow(args.date, args.service);
   const capacity = await serviceCapacity({ restaurantId: args.restaurantId, ...window });
   if (!capacity.known) return { status: 'CAPACITY_UNKNOWN' };
-  if (capacity.free <= 0) {
-    return { status: 'NO_FREE_PLACES', capacity: capacity.capacity, booked: capacity.booked };
+  const availability = await serviceAvailability({ restaurantId: args.restaurantId, ...window });
+  if (!availability.open) return { status: 'SERVICE_CLOSED' };
+  if (!availability.bookable) {
+    return { status: 'SERVICE_FULL', capacity: capacity.capacity, booked: capacity.booked };
   }
 
   const historySince = new Date(now.getTime() - HISTORY_MS);
@@ -158,7 +204,7 @@ export async function planServiceFill(args: {
   const groupSize = groupAverage._avg.partySize ?? FALLBACK_GROUP_SIZE;
   const targetSize = Math.min(
     MAX_CAMPAIGN_AUDIENCE,
-    Math.ceil(capacity.free / groupSize / TAUX_REPONSE),
+    Math.ceil(Math.max(0, capacity.free) / groupSize / TAUX_REPONSE),
   );
 
   const day = dayBounds(args.date);
@@ -235,6 +281,7 @@ export async function planServiceFill(args: {
     targetSize,
     candidateCount: pool.length,
     excludedSameDay: consented.length - pool.length,
+    excludedByReason: audience.excludedByReason,
     seed,
     holdoutCount,
     members: selected.map(({ member, matches }) => ({
@@ -277,4 +324,75 @@ export async function createServiceFillDraft(args: {
     createdBy: args.createdBy,
   });
   return { plan, campaign };
+}
+
+export type FillServiceInput = {
+  restaurantId: string;
+  /** Jour de Paris, AAAA-MM-JJ. */
+  date: string;
+  service: TonightService;
+  channel: CampaignChannelCode;
+};
+
+/**
+ * Aperçu chiffré d'un service, sans rien écrire : états, places, candidats, audience, témoin et coût.
+ * Aucun nom ni téléphone n'est renvoyé.
+ */
+export async function previewServiceFill(args: FillServiceInput & { now?: Date }) {
+  const plan = await planServiceFill(args);
+  const restaurant = await db.restaurant.findUnique({
+    where: { id: args.restaurantId },
+    select: { name: true },
+  });
+  const template = {
+    subject: args.channel === 'EMAIL' ? DEFAULT_FILL_SUBJECT : null,
+    bodyTemplate: DEFAULT_FILL_BODY,
+  };
+  const base = {
+    date: args.date,
+    service: args.service,
+    channel: args.channel,
+    template,
+    status: plan.status,
+    full: plan.status === 'SERVICE_FULL',
+  };
+  if (plan.status !== 'PLANNED') {
+    return {
+      ...base,
+      capacityKnown: plan.status !== 'CAPACITY_UNKNOWN',
+      capacity: plan.status === 'SERVICE_FULL' ? plan.capacity : null,
+      booked: plan.status === 'SERVICE_FULL' ? plan.booked : null,
+    };
+  }
+  const holdoutCount = plan.holdoutCount;
+  const sends = plan.members.length - holdoutCount;
+  // Coût sur le texte par défaut rendu avec le nom du restaurant : un lien de réservation indicatif.
+  const body = renderMarketingTemplate(DEFAULT_FILL_BODY, {
+    customer: { firstName: 'Client', name: 'Client' },
+    restaurant: { name: restaurant?.name ?? 'Votre restaurant' },
+    reservationLink: 'https://sokar.tech/book/restaurant',
+    unsubscribeUrl: 'https://sokar.tech/marketing/unsubscribe?token=preview',
+  });
+  const costEstimate = await estimateCampaignCost({
+    channel: args.channel,
+    body,
+    audienceCount: sends,
+    occurredAt: args.now ?? new Date(),
+  });
+  return {
+    ...base,
+    capacityKnown: true,
+    capacity: plan.capacity,
+    booked: plan.booked,
+    freePlaces: plan.freePlaces,
+    groupSize: plan.groupSize,
+    targetSize: plan.targetSize,
+    candidateCount: plan.candidateCount,
+    excludedSameDay: plan.excludedSameDay,
+    excludedByReason: plan.excludedByReason,
+    audience: plan.members.length,
+    holdout: holdoutCount,
+    sends,
+    costEstimate,
+  };
 }

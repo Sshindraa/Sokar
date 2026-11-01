@@ -386,4 +386,30 @@ describe('brouillon de relance dans Companion', () => {
       JSON.parse(window.sessionStorage.getItem('sokar:campaign-draft') ?? 'null'),
     ).toMatchObject({ name: 'Relance midi', channel: 'SMS' });
   });
+
+  it('propose de remplir le service du soir, avec le même texte, sans URL de données', async () => {
+    mocks.post.mockResolvedValue({
+      reply: 'Relance prête pour l’éditeur.',
+      sources: [],
+      responseId: RESPONSE_ID,
+      draft: {
+        channel: 'SMS',
+        name: 'Relance midi',
+        objective: 'Remplir le service',
+        body: 'Il reste des tables ce soir. {{unsubscribeUrl}}',
+      },
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: WEEK_QUESTION }));
+    const link = await screen.findByRole('link', { name: 'Remplir ce service' });
+
+    expect(link.getAttribute('href')).toMatch(
+      /^\/dashboard\/marketing\/fill-service\?date=\d{4}-\d{2}-\d{2}&service=soir$/,
+    );
+    fireEvent.click(link);
+    expect(
+      JSON.parse(window.sessionStorage.getItem('sokar:campaign-draft') ?? 'null'),
+    ).toMatchObject({ body: 'Il reste des tables ce soir. {{unsubscribeUrl}}' });
+  });
 });

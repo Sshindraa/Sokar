@@ -154,5 +154,46 @@
       "description": "Un montant ou une formule à offrir, puis à utiliser dans votre restaurant.",
       "action": "Créer une carte cadeau"
     }
+  },
+  "fillService": {
+    "title": "Remplir ce service",
+    "intro": "Un message à des clients qui ont donné leur accord, sans promotion. Rien n’est envoyé : la campagne reste un brouillon que vous programmez ou envoyez ensuite.",
+    "date": "Jour",
+    "service": "Service",
+    "midi": "Midi",
+    "soir": "Soir",
+    "channel": "Canal",
+    "sms": "SMS",
+    "email": "E-mail",
+    "loading": "Calcul de l’aperçu…",
+    "errorTitle": "Impossible de calculer l’aperçu",
+    "retry": "Réessayer",
+    "freePlaces": "Places libres",
+    "candidates": "Clients candidats",
+    "audience": "Destinataires",
+    "holdout": "Témoin (sans message)",
+    "sends": "Messages à envoyer",
+    "cost": "Coût estimé",
+    "costUnknown": "Tarif non rapproché",
+    "capacityUnknown": "Le plan de salle n’est pas renseigné : la capacité de ce service est inconnue, rien n’est proposé.",
+    "full": "Ce service est complet : plus aucun créneau pour 2 couverts.",
+    "noCandidate": "Aucun client joignable pour ce service.",
+    "noCandidateReasons": "Sans accord : {noConsent} · Opposés : {optedOut} · Déjà réservés ce jour : {sameDay} · Fréquence : {frequency}",
+    "subject": "Objet",
+    "body": "Message",
+    "bodyHelp": "Gardez '{reservationLink}' et '{unsubscribeUrl}' : ils sont obligatoires pour un envoi.",
+    "create": "Créer la campagne",
+    "creating": "Création…",
+    "openFromQuietDay": "Remplir ce service",
+    "report": {
+      "title": "Service visé",
+      "treated": "Destinataires",
+      "holdout": "Témoin",
+      "perCustomer": "couverts par client",
+      "difference": "Écart",
+      "inconclusive": "Non concluant : moins de 20 clients dans le témoin."
+    },
+    "back": "Tableau de bord",
+    "closed": "Le restaurant n’ouvre pas ce service ce jour-là : rien à remplir."
   }
 }

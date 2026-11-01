@@ -62,6 +62,8 @@ export const STAFF_RULES: readonly Rule[] = [
 export const DIRECTION_ONLY_RULES: readonly Rule[] = [
   // Companion : la carte « Ce soir » et le chat. Le chat refuse déjà l'écriture à la lecture seule.
   { path: '/companion', below: true },
+  // Remplissage d'un service : chiffres et texte d'une campagne, réservé à la direction.
+  { path: '/marketing/fill-service', below: true },
 ];
 
 function matches(rule: Rule, method: string, route: string): boolean {

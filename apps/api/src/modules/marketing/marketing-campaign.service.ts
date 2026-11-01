@@ -534,6 +534,42 @@ export async function getMarketingCampaign(args: {
   });
 }
 
+/** Coût estimé d'un envoi au tarif fournisseur ; `NOT_AVAILABLE` tant que le tarif n'est pas rapproché. */
+export async function estimateCampaignCost(args: {
+  channel: CampaignChannelCode;
+  body: string;
+  audienceCount: number;
+  occurredAt: Date;
+}): Promise<MarketingCampaignPreview['costEstimate']> {
+  const unitsPerMessage = args.channel === 'SMS' ? countSmsSegments(args.body) : 1;
+  const costDimension =
+    args.channel === 'SMS'
+      ? { category: 'SMS_SEGMENTS' as const, provider: 'telnyx', unit: 'segments' }
+      : args.channel === 'EMAIL'
+        ? { category: 'EMAIL_MESSAGES' as const, provider: 'resend', unit: 'messages' }
+        : { category: 'WHATSAPP_MESSAGES' as const, provider: 'telnyx', unit: 'messages' };
+  const tariff = await resolveUsageTariff({
+    ...costDimension,
+    quantity: unitsPerMessage * args.audienceCount,
+    occurredAt: args.occurredAt,
+  });
+  return tariff.costStatus === 'PRICED'
+    ? {
+        amount: tariff.estimatedCostEur,
+        currency: 'EUR' as const,
+        status: 'PRICED' as const,
+        reason: 'PROVIDER_TARIFF_RECONCILED' as const,
+        ...(tariff.tariffId ? { tariffId: tariff.tariffId } : {}),
+        ...(tariff.pricePerUnit ? { pricePerUnit: tariff.pricePerUnit } : {}),
+      }
+    : {
+        amount: null,
+        currency: 'EUR' as const,
+        status: 'NOT_AVAILABLE' as const,
+        reason: 'PROVIDER_TARIFF_NOT_RECONCILED' as const,
+      };
+}
+
 function previewContext(
   customerName: string | null | undefined,
   restaurantName: string,
@@ -608,35 +644,14 @@ export async function previewMarketingCampaign(args: {
   const smsUnits = isSms ? countSmsUnits(body) : null;
   const unitsPerMessage = isSms ? countSmsSegments(body) : 1;
   const encoding = isSms ? smsUnits!.encoding : 'message';
-  const costDimension =
-    campaign.channel === 'SMS'
-      ? { category: 'SMS_SEGMENTS' as const, provider: 'telnyx', unit: 'segments' }
-      : campaign.channel === 'EMAIL'
-        ? { category: 'EMAIL_MESSAGES' as const, provider: 'resend', unit: 'messages' }
-        : { category: 'WHATSAPP_MESSAGES' as const, provider: 'telnyx', unit: 'messages' };
-  const tariff = await resolveUsageTariff({
-    ...costDimension,
-    quantity: unitsPerMessage * campaign.audienceCount,
-    // A scheduled campaign is priced against its execution window. An
-    // unscheduled draft uses the preview instant and is recalculated on send.
+  // A scheduled campaign is priced against its execution window. An
+  // unscheduled draft uses the preview instant and is recalculated on send.
+  const costEstimate = await estimateCampaignCost({
+    channel: campaign.channel as CampaignChannelCode,
+    body,
+    audienceCount: campaign.audienceCount,
     occurredAt: campaign.scheduledAt ?? new Date(),
   });
-  const costEstimate =
-    tariff.costStatus === 'PRICED'
-      ? {
-          amount: tariff.estimatedCostEur,
-          currency: 'EUR' as const,
-          status: 'PRICED' as const,
-          reason: 'PROVIDER_TARIFF_RECONCILED' as const,
-          ...(tariff.tariffId ? { tariffId: tariff.tariffId } : {}),
-          ...(tariff.pricePerUnit ? { pricePerUnit: tariff.pricePerUnit } : {}),
-        }
-      : {
-          amount: null,
-          currency: 'EUR' as const,
-          status: 'NOT_AVAILABLE' as const,
-          reason: 'PROVIDER_TARIFF_NOT_RECONCILED' as const,
-        };
 
   return {
     campaign: {

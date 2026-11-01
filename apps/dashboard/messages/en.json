@@ -154,5 +154,46 @@
       "description": "An amount or package to give as a gift and redeem at your restaurant.",
       "action": "Create a gift card"
     }
+  },
+  "fillService": {
+    "title": "Fill this service",
+    "intro": "A message to guests who opted in, with no promotion. Nothing is sent: the campaign stays a draft that you schedule or send afterwards.",
+    "date": "Day",
+    "service": "Service",
+    "midi": "Lunch",
+    "soir": "Dinner",
+    "channel": "Channel",
+    "sms": "SMS",
+    "email": "E-mail",
+    "loading": "Computing the preview…",
+    "errorTitle": "The preview could not be computed",
+    "retry": "Retry",
+    "freePlaces": "Free seats",
+    "candidates": "Candidate guests",
+    "audience": "Recipients",
+    "holdout": "Control group (no message)",
+    "sends": "Messages to send",
+    "cost": "Estimated cost",
+    "costUnknown": "Tariff not reconciled",
+    "capacityUnknown": "No floor plan is set up: this service’s capacity is unknown, so nothing is proposed.",
+    "full": "This service is full: no slot is left for 2 guests.",
+    "noCandidate": "No reachable guest for this service.",
+    "noCandidateReasons": "No consent: {noConsent} · Opted out: {optedOut} · Already booked that day: {sameDay} · Frequency cap: {frequency}",
+    "subject": "Subject",
+    "body": "Message",
+    "bodyHelp": "Keep '{reservationLink}' and '{unsubscribeUrl}': they are required to send.",
+    "create": "Create the campaign",
+    "creating": "Creating…",
+    "openFromQuietDay": "Fill this service",
+    "report": {
+      "title": "Targeted service",
+      "treated": "Recipients",
+      "holdout": "Control",
+      "perCustomer": "covers per guest",
+      "difference": "Difference",
+      "inconclusive": "Inconclusive: fewer than 20 guests in the control group."
+    },
+    "back": "Dashboard",
+    "closed": "The restaurant does not open this service that day: nothing to fill."
   }
 }

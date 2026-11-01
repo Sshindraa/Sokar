@@ -153,5 +153,46 @@
       "description": "Un importe o una propuesta para regalar y utilizar en su restaurante.",
       "action": "Crear una tarjeta regalo"
     }
+  },
+  "fillService": {
+    "title": "Llenar este servicio",
+    "intro": "Un mensaje a clientes que dieron su consentimiento, sin promoción. No se envía nada: la campaña queda como borrador que programa o envía después.",
+    "date": "Día",
+    "service": "Servicio",
+    "midi": "Mediodía",
+    "soir": "Noche",
+    "channel": "Canal",
+    "sms": "SMS",
+    "email": "Correo",
+    "loading": "Calculando la vista previa…",
+    "errorTitle": "No se pudo calcular la vista previa",
+    "retry": "Reintentar",
+    "freePlaces": "Plazas libres",
+    "candidates": "Clientes candidatos",
+    "audience": "Destinatarios",
+    "holdout": "Grupo de control (sin mensaje)",
+    "sends": "Mensajes a enviar",
+    "cost": "Coste estimado",
+    "costUnknown": "Tarifa no conciliada",
+    "capacityUnknown": "No hay plano de sala: la capacidad de este servicio es desconocida, así que no se propone nada.",
+    "full": "Este servicio está completo: no queda ningún hueco para 2 personas.",
+    "noCandidate": "Ningún cliente localizable para este servicio.",
+    "noCandidateReasons": "Sin consentimiento: {noConsent} · Dados de baja: {optedOut} · Ya reservados ese día: {sameDay} · Límite de frecuencia: {frequency}",
+    "subject": "Asunto",
+    "body": "Mensaje",
+    "bodyHelp": "Mantenga '{reservationLink}' y '{unsubscribeUrl}': son obligatorios para enviar.",
+    "create": "Crear la campaña",
+    "creating": "Creando…",
+    "openFromQuietDay": "Llenar este servicio",
+    "report": {
+      "title": "Servicio objetivo",
+      "treated": "Destinatarios",
+      "holdout": "Control",
+      "perCustomer": "cubiertos por cliente",
+      "difference": "Diferencia",
+      "inconclusive": "No concluyente: menos de 20 clientes en el grupo de control."
+    },
+    "back": "Panel",
+    "closed": "El restaurante no abre este servicio ese día: no hay nada que llenar."
   }
 }

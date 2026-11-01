@@ -153,5 +153,46 @@
       "description": "Un importo o una proposta da regalare e utilizzare nel suo ristorante.",
       "action": "Crea un buono regalo"
     }
+  },
+  "fillService": {
+    "title": "Riempi questo servizio",
+    "intro": "Un messaggio ai clienti che hanno dato il consenso, senza promozioni. Non viene inviato nulla: la campagna resta una bozza che programmi o invii dopo.",
+    "date": "Giorno",
+    "service": "Servizio",
+    "midi": "Pranzo",
+    "soir": "Cena",
+    "channel": "Canale",
+    "sms": "SMS",
+    "email": "E-mail",
+    "loading": "Calcolo dell’anteprima…",
+    "errorTitle": "Impossibile calcolare l’anteprima",
+    "retry": "Riprova",
+    "freePlaces": "Posti liberi",
+    "candidates": "Clienti candidati",
+    "audience": "Destinatari",
+    "holdout": "Gruppo di controllo (senza messaggio)",
+    "sends": "Messaggi da inviare",
+    "cost": "Costo stimato",
+    "costUnknown": "Tariffa non riconciliata",
+    "capacityUnknown": "Non è stata impostata la planimetria: la capacità di questo servizio è sconosciuta, quindi non viene proposto nulla.",
+    "full": "Questo servizio è completo: non resta alcun posto per 2 persone.",
+    "noCandidate": "Nessun cliente raggiungibile per questo servizio.",
+    "noCandidateReasons": "Senza consenso: {noConsent} · Disiscritti: {optedOut} · Già prenotati quel giorno: {sameDay} · Limite di frequenza: {frequency}",
+    "subject": "Oggetto",
+    "body": "Messaggio",
+    "bodyHelp": "Mantenga '{reservationLink}' e '{unsubscribeUrl}': sono obbligatori per l’invio.",
+    "create": "Crea la campagna",
+    "creating": "Creazione…",
+    "openFromQuietDay": "Riempi questo servizio",
+    "report": {
+      "title": "Servizio mirato",
+      "treated": "Destinatari",
+      "holdout": "Controllo",
+      "perCustomer": "coperti per cliente",
+      "difference": "Differenza",
+      "inconclusive": "Non conclusivo: meno di 20 clienti nel gruppo di controllo."
+    },
+    "back": "Dashboard",
+    "closed": "Il ristorante non apre questo servizio quel giorno: non c’è nulla da riempire."
   }
 }

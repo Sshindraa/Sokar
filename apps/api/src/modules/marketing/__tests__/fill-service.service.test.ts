@@ -12,11 +12,15 @@ import {
   createServiceFillDraft,
   isTargetServiceFull,
   planServiceFill,
+  previewServiceFill,
   serviceWindow,
 } from '../fill-service.service';
 
 vi.mock('../../../shared/db/client', () => ({
-  db: { reservation: { findMany: vi.fn(), aggregate: vi.fn() } },
+  db: {
+    reservation: { findMany: vi.fn(), aggregate: vi.fn() },
+    restaurant: { findUnique: vi.fn().mockResolvedValue({ name: 'Chez Sokar' }) },
+  },
 }));
 vi.mock('../../floor-plan/availability-capacity-aware.service', () => ({
   CapacityAwareAvailabilityService: vi.fn(),
@@ -25,6 +29,9 @@ vi.mock('../marketing-campaign.service', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../marketing-campaign.service')>()),
   buildAudience: vi.fn(),
   createMarketingCampaign: vi.fn(),
+  estimateCampaignCost: vi
+    .fn()
+    .mockResolvedValue({ amount: null, currency: 'EUR', status: 'NOT_AVAILABLE' }),
 }));
 
 const NOW = new Date('2026-11-02T10:00:00.000Z');
@@ -58,15 +65,26 @@ function mockFloor({
   booked = 0,
   honored = [],
   busy = [],
+  bookable = true,
+  open = true,
 }: {
   tables: Array<{ capacity: number; minCapacity: number }>;
   booked?: number;
   honored?: Array<{ customerId: string; reservedAt: Date }>;
   busy?: Array<{ customerId: string }>;
+  /** Le moteur de disponibilité propose-t-il un créneau pour 2 couverts à 12 h 30 ? */
+  bookable?: boolean;
+  /** Le restaurant ouvre-t-il ce service ? Sinon, aucun créneau n'existe. */
+  open?: boolean;
 }) {
   // Une fonction (et non une flèche) : le service est instancié avec `new`.
   vi.mocked(CapacityAwareAvailabilityService).mockImplementation(function () {
-    return { tableRanges: vi.fn().mockResolvedValue(tables) };
+    return {
+      tableRanges: vi.fn().mockResolvedValue(tables),
+      getAvailability: vi.fn().mockResolvedValue({
+        slots: open ? [{ time: '12:30', available: bookable }] : [],
+      }),
+    };
   } as never);
   vi.mocked(db.reservation.aggregate).mockImplementation(((args: { _sum?: unknown }) =>
     Promise.resolve(
@@ -119,8 +137,8 @@ describe('remplissage de service', () => {
     expect(plan).toMatchObject({ status: 'PLANNED', capacity: 30, booked: 12, freePlaces: 18 });
   });
 
-  it('service plein : aucune audience', async () => {
-    mockFloor({ tables: [{ capacity: 30, minCapacity: 1 }], booked: 30 });
+  it('service non ouvert ce jour-là : ni plein ni ciblé', async () => {
+    mockFloor({ tables: [{ capacity: 30, minCapacity: 1 }], open: false });
     const plan = await planServiceFill({
       restaurantId: 'r1',
       date: DATE,
@@ -128,7 +146,20 @@ describe('remplissage de service', () => {
       channel: 'SMS',
       now: NOW,
     });
-    expect(plan).toEqual({ status: 'NO_FREE_PLACES', capacity: 30, booked: 30 });
+    expect(plan).toEqual({ status: 'SERVICE_CLOSED' });
+    expect(buildAudience).not.toHaveBeenCalled();
+  });
+
+  it('service plein (aucun créneau pour 2 couverts, moteur de disponibilité) : aucune audience', async () => {
+    mockFloor({ tables: [{ capacity: 30, minCapacity: 1 }], booked: 30, bookable: false });
+    const plan = await planServiceFill({
+      restaurantId: 'r1',
+      date: DATE,
+      service: 'midi',
+      channel: 'SMS',
+      now: NOW,
+    });
+    expect(plan).toEqual({ status: 'SERVICE_FULL', capacity: 30, booked: 30 });
     expect(buildAudience).not.toHaveBeenCalled();
   });
 
@@ -240,9 +271,11 @@ describe('remplissage de service', () => {
 
   it('service visé complet : pause ; capacité inconnue : rien ne bloque', async () => {
     const window = serviceWindow(DATE, 'midi');
-    mockFloor({ tables: [{ capacity: 10, minCapacity: 1 }], booked: 10 });
+    mockFloor({ tables: [{ capacity: 10, minCapacity: 1 }], bookable: false });
     await expect(isTargetServiceFull({ restaurantId: 'r1', ...window })).resolves.toBe(true);
-    mockFloor({ tables: [] });
+    mockFloor({ tables: [{ capacity: 10, minCapacity: 1 }], bookable: true });
+    await expect(isTargetServiceFull({ restaurantId: 'r1', ...window })).resolves.toBe(false);
+    mockFloor({ tables: [], bookable: false });
     await expect(isTargetServiceFull({ restaurantId: 'r1', ...window })).resolves.toBe(false);
   });
 
@@ -266,5 +299,41 @@ describe('remplissage de service', () => {
         data: [expect.objectContaining({ audienceMemberId: 'm1', customerId: 'c1' })],
       }),
     );
+  });
+
+  it('aperçu : chiffres et texte par défaut, aucun nom ni téléphone', async () => {
+    mockFloor({ tables: [{ capacity: 36, minCapacity: 1 }] });
+    mockAudience(members(10));
+    const preview = await previewServiceFill({
+      restaurantId: 'r1',
+      date: DATE,
+      service: 'midi',
+      channel: 'SMS',
+      now: NOW,
+    });
+    expect(preview).toMatchObject({
+      status: 'PLANNED',
+      full: false,
+      freePlaces: 36,
+      holdout: 1,
+      sends: 9,
+    });
+    expect(preview.template.bodyTemplate).toContain('{{reservationLink}}');
+    expect(preview.template.bodyTemplate).toContain('{{unsubscribeUrl}}');
+    const keys = JSON.stringify(preview);
+    expect(keys).not.toMatch(/"(name|phone|firstName)"/);
+  });
+
+  it('aperçu d’un service plein : indiqué comme plein, sans audience', async () => {
+    mockFloor({ tables: [{ capacity: 36, minCapacity: 1 }], bookable: false });
+    const preview = await previewServiceFill({
+      restaurantId: 'r1',
+      date: DATE,
+      service: 'midi',
+      channel: 'SMS',
+      now: NOW,
+    });
+    expect(preview).toMatchObject({ status: 'SERVICE_FULL', full: true });
+    expect(buildAudience).not.toHaveBeenCalled();
   });
 });

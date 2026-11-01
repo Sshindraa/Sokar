@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { parisToday } from '@/lib/paris-date';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, RotateCcw, Send, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
@@ -99,6 +100,7 @@ export function CompanionPanel() {
 
 function CompanionConversation({ siteId }: { siteId: string | undefined }) {
   const t = useTranslations('companion');
+  const tFill = useTranslations('fillService');
   const { post } = useApi();
   const [messages, setMessages] = useState<Message[]>(() => (siteId ? readHistory(siteId) : []));
   const [draft, setDraft] = useState('');
@@ -185,14 +187,26 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
 
   // Ouvre l'éditeur de campagne avec le brouillon : il passe par la session, jamais par l'URL.
   function draftLink(draft: CompanionCampaignDraft) {
+    const linkClass =
+      'mt-2 inline-block text-xs font-medium text-primary underline-offset-4 transition-all duration-200 hover:underline';
     return (
-      <Link
-        href="/dashboard/marketing/campaigns/new"
-        onClick={() => storeCampaignDraft(draft)}
-        className="mt-2 inline-block text-xs font-medium text-primary underline-offset-4 transition-all duration-200 hover:underline"
-      >
-        {t('openCampaign')}
-      </Link>
+      <div className="flex flex-wrap gap-x-4">
+        <Link
+          href="/dashboard/marketing/campaigns/new"
+          onClick={() => storeCampaignDraft(draft)}
+          className={linkClass}
+        >
+          {t('openCampaign')}
+        </Link>
+        {/* Service du soir d'aujourd'hui, à Paris : le gérant peut changer le jour et le service sur la page. */}
+        <Link
+          href={`/dashboard/marketing/fill-service?date=${parisToday()}&service=soir`}
+          onClick={() => storeCampaignDraft(draft)}
+          className={linkClass}
+        >
+          {tFill('openFromQuietDay')}
+        </Link>
+      </div>
     );
   }
 
