@@ -76,7 +76,9 @@ describe('TonightCard : résumé', () => {
     renderCard();
 
     expect(await screen.findByText(COVERS_LINE)).toBeInTheDocument();
-    expect(screen.queryByText('Résumé en préparation…')).not.toBeInTheDocument();
+    await vi.waitFor(() =>
+      expect(screen.queryByText('Résumé en préparation…')).not.toBeInTheDocument(),
+    );
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
