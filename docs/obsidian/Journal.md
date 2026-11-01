@@ -3129,13 +3129,13 @@ Contrat `POST /companion/chat` étendu, sans rupture : chaque message peut porte
 
 Retrait de `toolRuns` (API, panneau, doc) : l'historique redevient `{ role, content }` ; les entrées sessionStorage anciennes restent lisibles, sans ce champ.
 
-### 2026-10-30 — Companion : panneau monté même fermé
-
-Le dialog Companion reste monté quand il est fermé (`hidden`) : fermer le panneau pendant une question ne perd plus l'attente, la réponse ni l'erreur avec Réessayer. Test du layout : panneau fermé présent mais invisible.
-
 ### 2026-10-30 — Companion phase 3 : avis sur les réponses
 
 Chaque réponse porte un `responseId` (UUID, aussi dans le log « companion chat »). `POST /companion/feedback` reçoit `{ responseId, rating: 'up' | 'down' }` (corps strict, 204, avis en logs seulement : shortcut, table dédiée si le volume le justifie). Le panneau affiche deux boutons sous les réponses récentes ; un avis verrouille les boutons, un échec d'envoi les rétablit sans message. Les réponses enregistrées avant cette phase n'ont pas de boutons. Correctif de course : un avis donné pendant qu'une question est en cours n'est plus effacé par la réponse suivante (mise à jour fonctionnelle de la liste). Branche feat/companion-v1.
+
+### 2026-10-30 — Companion : panneau monté même fermé
+
+Le dialog Companion reste monté quand il est fermé (`hidden`) : fermer le panneau pendant une question ne perd plus l'attente, la réponse ni l'erreur avec Réessayer. Test du layout : panneau fermé présent mais invisible.
 
 ### 2026-10-30 — Companion : données de test et banc de questions
 
@@ -3168,6 +3168,10 @@ Le prompt interdit au modèle tout calcul (somme, différence, moyenne, taux, po
 ### 2026-10-30 — Companion : banc, critère d'outil générique
 
 Le critère « outil » du banc devient « au moins un outil appelé » pour toutes les questions notées : le nom d'outil attendu par question est retiré. Les appels d'outils (arguments et résultats) restent enregistrés par essai. Question 26 : le premier canal nommé doit aussi être celui dont la valeur est la plus haute dans un résultat d'outil enregistré (groupes par canal de `query_data` ou `by_channel`). Résultat sur les questions notées, trois essais chacune : outil 66/66, chiffre 66/66. Tokens : 672 780 en entrée, 37 641 en sortie.
+
+### 2026-10-30 — Companion : passation de session
+
+Fait : Companion v1 sur `feat/companion-v1` (PR #625, non fusionnée) : `POST /companion/chat` (Haiku 5.5 via OpenRouter, data_collection deny), 5 outils indicateurs + `query_data` (requête souple validée côté serveur, agrégats seulement), panneau dashboard, avis pouce haut/bas en logs, seed de dev `seed:companion` et banc `apps/api/scripts/companion-bench` (66/66). Décisions : aucun calcul par le modèle, aucun outil imposé par question (pas de correctif au cas par cas), brouillons sans fait inventé, réservé OWNER/MANAGER. Suite : tests réels de Hamza en dev, puis brainstorming produit pour la v2 (nouvelle session). Fichiers clés : `apps/api/src/modules/companion/*`, `apps/dashboard/src/features/companion/*`. Questions ouvertes : liste d'attente, avis clients et données nominatives (RGPD, hors UE) pas encore exposés ; checkout local resté sur `feat/companion-v1`.
 
 ### 2026-10-30 — Companion : carte « Ce soir »
 
@@ -3256,6 +3260,43 @@ Banc complet Sonnet (141 réponses) : outil 120/123, chiffre 117/123, ancrage 13
 
 Limites. La référence Haiku est le banc complet de la passe B2, joué sur un code antérieur à la mesure facultative d'`explain_change`. Je n'ai pas relancé de banc complet Haiku, pour respecter la règle d'un seul banc complet, sur le meilleur modèle. La bascule n'atteint la production qu'au déploiement de la PR, après fusion, qui reste une décision humaine. Si le `.env` de production fixe `COMPANION_LLM_MODEL` à Haiku, il faut le changer à ce moment-là ; je n'ai pas accès au VPS. `Context.md` dépasse 8 Ko (10 431 octets, contre 10 143 avant cette ligne) ; à réduire dans une passe dédiée.
 
+### 2026-10-31 — Companion : correcteur corrigé, condition passée au renotage
+
+Renotage avant/après, sans appel au modèle (`--rescore`). Avant : code de `378379b0`. Après : correcteur corrigé (`run.ts`, non commité).
+
+- Haiku 5.5, passe B2 (47 × 3) : ancrage 140/141 → 141/141 ; chiffre 111/123 → 111/123.
+- Sonnet 5.5, banc complet (47 × 3, raisonnement bas) : ancrage 136/141 → 140/141 ; chiffre 114/123 → 114/123.
+- Questions simples (Q1 à 41) : chiffre Sonnet 102/123, Haiku 101/123 ; notées seulement (35 questions, 105 essais) : Sonnet 102/105, Haiku 101/105. Aucune question 3/3 sous Haiku ne tombe à 1/3 ou moins. Trois baisses de 3/3 à 2/3 : Q10, Q24, Q41.
+
+Au moment du banc (avant `378379b0`), l'ancrage Sonnet était 135/141. Le correcteur de `378379b0` le porte à 136/141, pas à 139/141, et le total noté à 102/105, pas 105/105 : les chiffres du message de commit ne se reproduisent pas.
+
+Corrections du correcteur :
+- « 2026-09 » ne compte plus 09 comme chiffre à ancrer (Q11).
+- Une fraction d'un résultat vaut aussi son pourcentage : 0,89 → 89 % (Q45). Raccourci noté dans le code.
+- Un intervalle (« du 25 au 31 octobre ») nomme la fenêtre entière. Sa date de fin seule ne nomme plus une autre fenêtre. « octobre 2026 » nomme seulement le mois entier, pas la fenêtre de 7 ou 30 jours (`378379b0` le faisait).
+
+Condition après correction : chiffre simples 102 contre 101 (pas en recul) ; aucune question 3/3 tombée à 1/3 ; ancrage 140/141 = 99,3 %. La bascule de `378379b0` est cohérente avec ces critères. Reste un vrai défaut : Q19 essai 3 (Sonnet), « 4 cas », 37 − 33 calculé par le modèle.
+
+Non commité : correction de `run.ts` et cette entrée. `Context.md` (ligne 52) annonce encore 105/105 et 139/141.
+
 ### 2026-11-01 — Companion : parts en pourcentage
 
 `explain_change` renvoie `share_pct` (part de l'écart total en pour cent, arrondie à l'unité, calculée par le serveur) à la place de `share` (fraction à deux décimales), et la description de l'outil le dit ; `delta_pct` de `query_data` est déjà un pourcentage, rien à changer. Banc Q45 (Sonnet 5.5, raisonnement bas, 3 essais) : outil, chiffre et ancrage 3/3 ; renotage hors ligne sans changement.
+
+### 2026-11-01 — Companion : part nulle hors de 0 à 100, correcteur commité
+
+`share_pct` d'un groupe de `explain_change` vaut null quand sa part sort de 0 à 100 % : écart total faible, ou groupe allant en sens opposé. Le `delta` du groupe reste l'écart réel, et la description de l'outil le dit. Tests : part de 150 % et de −50 % dans un écart total de +2 ; l'écart total nul était déjà couvert. `explain-change` : 9 verts ; `companion` : 82 verts ; `tsc --noEmit` sans erreur.
+
+Le correcteur de `run.ts` est commité tel quel : intervalles et libellé de mois (`windowSays`), AAAA-MM (`figuresIn`), fraction → pourcentage (`anchoredIn`, décrite le 31/10). Renotage hors ligne de tout le banc Sonnet (`--rescore`, aucun appel au modèle). Avant : scorer de `a76302ae`. Après : scorer commité. Copies renotées dans le scratchpad ; `results/` non touché.
+
+| Fichier | Ancrage avant → après | Chiffre avant → après |
+|---|---|---|
+| `23-48-07`, banc complet (47 × 3) | 139/141 → 140/141 | 114/123 → 114/123 |
+| `23-52-55`, banc complet, second passage | 136/141 → 140/141 | 113/123 → 113/123 |
+| `23-45-50`, huit questions | 24/24 → 24/24 | 17/24 → 17/24 |
+| `23-59-01`, deux questions | 2/2 → 2/2 | 2/2 → 2/2 |
+| `18-13-55`, Q45 | 3/3 → 3/3 | 3/3 → 3/3 |
+
+Ancrages rendus : Q45 essai 1 de `23-48-07` (« 89 % », part 0,89) ; Q11 essais 1 et 3, puis Q45 essais 2 et 3 de `23-52-55` (« 2026-09 », « 89 % »). Aucun chiffre ne bouge.
+
+Dérive : 27 questions du banc complet, 6 de `23-45-50` et 1 de `23-59-01` n'ont plus leur valeur dans la base locale ; leur chiffre garde la valeur enregistrée, non renotée. Le 23/24 de `23-45-50` noté le 31/10 n'est pas reproduit : le scorer de `a76302ae` donne 24/24 sur ce fichier.

@@ -44,7 +44,7 @@ export interface Driver {
   value: number | null;
   reference: number | null;
   delta: number;
-  /** Part de l'écart total porté par ce groupe, en pour cent arrondi à l'unité ; null si l'écart total vaut 0. */
+  /** Part de l'écart total porté par ce groupe, en pour cent arrondi à l'unité ; null si l'écart total vaut 0 ou si cette part sort de 0 à 100. */
   share_pct: number | null;
 }
 
@@ -77,6 +77,13 @@ export interface Explanation {
 
 const isResult = (value: QueryResult | QueryUnavailable | QueryError): value is QueryResult =>
   'total' in value;
+
+/** Part d'un écart dans l'écart total, en pour cent arrondi ; null hors de 0 à 100 (écart total faible, sens opposés). */
+const sharePct = (delta: number, total: number | null): number | null => {
+  if (total === null || total === 0) return null;
+  const share = (delta / total) * 100;
+  return share < 0 || share > 100 ? null : Math.round(share);
+};
 
 /** Le total, les drivers et le volume d'une mesure, depuis le moteur de query_data. */
 async function explainMeasure(
@@ -120,10 +127,7 @@ async function explainMeasure(
         value: group.value,
         reference: group.reference,
         delta: group.delta,
-        share_pct:
-          totalCompared.delta === null || totalCompared.delta === 0
-            ? null
-            : Math.round((group.delta / totalCompared.delta) * 100),
+        share_pct: sharePct(group.delta, totalCompared.delta),
       });
     }
   }
@@ -216,7 +220,7 @@ export function explainChangeDescription(): string {
     .join(' ; ');
   return [
     `Explique un écart entre une période et sa référence (compare, même sens que query_data). Sources (source) : ${sources}.`,
-    'measure est facultatif : sans lui, le résultat explique chaque mesure de la fiche. Pour chaque mesure, measures donne le total avec sa référence, un écart et un pourcentage calculés par le serveur, et les groupes qui portent l’écart (drivers : share_pct donne leur part de l’écart total en pour cent, arrondie à l’unité ; cinq au plus).',
+    'measure est facultatif : sans lui, le résultat explique chaque mesure de la fiche. Pour chaque mesure, measures donne le total avec sa référence, un écart et un pourcentage calculés par le serveur, et les groupes qui portent l’écart (drivers, cinq au plus : delta est leur écart ; share_pct leur part de l’écart total en pour cent, arrondie à l’unité, ou null si cette part sort de 0 à 100, ce qui arrive quand l’écart total est faible ou que les groupes vont en sens opposé).',
     'alongside donne les autres sources qui varient dans le même temps (seulement si l’écart est d’au moins 25 % et la référence d’au moins 5). low_volume vrai signifie une référence inférieure à 5 : ne concluez rien alors.',
     'Les variations simultanées ne sont pas des causes. date_field est obligatoire si la source a plusieurs dates.',
   ].join(' ');

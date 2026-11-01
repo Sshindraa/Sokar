@@ -127,6 +127,33 @@ describe('explainChange : total et drivers', () => {
     expect(drivers.every((driver) => driver.delta === 0 && driver.share_pct === null)).toBe(true);
   });
 
+  it('met une part nulle quand elle sort de 0 à 100 %, et garde le delta du groupe', async () => {
+    // Écart total de +2 : le téléphone porte +3 (150 %), le site −1 (−50 %).
+    vi.mocked(db.reservation.findMany).mockImplementation(
+      serve([
+        reservation(at(6), 'PHONE'),
+        reservation(at(6), 'PHONE'),
+        reservation(at(6), 'PHONE'),
+        reservation(at(6)),
+        reservation(at(5)),
+        reservation(at(5)),
+      ]),
+    );
+
+    const drivers = firstMeasure(await explainChange('r1', reservationsQuery)).drivers as Array<
+      Record<string, unknown>
+    >;
+
+    expect(drivers.find((driver) => driver.key === 'phone')).toMatchObject({
+      delta: 3,
+      share_pct: null,
+    });
+    expect(drivers.find((driver) => driver.key === 'website')).toMatchObject({
+      delta: -1,
+      share_pct: null,
+    });
+  });
+
   it('signale un volume faible quand la référence totale est inférieure à 5', async () => {
     vi.mocked(db.reservation.findMany).mockImplementation(
       serve([reservation(at(6)), reservation(at(5))]),

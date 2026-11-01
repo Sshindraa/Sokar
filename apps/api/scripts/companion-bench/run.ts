@@ -337,6 +337,7 @@ const USUAL_DAY = /habituel|d['’]habitude|d['’]ordinaire|moyenne|en généra
 const PREVIOUS_WEEK = /mardi dernier|semaine dernière|semaine précédente|13 octobre/i;
 const ATTENTE = /attente/i;
 const LAST_30 = /30 (derniers )?jours|30 jours/i;
+const WEEKDAYS = 'lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche';
 const FRENCH_MONTHS = [
   'janvier',
   'février',
@@ -393,13 +394,27 @@ const shiftYear = (dayKey: string) => `${Number(dayKey.slice(0, 4)) - 1}${dayKey
 // Une fenêtre est nommée par son libellé, ou par une de ses dates : « du 2 au 31 octobre » suffit.
 const dayMonth = (dayKey: string) =>
   `\\b${Number(dayKey.slice(8))}(?:er)?\\s+${FRENCH_MONTHS[Number(dayKey.slice(5, 7)) - 1]}\\b`;
-// Un mois nommé avec son année (« octobre 2026 ») désigne aussi la fenêtre.
-const monthYear = (dayKey: string) =>
-  `${FRENCH_MONTHS[Number(dayKey.slice(5, 7)) - 1]}\\s+${dayKey.slice(0, 4)}`;
+// Une date ou un mois qui suit « au » ou « et le » fait partie d'un intervalle : il ne nomme pas seul la fenêtre.
+const NOT_END_OF_INTERVAL = `(?<!\\b(?:au|et le)\\s+(?:(?:${WEEKDAYS})\\s+)?(?:\\d{1,2}(?:er)?\\s+)?)`;
+// « du 25 au 31 octobre » et « entre le 1er et le 31 octobre » nomment la fenêtre entière.
+const intervalOf = (from: string, to: string) =>
+  `\\b(?:du|entre le)\\s+(?:(?:${WEEKDAYS})\\s+)?${Number(from.slice(8))}(?:er)?\\s+` +
+  `(?:${FRENCH_MONTHS[Number(from.slice(5, 7)) - 1]}\\s+)?(?:au|et le)\\s+` +
+  `(?:(?:${WEEKDAYS})\\s+)?${Number(to.slice(8))}(?:er)?\\s+${FRENCH_MONTHS[Number(to.slice(5, 7)) - 1]}\\b`;
+// Un mois entier (depuis le 1er, dans le même mois) se nomme aussi par son libellé : « octobre 2026 ».
+const monthLabelOf = (from: string, to: string) =>
+  from.endsWith('-01') && to.slice(0, 7) === from.slice(0, 7)
+    ? `${NOT_END_OF_INTERVAL}\\b${FRENCH_MONTHS[Number(from.slice(5, 7)) - 1]}\\s+${from.slice(0, 4)}\\b`
+    : '';
 function windowSays(window: OpenWindow): RegExp {
   const [from, to] = window.current();
-  const dates = [dayMonth(from), dayMonth(to), monthYear(from), monthYear(to)];
-  return new RegExp([window.says.source, ...dates].join('|'), 'i');
+  const dates = [
+    intervalOf(from, to),
+    dayMonth(from),
+    `${NOT_END_OF_INTERVAL}${dayMonth(to)}`,
+    monthLabelOf(from, to),
+  ];
+  return new RegExp([window.says.source, ...dates.filter(Boolean)].join('|'), 'i');
 }
 
 const QUESTIONS: Question[] = [
@@ -1148,10 +1163,11 @@ function toolUsedFor(expected: Expected | undefined, calls: ToolCall[]): boolean
 // Nombres qui doivent venir d'un outil : hors dates, années, heures, durées et formules de calendrier.
 const MONTHS =
   'janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre';
-const WEEKDAYS = 'lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche';
 function figuresIn(reply: string): number[] {
   const text = reply
     .replace(/\b\d{4}-\d{2}-\d{2}\b/g, ' ')
+    // Mois sous forme AAAA-MM : « 2026-09 » ne contient pas le chiffre 09 à ancrer.
+    .replace(/\b\d{4}-\d{2}\b/g, ' ')
     // Intervalles : « du 1er au 30 », « du lundi 26 au vendredi 30 », « entre le 1er et le 30 ».
     .replace(
       new RegExp(
@@ -1201,6 +1217,10 @@ function collectNumbers(value: unknown, into: number[]): void {
 function anchoredIn(reply: string, calls: ToolCall[]): { ok: boolean; unanchored: number[] } {
   const available: number[] = [];
   for (const call of calls) collectNumbers(call.result, available);
+  // shortcut: toute fraction d'un résultat vaut aussi son pourcentage (0,89 → 89 %), pas seulement les parts ; à réserver aux champs de part si un ratio fait passer une réponse à tort.
+  for (const value of [...available]) {
+    if (value !== 0 && Math.abs(value) < 1) available.push(value * 100);
+  }
   // Le signe d'un écart se dit en mots (« baisse de 20 % ») : seule la valeur absolue compte.
   // Un chiffre arrondi à l'unité ou au dixième est ancré : arrondir n'est pas calculer.
   // Un entier s'accepte à la demi-unité près, un décimal au dixième près.
