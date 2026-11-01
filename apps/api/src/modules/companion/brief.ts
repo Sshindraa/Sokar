@@ -135,12 +135,22 @@ export async function briefFacts(
   };
 }
 
-export function briefSystemPrompt(): string {
+export const BRIEF_LANGUAGES = ['fr', 'en', 'es', 'it'] as const;
+export type BriefLanguage = (typeof BRIEF_LANGUAGES)[number];
+
+const LANGUAGE_NAMES: Record<BriefLanguage, string> = {
+  fr: 'français',
+  en: 'anglais',
+  es: 'espagnol',
+  it: 'italien',
+};
+
+export function briefSystemPrompt(language: BriefLanguage): string {
   return [
     "Vous êtes l'assistant IA de Sokar. Vous rédigez le résumé de la carte « Ce soir » d'un restaurant, à partir des données fournies.",
     '',
     'Règles :',
-    '- Trois phrases au plus. Vouvoyez le lecteur. Texte simple, sans Markdown.',
+    `- Rédigez le résumé en ${LANGUAGE_NAMES[language]}. Trois phrases au plus, vingt mots au plus chacune. Adressez-vous au lecteur avec la politesse de cette langue. Texte simple, sans Markdown.`,
     "- Mettez d'abord ce qui demande une action ou sort de l'habitude : ce soir, puis hier.",
     "- Ne citez que les chiffres des données, tels qu'ils y figurent. Ne calculez rien : ni somme, ni écart, ni pourcentage.",
     '- Reliez seulement ce que les données montrent ensemble, en « en même temps ». Jamais une cause extérieure aux données, jamais « à cause de ». Dites ce que vous ne savez pas.',
@@ -149,17 +159,24 @@ export function briefSystemPrompt(): string {
 }
 
 /** Un tour du modèle sur les données : le texte, sans contrôle d'ancrage. Le banc et computeBrief s'en servent. */
-export function modelBrief(facts: BriefFacts, fetcher?: typeof fetch): Promise<CompletionAnswer> {
+export function modelBrief(
+  facts: BriefFacts,
+  language: BriefLanguage,
+  fetcher?: typeof fetch,
+): Promise<CompletionAnswer> {
   return completeWithoutTools({
-    system: briefSystemPrompt(),
+    system: briefSystemPrompt(language),
     user: `Données de la carte (JSON) :\n${JSON.stringify(facts)}`,
     timeoutMs: BRIEF_TIMEOUT_MS,
     fetcher,
   });
 }
 
-const cacheKey = (restaurantId: string, card: Pick<TonightCard, 'date' | 'service'>) =>
-  `companion:brief:${restaurantId}:${card.date}:${card.service}`;
+const cacheKey = (
+  restaurantId: string,
+  card: Pick<TonightCard, 'date' | 'service'>,
+  language: BriefLanguage,
+) => `companion:brief:${restaurantId}:${card.date}:${card.service}:${language}`;
 
 // undefined : pas de résumé en cache. null : résumé refusé (chiffre non ancré), lui aussi gardé.
 async function readCache(key: string): Promise<string | null | undefined> {
@@ -184,8 +201,9 @@ async function writeCache(key: string, brief: string | null): Promise<void> {
 export async function cachedBrief(
   restaurantId: string,
   card: Pick<TonightCard, 'date' | 'service'>,
+  language: BriefLanguage,
 ): Promise<string | null> {
-  return (await readCache(cacheKey(restaurantId, card))) ?? null;
+  return (await readCache(cacheKey(restaurantId, card, language))) ?? null;
 }
 
 /**
@@ -196,11 +214,13 @@ export async function computeBrief(input: {
   restaurantId: string;
   now: Date;
   recovery?: boolean;
+  language?: BriefLanguage;
   fetcher?: typeof fetch;
   log: FastifyBaseLogger;
 }): Promise<string | null> {
+  const language = input.language ?? 'fr';
   const card = await computeTonight(input.restaurantId, input.now);
-  const key = cacheKey(input.restaurantId, card);
+  const key = cacheKey(input.restaurantId, card, language);
   const cached = await readCache(key);
   if (cached !== undefined) return cached;
 
@@ -208,7 +228,7 @@ export async function computeBrief(input: {
     const facts = await briefFacts(input.restaurantId, card, {
       recovery: input.recovery ?? true,
     });
-    const answer = await modelBrief(facts, input.fetcher);
+    const answer = await modelBrief(facts, language, input.fetcher);
     const unanchored = anchoredIn(answer.text, [{ result: facts }]).unanchored;
     const brief = unanchored.length === 0 ? answer.text : null;
     input.log.info(

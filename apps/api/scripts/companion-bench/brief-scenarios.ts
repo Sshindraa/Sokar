@@ -6,7 +6,9 @@
  * - au plus 3 phrases ;
  * - au moins un point attendu présent : sa valeur exacte, calculée ici par Prisma, indépendamment
  *   de catalog.ts, de tonight.ts et de brief.ts ;
- * - aucun nom de client du jour dans le texte.
+ * - aucun nom de client du jour dans le texte ;
+ * - au plus 20 mots par phrase. Critère ajouté après le premier passage des trois scénarios,
+ *   à la demande (la consigne demandait des phrases courtes sans le chiffrer) : voir le Journal.
  *
  * Restaurant : le démo. Aucun restaurant sans la formule Avis n'a de réservations dans la base
  * locale : le scénario 3 retire donc la lecture des avis, comme le ferait une formule absente.
@@ -19,6 +21,7 @@ import { anchoredIn, numbersIn } from '../../src/modules/companion/grounding';
 
 export const BRIEF_CRITERIA = {
   maxSentences: 3,
+  maxWordsPerSentence: 20,
   /** Part des chiffres du résumé ancrés dans les données (1 = 100 %). */
   anchoring: 1,
   minExpectedPoints: 1,
@@ -113,6 +116,15 @@ export function sentenceCount(text: string): number {
 }
 
 /** Score d'un essai, selon les critères ci-dessus. facts : les données transmises au modèle. */
+/** Mots de chaque phrase du texte. */
+export function sentenceWords(text: string): number[] {
+  return text
+    .split(/[.!?]+(?=\s|$)/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .map((sentence) => sentence.split(/\s+/).length);
+}
+
 export function scoreBrief(input: {
   reply: string;
   facts: unknown;
@@ -126,6 +138,9 @@ export function scoreBrief(input: {
     anchored: anchoredIn(input.reply, [{ result: input.facts }]).ok,
     sentences,
     withinSentences: sentences <= BRIEF_CRITERIA.maxSentences,
+    withinWords: sentenceWords(input.reply).every(
+      (words) => words <= BRIEF_CRITERIA.maxWordsPerSentence,
+    ),
     point: input.expected.some((value) => figures.includes(value)),
     names: input.names.filter((name) => lowered.includes(name.toLowerCase())),
   };

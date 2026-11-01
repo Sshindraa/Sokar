@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '../../../messages/fr.json';
+import enMessages from '../../../messages/en.json';
 import { TonightCard } from './TonightCard';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn() }));
@@ -49,19 +50,19 @@ describe('TonightCard : résumé', () => {
 
   it('demande le résumé après la carte quand il n’est pas en cache, puis l’affiche', async () => {
     mocks.get.mockImplementation(async (path: string) =>
-      path === 'companion/tonight' ? CARD : { brief: SUMMARY },
+      path === 'companion/tonight?lang=fr' ? CARD : { brief: SUMMARY },
     );
     renderCard();
 
     expect(await screen.findByText(SUMMARY)).toBeInTheDocument();
     expect(screen.getByText(COVERS_LINE)).toBeInTheDocument();
-    expect(mocks.get).toHaveBeenNthCalledWith(1, 'companion/tonight');
-    expect(mocks.get).toHaveBeenNthCalledWith(2, 'companion/tonight/brief');
+    expect(mocks.get).toHaveBeenNthCalledWith(1, 'companion/tonight?lang=fr');
+    expect(mocks.get).toHaveBeenNthCalledWith(2, 'companion/tonight/brief?lang=fr');
   });
 
   it('montre un chargement discret pendant que le résumé se prépare, la carte déjà affichée', async () => {
     mocks.get.mockImplementation((path: string) =>
-      path === 'companion/tonight' ? Promise.resolve(CARD) : new Promise(() => {}),
+      path === 'companion/tonight?lang=fr' ? Promise.resolve(CARD) : new Promise(() => {}),
     );
     renderCard();
 
@@ -71,7 +72,9 @@ describe('TonightCard : résumé', () => {
 
   it('n’affiche rien quand le résumé est absent ou en échec, et garde la carte', async () => {
     mocks.get.mockImplementation((path: string) =>
-      path === 'companion/tonight' ? Promise.resolve(CARD) : Promise.reject(new Error('réseau')),
+      path === 'companion/tonight?lang=fr'
+        ? Promise.resolve(CARD)
+        : Promise.reject(new Error('réseau')),
     );
     renderCard();
 
@@ -84,7 +87,9 @@ describe('TonightCard : résumé', () => {
 
   it('n’affiche pas de résumé quand le serveur répond null', async () => {
     mocks.get.mockImplementation((path: string) =>
-      path === 'companion/tonight' ? Promise.resolve(CARD) : Promise.resolve({ brief: null }),
+      path === 'companion/tonight?lang=fr'
+        ? Promise.resolve(CARD)
+        : Promise.resolve({ brief: null }),
     );
     renderCard();
 
@@ -93,5 +98,20 @@ describe('TonightCard : résumé', () => {
       expect(screen.queryByText('Résumé en préparation…')).not.toBeInTheDocument(),
     );
     expect(screen.queryByText(SUMMARY)).not.toBeInTheDocument();
+  });
+
+  it('demande le résumé dans la langue du tableau de bord', async () => {
+    mocks.get.mockImplementation(async (path: string) =>
+      path.startsWith('companion/tonight?') ? CARD : { brief: SUMMARY },
+    );
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <TonightCard />
+      </NextIntlClientProvider>,
+    );
+
+    expect(await screen.findByText(SUMMARY)).toBeInTheDocument();
+    expect(mocks.get).toHaveBeenCalledWith('companion/tonight?lang=en');
+    expect(mocks.get).toHaveBeenCalledWith('companion/tonight/brief?lang=en');
   });
 });

@@ -115,7 +115,7 @@ describe('computeBrief : résumé ancré', () => {
     expect(brief).toBe(GROUNDED);
     expect(sentBody(fetcher)).not.toContain('Marie');
     expect(redisCache.set).toHaveBeenCalledWith(
-      'companion:brief:r1:2026-10-31:soir',
+      'companion:brief:r1:2026-10-31:soir:fr',
       JSON.stringify({ brief: GROUNDED }),
       'EX',
       1800,
@@ -145,7 +145,7 @@ describe('computeBrief : pas de résumé', () => {
     );
     expect(JSON.stringify(vi.mocked(log.info).mock.calls)).not.toContain('Marie');
     expect(redisCache.set).toHaveBeenCalledWith(
-      'companion:brief:r1:2026-10-31:soir',
+      'companion:brief:r1:2026-10-31:soir:fr',
       JSON.stringify({ brief: null }),
       'EX',
       1800,
@@ -204,7 +204,37 @@ describe('computeBrief : cache', () => {
   });
 
   it('cachedBrief lit sans modèle et rend null quand rien n’est en cache', async () => {
-    expect(await cachedBrief('r1', { date: '2026-10-31', service: 'soir' })).toBeNull();
+    expect(await cachedBrief('r1', { date: '2026-10-31', service: 'soir' }, 'fr')).toBeNull();
     expect(explainChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('computeBrief : langue du tableau de bord', () => {
+  it('écrit en français quand aucune langue n’est demandée', async () => {
+    const fetcher = fetcherReplying(GROUNDED);
+
+    await computeBrief({ restaurantId: 'r1', now: new Date(), log, fetcher });
+
+    expect(sentBody(fetcher)).toContain('Rédigez le résumé en français.');
+  });
+
+  it.each([
+    ['en', 'anglais'],
+    ['es', 'espagnol'],
+    ['it', 'italien'],
+  ] as const)('demande le résumé en %s, avec son cache propre', async (language, name) => {
+    const fetcher = fetcherReplying(GROUNDED);
+
+    await computeBrief({ restaurantId: 'r1', now: new Date(), language, log, fetcher });
+
+    expect(sentBody(fetcher)).toContain(`Rédigez le résumé en ${name}.`);
+    expect(redisCache.get).toHaveBeenCalledWith(`companion:brief:r1:2026-10-31:soir:${language}`);
+  });
+
+  it('lit le résumé de la langue demandée dans le cache', async () => {
+    vi.mocked(redisCache.get).mockResolvedValue(JSON.stringify({ brief: 'Summary.' }));
+
+    expect(await cachedBrief('r1', { date: '2026-10-31', service: 'soir' }, 'en')).toBe('Summary.');
+    expect(redisCache.get).toHaveBeenCalledWith('companion:brief:r1:2026-10-31:soir:en');
   });
 });

@@ -324,8 +324,10 @@ describe('carte « Ce soir »', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
 
     expect(await screen.findByText('Léa Martin')).toBeInTheDocument();
-    expect(mocks.get.mock.calls.filter(([path]) => path === 'companion/tonight')).toHaveLength(2);
-    expect(mocks.get).toHaveBeenCalledWith('companion/tonight');
+    expect(
+      mocks.get.mock.calls.filter(([path]) => path === 'companion/tonight?lang=fr'),
+    ).toHaveLength(2);
+    expect(mocks.get).toHaveBeenCalledWith('companion/tonight?lang=fr');
   });
 
   it('affiche chaque réservation une seule fois, avec ses motifs et son lien vers les réservations', async () => {

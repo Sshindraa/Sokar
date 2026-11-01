@@ -3344,3 +3344,27 @@ Coût (9 appels) : entrée 10 479 tokens, soit environ 1 164 par résumé ; lus 
 - Le délai de 8 s borne le tour du modèle, pas le calcul des données (non borné, mais 11 à 31 ms en local).
 - Aucun couvert n'est lu du cache du fournisseur. Hypothèse non vérifiée : le prompt de résumé est trop court pour être mis en cache.
 - Le banc ne s'arrêtait pas : Redis garde la boucle ouverte. Il se termine après son bilan.
+
+### 2026-11-01 — Companion : résumé dans la langue du tableau de bord, critère de longueur
+
+Langue : `GET /companion/tonight` et `GET /companion/tonight/brief` reçoivent `lang` (fr, en, es, it ; une autre valeur donne le français). La consigne demande d'écrire dans cette langue, la clé de cache l'inclut, et le tableau de bord envoie sa locale. Tests : français par défaut, anglais, espagnol, italien avec cache propre, lecture du cache par langue.
+
+Consigne : trois phrases au plus, vingt mots au plus par phrase, politesse de la langue.
+
+Correction de critère (notée ici) : « au plus 20 mots par phrase » n'était pas dans les critères figés de `bea3077b`. Il est ajouté après le premier passage. Ce premier passage, mesuré après coup, donnait 31 mots par phrase en médiane et 53 au maximum (`brief-2026-11-01T19-07-40-942Z.json`).
+
+Banc (`brief-2026-11-01T19-30-10-443Z.json`, trois scénarios, trois essais, fr) :
+
+| Critère | Résultat |
+|---|---|
+| ancrage | 9/9 |
+| point attendu exact | 9/9 |
+| aucun nom | 9/9 |
+| au plus trois phrases | 6/9 (9/9 au premier passage) |
+| au plus 20 mots par phrase | 2/9 |
+
+Longueur des phrases : médiane 20 mots, maximum 29. Latence du tour modèle : médiane 2 097 ms, maximum 2 637 ms. Coût : 10 794 tokens d'entrée, soit environ 1 199 par résumé, aucun lu du cache ; 1 630 tokens de sortie, soit environ 181 par résumé. Dans trois essais, le modèle écrit quatre à six phrases courtes au lieu de trois. La consigne seule n'obtient pas vingt mots par phrase : à décider avant la mise en production.
+
+Navigateur, sans cache (vidé avant), tableau de bord en français, panneau Companion ouvert : la carte et « Résumé en préparation… » sont là à 281 ms ; le résumé s'affiche à 2 128 ms. Captures en clair et en sombre, en fin de chargement.
+
+Constat : la carte est montée même fermée, donc le résumé se calcule à chaque chargement du tableau de bord, une fois par restaurant, langue et service toutes les 30 min, même si Companion n'est pas ouvert.

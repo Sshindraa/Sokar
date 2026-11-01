@@ -4,11 +4,14 @@ import { requireOrg } from '../../plugins/clerk';
 import { env } from '../../env';
 import { checkRateLimit } from '../../shared/redis/rate-limit';
 import { answerCompanion, CompanionUpstreamError, companionDayKey } from './companion.service';
-import { cachedBrief, computeBrief } from './brief';
+import { BRIEF_LANGUAGES, cachedBrief, computeBrief } from './brief';
 import { computeTonight } from './tonight';
 
 const DAILY_MESSAGE_LIMIT = 100;
 const DAY_SECONDS = 86_400;
+
+// Langue du résumé : celle du tableau de bord ; une langue inconnue donne le français.
+const BriefQuerySchema = z.object({ lang: z.enum(BRIEF_LANGUAGES).catch('fr') });
 
 const ChatBodySchema = z.object({
   messages: z
@@ -45,15 +48,18 @@ export async function companionRoutes(app: FastifyInstance) {
   app.get('/companion/tonight', { preHandler: requireOrg() }, async (req, reply) => {
     const restaurantId = req.restaurantId as string;
     const card = await computeTonight(restaurantId, new Date());
-    return reply.send({ ...card, brief: await cachedBrief(restaurantId, card) });
+    const { lang } = BriefQuerySchema.parse(req.query);
+    return reply.send({ ...card, brief: await cachedBrief(restaurantId, card, lang) });
   });
 
   // Résumé de la carte, par le modèle s'il n'est pas en cache. Sans clé OpenRouter, pas de résumé.
   app.get('/companion/tonight/brief', { preHandler: requireOrg() }, async (req, reply) => {
     if (!env.OPENROUTER_API_KEY?.trim()) return reply.send({ brief: null });
+    const { lang } = BriefQuerySchema.parse(req.query);
     const brief = await computeBrief({
       restaurantId: req.restaurantId as string,
       now: new Date(),
+      language: lang,
       log: req.log,
     });
     return reply.send({ brief });

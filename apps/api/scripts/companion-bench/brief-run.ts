@@ -12,7 +12,7 @@ import { env } from '../../src/env';
 import { db } from '../../src/shared/db/client';
 import { briefFacts, modelBrief } from '../../src/modules/companion/brief';
 import { computeTonight } from '../../src/modules/companion/tonight';
-import { BRIEF_CRITERIA, BRIEF_SCENARIOS, scoreBrief } from './brief-scenarios';
+import { BRIEF_CRITERIA, BRIEF_SCENARIOS, scoreBrief, sentenceWords } from './brief-scenarios';
 
 // Même liste que run.ts : le banc ne tourne que sur une base locale.
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
@@ -68,7 +68,7 @@ async function main() {
     for (let trial = 1; trial <= trials; trial++) {
       const card = await computeTonight(restaurantId, new Date(scenario.now));
       const facts = await briefFacts(restaurantId, card, { recovery: scenario.recovery });
-      const answer = await modelBrief(facts);
+      const answer = await modelBrief(facts, 'fr');
       const score = scoreBrief({ reply: answer.text, facts, expected, names });
       runs.push({
         scenario: scenario.n,
@@ -93,6 +93,9 @@ async function main() {
   const summary = {
     anchored: count((run) => run.score.anchored),
     withinSentences: count((run) => run.score.withinSentences),
+    withinWords: count((run) => run.score.withinWords),
+    wordsPerSentenceMedian: median(runs.flatMap((run) => sentenceWords(run.reply))),
+    wordsPerSentenceMax: Math.max(...runs.flatMap((run) => sentenceWords(run.reply))),
     point: count((run) => run.score.point),
     noName: count((run) => run.score.names.length <= BRIEF_CRITERIA.maxNames),
     latencyMedianMs: median(runs.map((run) => run.latency_ms as number)),

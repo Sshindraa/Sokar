@@ -59,7 +59,7 @@ export function TonightCard() {
 
   useEffect(() => {
     let current = true;
-    get<TonightData>('companion/tonight').then(
+    get<TonightData>(`companion/tonight?lang=${locale}`).then(
       (result) => {
         if (!current) return;
         setData(result);
@@ -72,12 +72,12 @@ export function TonightCard() {
     return () => {
       current = false;
     };
-  }, [get, attempt]);
+  }, [get, attempt, locale]);
 
   useEffect(() => {
     if (!data || data.brief) return;
     let current = true;
-    get<{ brief: string | null }>('companion/tonight/brief').then(
+    get<{ brief: string | null }>(`companion/tonight/brief?lang=${locale}`).then(
       (result) => {
         if (!current) return;
         setFetchedBrief(result?.brief ?? null);
@@ -90,7 +90,7 @@ export function TonightCard() {
     return () => {
       current = false;
     };
-  }, [get, data]);
+  }, [get, data, locale]);
 
   function retry() {
     setStatus('loading');
