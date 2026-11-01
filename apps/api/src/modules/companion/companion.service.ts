@@ -279,7 +279,10 @@ export async function answerCompanion(input: {
   /** Identifiant OpenRouter d'un autre modèle, pour le banc. Absent : le modèle de production. */
   model?: string;
   reasoningEffort?: CompanionModelChoice['reasoningEffort'];
+  /** Horloge de la réponse : l'heure courante en production, une date de référence pour le banc. */
+  now?: Date;
 }): Promise<CompanionAnswer> {
+  const now = input.now ?? new Date();
   const started = performance.now();
   const responseId = randomUUID();
   const fetcher = input.fetcher ?? fetch;
@@ -302,7 +305,7 @@ export async function answerCompanion(input: {
         { type: 'text', text: companionSystemPrompt(), cache_control: { type: 'ephemeral' } },
       ],
     },
-    { role: 'system', content: companionDatePrompt(new Date()) },
+    { role: 'system', content: companionDatePrompt(now) },
     ...input.messages,
   ];
   let outcome = 'ok';
@@ -328,6 +331,7 @@ export async function answerCompanion(input: {
           call.function.name,
           call.function.arguments,
           input.restaurantId,
+          now,
         );
         trace.tools.push(call.function.name);
         input.onToolCall?.({

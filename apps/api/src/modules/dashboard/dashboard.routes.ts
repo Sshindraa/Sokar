@@ -26,8 +26,7 @@ interface AnalyticsBucket {
   revenue: number;
 }
 
-export function periodStart(period: z.infer<typeof PeriodSchema>): Date {
-  const now = new Date();
+export function periodStart(period: z.infer<typeof PeriodSchema>, now: Date = new Date()): Date {
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
 
@@ -111,8 +110,9 @@ function numberFromDecimal(value: unknown): number {
 export async function computeDashboardStats(
   restaurantId: string,
   period: z.infer<typeof PeriodSchema>,
+  now: Date = new Date(),
 ) {
-  const start = periodStart(period);
+  const start = periodStart(period, now);
   const where = { restaurantId, createdAt: { gte: start } };
 
   const [totalCalls, reservations, answeredCalls, recoverableCalls] = await Promise.all([
@@ -186,7 +186,7 @@ export async function computeDashboardStats(
 // Montre le gap entre "restaurant ouvert" et "réservations effectives".
 // Estimation du CA non réalisé basée sur l'historique du restaurant
 // (pas un chiffre inventé).
-export async function computeEmptySlots(restaurantId: string) {
+export async function computeEmptySlots(restaurantId: string, now: Date = new Date()) {
   const restaurant = await db.restaurant.findUniqueOrThrow({
     where: { id: restaurantId },
     select: { openingHours: true },
@@ -202,7 +202,7 @@ export async function computeEmptySlots(restaurantId: string) {
   const openingHours = normalizeOpeningHours(rawOpeningHours);
 
   // Fenêtre : 7 prochains jours à partir d'aujourd'hui
-  const today = new Date();
+  const today = new Date(now);
   today.setHours(0, 0, 0, 0);
   const weekEnd = new Date(today);
   weekEnd.setDate(weekEnd.getDate() + 7);
@@ -326,9 +326,9 @@ export async function computeEmptySlots(restaurantId: string) {
 // ─── No-show tracking : taux de no-show et impact du rappel SMS ────────
 // Compare les SMS dont l'envoi est attesté aux réservations sans rappel connu.
 // Le gérant doit marquer les no-shows dans le dashboard pour que ça marche.
-export async function computeNoShowStats(restaurantId: string) {
+export async function computeNoShowStats(restaurantId: string, now: Date = new Date()) {
   // Fenêtre : 90 derniers jours (assez large pour avoir du volume)
-  const since = new Date();
+  const since = new Date(now);
   since.setDate(since.getDate() - 90);
 
   const reservations = await db.reservation.findMany({
@@ -337,7 +337,7 @@ export async function computeNoShowStats(restaurantId: string) {
       createdAt: { gte: since },
       // On ne compte que les réservations qui ont eu le temps d'arriver
       // (reservedAt dans le passé)
-      reservedAt: { lt: new Date() },
+      reservedAt: { lt: now },
       // ... et qui étaient réellement attendues : les annulées, échouées ou expirées gonflaient le
       // dénominateur et faisaient paraître le taux de no-show artificiellement bas.
       state: { in: ['CONFIRMED', 'SEATED', 'HONORED', 'NO_SHOW'] },

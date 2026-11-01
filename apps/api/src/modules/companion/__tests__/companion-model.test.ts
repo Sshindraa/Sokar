@@ -41,3 +41,24 @@ describe('answerCompanion : choix du modèle', () => {
     expect(body.reasoning).toEqual({ effort: 'high' });
   });
 });
+
+describe('answerCompanion : horloge injectée', () => {
+  it('date la réponse de la date de référence fournie, et non de l’heure courante', async () => {
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      completion(),
+    );
+    await answerCompanion({
+      restaurantId: 'restaurant-test',
+      messages: [{ role: 'user', content: 'Bonjour' }],
+      log,
+      fetcher,
+      now: new Date('2026-10-31T11:00:00Z'),
+    });
+
+    const body = JSON.parse(String((fetcher.mock.calls[0][1] as RequestInit).body)) as {
+      messages: unknown[];
+    };
+    expect(JSON.stringify(body.messages)).toContain('samedi 31 octobre 2026');
+    expect(JSON.stringify(body.messages)).toContain('2026-10-31');
+  });
+});

@@ -38,14 +38,18 @@ export function isWithinOpeningHours(date: Date, openingHours: unknown): boolean
   );
 }
 
-export async function computeCallStats(restaurantId: string, period: CallStatsPeriod) {
+export async function computeCallStats(
+  restaurantId: string,
+  period: CallStatsPeriod,
+  now: Date = new Date(),
+) {
   const [restaurant, calls] = await Promise.all([
     db.restaurant.findUniqueOrThrow({
       where: { id: restaurantId },
       select: { openingHours: true },
     }),
     db.call.findMany({
-      where: { restaurantId, createdAt: { gte: periodStart(period) } },
+      where: { restaurantId, createdAt: { gte: periodStart(period, now) } },
       select: { createdAt: true, intent: true, outcome: true, durationSec: true },
     }),
   ]);

@@ -141,6 +141,7 @@ export async function runCompanionTool(
   name: string,
   rawArgs: string,
   restaurantId: string,
+  now: Date = new Date(),
 ): Promise<CompanionToolResult> {
   const args = parseArgs(rawArgs);
   const invalid = { content: { error: 'invalid_arguments' } };
@@ -150,13 +151,13 @@ export async function runCompanionTool(
     case 'reservation_stats': {
       const parsed = PeriodArgs.safeParse(args);
       if (!parsed.success) return invalid;
-      result = computeDashboardStats(restaurantId, parsed.data.period);
+      result = computeDashboardStats(restaurantId, parsed.data.period, now);
       break;
     }
     case 'call_stats': {
       const parsed = PeriodArgs.safeParse(args);
       if (!parsed.success) return invalid;
-      result = computeCallStats(restaurantId, parsed.data.period);
+      result = computeCallStats(restaurantId, parsed.data.period, now);
       break;
     }
     case 'query_data': {
@@ -169,12 +170,12 @@ export async function runCompanionTool(
     }
     case 'upcoming_days': {
       if (!NoArgs.safeParse(args).success) return invalid;
-      result = computeEmptySlots(restaurantId);
+      result = computeEmptySlots(restaurantId, now);
       break;
     }
     case 'no_shows': {
       if (!NoArgs.safeParse(args).success) return invalid;
-      result = computeNoShowStats(restaurantId);
+      result = computeNoShowStats(restaurantId, now);
       break;
     }
     case 'monthly_roi': {

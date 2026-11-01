@@ -29,6 +29,7 @@ import {
   computeNoShowStats,
 } from '../../src/modules/dashboard/dashboard.routes';
 import { WEEKDAYS, anchoredIn, numbersIn } from '../../src/modules/companion/grounding';
+import { COMPANION_REFERENCE_NOW } from '../../src/modules/companion/reference-clock';
 
 // Même liste que packages/database/prisma/seed-demo-guard.ts.
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
@@ -128,7 +129,7 @@ const CHANNEL_LABELS: Record<string, string[]> = {
   team: ['equipe', 'saisie'],
 };
 
-const today = () => dayFormat.format(new Date());
+const today = () => dayFormat.format(COMPANION_REFERENCE_NOW);
 function shiftDay(dayKey: string, days: number): string {
   return new Date(Date.parse(`${dayKey}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
@@ -209,7 +210,7 @@ function sumCovers(rows: Array<{ partySize: number }>): number {
 
 // Mois précédent à Paris, au format AAAA-MM (Date.UTC accepte le mois -1 : janvier → décembre).
 function previousMonth(): string {
-  const [year, month] = dayFormat.format(new Date()).split('-').map(Number);
+  const [year, month] = dayFormat.format(COMPANION_REFERENCE_NOW).split('-').map(Number);
   return new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7);
 }
 
@@ -242,7 +243,7 @@ function feedbacksBetween(restaurantId: string, from: string, to: string) {
 }
 // Mois suivant à Paris, au format AAAA-MM.
 function nextMonth(): string {
-  const [year, month] = dayFormat.format(new Date()).split('-').map(Number);
+  const [year, month] = dayFormat.format(COMPANION_REFERENCE_NOW).split('-').map(Number);
   return new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 7);
 }
 // Restaurant sans la formule Avis (reputation.feedback), pour la question hors formule.
@@ -1181,6 +1182,7 @@ async function runTrial(
   const calls: ToolCall[] = [];
   try {
     const answer = await answerCompanion({
+      now: COMPANION_REFERENCE_NOW,
       restaurantId,
       messages: [{ role: 'user', content: question.text }],
       log: usageLog,
