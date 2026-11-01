@@ -170,16 +170,17 @@ function initialDraft(): Draft {
   };
 }
 
-const PENDING_MARK = '[à compléter]';
+// Repère laissé par Companion : « [à compléter] » et ses variantes entre crochets.
+const PENDING_PLACEHOLDER = /\[[^\]]*à compléter[^\]]*\]/i;
 
 /** Contrôles avant l'appel API : on dit quoi corriger plutôt que d'attendre un refus en anglais. */
 function draftProblem(draft: Draft): string | null {
   if (
     [draft.name, draft.objective, draft.subject, draft.bodyTemplate].some((text) =>
-      text.includes(PENDING_MARK),
+      PENDING_PLACEHOLDER.test(text),
     )
   ) {
-    return 'Le texte contient encore « [à compléter] ». Complétez-le avant l’envoi.';
+    return 'Le texte contient encore « [à compléter] » ou une variante. Complétez-le avant l’envoi.';
   }
   if (!draft.name.trim() || !draft.objective.trim() || !draft.segmentId) {
     return 'Renseignez le nom, l’objectif et le segment de la campagne.';

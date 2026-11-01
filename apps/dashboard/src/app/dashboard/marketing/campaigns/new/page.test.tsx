@@ -204,6 +204,27 @@ describe('NewMarketingCampaignPage', () => {
     ).toHaveLength(0);
   });
 
+  it('refuse aussi une variante entre crochets, comme « [heure à compléter] »', async () => {
+    window.sessionStorage.setItem(
+      'sokar:campaign-draft',
+      JSON.stringify({
+        channel: 'SMS',
+        name: 'Relance midi',
+        objective: 'Remplir le service',
+        body: 'Table à [heure à compléter]. {{unsubscribeUrl}}',
+      }),
+    );
+    render(<NewMarketingCampaignPage />);
+    await screen.findByRole('heading', { name: 'Nouvelle campagne' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Créer et prévisualiser' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('[à compléter]');
+    expect(
+      apiMocks.post.mock.calls.filter(([path]) => path === 'marketing/campaigns'),
+    ).toHaveLength(0);
+  });
+
   it('ne crée jamais deux brouillons : le formulaire se fige après la création', async () => {
     render(<NewMarketingCampaignPage />);
     await fillRequiredFields();
