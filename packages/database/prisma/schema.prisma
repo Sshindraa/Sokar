@@ -2064,6 +2064,9 @@ model MarketingCampaign {
   startedAt       DateTime?               @map("started_at")
   completedAt     DateTime?               @map("completed_at")
   lastErrorCode   String?                 @map("last_error_code")
+  /// Service visé (remplissage) : bornes absolues, nulles pour les campagnes ordinaires.
+  targetServiceStart DateTime?            @map("target_service_start")
+  targetServiceEnd   DateTime?            @map("target_service_end")
   createdByHash   String                  @map("created_by_hash")
   createdAt       DateTime                @default(now()) @map("created_at")
   updatedAt       DateTime                @updatedAt @map("updated_at")

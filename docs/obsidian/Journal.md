@@ -3112,10 +3112,65 @@ Vérification d’identité et export rouverts après qualification SMS en stagi
 ### 2026-10-30 — Rollback staging : dépendances restaurées
 
 Le test de rollback de Sshindraa/Sokar#577 échouait : l'artefact de la release précédente exige `zod-to-json-schema`, retiré par la PR (passage à Zod 4), donc absent de node_modules après le déploiement. Correctif : chaque snapshot garde le lockfile et les package.json de son commit (`deps/`), et le rollback réinstalle via `pnpm install --frozen-lockfile` avant de redémarrer. Une release sans lockfile est refusée avant d'arrêter les services. Non validé sur le VPS : la prochaine exécution de staging le vérifiera (le pré-build utilise `.latest-hash`).
+### 2026-10-30 — Qualification du lot réservations
+
+La PR #617 (0d4aaaff) contient les correctifs d'audit réservations ; workflows CI, déploiement staging et production et smoke tests réussis. Production vérifiée sur 0d4aaaff ; staging sur le snapshot de ce même commit. Réexécution locale isolée sur PostgreSQL : 53 tests de concurrence/modification réussis ; 146 tests ciblés allocation, disponibilité, confirmation et service réussis. Disponibilité publique Chez Sokar demo : HTTP 200 en staging et production, 22 créneaux renvoyés. Aucun hold ni réservation réel, SMS ou autre notification envoyé ; création, rejeu, modification et annulation via les environnements déployés restent à qualifier de bout en bout avec un dispositif de test sans notification à des tiers.
+
+### 2026-10-30 — Réservation staging sans SMS
+
+À la demande de l'utilisateur, aucun SMS : disponibilité publique et création d'un hold en mode test réussies sur Chez Sokar demo en staging (HTTP 200), refus d'un jeton de confirmation invalide (410). Aucun appel de confirmation valide ni réservation créé ; le hold temporaire expire automatiquement. Le parcours complet reste non qualifié sur les environnements déployés, car la confirmation de test peut notifier le client ou le responsable.
+
+### 2026-10-30 — Contrôle production sans SMS
+
+Sur Chez Sokar demo en production : disponibilité et hold en mode test HTTP 200, confirmation avec jeton invalide refusée 410. Aucune confirmation valide ni SMS. Hold temporaire expire automatiquement. Vérification de préférence de section étrangère impossible en staging : aucune section d'un autre établissement trouvée ; scénario couvert par test PostgreSQL local mais pas validé en staging.
+
+### 2026-10-30 — Réservations : vérification de l'annulation sans notification
+
+Test PostgreSQL local dédié supplémentaire réussi : annulations simultanées, libération de la table et audit. Les 53 tests de concurrence et modification comprennent aussi la confirmation publique rejouée sans doublon et sa cohérence des consentements. Confirmation déployée non exécutée : même en mode test elle crée une intention de notification ; consigne utilisateur explicite de ne pas envoyer de SMS. Aucun changement de configuration en staging ou production.
+
+### 2026-10-30 — Confirmation réelle de réservation de test en staging
+
+Avec autorisation de l'utilisateur pour les SMS : hold et confirmation publics HTTP 200, rejeu HTTP 200 pour la même réservation avec reused=true, réservation marquée isTest ; page personnelle HTTP 200. Le restaurant demo a smsConfirmEnabled=false et aucune intention SMS associée : aucun envoi observé. Modification et annulation client refusées par les conditions du restaurant (contact requis), donc parcours positif non qualifié en staging ; aucune modification de configuration. La réservation de test restante est soumise à la purge habituelle après 24 h. Aucun code ni identifiant de réservation consigné.
+
+### 2026-10-30 — Qualification réservation staging complète
+
+Sur la réservation isTest créée pour ce test uniquement, condition d'annulation factice libre-service appliquée au snapshot sans modifier les réglages du restaurant. Page personnelle, options, modification et rejeu HTTP 200 vers le même créneau ; annulation et rejeu HTTP 200, état CANCELLED. Vérification en base : aucun profil client ni événement outbox ; une seule trace pour création, modification et annulation. Aucun SMS envoyé. Les conditions de test modifiées ne qualifient pas les conditions commerciales du restaurant ; scénarios concurrents et isolation entre restaurants vérifiés sur PostgreSQL local, pas sur deux établissements staging.
+
+### 2026-10-30 — Confirmation de test en production
+
+Chez Sokar demo, après vérification que smsConfirmEnabled=false : hold et confirmation HTTP 200, rejeu HTTP 200 avec la même réservation et reused=true. Ligne vérifiée isTest, aucun client ni événement outbox associés ; aucun SMS envoyé. La réservation de test confirmée reste soumise à la purge automatique après 24 h. Flags de gestion personnelle absents ou faux dans la configuration lue : modification et annulation positives en production non testées et configuration inchangée. Validation positive effectuée en staging avec conditions fictives limitées à la réservation de test.
+
+### 2026-10-30 — Qualification facturation et paiements
+
+Les correctifs de facturation, cartes cadeaux et paiements de réservation sont inclus dans #617, déployée staging et production. Configuration lue : clé Stripe staging test, clé production live ; paiements de réservation et expériences non activés dans les .env consultés, variables correspondantes absentes de PM2. Tests sur bases PostgreSQL locales dédiées : 24 réussis et 4 Stripe ignorés sans clé ; puis 6 tests billing réussis avec la clé Stripe test du staging, incluant concurrence et reprise. Les objets Stripe test créés par les tests sont nettoyés ou archivés par leur fixture. 126 tests ciblés routes/services réussis. Aucun paiement réel, aucune vérification complète des webhooks déployés ni des remboursements Stripe de bout en bout.
+
+### 2026-10-30 — Stripe test et webhook staging
+
+Paiement fictif Stripe test de 10 EUR puis remboursements de 3 et 7 EUR réussis, montant remboursé total vérifié. Un événement charge.refunded issu de ce paiement a été signé avec le secret staging et envoyé deux fois au webhook générique : 200/200 ; signature invalide : 400. La carte utilisée est une méthode de test Stripe, sans débit réel ; le paiement reste dans l'historique du compte Stripe test. Ce paiement n'est associé à aucune réservation ou carte cadeau Sokar : résultat ne valide pas la projection métier des remboursements ni l'ordre des événements. Le webhook paiement réservation staging répond 503 car la fonction reste désactivée ; aucune activation ni changement de configuration.
+
+### 2026-10-30 — Projection carte cadeau avec Stripe test et PostgreSQL staging
+
+Service de remboursement de la version staging exécuté sur une carte fictive non persistée dans une transaction PostgreSQL annulée à la fin. Paiement Stripe test 10 EUR ; remboursement partiel 3 EUR => solde 7 EUR, rejeu => 7 EUR, remboursement final 7 EUR => solde 0 et état CANCELLED. Aucun envoi ; aucune donnée client utilisée. Les objets Stripe restent dans le compte test, le paiement est intégralement remboursé. Exécution directe du service, pas webhook HTTP lié à cette carte ; paiement de réservation demeure désactivé.
+
+### 2026-10-30 — Webhooks et projections paiements en processus isolé staging
+
+Code déployé staging exécuté dans Fastify inject sur transaction PostgreSQL staging annulée, sans serveur supplémentaire ni données persistées. Carte cadeau fictive : événement charge.refunded réel de Stripe test signé, route webhook HTTP simulée 200, solde 7 EUR après remboursement 3/10 EUR et après rejeu. Paiement réservation fictif : activation du flag uniquement dans ce processus isolé ; événements Stripe test enrichis des métadonnées fictives puis signés, 200 pour partiel, rejeu, total et rejeu ancien ; états PARTIALLY_REFUNDED puis REFUNDED. Paiements test entièrement remboursés ; aucun paiement réel ni SMS. La route staging réellement exposée reste désactivée (503) ; ces tests injectés ne valident pas le transport public de cette route ni les comptes Stripe connectés.
+
+### 2026-10-30 — Contrôles de cohérence paiement et compte connecté staging
+
+Le compte Stripe connecté de Chez Sokar demo en staging est incomplet : charges_enabled=false, payouts_enabled=false, details_submitted=false ; aucune modification du compte. Test Fastify inject sur code et PostgreSQL staging, transaction annulée, flag activé uniquement dans le processus isolé : événement Stripe test signé avec données fictives, restaurant incohérent refusé 403 ; montant, compte et identifiant de paiement incohérents refusés 500, état CAPTURED inchangé et aucun événement enregistré. Les 500 méritent une gestion explicite avant activation pour éviter des erreurs techniques opaques et des retransmissions fournisseur répétées. Paiement test intégralement remboursé. Les comptes connectés et le transport public du webhook restent à qualifier ; aucune activation staging/production.
+
+### 2026-10-30 — CI #621 et qualification Stripe Connect
+
+PR #621 : un job PostgreSQL a échoué sur le test concurrent service-copilot-packaging (DelayRecoveryConflictError), alors que l'autre exécution CI a réussi. Le job en échec a été relancé ; résultat à suivre. Lecture du code : une hypothèse de course existe entre la recherche d'opération déjà appliquée et la simulation préliminaire, mais elle n'est pas encore reproduite de façon déterministe. Ne pas attribuer l'échec au correctif webhook sans preuve. Compte Stripe Connect de démonstration staging toujours incomplet ; aucun changement d'identité ni d'activation.
 
 ### 2026-10-30 — Companion, phase 1 : API de chat (sans UI)
 
 Ajout de `POST /companion/chat` (`apps/api/src/modules/companion/`) : réponse JSON `{ reply, sources }`, modèle `COMPANION_LLM_MODEL` (défaut `anthropic/claude-haiku-5.5`, slug vérifié sur OpenRouter le 30/10). Quatre outils en lecture seule (`reservation_stats`, `upcoming_days`, `no_shows`, `monthly_roi`) appellent en process les calculs des routes dashboard, extraits en fonctions exportées dans `dashboard.routes.ts` (sortie inchangée, tests dashboard verts sans modification) ; `monthly_roi` reprend `computeRoi`. Plafond 100 messages par jour et par restaurant via `checkRateLimit`, dont la fenêtre devient un paramètre optionnel. Rôles : STAFF et READ_ONLY reçoivent 403 de la politique existante, qui n'a pas été modifiée. Décisions ouvertes : pas de SSE, 4 tours d'outils puis une réponse finale sans outils, quota fail-open si Redis tombe (convention de `checkRateLimit`), et `href` vers `/dashboard` pour `monthly_roi` faute d'écran qui consomme `/analytics/roi`. Correctif : chaque requête porte `provider.data_collection: deny` (test sur les cinq corps d'une boucle complète). Clé `OPENROUTER_API_KEY` de `apps/api/.env` renouvelée (auth/key 200) ; deux curls en 200 sur l'API dev. Fichiers : `apps/api/src/modules/companion/*`, `dashboard.routes.ts`, `rate-limit.ts`, `env.ts`, `main.ts`, `docs/runbooks/environment.md`.
+
+### 2026-10-30 — Description de Sokar alignée sur la plateforme
+
+AGENTS.md, README.md, `docs/obsidian/README.md` et la ligne Voice de `PROJECT_MAP.md` ne réduisent plus Sokar à un agent téléphonique : plateforme réservations multicanal + service + relation client, la voix est une fonction. Textes visibles côté client (tagline dashboard, manifest, FAQ, kicker « Assistant vocal restaurant ») encore à revoir, sur décision de Hamza.
 
 ### 2026-10-30 — Companion, phase 2 : panneau dashboard et prompt
 
@@ -3345,147 +3400,20 @@ Coût (9 appels) : entrée 10 479 tokens, soit environ 1 164 par résumé ; lus 
 - Aucun couvert n'est lu du cache du fournisseur. Hypothèse non vérifiée : le prompt de résumé est trop court pour être mis en cache.
 - Le banc ne s'arrêtait pas : Redis garde la boucle ouverte. Il se termine après son bilan.
 
-### 2026-11-01 — Companion : résumé dans la langue du tableau de bord, critère de longueur
+### 2026-11-02 — Marketing : remplissage d'un service creux, phase 1 (moteur)
 
-Langue : `GET /companion/tonight` et `GET /companion/tonight/brief` reçoivent `lang` (fr, en, es, it ; une autre valeur donne le français). La consigne demande d'écrire dans cette langue, la clé de cache l'inclut, et le tableau de bord envoie sa locale. Tests : français par défaut, anglais, espagnol, italien avec cache propre, lecture du cache par langue.
+Moteur `apps/api/src/modules/marketing/fill-service.service.ts`, aucun appel LLM, rien n'est envoyé. Places libres = capacité des tables actives (`tableRanges` de `CapacityAwareAvailabilityService`) − couverts des réservations actives du service (PENDING, CONFIRMED, SEATED, `isTest` exclu). Sans plan de salle : `CAPACITY_UNKNOWN`, aucune cible. Candidats : `buildAudience` en mode `allCustomers` (consentement, opposition, fréquence), moins les clients déjà réservés ce jour-là. Classement : visites honorées le même jour de semaine et au même service sur 365 jours, puis récence. Taille : `ceil(places / taille moyenne / TAUX_REPONSE)`, `TAUX_REPONSE = 0,2` (hypothèse marquée `shortcut:`), plafonnée par `MAX_CAMPAIGN_AUDIENCE` et par les candidats. Témoin : 10 % de l'audience tirés avec une graine mémorisée dans `snapshot.holdoutSeed`, `inclusionReason = HOLDOUT`. Brouillon : `createMarketingCampaign` reçoit désormais des `members` déjà calculés, `targetServiceStart/End` et `audienceCount` = destinataires seulement.
 
-Consigne : trois phrases au plus, vingt mots au plus par phrase, politesse de la langue.
+Envoi : `ensureCampaignMessages` ignore HOLDOUT, donc aucun message pour le témoin. Avant chaque lot, service visé complet (capacité connue, 0 place) : campagne `PAUSED`, `lastErrorCode = TARGET_SERVICE_FULL`, aucun envoi. Capacité inconnue : rien n'est bloqué, comportement inchangé.
 
-Correction de critère (notée ici) : « au plus 20 mots par phrase » n'était pas dans les critères figés de `bea3077b`. Il est ajouté après le premier passage. Ce premier passage, mesuré après coup, donnait 31 mots par phrase en médiane et 53 au maximum (`brief-2026-11-01T19-07-40-942Z.json`).
+Mesure : `serviceFill` dans le rapport, seulement pour une campagne avec service visé. Couverts par client, destinataires contre témoin, écart. Réservations créées entre l'envoi et la fin du service, téléphone compris, rattachées par `customerId`. `conclusive` seulement si le témoin compte 20 clients ou plus.
 
-Banc (`brief-2026-11-01T19-30-10-443Z.json`, trois scénarios, trois essais, fr) :
+Migration `20261102120000_marketing_target_service` : deux colonnes nullables, aucun DROP (vérifié avec `prisma migrate diff`).
 
-| Critère | Résultat |
-|---|---|
-| ancrage | 9/9 |
-| point attendu exact | 9/9 |
-| aucun nom | 9/9 |
-| au plus trois phrases | 6/9 (9/9 au premier passage) |
-| au plus 20 mots par phrase | 2/9 |
+Limites : la capacité compte une rotation par service, ce qui sous-estime les services à rotation (plus prudent, mais la pause peut survenir souvent : à mesurer). `TAUX_REPONSE` est une hypothèse. Le témoin est tiré parmi les ciblés, pas parmi tous les candidats.
 
-Longueur des phrases : médiane 20 mots, maximum 29. Latence du tour modèle : médiane 2 097 ms, maximum 2 637 ms. Coût : 10 794 tokens d'entrée, soit environ 1 199 par résumé, aucun lu du cache ; 1 630 tokens de sortie, soit environ 181 par résumé. Dans trois essais, le modèle écrit quatre à six phrases courtes au lieu de trois. La consigne seule n'obtient pas vingt mots par phrase : à décider avant la mise en production.
+Exemple sur le seed (base locale `sokar`, « Chez Sokar », mercredi 4 novembre, midi) : capacité 116 (27 tables), couverts réservés 0, places libres 116, taille moyenne 3,33, cible 174, candidats 108, audience 108, témoin 11, envois 97. Le seed n'a aucun consentement : 108 consentements de test ont été insérés puis supprimés (0 restant).
 
-Navigateur, sans cache (vidé avant), tableau de bord en français, panneau Companion ouvert : la carte et « Résumé en préparation… » sont là à 281 ms ; le résumé s'affiche à 2 128 ms. Captures en clair et en sombre, en fin de chargement.
+Base locale `sokar` : hors historique de migrations (db push) ; `is_test` (20261019120000) et la migration de cette phase ont été appliqués à la main, en SQL additif. Base `sokar_preview` : colonnes de service ajoutées de la même façon.
 
-Constat : la carte est montée même fermée, donc le résumé se calcule à chaque chargement du tableau de bord, une fois par restaurant, langue et service toutes les 30 min, même si Companion n'est pas ouvert.
-
-### 2026-11-01 — Companion : consigne de longueur, deuxième passe
-
-Une seule modification, de principe : la consigne fixe un budget (trois phrases, vingt mots par phrase, soixante mots en tout) et demande de choisir les points qui comptent le plus, puis de couper une phrase trop longue plutôt que d'en ajouter une. Aucun cas, aucune formulation, modèle inchangé. Tests : brief 12/12, tsc sans erreur.
-
-Banc (`brief-2026-11-01T19-39-24-295Z.json`, trois scénarios, trois essais, fr), comparé au premier passage (`brief-2026-11-01T19-30-10-443Z.json`) :
-
-| Critère | Premier passage | Deuxième passage |
-|---|---|---|
-| ancrage | 9/9 | 9/9 |
-| point attendu exact | 9/9 | 9/9 |
-| aucun nom | 9/9 | 9/9 |
-| au plus trois phrases | 6/9 | 5/9 |
-| au plus 20 mots par phrase | 2/9 | 7/9 |
-
-Mots par phrase : médiane 20 → 15, maximum 29 → 26. Latence du tour modèle : médiane 2 097 → 1 813 ms, maximum 2 637 → 2 320 ms. Coût : entrée 10 794 → 11 253 tokens (environ 1 250 par résumé), aucun lu du cache ; sortie 1 630 → 1 286 tokens (environ 143 par résumé).
-
-Reste : quatre essais sur neuf dépassent trois phrases (quatre à cinq). Le modèle coupe en phrases plus courtes au lieu de réduire le contenu. Non corrigé dans cette passe : à trancher, accepter quatre phrases ou appliquer le plafond en production.
-
-### 2026-11-01 — Companion : résumé en points validés par le serveur
-
-Sortie structurée : `json_schema` (`points: string[]`) envoyé à `anthropic/claude-sonnet-5.5`. Vérifié avant emploi : les métadonnées OpenRouter listent `response_format` et `structured_outputs` pour ce modèle, et un appel réel répond en 200 avec un contenu conforme au schéma. La réponse est tout de même validée par Zod.
-
-Serveur : les trois premiers points valides sont gardés, dans l'ordre du modèle. Un point est valide s'il fait vingt mots au plus et si ses chiffres sont dans les données. Aucun point valide : pas de résumé, gardé en cache. Réponse sans JSON valide : pas de résumé, non gardé en cache. Le texte est la suite des points, avec un point final ajouté s'il manque. La trace donne le nombre de points écartés et les chiffres absents, sans nom.
-
-Consigne : principe seul (points courts, les plus utiles d'abord, réponse en JSON). Les limites chiffrées sont retirées de la consigne.
-
-Tests : companion 106/106, dont trois premiers points, point trop long, chiffre absent, point vide, aucun point valide, JSON invalide, délai et cache.
-
-Banc (`brief-2026-11-01T19-46-19-019Z.json`, trois scénarios, trois essais, fr). Critères inchangés : ancrage, au plus trois phrases, au plus vingt mots par phrase, point attendu et aucun nom, tous à 9/9. Longueur des phrases : médiane 17 mots, maximum 20. Points écartés : 31 sur 51 proposés, tous parce qu'ils dépassent vingt mots ; aucun pour chiffre absent. Aucune réponse sans JSON valide. Latence du tour modèle : médiane 3 870 ms (1 813 au passage précédent), maximum 5 301 ms. Coût : entrée 12 783 tokens, soit environ 1 420 par résumé, dont 4 424 lus du cache ; sortie 3 285 tokens, soit environ 365 par résumé.
-
-Constat : le modèle écrit encore des points de trente à quarante mots, et ce sont souvent les plus utiles qui sont écartés. Dans le scénario 2, un essai ne garde qu'un point, sur la réservation du soir ; la surveillance des réservations et la veille sont écartées. La consigne seule ne suffit pas. À décider : relever la limite (correction de critère notée ici) ou autre forme de sortie.
-
-Navigateur, cache vidé, tableau de bord en français : la carte et « Résumé en préparation… » sont là à 978 ms, le résumé s'affiche à 4 590 ms. Captures en clair et en sombre, avec le résumé à un seul point.
-
-### 2026-11-01 — Companion : seuil de 30 mots choisi au renotage
-
-Renotage hors ligne des points du banc précédent (`brief-2026-11-01T19-46-19-019Z.json`, 51 points proposés, `brief-run --rescore`, sans appel au modèle) :
-
-| Seuil par point | Points gardés | Points par résumé (moyenne) |
-|---|---|---|
-| 25 mots | 57 % (29 sur 51) | 2,67 |
-| 30 mots | 78 % (40 sur 51) | 2,89 |
-
-Règle appliquée : 25 mots seulement si le renotage gardait au moins 90 % des points. Il n'en garde que 57 %, donc le seuil retenu est 30 mots.
-
-Correction de critère (notée ici) : « au plus 20 mots par phrase » devient « au plus 30 mots par phrase », dans `BRIEF_CRITERIA` et dans le serveur (`POINT_MAX_WORDS`). Consigne : principe « un seul fait par point » ajouté.
-
-Banc (`brief-2026-11-01T20-12-11-577Z.json`, trois scénarios, trois essais, fr) :
-
-| Critère | Résultat |
-|---|---|
-| ancrage | 9/9 |
-| au plus trois phrases | 9/9 |
-| au plus 30 mots par phrase | 9/9 |
-| aucun nom | 9/9 |
-| point attendu exact | 6/9 (9/9 au passage précédent) |
-
-Points : 65 proposés, 0 écarté (ni trop longs, ni chiffre absent), 27 retenus (trois par résumé, 9 résumés sur 9), 38 non retenus faute de place. Le point attendu manque dans les trois essais du scénario 3 (sans la formule Avis) : le chiffre des couverts (32) n'y figure pas, car les trois points retenus portent sur les réservations à surveiller. Longueur des phrases : médiane 15 mots, maximum 27. Latence du tour modèle : médiane 3 108 ms (3 870 au passage précédent), maximum 3 789 ms. Coût : entrée 12 855 tokens, soit environ 1 428 par résumé, dont 4 488 lus du cache ; sortie 2 732 tokens, soit environ 304 par résumé.
-
-### 2026-11-01 — Companion : le modèle choisit ses trois points
-
-`maxItems` est accepté sans erreur (HTTP 200) mais n'est pas respecté : à une demande de six faits avec `maxItems: 3`, Sonnet 5.5 a renvoyé six points, trois fois sur trois, sur des appels réels. Le schéma reste donc sans `maxItems`. La limite passe par la consigne (« choisissez les trois points les plus utiles avant le service »), et le serveur garde la coupe à trois comme filet.
-
-Consigne : « ce soir d'abord, puis hier » dans les points, et le choix des trois points les plus utiles avant le service. Pas de liste de formulations.
-
-Banc (`brief-2026-11-01T20-24-35-484Z.json`, trois scénarios, trois essais, fr). Critères inchangés :
-
-| Critère | Résultat |
-|---|---|
-| ancrage | 9/9 |
-| au plus trois phrases | 9/9 |
-| au plus 30 mots par phrase | 9/9 |
-| aucun nom | 9/9 |
-| point attendu exact | 9/9 (6/9 au passage précédent : le scénario sans Avis mentionne de nouveau les couverts) |
-
-Points proposés : trois par résumé, 27 au total. Points écartés : un, dans l'essai 3.1, qui laisse un résumé à deux phrases. Latence du tour modèle : médiane 2 431 ms (3 108 au passage précédent), maximum 2 655 ms. Coût : entrée 12 882 tokens, soit environ 1 431 par résumé, dont 4 512 lus du cache ; sortie 1 600 tokens, soit environ 178 par résumé.
-
-### 2026-11-01 — Companion : comparaison calendaire, banc à date fixe
-
-Référence `previous_period` (query_data et explain_change, même code) : un mois civil complet se compare au mois civil précédent ; un mois en cours (du 1er au jour J) à son intervalle du mois précédent, borné à la fin de ce mois ; une semaine lundi-dimanche à la semaine précédente ; une seule journée et les autres périodes gardent la même durée juste avant. La réponse donne `reference_from` et `reference_to` (aussi pour `last_year`), et la description générée le dit. Tests : mois complet, mois en cours, 31 → 30, février (y compris bissextile), semaine, période quelconque, journée seule.
-
-Banc Q44 : une lecture sans comparaison (chiffres de la période seule) compte à côté de la lecture avec comparaison ; `query_data` ou `explain_change` suffisent (`anyTool`). Correction de critère : le texte de la question est inchangé.
-
-Date fixe : `now` est injecté dans `answerCompanion`, `runCompanionTool`, les statistiques du tableau de bord, des appels et des no-shows, et la liste des créneaux ; le défaut reste `new Date()` en production. `COMPANION_REFERENCE_NOW` (31 octobre 2026, 12 h à Paris) est lu par le banc et par le seed (`apps/api/seed.ts`). L'horodatage des fichiers de résultats reste l'heure réelle : ce n'est pas une entrée.
-
-Bug trouvé au premier passage à date fixe : quatorze attentes du banc appelaient les fonctions du tableau de bord sans `now`, donc à l'heure réelle, alors que l'outil recevait la date de référence. Le renotage ne le voyait pas (il recalcule à la même heure réelle). Corrigé dans `0cb5d945`. Le premier passage complet avait 8 questions en dérive au renotage (2, 3, 4, 5, 17, 18, 19, 20) : ses chiffres sont invalides.
-
-Résultats (banc corrigé, `2026-11-01T20-57-50-719Z.json`, trois essais) :
-- Enquêtes 42 à 47 (`2026-11-01T20-56-13-710Z.json`) : outil 18/18, chiffre 18/18, ancrage 17/18. Le raté d'ancrage est un faux négatif du banc : « (1er au 30) » n'est pas reconnu comme un intervalle, donc le 30 compte comme chiffre absent.
-- Banc complet : outil 123/123, chiffre 118/123, ancrage 141/141. Échecs de chiffre : Q19 (deux essais), Q24 (trois essais). Q19 attend sept jours glissants (25–31 octobre) ; le modèle a répondu avec la semaine civile (lundi 26 au samedi 31). Q24 attend la date de service ; le modèle a répondu avec la date de prise, 407 couverts au lieu de 388. Ce sont des lectures défendables : la question est ambiguë, à arbitrer dans le critère.
-- Dérive au renotage : nulle sur les deux fichiers corrigés.
-- Tokens, banc complet : 1 796 917 en entrée, dont 1 692 395 lus du cache ; 49 938 en sortie. Enquêtes : 254 806 en entrée, dont 224 820 du cache ; 10 811 en sortie. Latence médiane 3 498 ms, maximum 6 759 ms.
-
-### 2026-11-01 — Companion : seed, lectures Q19 et Q24, consommation
-
-Seed : `apps/api/seed.ts` revient à l'heure réelle. `COMPANION_REFERENCE_NOW` vit dans `@sokar/config` (source unique, `dist` reconstruit, non suivi) ; `seed-companion.ts` part de cette date. Seed companion relancé en local, après sauvegarde de `sokar_preview`. Renotage du banc complet `2026-11-01T20-57-50-719Z.json` après relance : dérive sur 30 questions. Ce banc a été joué sur des données que la relance a remplacées (le seed reste déterministe, mulberry32) ; une dérive nulle exige un banc complet neuf sur la nouvelle base, non lancé dans cette passe.
-
-Lectures Q19 et Q24 : Q19 accepte sept jours glissants ou semaine civile (lundi au jour de référence), Q24 date de service ou date de prise, si la réponse dit laquelle ; « date du repas » vaut date de service. Texte des questions inchangé. Ancrage : « (1er au 30) » est un intervalle de dates. Renotage des réponses Q19 et Q24 (`2026-11-01T21-14-00-200Z.json`) : chiffre 6/6.
-
-Consommation, sous-ensemble 10, 33, 42-47, trois essais :
-
-| Configuration | Outil | Chiffre | Ancrage | Entrée hors cache | Sortie | Résultats d'outils |
-|---|---|---|---|---|---|---|
-| Initiale (`…21-14-52`) | 23/24 | 22/24 | 23/24 | 33 739 | 13 157 | 44 751 car. |
-| Résultats allégés (`…21-18-11`) | 24/24 | 22/24 | 24/24 | 38 532 | 14 574 | 38 276 car. |
-| + effort minimal entre les outils (`…21-21-16`) | 24/24 | 22/24 | 24/24 | 32 053 | 14 374 | — |
-
-Résultats allégés : libellé de chaque dimension une fois (`labels`), groupes à zéro non renvoyés. Effort minimal : Sonnet 5.5 ne peut pas désactiver son raisonnement, OpenRouter répond 400 (« Reasoning is mandatory for this endpoint and cannot be disabled ») pour `none` et `enabled: false` ; `minimal` est accepté. Premier tour en `low`, tours suivants en `minimal`. Les deux changements sont gardés : outil, chiffre et ancrage ne baissent pas. Gain de tokens non établi : un seul passage par configuration, et la sortie de la dernière configuration dépasse l'initiale.
-
-### 2026-11-01 — Companion : brouillon de relance vers l'éditeur de campagne
-
-API : l'outil `draft_campaign` (channel SMS ou EMAIL, name, objective, subject obligatoire pour un e-mail, body) est validé par Zod. Chaque chiffre du brouillon doit figurer dans les résultats d'outils de la même réponse ; sinon le serveur le renvoie au modèle (`unanchored_figures`) et le brouillon n'est pas retenu. La réponse porte `draft` (null sinon).
-
-Dashboard : lien « Ouvrir dans l'éditeur de campagne » sous une relance (fr, en, es, it). Le brouillon passe par `sessionStorage` (`sokar:campaign-draft`), jamais par l'URL. L'éditeur le reprend une fois ; le segment reste à choisir. L'envoi est refusé tant qu'un passage entre crochets contient « à compléter », variantes comprises (`8f0d9ab7`).
-
-Banc : critères figés dans `d6454643`, avant les essais : brouillon présent (`draft_campaign` valide), chaque chiffre dans un résultat d'outil, aucun nom du restaurant. Questions 48 à 50, texte inchangé. Résultat (`--only 48,49,50 --trials 1`, `2026-11-01T21-40-42-469Z.json`) : 3/3 sur les trois critères. Latence médiane 6 564 ms, maximum 7 941 ms. Coût : 57 780 tokens en entrée, dont 46 956 du cache ; 2 191 en sortie.
-
-Constats : le modèle écrit des variantes comme « [heure à compléter] » (désormais refusées à l'envoi) ; « [table disponible : à vérifier] » reste envoyable, le contrôle ne vise que « à compléter ». Q49 lit « la semaine dernière » comme du lundi 19 au dimanche 25 octobre, en date de service.
-
-Navigateur : demande de relance, lien, éditeur pré-rempli (SMS, nom, objectif, message), segment par défaut. Refus vérifié à l'envoi : l'alerte s'affiche, aucun appel à l'API. Capture : `companion-editeur-prerempli.jpg` (scratchpad).
+Tests : marketing 172 verts, API complète 4 930 verts, typecheck, eslint et prettier verts sur les fichiers touchés.

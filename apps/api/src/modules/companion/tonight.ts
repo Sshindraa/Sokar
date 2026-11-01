@@ -8,7 +8,7 @@ import { COUNTED_RESERVATION_STATES } from '../../shared/reservations/reservatio
 import { addDays, parisMidnight, parisParts } from './query-data';
 
 // Avant 16 h (heure de Paris) : service de midi. À partir de 16 h : service du soir.
-const SERVICE_SPLIT_HOUR = 16;
+export const SERVICE_SPLIT_HOUR = 16;
 const LARGE_PARTY_SIZE = 6;
 const REGULAR_MIN_HONORED = 3;
 const USUAL_WEEKS = 4;
@@ -47,7 +47,7 @@ export interface TonightCard {
   attention: TonightRow[];
 }
 
-function isInService(at: Date, service: TonightService): boolean {
+export function isInService(at: Date, service: TonightService): boolean {
   const { hour } = parisParts(at);
   return service === 'midi' ? hour < SERVICE_SPLIT_HOUR : hour >= SERVICE_SPLIT_HOUR;
 }
