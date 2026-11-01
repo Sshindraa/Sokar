@@ -3477,3 +3477,15 @@ Consommation, sous-ensemble 10, 33, 42-47, trois essais :
 | + effort minimal entre les outils (`…21-21-16`) | 24/24 | 22/24 | 24/24 | 32 053 | 14 374 | — |
 
 Résultats allégés : libellé de chaque dimension une fois (`labels`), groupes à zéro non renvoyés. Effort minimal : Sonnet 5.5 ne peut pas désactiver son raisonnement, OpenRouter répond 400 (« Reasoning is mandatory for this endpoint and cannot be disabled ») pour `none` et `enabled: false` ; `minimal` est accepté. Premier tour en `low`, tours suivants en `minimal`. Les deux changements sont gardés : outil, chiffre et ancrage ne baissent pas. Gain de tokens non établi : un seul passage par configuration, et la sortie de la dernière configuration dépasse l'initiale.
+
+### 2026-11-01 — Companion : brouillon de relance vers l'éditeur de campagne
+
+API : l'outil `draft_campaign` (channel SMS ou EMAIL, name, objective, subject obligatoire pour un e-mail, body) est validé par Zod. Chaque chiffre du brouillon doit figurer dans les résultats d'outils de la même réponse ; sinon le serveur le renvoie au modèle (`unanchored_figures`) et le brouillon n'est pas retenu. La réponse porte `draft` (null sinon).
+
+Dashboard : lien « Ouvrir dans l'éditeur de campagne » sous une relance (fr, en, es, it). Le brouillon passe par `sessionStorage` (`sokar:campaign-draft`), jamais par l'URL. L'éditeur le reprend une fois ; le segment reste à choisir. L'envoi est refusé tant qu'un passage entre crochets contient « à compléter », variantes comprises (`8f0d9ab7`).
+
+Banc : critères figés dans `d6454643`, avant les essais : brouillon présent (`draft_campaign` valide), chaque chiffre dans un résultat d'outil, aucun nom du restaurant. Questions 48 à 50, texte inchangé. Résultat (`--only 48,49,50 --trials 1`, `2026-11-01T21-40-42-469Z.json`) : 3/3 sur les trois critères. Latence médiane 6 564 ms, maximum 7 941 ms. Coût : 57 780 tokens en entrée, dont 46 956 du cache ; 2 191 en sortie.
+
+Constats : le modèle écrit des variantes comme « [heure à compléter] » (désormais refusées à l'envoi) ; « [table disponible : à vérifier] » reste envoyable, le contrôle ne vise que « à compléter ». Q49 lit « la semaine dernière » comme du lundi 19 au dimanche 25 octobre, en date de service.
+
+Navigateur : demande de relance, lien, éditeur pré-rempli (SMS, nom, objectif, message), segment par défaut. Refus vérifié à l'envoi : l'alerte s'affiche, aucun appel à l'API. Capture : `companion-editeur-prerempli.jpg` (scratchpad).
