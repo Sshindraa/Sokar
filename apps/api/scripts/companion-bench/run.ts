@@ -1217,10 +1217,6 @@ function collectNumbers(value: unknown, into: number[]): void {
 function anchoredIn(reply: string, calls: ToolCall[]): { ok: boolean; unanchored: number[] } {
   const available: number[] = [];
   for (const call of calls) collectNumbers(call.result, available);
-  // shortcut: toute fraction d'un résultat vaut aussi son pourcentage (0,89 → 89 %), pas seulement les parts ; à réserver aux champs de part si un ratio fait passer une réponse à tort.
-  for (const value of [...available]) {
-    if (value !== 0 && Math.abs(value) < 1) available.push(value * 100);
-  }
   // Le signe d'un écart se dit en mots (« baisse de 20 % ») : seule la valeur absolue compte.
   // Un chiffre arrondi à l'unité ou au dixième est ancré : arrondir n'est pas calculer.
   // Un entier s'accepte à la demi-unité près, un décimal au dixième près.

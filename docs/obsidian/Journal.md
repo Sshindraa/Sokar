@@ -3300,3 +3300,21 @@ Le correcteur de `run.ts` est commité tel quel : intervalles et libellé de moi
 Ancrages rendus : Q45 essai 1 de `23-48-07` (« 89 % », part 0,89) ; Q11 essais 1 et 3, puis Q45 essais 2 et 3 de `23-52-55` (« 2026-09 », « 89 % »). Aucun chiffre ne bouge.
 
 Dérive : 27 questions du banc complet, 6 de `23-45-50` et 1 de `23-59-01` n'ont plus leur valeur dans la base locale ; leur chiffre garde la valeur enregistrée, non renotée. Le 23/24 de `23-45-50` noté le 31/10 n'est pas reproduit : le scorer de `a76302ae` donne 24/24 sur ce fichier.
+
+### 2026-11-01 — Companion : sans conversion fraction → pourcentage
+
+Le correcteur (`anchoredIn`, `run.ts`) ne convertit plus une fraction en pourcentage : `0,89` ne fait plus compter « 89 % » comme ancré. Vérification des sorties d'outils : `explain_change` renvoie `share_pct` (entier, en pour cent) depuis `a76302ae`, et `delta_pct` de `query_data` est déjà en pour cent. Les seules fractions restantes (`delta`, `reference`, `total.delta`) sont des écarts en unités, à citer tels quels.
+
+Les bancs joués avant `a76302ae` ont reçu le champ `share` fractionnaire (0,89) : leur « 89 % » venait d'une sortie d'outil, pas d'un calcul. La règle s'applique quand même, comme prévu : un ratio cité en pourcentage doit venir d'un champ de part.
+
+Renotage hors ligne de tout le banc Sonnet (`--rescore`, aucun appel au modèle). Avant : scorer de `15317a3a`. Après : scorer sans la conversion. Copies renotées dans le scratchpad ; `results/` non touché.
+
+| Fichier | Ancrage avant → après | Chiffre avant → après |
+|---|---|---|
+| `23-48-07`, banc complet (47 × 3) | 140/141 → 139/141 | 114/123 → 114/123 |
+| `23-52-55`, banc complet, second passage | 140/141 → 138/141 | 113/123 → 113/123 |
+| `23-45-50`, huit questions | 24/24 → 24/24 | 17/24 → 17/24 |
+| `23-59-01`, deux questions | 2/2 → 2/2 | 2/2 → 2/2 |
+| `18-13-55`, Q45 (sorties `share_pct`) | 3/3 → 3/3 | 3/3 → 3/3 |
+
+Attendu, et seul changement : Q45 essai 1 de `23-48-07` et Q45 essais 2 et 3 de `23-52-55` (« 89 % » tiré de 0,89) deviennent non ancrés. Aucun chiffre ne bouge. La dérive ne change pas (27 questions du banc complet, 6 de `23-45-50`, 1 de `23-59-01`).
