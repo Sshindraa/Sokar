@@ -37,6 +37,7 @@ const CARD = {
 };
 
 const EXPLANATION = {
+  labels: { channel: 'canal d’arrivée' },
   source: 'reservations',
   compare: 'usual',
   from: '2026-10-30',

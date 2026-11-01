@@ -39,7 +39,6 @@ const ExplainArgs = z
 
 export interface Driver {
   dimension: string;
-  label: string;
   key: string | number;
   value: number | null;
   reference: number | null;
@@ -68,6 +67,8 @@ export interface MeasureExplanation {
 }
 
 export interface Explanation {
+  /** Libellé de chaque dimension citée par les drivers, une seule fois. */
+  labels: Record<string, string>;
   source: string;
   compare: string;
   from: string;
@@ -128,7 +129,6 @@ async function explainMeasure(
       if (group.delta === null) continue;
       drivers.push({
         dimension: dimension.name,
-        label: dimension.label,
         key: group.key,
         value: group.value,
         reference: group.reference,
@@ -209,7 +209,20 @@ export async function explainChange(
   }
   alongside.sort((a, b) => Math.abs(b.delta_pct) - Math.abs(a.delta_pct));
 
+  // Libellé de chaque dimension citée : une fois ici, et non dans chaque driver.
+  const labels = Object.fromEntries(
+    [...new Set(explained.flatMap((entry) => entry.drivers.map((driver) => driver.dimension)))].map(
+      (name) => [
+        name,
+        TIME_DIMENSIONS.find((time) => time.name === name)?.label ??
+          source.dimensions[name]?.label ??
+          name,
+      ],
+    ),
+  );
+
   return {
+    labels,
     source: args.source,
     compare: args.compare,
     from: args.from,
@@ -230,7 +243,7 @@ export function explainChangeDescription(): string {
     .join(' ; ');
   return [
     `Explique un écart entre une période et sa référence (compare, même sens que query_data). Sources (source) : ${sources}.`,
-    'measure est facultatif : sans lui, le résultat explique chaque mesure de la fiche. Pour chaque mesure, measures donne le total avec sa référence, un écart et un pourcentage calculés par le serveur, et les groupes qui portent l’écart (drivers, cinq au plus : delta est leur écart ; share_pct leur part de l’écart total en pour cent, arrondie à l’unité, ou null si cette part sort de 0 à 100, ce qui arrive quand l’écart total est faible ou que les groupes vont en sens opposé).',
+    'measure est facultatif : sans lui, le résultat explique chaque mesure de la fiche. Pour chaque mesure, measures donne le total avec sa référence, un écart et un pourcentage calculés par le serveur, et les groupes qui portent l’écart (drivers, cinq au plus : dimension donne leur dimension, labels le libellé de chaque dimension, delta leur écart ; share_pct leur part de l’écart total en pour cent, arrondie à l’unité, ou null si cette part sort de 0 à 100, ce qui arrive quand l’écart total est faible ou que les groupes vont en sens opposé).',
     'alongside donne les autres sources qui varient dans le même temps (seulement si l’écart est d’au moins 25 % et la référence d’au moins 5). low_volume vrai signifie une référence inférieure à 5 : ne concluez rien alors.',
     'Les variations simultanées ne sont pas des causes. date_field est obligatoire si la source a plusieurs dates. Avec previous_period, reference_from et reference_to donnent la période de référence : citez-la.',
   ].join(' ');

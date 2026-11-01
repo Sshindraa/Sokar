@@ -265,7 +265,10 @@ function summarize(
     if (bucket) bucket.push(item);
     else buckets.set(key, [item]);
   }
-  const groups: Group[] = [...buckets].map(([key, bucket]) => ({ key, value: value(bucket) }));
+  // Un groupe à zéro n'apprend rien au modèle : il n'est pas renvoyé.
+  const groups: Group[] = [...buckets]
+    .map(([key, bucket]) => ({ key, value: value(bucket) }))
+    .filter((group) => group.value !== 0);
   groups.sort((a, b) => compareGroups(groupBy, dimension?.order, a, b));
   return {
     total,
@@ -367,10 +370,13 @@ function summarizeCompared(
   const main = bucketsOf(items);
   const refs = references.map(bucketsOf);
   const keys = [...new Set([...main.keys(), ...refs.flatMap((map) => [...map.keys()])])];
-  const groups = keys.map((key) => ({
-    key,
-    ...compared(value(main.get(key) ?? []), meanOf(refs.map((map) => value(map.get(key) ?? [])))),
-  }));
+  // Un groupe à zéro dans l'actuelle comme dans la référence n'apprend rien : il n'est pas renvoyé.
+  const groups = keys
+    .map((key) => ({
+      key,
+      ...compared(value(main.get(key) ?? []), meanOf(refs.map((map) => value(map.get(key) ?? [])))),
+    }))
+    .filter((group) => group.value !== 0 || group.reference !== 0);
   groups.sort((a, b) =>
     compareGroups(
       groupBy,

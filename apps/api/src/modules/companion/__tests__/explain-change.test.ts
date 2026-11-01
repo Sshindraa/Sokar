@@ -107,9 +107,9 @@ describe('explainChange : total et drivers', () => {
         expect.objectContaining({ dimension: 'channel', key: 'website', delta: 1, share_pct: 25 }),
       ]),
     );
-    expect(drivers.find((driver) => driver.dimension === 'channel')).toMatchObject({
-      label: SOURCES.reservations.dimensions.channel.label,
-    });
+    expect((result as { labels: Record<string, string> }).labels.channel).toBe(
+      SOURCES.reservations.dimensions.channel.label,
+    );
   });
 
   it('donne une part nulle à chaque groupe quand l’écart total vaut 0', async () => {

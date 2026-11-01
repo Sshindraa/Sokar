@@ -76,13 +76,13 @@ const countReasons = (rows: TonightRow[]): Record<string, number> => {
 // Une explication sans mesure, ou une réponse indisponible (formule, erreur) : pas de bloc.
 function summarize(result: unknown): ExplanationSummary | null {
   if (!result || typeof result !== 'object' || !('measures' in result)) return null;
-  const { measures, alongside } = result as Explanation;
+  const { measures, alongside, labels } = result as Explanation;
   const [measure] = measures;
   if (!measure) return null;
   return {
     total: measure.total,
-    drivers: measure.drivers.map(({ label, key, delta, share_pct }) => ({
-      label,
+    drivers: measure.drivers.map(({ dimension, key, delta, share_pct }) => ({
+      label: labels[dimension] ?? dimension,
       key,
       delta,
       share_pct,
