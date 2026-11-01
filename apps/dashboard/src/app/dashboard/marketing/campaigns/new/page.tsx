@@ -170,8 +170,8 @@ function initialDraft(): Draft {
   };
 }
 
-// Repère laissé par Companion : « [à compléter] » et ses variantes entre crochets.
-const PENDING_PLACEHOLDER = /\[[^\]]*à compléter[^\]]*\]/i;
+// Companion met entre crochets tout ce que le gérant doit compléter ou vérifier : aucun crochet ne part.
+const PENDING_PLACEHOLDER = /\[[^\]]*\]/;
 
 /** Contrôles avant l'appel API : on dit quoi corriger plutôt que d'attendre un refus en anglais. */
 function draftProblem(draft: Draft): string | null {
@@ -180,7 +180,7 @@ function draftProblem(draft: Draft): string | null {
       PENDING_PLACEHOLDER.test(text),
     )
   ) {
-    return 'Le texte contient encore « [à compléter] » ou une variante. Complétez-le avant l’envoi.';
+    return 'Le texte contient encore un passage entre crochets, comme « [à compléter] » ou « [à vérifier] ». Complétez-le avant l’envoi.';
   }
   if (!draft.name.trim() || !draft.objective.trim() || !draft.segmentId) {
     return 'Renseignez le nom, l’objectif et le segment de la campagne.';

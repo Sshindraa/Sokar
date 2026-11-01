@@ -204,14 +204,17 @@ describe('NewMarketingCampaignPage', () => {
     ).toHaveLength(0);
   });
 
-  it('refuse aussi une variante entre crochets, comme « [heure à compléter] »', async () => {
+  it.each([
+    'Table à [heure à compléter]. {{unsubscribeUrl}}',
+    'Ce soir, [table disponible : à vérifier]. {{unsubscribeUrl}}',
+  ])('refuse tout passage entre crochets : %s', async (body) => {
     window.sessionStorage.setItem(
       'sokar:campaign-draft',
       JSON.stringify({
         channel: 'SMS',
         name: 'Relance midi',
         objective: 'Remplir le service',
-        body: 'Table à [heure à compléter]. {{unsubscribeUrl}}',
+        body,
       }),
     );
     render(<NewMarketingCampaignPage />);
