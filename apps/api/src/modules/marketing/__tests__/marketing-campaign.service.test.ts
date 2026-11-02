@@ -395,7 +395,7 @@ describe('marketing campaign control plane', () => {
     const remaining = await readRemainingDailyEmailBudget(BUDGET_NOW);
 
     expect(locked).toBeUndefined();
-    expect(remaining).toBeGreaterThanOrEqual(20);
+    expect(remaining).toBe(20);
     expect(db.$executeRaw).not.toHaveBeenCalled();
   });
 

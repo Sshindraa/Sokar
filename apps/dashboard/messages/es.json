@@ -229,6 +229,13 @@
       "sends": "{count, plural, one {# mensaje por enviar} other {# mensajes por enviar}}",
       "dismiss": "Ignorar",
       "dismissError": "No se puede ignorar este servicio por ahora. Inténtelo de nuevo.",
+      "dismissLabel": "Ignorar {day} {service}",
+      "prepareLabel": "Preparar {day} {service}",
+      "blocked": {
+        "SENDS_DISABLED": "Los envíos de marketing aún no están activados.",
+        "BUDGET_EXHAUSTED": "El presupuesto de correos de hoy se ha agotado.",
+        "NO_AUDIENCE": "No hay clientes a los que contactar para este servicio."
+      },
       "midi": "Mediodía",
       "soir": "Noche"
     }
