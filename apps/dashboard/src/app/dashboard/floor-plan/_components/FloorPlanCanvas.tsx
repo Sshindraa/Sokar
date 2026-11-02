@@ -253,9 +253,8 @@ export function computeCenterScroll({
 
 /** Marge (coordonnées plan) ajoutée autour des tables au cadrage d'ouverture. */
 export const CONTENT_FIT_PADDING = 48;
-// Live est une vue opérationnelle : une marge plus courte garde les tables
-// lisibles sans conserver une bande vide sous le groupe quand la zone est haute.
-export const LIVE_CONTENT_FIT_PADDING = 24;
+// Les cartes et leurs chaises peuvent dépasser les dimensions métier des tables.
+export const LIVE_CONTENT_FIT_PADDING = 80;
 
 export type ContentBounds = { x: number; y: number; width: number; height: number };
 
@@ -380,13 +379,13 @@ export function computeLiveContentBounds(
   }
 
   if (minX === Number.POSITIVE_INFINITY || canvasWidth <= 0 || canvasHeight <= 0) return null;
-  const x = Math.max(0, minX - LIVE_CONTENT_FIT_PADDING);
-  const y = Math.max(0, minY - LIVE_CONTENT_FIT_PADDING);
+  const x = minX - LIVE_CONTENT_FIT_PADDING;
+  const y = minY - LIVE_CONTENT_FIT_PADDING;
   return {
     x,
     y,
-    width: Math.max(1, Math.min(canvasWidth - x, maxX + LIVE_CONTENT_FIT_PADDING - x)),
-    height: Math.max(1, Math.min(canvasHeight - y, maxY + LIVE_CONTENT_FIT_PADDING - y)),
+    width: Math.max(1, maxX + LIVE_CONTENT_FIT_PADDING - x),
+    height: Math.max(1, maxY + LIVE_CONTENT_FIT_PADDING - y),
   };
 }
 
@@ -1487,7 +1486,7 @@ function TableCard({
   // Une table ronde reste un cercle même si une ancienne donnée géométrique
   // est légèrement rectangulaire. On la centre dans son empreinte au lieu de
   // transformer silencieusement les dimensions métier.
-  const roundDiameter = Math.max(Math.min(width, height), compact ? 64 : 72);
+  const roundDiameter = Math.max(Math.min(width, height), editable ? 72 : compact ? 104 : 112);
   const liveBodyWidth = isRound ? roundDiameter : rectBodyWidth;
   const liveBodyHeight = isRound
     ? roundDiameter
@@ -1647,8 +1646,12 @@ function TableCard({
           />
           <div
             className={cn(
-              'absolute inset-0 flex flex-col items-start justify-between text-left',
-              compact ? 'px-2 py-1.5 pr-3' : 'px-3 py-2 pr-5',
+              'absolute inset-0 flex flex-col',
+              isRound
+                ? 'items-center justify-center gap-1 px-3 text-center'
+                : compact
+                  ? 'items-start justify-between px-2 py-1.5 pr-3 text-left'
+                  : 'items-start justify-between px-3 py-2 pr-5 text-left',
             )}
           >
             <p className="max-w-full truncate pr-2 text-[11px] font-bold leading-none text-floor-table-text">
@@ -3642,7 +3645,11 @@ export function FloorPlanCanvas({
       ...table,
       sectionName: table.sectionName ?? null,
     }));
-    const combined = [...sectionTables, ...topTables];
+    const sectionTableIds = new Set(sectionTables.map((table) => table.id));
+    const combined = [
+      ...sectionTables,
+      ...topTables.filter((table) => !sectionTableIds.has(table.id)),
+    ];
     const usedNumbers = new Set(
       combined
         .map((table) => Number(table.name.match(/^T0*(\d+)$/i)?.[1] ?? 0))
@@ -8457,7 +8464,7 @@ export function FloorPlanCanvas({
                     <SelectTrigger
                       aria-label="Filtrer par serveur"
                       title="Filtrer par serveur"
-                      className="order-3 ml-auto h-8 w-9 justify-center gap-1 border-border bg-background px-0 text-xs font-medium sm:order-none sm:w-auto sm:max-w-[11rem] sm:justify-start sm:px-2.5"
+                      className="order-3 ml-auto h-8 w-9 justify-center gap-1 border-border bg-background px-0 text-xs font-medium sm:order-none sm:w-auto sm:justify-start sm:px-2.5"
                     >
                       {selectedServerFilter === '_unassigned_' ? (
                         <UserX size={13} className="shrink-0 text-muted-foreground" />

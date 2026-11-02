@@ -869,6 +869,31 @@ describe('FloorPlanCanvas — actions Live service', () => {
     expect(screen.getByTitle('Occupée')).toBeInTheDocument();
   });
 
+  it('compte une seule fois une table présente dans sa section et dans le plan', async () => {
+    const table = { ...floorPlan.tables![0], sectionId: 'section-1' };
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return {
+        ...floorPlan,
+        sections: [{ id: 'section-1', name: 'Salle', position: 0, tables: [table] }],
+        tables: [table],
+      };
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+    const tables = await screen.findAllByRole('button', { name: 'T4 · 4 places' });
+    expect(tables).toHaveLength(1);
+    expect(tables[0].querySelector('.rounded-full.bg-floor-table-surface')).toHaveStyle({
+      width: '112px',
+      height: '112px',
+    });
+    expect(within(tables[0]).getByText('Disponible')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Statistiques' }));
+    expect(screen.getByText('Tables actives').previousElementSibling).toHaveTextContent('1');
+    expect(screen.getByText('0 / 4 places')).toBeInTheDocument();
+  });
+
   it('signale une date passée et permet de revenir au jour courant', async () => {
     apiMocks.get.mockImplementation(async (path: string) => {
       if (path.includes('/floor-plan/reservations')) return [];
@@ -1691,7 +1716,15 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
         1400,
         900,
       ),
-    ).toEqual({ x: 156, y: 156, width: 112, height: 112 });
+    ).toEqual({ x: 100, y: 100, width: 224, height: 224 });
+    expect(
+      computeLiveContentBounds(
+        [],
+        [{ positionX: 0, positionY: 0, width: 64, height: 64 }],
+        700,
+        420,
+      ),
+    ).toEqual({ x: -80, y: -80, width: 224, height: 224 });
   });
 
   it('centre la zone des tables dans la fenêtre', () => {
@@ -1786,7 +1819,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
         expect(screen.queryByRole('button', { name: 'Zoom arrière' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Zoom avant' })).not.toBeInTheDocument();
         await waitFor(() =>
-          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '224px' }),
+          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '358px' }),
         );
 
         // Le canvas recouvre l'espaceur qui fournit l'aire de défilement. S'il
@@ -1840,7 +1873,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
 
         expect(await screen.findByRole('button', { name: 'T4 · 4 places' })).toBeInTheDocument();
         await waitFor(() =>
-          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '224px' }),
+          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '358px' }),
         );
       } finally {
         widthSpy.mockRestore();

@@ -3595,3 +3595,7 @@ Décision de Hamza : version 2 de `docs/superpowers/specs/2026-11-02-marketing-i
 ### 2026-11-02 — Marketing : lot « repérer, cibler, mesurer » implémenté (envois toujours coupés)
 
 Ajouts : `GET /marketing/fill-suggestions` et `POST /marketing/fill-suggestions/dismiss` (direction seule, cache et « Ignorer » dans Redis), prévision des places vides probables, paliers clients avec audience plafonnée au budget, témoin à 30 %, rapport avec marge d'erreur, résultat par palier et effet net à 30 jours. `TAUX_REPONSE` retiré. `EmptySlotsWidget` sort du bloc replié de l'accueil. Une visite compte dès qu'une réservation passée est confirmée, en salle ou honorée, car l'équipe ne marque pas toujours « honorée » (décision de Hamza) ; les clients sans aucune visite sur 12 mois ne sont pas contactés. Aucune mesure ne modifie l'audience. `MARKETING_SENDS_ENABLED` inchangé. Spec et plan dans `docs/superpowers/`.
+
+### 2026-11-02 — Plan de salle : compteurs et lisibilité
+
+Correctif local : les tables présentes dans une section et dans la liste générale du plan ne sont comptées et dessinées qu’une fois. En service, les tables rondes et les sélecteurs gagnent en lisibilité et le cadrage conserve une marge autour des chaises, même au bord du plan. Aucune donnée ni API modifiée ; qualification et livraison à suivre via la PR.
