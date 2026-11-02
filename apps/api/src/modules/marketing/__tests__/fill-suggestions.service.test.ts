@@ -242,6 +242,7 @@ describe('suggestions de services creux', () => {
       tiers: {},
       costEstimate: null,
       canPrepare: false,
+      prepareBlockedReason: 'NO_AUDIENCE',
     });
   });
 
@@ -276,6 +277,7 @@ describe('suggestions de services creux', () => {
       'emptyPlaces',
       'forecastSource',
       'freePlaces',
+      'prepareBlockedReason',
       'sends',
       'service',
       'tiers',
@@ -415,6 +417,56 @@ describe('suggestions de services creux', () => {
       const none = await listFillSuggestions({ restaurantId: 'r1', now: NOW });
       expect(none).toHaveLength(1);
       expect(none[0]).toMatchObject({ canPrepare: false, sends: 0, costEstimate: null });
+    });
+
+    it('prepareBlockedReason : priorité envois coupés, puis budget épuisé, puis aucun envoi ; null si préparable', async () => {
+      mockFloor({ [`2026-11-03:soir`]: { capacity: 30, free: 12 } });
+      const reason = async () =>
+        (await listFillSuggestions({ restaurantId: 'r1', now: NOW }))[0].prepareBlockedReason;
+      const empty = { members: 0, budgetExhausted: true };
+      const ok = { members: 10, tiers: { CRENEAU: 10 } };
+
+      mockPlans({ '2026-11-03:soir': ok });
+      expect(await reason()).toBeNull();
+
+      mockPlans({ '2026-11-03:soir': { ...ok, budgetExhausted: true } });
+      expect(await reason()).toBe('BUDGET_EXHAUSTED');
+
+      mockPlans({ '2026-11-03:soir': { members: 0 } });
+      expect(await reason()).toBe('NO_AUDIENCE');
+
+      // Budget épuisé et aucun envoi : le budget prime sur l'audience.
+      mockPlans({ '2026-11-03:soir': empty });
+      expect(await reason()).toBe('BUDGET_EXHAUSTED');
+
+      // Envois coupés prime sur tout.
+      vi.stubEnv('MARKETING_SENDS_ENABLED', 'false');
+      expect(await reason()).toBe('SENDS_DISABLED');
+      mockPlans({ '2026-11-03:soir': ok });
+      expect(await reason()).toBe('SENDS_DISABLED');
+    });
+
+    it('AUDIENCE_TOO_LARGE : prepareBlockedReason NO_AUDIENCE', async () => {
+      mockFloor(floors);
+      vi.mocked(loadServiceFillContext).mockRejectedValue(new Error('AUDIENCE_TOO_LARGE:5000'));
+      const list = await listFillSuggestions({ restaurantId: 'r1', now: NOW });
+      expect(list.map((s) => s.prepareBlockedReason)).toEqual([
+        'NO_AUDIENCE',
+        'NO_AUDIENCE',
+        'NO_AUDIENCE',
+      ]);
+    });
+
+    it('le champ passe dans le cache ; une ancienne entrée sans le champ reste lisible', async () => {
+      mockFloor({ [`2026-11-03:soir`]: { capacity: 30, free: 12 } });
+      await listFillSuggestions({ restaurantId: 'r1', now: NOW });
+      const cached = JSON.parse(vi.mocked(redisCache.set).mock.calls[0][1] as string);
+      expect(cached[0].prepareBlockedReason).toBe('NO_AUDIENCE');
+
+      const { prepareBlockedReason: _gone, ...legacy } = cached[0];
+      vi.mocked(redisCache.get).mockResolvedValue(JSON.stringify([legacy]));
+      const [item] = await listFillSuggestions({ restaurantId: 'r1', now: NOW });
+      expect(item).toEqual(legacy);
     });
 
     it('AUDIENCE_TOO_LARGE : services listés, canPrepare faux, sends 0, aucune erreur', async () => {

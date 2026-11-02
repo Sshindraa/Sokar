@@ -75,11 +75,11 @@ describe('ServiceFillReport : mesure de l’effet', () => {
     renderFill({
       treated: { customers: 100, covers: 40, coversPerCustomer: 0.4, reservedCustomers: 30 },
       holdout: { customers: 50, covers: 5, coversPerCustomer: 0.1, reservedCustomers: 5 },
-      effect: { difference: 20, margin95: 8.5 },
+      effect: { difference: 20, margin95: 12.2 },
     });
 
     expect(screen.queryByText('Pas encore de preuve d’effet')).not.toBeInTheDocument();
-    expect(screen.getByText(/entre \+12 et \+29 points/)).toBeInTheDocument();
+    expect(screen.getByText(/entre \+8 et \+32 points/)).toBeInTheDocument();
     expect(screen.getByText('Effet démontré')).toBeInTheDocument();
   });
 
@@ -101,6 +101,29 @@ describe('ServiceFillReport : mesure de l’effet', () => {
       difference: 0.6,
       conclusive: false,
       effect: { difference: 30, margin95: 28.4 },
+    });
+
+    expect(screen.getByText('Pas encore de preuve d’effet')).toBeInTheDocument();
+    expect(screen.queryByText('Effet démontré')).not.toBeInTheDocument();
+  });
+
+  it('fill.proven vrai l’emporte sur le calcul local', () => {
+    renderFill({
+      // Le calcul local dirait « pas de preuve » : 3 réservants côté témoin.
+      holdout: { customers: 25, covers: 3, coversPerCustomer: 0.12, reservedCustomers: 3 },
+      proven: true,
+    });
+
+    expect(screen.getByText('Effet démontré')).toBeInTheDocument();
+    expect(screen.queryByText('Pas encore de preuve d’effet')).not.toBeInTheDocument();
+  });
+
+  it('fill.proven faux l’emporte sur le calcul local', () => {
+    renderFill({
+      treated: { customers: 100, covers: 40, coversPerCustomer: 0.4, reservedCustomers: 30 },
+      holdout: { customers: 50, covers: 5, coversPerCustomer: 0.1, reservedCustomers: 5 },
+      effect: { difference: 20, margin95: 12.2 },
+      proven: false,
     });
 
     expect(screen.getByText('Pas encore de preuve d’effet')).toBeInTheDocument();

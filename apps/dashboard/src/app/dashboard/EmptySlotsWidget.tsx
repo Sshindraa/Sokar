@@ -34,6 +34,8 @@ interface FillSuggestion {
   tiers: Partial<Record<'CRENEAU' | 'REGULIER' | 'CONNU', number>>;
   costEstimate: { amount: number | string | null; status: string } | null;
   canPrepare: boolean;
+  // Absent des anciennes entrées du cache : traité comme null.
+  prepareBlockedReason?: 'SENDS_DISABLED' | 'BUDGET_EXHAUSTED' | 'NO_AUDIENCE' | null;
 }
 
 interface EmptySlotsResponse {
@@ -58,6 +60,7 @@ const DAY_LABELS: Record<string, string> = {
 };
 
 const MAX_VISIBLE_DAYS = 3;
+const rowKey = (item: FillSuggestion) => `${item.date}-${item.service}`;
 const TIERS = ['CRENEAU', 'REGULIER', 'CONNU'] as const;
 
 function getLocalDateKey(date: Date) {
@@ -94,6 +97,8 @@ export default function EmptySlotsWidget() {
   // null = route des suggestions indisponible (403, panne) : on garde la vue des journées.
   const [suggestions, setSuggestions] = useState<FillSuggestion[] | null>(null);
   const [dismissError, setDismissError] = useState(false);
+  // Lignes dont l'appel « Ignorer » est en cours : le bouton est désactivé pour éviter le double envoi.
+  const [dismissing, setDismissing] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
@@ -155,7 +160,9 @@ export default function EmptySlotsWidget() {
 
   if (suggestions) {
     async function dismiss(suggestion: FillSuggestion) {
+      const key = rowKey(suggestion);
       setDismissError(false);
+      setDismissing((keys) => [...keys, key]);
       try {
         await post('marketing/fill-suggestions/dismiss', {
           date: suggestion.date,
@@ -168,6 +175,8 @@ export default function EmptySlotsWidget() {
         );
       } catch {
         setDismissError(true);
+      } finally {
+        setDismissing((keys) => keys.filter((k) => k !== key));
       }
     }
 
@@ -191,67 +200,81 @@ export default function EmptySlotsWidget() {
           <p className="mt-3 text-sm text-foreground">{t('suggestions.empty')}</p>
         ) : (
           <ul className="mt-3 divide-y divide-border">
-            {suggestions.map((item) => (
-              <li
-                key={`${item.date}-${item.service}`}
-                className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"
-              >
-                <div>
-                  <p className="font-medium text-foreground">
-                    {formatDayName(item.date, '')} {formatShortDate(item.date)}
-                    {' · '}
-                    <span>{t(`suggestions.${item.service}`)}</span>
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {t('suggestions.emptyPlaces', { count: item.emptyPlaces })}
-                    {item.forecastSource === 'simple' && (
-                      <span> · {t('suggestions.sourceSimple')}</span>
-                    )}
-                  </p>
-                  {item.sends > 0 && (
+            {suggestions.map((item) => {
+              const rowLabel = {
+                day: `${formatDayName(item.date, '').toLocaleLowerCase('fr-FR')} ${formatShortDate(item.date)}`,
+                service: t(`suggestions.${item.service}`).toLocaleLowerCase('fr-FR'),
+              };
+              return (
+                <li
+                  key={rowKey(item)}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"
+                >
+                  <div>
+                    <p className="font-medium text-foreground">
+                      {formatDayName(item.date, '')} {formatShortDate(item.date)}
+                      {' · '}
+                      <span>{t(`suggestions.${item.service}`)}</span>
+                    </p>
                     <p className="text-xs text-muted-foreground">
-                      {t('suggestions.sends', { count: item.sends })}
-                      {/* Les anciennes entrées du cache n'ont pas de composition. */}
-                      {TIERS.filter((tier) => (item.tiers?.[tier] ?? 0) > 0).map((tier) => (
-                        <span key={tier}>
-                          {' · '}
-                          {t(`composition.${tier}`, { count: item.tiers[tier] ?? 0 })}
-                        </span>
-                      ))}
-                      {item.costEstimate && (
-                        <span>
-                          {' · '}
-                          {t('cost')} :{' '}
-                          {item.costEstimate.amount == null
-                            ? t('costUnknown')
-                            : money.format(Number(item.costEstimate.amount))}
-                        </span>
+                      {t('suggestions.emptyPlaces', { count: item.emptyPlaces })}
+                      {item.forecastSource === 'simple' && (
+                        <span> · {t('suggestions.sourceSimple')}</span>
                       )}
                     </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {item.canPrepare && (
-                    <Button asChild variant="outline" size="sm">
-                      <Link
-                        href={`/dashboard/marketing/fill-service?date=${encodeURIComponent(item.date)}&service=${item.service}&channel=EMAIL`}
-                      >
-                        {t('suggestions.prepare')}
-                      </Link>
+                    {item.sends > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {t('suggestions.sends', { count: item.sends })}
+                        {/* Les anciennes entrées du cache n'ont pas de composition. */}
+                        {TIERS.filter((tier) => (item.tiers?.[tier] ?? 0) > 0).map((tier) => (
+                          <span key={tier}>
+                            {' · '}
+                            {t(`composition.${tier}`, { count: item.tiers[tier] ?? 0 })}
+                          </span>
+                        ))}
+                        {item.costEstimate && (
+                          <span>
+                            {' · '}
+                            {t('cost')} :{' '}
+                            {item.costEstimate.amount == null
+                              ? t('costUnknown')
+                              : money.format(Number(item.costEstimate.amount))}
+                          </span>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {item.canPrepare && (
+                      <Button asChild variant="outline" size="sm">
+                        <Link
+                          aria-label={t('suggestions.prepareLabel', rowLabel)}
+                          href={`/dashboard/marketing/fill-service?date=${encodeURIComponent(item.date)}&service=${item.service}&channel=EMAIL`}
+                        >
+                          {t('suggestions.prepare')}
+                        </Link>
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="transition-all duration-200"
+                      aria-label={t('suggestions.dismissLabel', rowLabel)}
+                      disabled={dismissing.includes(rowKey(item))}
+                      onClick={() => dismiss(item)}
+                    >
+                      {t('suggestions.dismiss')}
                     </Button>
+                  </div>
+                  {!item.canPrepare && item.prepareBlockedReason && (
+                    <p className="w-full text-xs text-muted-foreground">
+                      {t(`suggestions.blocked.${item.prepareBlockedReason}`)}
+                    </p>
                   )}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="transition-all duration-200"
-                    onClick={() => dismiss(item)}
-                  >
-                    {t('suggestions.dismiss')}
-                  </Button>
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

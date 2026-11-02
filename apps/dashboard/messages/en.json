@@ -230,6 +230,13 @@
       "sends": "{count, plural, one {# message to send} other {# messages to send}}",
       "dismiss": "Dismiss",
       "dismissError": "Unable to dismiss this service right now. Please try again.",
+      "dismissLabel": "Dismiss {day} {service}",
+      "prepareLabel": "Prepare {day} {service}",
+      "blocked": {
+        "SENDS_DISABLED": "Marketing sends are not enabled yet.",
+        "BUDGET_EXHAUSTED": "Today’s email budget is used up.",
+        "NO_AUDIENCE": "No customers to contact for this service."
+      },
       "midi": "Lunch",
       "soir": "Dinner"
     }
