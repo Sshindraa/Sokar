@@ -1156,6 +1156,17 @@ describe('FloorPlanCanvas — actions Live service', () => {
     fireEvent.keyDown(trigger, { key: 'Enter' });
     expect(await screen.findByRole('menu')).toHaveTextContent('Arrivée imminente');
     expect(screen.getByRole('menu')).toHaveTextContent('Les réservations sans table affectée');
+    for (const [label, color] of [
+      ['Disponible', 'free'],
+      ['Réservée', 'reserved'],
+      ['Arrivée imminente', 'upcoming'],
+      ['En retard', 'late'],
+      ['Occupée', 'occupied'],
+    ]) {
+      expect(within(screen.getByRole('menu')).getByText(label).querySelector('span')).toHaveClass(
+        `bg-floor-status-${color}`,
+      );
+    }
   });
 
   it.each([false, true])(

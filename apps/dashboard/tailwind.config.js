@@ -70,6 +70,13 @@ module.exports = {
         // spéculaire pour l'effet verre.
         glass2: 'hsl(var(--glass-2))',
         'glass-stroke': 'hsl(var(--glass-stroke))',
+        'floor-status': {
+          free: 'hsl(var(--floor-status-free))',
+          reserved: 'hsl(var(--floor-status-reserved))',
+          upcoming: 'hsl(var(--floor-status-upcoming))',
+          late: 'hsl(var(--floor-status-late))',
+          occupied: 'hsl(var(--floor-status-occupied))',
+        },
         'floor-table': {
           surface: 'hsl(var(--floor-table-surface))',
           chair: 'hsl(var(--floor-table-chair))',

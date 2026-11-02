@@ -709,11 +709,11 @@ const statusMeta: Record<TableStatus, { label: string; icon: LucideIcon }> = {
 };
 
 const statusDotClasses: Record<TableStatus, string> = {
-  free: 'bg-floor-table-muted/80',
-  reserved: 'bg-brand',
-  upcoming: 'bg-warning',
-  late: 'bg-destructive',
-  occupied: 'bg-floor-table-accent',
+  free: 'bg-floor-status-free',
+  reserved: 'bg-floor-status-reserved',
+  upcoming: 'bg-floor-status-upcoming',
+  late: 'bg-floor-status-late',
+  occupied: 'bg-floor-status-occupied',
   inactive: 'bg-floor-table-muted/80',
 };
 
@@ -1438,18 +1438,7 @@ function TableCard({
   // still provide different interactions, but the table itself should remain
   // recognisable when moving between them.
   const liveStatusLabel = status ? statusMeta[status.status].label : null;
-  const liveRailClass =
-    status?.status === 'occupied'
-      ? 'bg-floor-table-accent'
-      : status?.status === 'late'
-        ? 'bg-destructive'
-        : status?.status === 'upcoming'
-          ? 'bg-warning'
-          : status?.status === 'reserved'
-            ? 'bg-brand'
-            : status
-              ? 'bg-floor-table-muted/45'
-              : 'bg-floor-table-accent';
+  const liveRailClass = status ? statusDotClasses[status.status] : 'bg-floor-table-accent';
   const liveStatusTextClass =
     status?.status === 'occupied'
       ? 'text-floor-table-accent'
@@ -6783,16 +6772,7 @@ export function FloorPlanCanvas({
     setMobileServiceDetailsOpen(false);
   }, [selectedServiceTableId]);
 
-  const selectedServiceStatusDotClass =
-    selectedServiceStatus?.status === 'occupied'
-      ? 'bg-floor-table-accent'
-      : selectedServiceStatus?.status === 'late'
-        ? 'bg-destructive'
-        : selectedServiceStatus?.status === 'upcoming'
-          ? 'bg-warning'
-          : selectedServiceStatus?.status === 'reserved'
-            ? 'bg-brand'
-            : 'bg-floor-table-muted/80';
+  const selectedServiceStatusDotClass = statusDotClasses[selectedServiceStatus?.status ?? 'free'];
 
   const serviceOverview = (
     <DropdownMenu>
