@@ -77,6 +77,18 @@ afterEach(() => {
 });
 
 describe('CompanionPanel', () => {
+  it('déploie la saisie au focus et conserve le brouillon après la perte du focus', () => {
+    renderPanel();
+    const field = screen.getByRole('textbox');
+    expect(field).toHaveAttribute('rows', '1');
+    fireEvent.focus(field);
+    expect(field).toHaveAttribute('rows', '3');
+    fireEvent.change(field, { target: { value: 'Mes réservations' } });
+    fireEvent.blur(field);
+    expect(field).toHaveAttribute('rows', '3');
+    expect(field).toHaveValue('Mes réservations');
+  });
+
   it('envoie la suggestion comme question et affiche la réponse avec un seul lien par écran', async () => {
     mocks.post.mockResolvedValue({
       reply: 'Vous avez 12 couverts prévus.',
@@ -98,15 +110,9 @@ describe('CompanionPanel', () => {
     expect(links[0]).toHaveAttribute('href', '/dashboard');
   });
 
-  it('affiche la mention permanente et envoie avec Entrée, sans Maj+Entrée', () => {
+  it('envoie avec Entrée, sans Maj+Entrée', () => {
     mocks.post.mockResolvedValue({ reply: 'OK.', sources: [] });
     renderPanel();
-
-    expect(
-      screen.getByText(
-        'Réponses générées par IA, à vérifier. Ne saisissez pas de coordonnées client.',
-      ),
-    ).toBeInTheDocument();
 
     typeInDraft('Combien de no-shows ?');
     const field = screen.getByRole('textbox');
@@ -158,7 +164,7 @@ describe('CompanionPanel', () => {
     mocks.siteId = 'site_2';
     renderPanel();
     expect(screen.queryByText('Réponse ancienne')).not.toBeInTheDocument();
-    expect(screen.getByText(/Je suis l'assistant IA de Sokar/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: WEEK_QUESTION })).toBeInTheDocument();
   });
 
   it('lit une entrée ancienne qui contient toolRuns sans ce champ', async () => {

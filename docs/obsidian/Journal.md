@@ -3595,3 +3595,47 @@ Décision de Hamza : version 2 de `docs/superpowers/specs/2026-11-02-marketing-i
 ### 2026-11-02 — Marketing : lot « repérer, cibler, mesurer » implémenté (envois toujours coupés)
 
 Ajouts : `GET /marketing/fill-suggestions` et `POST /marketing/fill-suggestions/dismiss` (direction seule, cache et « Ignorer » dans Redis), prévision des places vides probables, paliers clients avec audience plafonnée au budget, témoin à 30 %, rapport avec marge d'erreur, résultat par palier et effet net à 30 jours. `TAUX_REPONSE` retiré. `EmptySlotsWidget` sort du bloc replié de l'accueil. Une visite compte dès qu'une réservation passée est confirmée, en salle ou honorée, car l'équipe ne marque pas toujours « honorée » (décision de Hamza) ; les clients sans aucune visite sur 12 mois ne sont pas contactés. Aucune mesure ne modifie l'audience. `MARKETING_SENDS_ENABLED` inchangé. Spec et plan dans `docs/superpowers/`.
+
+### 2026-11-02 — Plan de salle : compteurs et lisibilité
+
+Correctif local : les tables présentes dans une section et dans la liste générale du plan ne sont comptées et dessinées qu’une fois. En service, les tables rondes et les sélecteurs gagnent en lisibilité et le cadrage conserve une marge autour des chaises, même au bord du plan. Aucune donnée ni API modifiée ; qualification et livraison à suivre via la PR.
+
+### 2026-11-02 — Plan de salle : chaises et vue d’ensemble
+
+Les tables de huit places maximum affichent le nombre réel de chaises ; au-delà, les chaises sont masquées pour éviter un comptage trompeur et la capacité reste affichée. En service, le résumé et la légende restent accessibles pendant la sélection et la fiche se ferme explicitement sur ordinateur comme sur téléphone.
+
+### 2026-11-02 — Service : lisibilité et barre de suivi
+
+La vue service regroupe date, direct ou archive, fraîcheur et compteurs dans une barre ; un bouton recadre le plan et le retour à aujourd’hui reste visible hors du jour courant. Les cartes de table sont plus lisibles et les anciens compteurs sont masqués pendant le chargement d’une autre date. Qualification et livraison via la PR du plan de salle.
+
+### 2026-11-02 — Service : accueil et navigation
+
+L’action « Client sans réservation » guide vers une table libre avant le placement réel ; le simulateur Copilot est identifié comme prévisualisation sans placement. Navigation Salle : libellés explicites, infobulles clavier/souris et état actif accessible ; cibles tactiles contrôlées en formats tablette portrait et paysage.
+
+### 2026-11-02 — Démo locale : limitation des requêtes du plan
+
+La démo non authentifiée partageait le budget anonyme de 100 requêtes/minute/IP ; plusieurs vues locales et leurs actualisations pouvaient provoquer des 429. En développement, les lectures de la démo provenant de la boucle locale utilisent un compteur séparé plafonné à 600/minute ; écritures, trafic réseau, staging et production gardent leurs limites. Un onglet de service initialement masqué attend son affichage pour charger et lancer le polling.
+
+### 2026-11-02 — Service : cadrage et lisibilité du plan
+
+Le cadrage Live inclut les zones occupées en entier ; l’inspecteur s’ouvre à la sélection et la barre garde un résumé unique avec les couverts prévus. Les tables combinables sont expliquées sur la carte et dans la fiche. Les assises sont réduites et masquées quand leurs enveloppes se chevaucheraient, sans modifier la capacité ni les coordonnées enregistrées.
+
+### 2026-11-02 — Service : zoom, fiche stable et légende flottante
+
+La vue s’ouvre cadrée sur les tables tout en conservant la géométrie complète des zones ; « Ajuster le plan » cadre la salle et des commandes règlent le zoom. La fiche reste en surimpression quand elle ne masque aucune table et prend sinon une colonne. La légende flottante reprend les points des statuts et explique les tables attendues ; l’accueil guide vers le choix d’une table sans déplacer le plan.
+
+### 2026-11-02 — Service : cadrage intermédiaire et lisibilité des états
+
+Le cadrage initial tient compte des empreintes visuelles des tables et de leurs assises, de la rotation et de la hauteur disponible ; le zoom est indiqué en pourcentage. L’aide au placement est ancrée au bouton et ne recouvre pas le plan. Une salle de cinq tables et les états simultanés ont été vérifiés avec des données de test ; la fiche conserve une colonne si une table à droite serait masquée.
+
+### 2026-11-02 — Service : correction du cadrage initial
+
+Pour les salles de dimensions comparables à la zone occupée, le cadrage initial montre la salle entière avec une marge réduite. Les salles très étendues restent cadrées sur les tables ; la géométrie enregistrée ne change pas.
+
+### 2026-11-02 — Navigation latérale du tableau de bord
+
+La navigation bureau affiche les rubriques et leurs sous-menus directement dans une barre latérale élargie ; la section active est ouverte à la navigation et un clic extérieur ou Échap la referme. La navigation tactile existante et les restrictions de rôle sont conservées.
+
+### 2026-11-03 — Navigation latérale repliable
+
+La navigation bureau démarre en barre d’icônes ; le bouton de menu ou une catégorie la déplie, et le contenu récupère l’espace lorsqu’elle est repliée. La navigation tactile conserve son fonctionnement.

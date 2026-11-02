@@ -28,7 +28,17 @@ function authenticatedUserId(req: FastifyRequest): string | null {
  */
 export function rateLimitBucket(req: FastifyRequest): { key: string; max: number } {
   const userId = authenticatedUserId(req);
-  if (!userId) return { key: `ip:${req.ip}`, max: RATE_LIMIT_GLOBAL_MAX };
+  if (!userId) {
+    if (
+      process.env.NODE_ENV === 'development' &&
+      process.env.DEMO_RESTAURANT_ID &&
+      READ_METHODS.has(req.method) &&
+      ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip)
+    ) {
+      return { key: `ip:${req.ip}:preview-read`, max: RATE_LIMIT_USER_READ_MAX };
+    }
+    return { key: `ip:${req.ip}`, max: RATE_LIMIT_GLOBAL_MAX };
+  }
   return READ_METHODS.has(req.method)
     ? { key: `user:${userId}:read`, max: RATE_LIMIT_USER_READ_MAX }
     : { key: `user:${userId}:write`, max: RATE_LIMIT_USER_WRITE_MAX };
