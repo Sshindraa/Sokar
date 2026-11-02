@@ -1,6 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { NextIntlClientProvider } from 'next-intl';
+import messages from '../../../../messages/fr.json';
 import DashboardPage from '../page';
+
+// Le tableau de bord rend le widget « Journées peu remplies », qui lit ses libellés dans next-intl.
+function renderDashboard() {
+  return render(
+    <NextIntlClientProvider locale="fr" messages={messages}>
+      <DashboardPage />
+    </NextIntlClientProvider>,
+  );
+}
 
 const api = vi.hoisted(() => ({
   orgId: 'real-restaurant',
@@ -38,7 +49,7 @@ describe('Pilotage — situations de travail', () => {
 
   it('une journée de renseignements reste calme, sans assimiler zéro réservation à un échec', async () => {
     scenario();
-    render(<DashboardPage />);
+    renderDashboard();
     expect(
       await screen.findByRole('article', { name: 'Indicateur Réservations' }),
     ).toHaveTextContent('0');
@@ -64,7 +75,7 @@ describe('Pilotage — situations de travail', () => {
         },
       ],
     });
-    render(<DashboardPage />);
+    renderDashboard();
     const summary = await screen.findByText('1 point à vérifier dans Salle');
     expect(summary.closest('details')).not.toHaveAttribute('open');
     fireEvent.click(summary);
@@ -79,7 +90,7 @@ describe('Pilotage — situations de travail', () => {
 
   it('une faible activité reste descriptive et donne accès aux limites de l’estimation', async () => {
     scenario({ reservations: 2, calls: 2 });
-    render(<DashboardPage />);
+    renderDashboard();
     const reservations = await screen.findByRole('article', {
       name: 'Indicateur Réservations',
     });

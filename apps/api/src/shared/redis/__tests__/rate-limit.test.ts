@@ -1,6 +1,22 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import { getClientIp } from '../rate-limit';
+import { redisCache } from '../client';
+
+describe('checkRateLimit', () => {
+  it('garde la fenêtre de 60 s par défaut, et accepte une fenêtre donnée', async () => {
+    // Le module est mocké globalement dans les tests : on prend la version réelle.
+    const { checkRateLimit } =
+      await vi.importActual<typeof import('../rate-limit')>('../rate-limit');
+    vi.mocked(redisCache.incr).mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+
+    await checkRateLimit('short', 10);
+    await checkRateLimit('daily', 100, 86_400);
+
+    expect(redisCache.expire).toHaveBeenCalledWith('short', 60);
+    expect(redisCache.expire).toHaveBeenCalledWith('daily', 86_400);
+  });
+});
 
 describe('getClientIp', () => {
   it('ignore un préfixe X-Forwarded-For fourni par le client', async () => {

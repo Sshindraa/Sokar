@@ -11,7 +11,9 @@ import { Prisma } from '@prisma/client';
 import {
   CapacityAwareAvailabilityService,
   markTooSoonSlotsUnavailable,
+  zonedTimeToUtc,
 } from '../availability-capacity-aware.service.js';
+import { findUnassignedSeatingConflict } from '../unassigned-seating';
 
 vi.mock('../../../shared/redis/client', () => {
   const store = new Map<string, string>();
@@ -1323,5 +1325,167 @@ describe('créneaux passés', () => {
       expect(huge.slots[0].available).toBe(false);
       expect(dto.slots[0].available).toBe(true);
     });
+  });
+});
+
+describe('sans table : disponibilité et création restent d’accord', () => {
+  beforeEach(() => {
+    (redisCache as unknown as { __resetStore: () => void }).__resetStore();
+    vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(BEFORE_FIXTURE_DATES);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const SLOT_MINUTES = 120;
+  const TIMES = ['17:00', '17:30', '18:00', '19:00', '20:00'];
+  const parisAt = (time: string) => zonedTimeToUtc(date, time, 'Europe/Paris');
+
+  /**
+   * Pour chaque créneau et chaque taille de groupe : la disponibilité annonce « oui » exactement quand
+   * la création accepterait la même réservation sans table.
+   */
+  async function expectSameVerdict(
+    prisma: PrismaClient,
+    partySizes: number[],
+  ): Promise<Record<string, boolean>> {
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const verdicts: Record<string, boolean> = {};
+    for (const partySize of partySizes) {
+      const dto = await service.getAvailability({ restaurantId: RESTAURANT_ID, date, partySize });
+      for (const time of TIMES) {
+        const startsAt = zonedTimeToUtc(date, time, 'Europe/Paris');
+        const { conflict } = await findUnassignedSeatingConflict(prisma, {
+          restaurantId: RESTAURANT_ID,
+          partySize,
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + SLOT_MINUTES * 60_000),
+          now: new Date(),
+        });
+        const available = dto.slots.find((s) => s.time === time)?.available ?? false;
+        expect(available, `${partySize} couverts à ${time}`).toBe(!conflict);
+        verdicts[`${partySize}@${time}`] = available;
+      }
+    }
+    return verdicts;
+  }
+
+  function withExposureSettings(prisma: PrismaClient): PrismaClient {
+    return Object.assign(prisma, {
+      restaurantExposureSettings: { findUnique: async () => ({ capacitySpecials: {} }) },
+    }) as PrismaClient;
+  }
+
+  it('une réservation sans table n’occupe qu’une table : la place libre reste ouverte', async () => {
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [
+        makeTable({ id: 't-2', floorPlanId: FLOOR_PLAN_ID, capacity: 2 }),
+        makeTable({ id: 't-4', floorPlanId: FLOOR_PLAN_ID, capacity: 4 }),
+      ],
+      reservations: [
+        makeReservation({
+          id: 'r-loose',
+          tableId: null,
+          partySize: 2,
+          startsAt: parisAt('17:00'),
+          endsAt: parisAt('19:00'),
+        }),
+      ],
+    });
+    const fake = withExposureSettings(prisma);
+
+    const verdicts = await expectSameVerdict(fake, [2, 4, 6]);
+
+    // Le groupe sans table prend la table de 2 ; celle de 4 reste libre à 17 h.
+    expect(verdicts['4@17:00']).toBe(true);
+    expect(verdicts['2@17:00']).toBe(true);
+    expect(verdicts['6@17:00']).toBe(false);
+  });
+
+  it('jusqu’à saturation : deux groupes sans table, puis une table avec, ferment la plage', async () => {
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [
+        makeTable({ id: 't-2', floorPlanId: FLOOR_PLAN_ID, capacity: 2 }),
+        makeTable({ id: 't-4', floorPlanId: FLOOR_PLAN_ID, capacity: 4 }),
+      ],
+      reservations: [
+        makeReservation({
+          id: 'r-loose-1',
+          tableId: null,
+          partySize: 2,
+          startsAt: parisAt('17:00'),
+          endsAt: parisAt('19:00'),
+        }),
+        makeReservation({
+          id: 'r-assigned',
+          tableId: 't-4',
+          partySize: 4,
+          startsAt: parisAt('17:00'),
+          endsAt: parisAt('19:00'),
+        }),
+      ],
+    });
+    const fake = withExposureSettings(prisma);
+
+    const verdicts = await expectSameVerdict(fake, [2, 4]);
+
+    // Le groupe sans table prend la table de 2 ; la table de 4 est fixée : plus rien pour 2 couverts.
+    expect(verdicts['2@17:00']).toBe(false);
+    expect(verdicts['4@17:00']).toBe(false);
+    // À 19 h, le créneau ne chevauche plus les réservations.
+    expect(verdicts['2@19:00']).toBe(true);
+  });
+
+  it('un hold actif sans table occupe une table, comme une réservation', async () => {
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [
+        makeTable({ id: 't-2', floorPlanId: FLOOR_PLAN_ID, capacity: 2 }),
+        makeTable({ id: 't-4', floorPlanId: FLOOR_PLAN_ID, capacity: 4 }),
+      ],
+      holds: [
+        makeHold({
+          id: 'h-loose',
+          tableId: null,
+          partySize: 2,
+          slotStart: parisAt('17:00'),
+          slotEnd: parisAt('19:00'),
+          expiresAt: new Date(Date.now() + 10 * 60_000),
+        }),
+      ],
+    });
+    const fake = withExposureSettings(prisma);
+
+    const verdicts = await expectSameVerdict(fake, [2, 4]);
+
+    expect(verdicts['4@17:00']).toBe(true);
+    expect(verdicts['2@17:00']).toBe(true);
+  });
+
+  it('aucune table compatible : un groupe trop grand est refusé par la disponibilité et la création', async () => {
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [makeTable({ id: 't-4', floorPlanId: FLOOR_PLAN_ID, capacity: 4 })],
+      reservations: [
+        makeReservation({
+          id: 'r-loose',
+          tableId: null,
+          partySize: 2,
+          startsAt: parisAt('17:00'),
+          endsAt: parisAt('19:00'),
+        }),
+      ],
+    });
+    const fake = withExposureSettings(prisma);
+
+    const verdicts = await expectSameVerdict(fake, [4, 6]);
+
+    expect(verdicts['6@17:00']).toBe(false);
+    expect(verdicts['4@17:00']).toBe(false);
   });
 });

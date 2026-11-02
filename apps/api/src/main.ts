@@ -34,6 +34,7 @@ import { reservationRoutes } from './modules/reservations/reservation.routes';
 import { callRoutes } from './modules/calls/call.routes';
 import { voiceReadRoutes } from './modules/voice/voice-read.routes';
 import { dashboardRoutes } from './modules/dashboard/dashboard.routes';
+import { companionRoutes } from './modules/companion/companion.routes';
 import { reactivationRoutes } from './modules/dashboard/reactivation.routes';
 import { authSyncRoutes } from './modules/auth/auth.routes';
 import { testRoutes } from './modules/test/test.routes';
@@ -203,7 +204,7 @@ export async function buildApp() {
     if (error instanceof ZodError) {
       return reply.status(400).send({
         error: 'Validation Error',
-        details: error.errors.map((e) => ({
+        details: error.issues.map((e) => ({
           path: e.path.join('.'),
           message: e.message,
         })),
@@ -261,6 +262,7 @@ export async function buildApp() {
   await app.register(callRoutes);
   await app.register(voiceReadRoutes);
   await app.register(dashboardRoutes);
+  await app.register(companionRoutes);
   await app.register(reactivationRoutes);
   await app.register(authSyncRoutes);
   await app.register(agenticAdminRoutes);

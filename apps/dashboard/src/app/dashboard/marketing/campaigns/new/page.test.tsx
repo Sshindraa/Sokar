@@ -158,6 +158,76 @@ describe('NewMarketingCampaignPage', () => {
     });
   }
 
+  it('reprend le brouillon de Companion, sans toucher au segment', async () => {
+    window.sessionStorage.setItem(
+      'sokar:campaign-draft',
+      JSON.stringify({
+        channel: 'SMS',
+        name: 'Relance midi',
+        objective: 'Remplir le service',
+        body: 'Il reste des tables ce midi. {{unsubscribeUrl}}',
+      }),
+    );
+    render(<NewMarketingCampaignPage />);
+
+    await screen.findByRole('heading', { name: 'Nouvelle campagne' });
+    expect(screen.getByPlaceholderText('Relance déjeuner de septembre')).toHaveValue(
+      'Relance midi',
+    );
+    expect(screen.getByPlaceholderText('Remplir le service du midi')).toHaveValue(
+      'Remplir le service',
+    );
+    expect(screen.getByRole('textbox', { name: /Message/ })).toHaveValue(
+      'Il reste des tables ce midi. {{unsubscribeUrl}}',
+    );
+    expect(window.sessionStorage.getItem('sokar:campaign-draft')).toBeNull();
+  });
+
+  it('refuse l’envoi tant que le texte contient le repère à compléter, sans appeler l’API', async () => {
+    window.sessionStorage.setItem(
+      'sokar:campaign-draft',
+      JSON.stringify({
+        channel: 'SMS',
+        name: 'Relance midi',
+        objective: 'Remplir le service',
+        body: 'Votre table est prête à [à compléter]. {{unsubscribeUrl}}',
+      }),
+    );
+    render(<NewMarketingCampaignPage />);
+    await screen.findByRole('heading', { name: 'Nouvelle campagne' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Créer et prévisualiser' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('[à compléter]');
+    expect(
+      apiMocks.post.mock.calls.filter(([path]) => path === 'marketing/campaigns'),
+    ).toHaveLength(0);
+  });
+
+  it.each([
+    'Table à [heure à compléter]. {{unsubscribeUrl}}',
+    'Ce soir, [table disponible : à vérifier]. {{unsubscribeUrl}}',
+  ])('refuse tout passage entre crochets : %s', async (body) => {
+    window.sessionStorage.setItem(
+      'sokar:campaign-draft',
+      JSON.stringify({
+        channel: 'SMS',
+        name: 'Relance midi',
+        objective: 'Remplir le service',
+        body,
+      }),
+    );
+    render(<NewMarketingCampaignPage />);
+    await screen.findByRole('heading', { name: 'Nouvelle campagne' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Créer et prévisualiser' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('[à compléter]');
+    expect(
+      apiMocks.post.mock.calls.filter(([path]) => path === 'marketing/campaigns'),
+    ).toHaveLength(0);
+  });
+
   it('ne crée jamais deux brouillons : le formulaire se fige après la création', async () => {
     render(<NewMarketingCampaignPage />);
     await fillRequiredFields();

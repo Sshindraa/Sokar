@@ -27,7 +27,7 @@ export interface JudgeOptions {
 const rawJudgeOutputSchema = z
   .object({
     reasoning: z.string().optional(),
-    labels: z.record(z.unknown()).optional(),
+    labels: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough();
 

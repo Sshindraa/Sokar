@@ -73,7 +73,7 @@ export async function smsInboundRoutes(app: FastifyInstance) {
   app.post('/sms/telnyx/inbound', inboundRouteOptions, async (req, reply) => {
     const parseResult = TelnyxWebhookBodySchema.safeParse(req.body);
     if (!parseResult.success) {
-      req.log.warn({ errors: parseResult.error.errors }, 'sms inbound: invalid payload');
+      req.log.warn({ errors: parseResult.error.issues }, 'sms inbound: invalid payload');
       return reply.status(400).send({ result: 'ignored' });
     }
 

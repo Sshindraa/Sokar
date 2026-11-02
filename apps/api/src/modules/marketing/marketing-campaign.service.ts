@@ -24,6 +24,7 @@ import { resolveUsageTariff } from '../usage/usage-tariff.service';
 export const CAMPAIGN_CHANNELS = ['SMS', 'EMAIL', 'WHATSAPP'] as const;
 export const MAX_CAMPAIGN_AUDIENCE = 10_000;
 export const MAX_SENDS_PER_FREQUENCY_WINDOW = 3;
+export const HOLDOUT_INCLUSION_REASON = 'HOLDOUT';
 
 const ALLOWED_TEMPLATE_VARIABLES = new Set([
   'customer.firstName',
@@ -33,7 +34,7 @@ const ALLOWED_TEMPLATE_VARIABLES = new Set([
   'unsubscribeUrl',
 ]);
 
-type CampaignChannelCode = (typeof CAMPAIGN_CHANNELS)[number];
+export type CampaignChannelCode = (typeof CAMPAIGN_CHANNELS)[number];
 
 export type CampaignAudienceMemberDraft = {
   customerId: string;
@@ -195,9 +196,10 @@ export async function ensureCampaignMessages(
   channel: CampaignChannelCode,
   writer: Pick<Prisma.TransactionClient, 'campaignAudienceMember' | 'campaignMessage'> = db,
 ): Promise<void> {
+  // Le groupe témoin (HOLDOUT) ne reçoit jamais de message : il sert seulement de référence à la mesure.
   const audience =
     (await writer.campaignAudienceMember.findMany({
-      where: { campaignId },
+      where: { campaignId, inclusionReason: { not: HOLDOUT_INCLUSION_REASON } },
       select: { id: true, customerId: true },
       orderBy: { id: 'asc' },
     })) ?? [];
@@ -245,23 +247,27 @@ function incrementReason(target: Record<string, number>, reason: string): void {
   target[reason] = (target[reason] ?? 0) + 1;
 }
 
-async function buildAudience(args: {
+export async function buildAudience(args: {
   restaurantId: string;
   channel: CampaignChannelCode;
   segmentId?: string;
   definition?: unknown;
+  /** Moteur de remplissage : tous les clients du restaurant, sans filtre de segment. */
+  allCustomers?: boolean;
   now?: Date;
   sampleLimit?: number;
 }): Promise<CampaignAudiencePreview> {
   const now = args.now ?? new Date();
   if (Number.isNaN(now.getTime())) throw new Error('now must be a valid date');
   const channel = normalizeChannel(args.channel);
-  const resolved = await resolveSegmentDefinition(args);
+  const segmentWhere = args.allCustomers
+    ? {}
+    : compileCustomerSegmentWhere((await resolveSegmentDefinition(args)).definition, now);
   const where: Prisma.CustomerWhereInput = {
     restaurantId: args.restaurantId,
     archivedAt: null,
     mergedIntoId: null,
-    ...compileCustomerSegmentWhere(resolved.definition, now),
+    ...segmentWhere,
   };
 
   const candidates = ((await db.customer.findMany({
@@ -427,7 +433,11 @@ export async function createMarketingCampaign(args: {
   name: string;
   objective: string;
   channel: CampaignChannelCode;
-  segmentId: string;
+  segmentId?: string;
+  /** Audience déjà calculée (remplissage de service) : remplace le calcul par segment. */
+  members?: CampaignAudienceMemberDraft[];
+  targetServiceStart?: Date | null;
+  targetServiceEnd?: Date | null;
   subject?: string | null;
   bodyTemplate: string;
   scheduledAt?: Date | null;
@@ -441,11 +451,17 @@ export async function createMarketingCampaign(args: {
   if (scheduledAt && Number.isNaN(scheduledAt.getTime()))
     throw new Error('scheduledAt must be valid');
   const content = validateMarketingTemplate(args);
-  const audience = await buildAudience({
-    restaurantId: args.restaurantId,
-    channel: args.channel,
-    segmentId: args.segmentId,
-  });
+  const audience = args.members
+    ? { audienceVersion: 1, members: args.members }
+    : await buildAudience({
+        restaurantId: args.restaurantId,
+        channel: args.channel,
+        segmentId: args.segmentId,
+      });
+  // Le témoin ne part pas : le compteur d'audience ne compte que les destinataires réels.
+  const audienceCount = audience.members.filter(
+    (member) => member.inclusionReason !== HOLDOUT_INCLUSION_REASON,
+  ).length;
   const now = new Date();
   return db.$transaction(async (tx) => {
     const campaign = await tx.marketingCampaign.create({
@@ -461,7 +477,9 @@ export async function createMarketingCampaign(args: {
         scheduledAt,
         timezone,
         audienceVersion: audience.audienceVersion,
-        audienceCount: audience.eligibleCount,
+        audienceCount,
+        targetServiceStart: args.targetServiceStart ?? null,
+        targetServiceEnd: args.targetServiceEnd ?? null,
         createdByHash: args.createdBy ? hashActor(args.createdBy) : hashActor(undefined),
       },
     });
@@ -514,6 +532,42 @@ export async function getMarketingCampaign(args: {
   return db.marketingCampaign.findFirst({
     where: { id: args.campaignId, restaurantId: args.restaurantId },
   });
+}
+
+/** Coût estimé d'un envoi au tarif fournisseur ; `NOT_AVAILABLE` tant que le tarif n'est pas rapproché. */
+export async function estimateCampaignCost(args: {
+  channel: CampaignChannelCode;
+  body: string;
+  audienceCount: number;
+  occurredAt: Date;
+}): Promise<MarketingCampaignPreview['costEstimate']> {
+  const unitsPerMessage = args.channel === 'SMS' ? countSmsSegments(args.body) : 1;
+  const costDimension =
+    args.channel === 'SMS'
+      ? { category: 'SMS_SEGMENTS' as const, provider: 'telnyx', unit: 'segments' }
+      : args.channel === 'EMAIL'
+        ? { category: 'EMAIL_MESSAGES' as const, provider: 'resend', unit: 'messages' }
+        : { category: 'WHATSAPP_MESSAGES' as const, provider: 'telnyx', unit: 'messages' };
+  const tariff = await resolveUsageTariff({
+    ...costDimension,
+    quantity: unitsPerMessage * args.audienceCount,
+    occurredAt: args.occurredAt,
+  });
+  return tariff.costStatus === 'PRICED'
+    ? {
+        amount: tariff.estimatedCostEur,
+        currency: 'EUR' as const,
+        status: 'PRICED' as const,
+        reason: 'PROVIDER_TARIFF_RECONCILED' as const,
+        ...(tariff.tariffId ? { tariffId: tariff.tariffId } : {}),
+        ...(tariff.pricePerUnit ? { pricePerUnit: tariff.pricePerUnit } : {}),
+      }
+    : {
+        amount: null,
+        currency: 'EUR' as const,
+        status: 'NOT_AVAILABLE' as const,
+        reason: 'PROVIDER_TARIFF_NOT_RECONCILED' as const,
+      };
 }
 
 function previewContext(
@@ -590,35 +644,14 @@ export async function previewMarketingCampaign(args: {
   const smsUnits = isSms ? countSmsUnits(body) : null;
   const unitsPerMessage = isSms ? countSmsSegments(body) : 1;
   const encoding = isSms ? smsUnits!.encoding : 'message';
-  const costDimension =
-    campaign.channel === 'SMS'
-      ? { category: 'SMS_SEGMENTS' as const, provider: 'telnyx', unit: 'segments' }
-      : campaign.channel === 'EMAIL'
-        ? { category: 'EMAIL_MESSAGES' as const, provider: 'resend', unit: 'messages' }
-        : { category: 'WHATSAPP_MESSAGES' as const, provider: 'telnyx', unit: 'messages' };
-  const tariff = await resolveUsageTariff({
-    ...costDimension,
-    quantity: unitsPerMessage * campaign.audienceCount,
-    // A scheduled campaign is priced against its execution window. An
-    // unscheduled draft uses the preview instant and is recalculated on send.
+  // A scheduled campaign is priced against its execution window. An
+  // unscheduled draft uses the preview instant and is recalculated on send.
+  const costEstimate = await estimateCampaignCost({
+    channel: campaign.channel as CampaignChannelCode,
+    body,
+    audienceCount: campaign.audienceCount,
     occurredAt: campaign.scheduledAt ?? new Date(),
   });
-  const costEstimate =
-    tariff.costStatus === 'PRICED'
-      ? {
-          amount: tariff.estimatedCostEur,
-          currency: 'EUR' as const,
-          status: 'PRICED' as const,
-          reason: 'PROVIDER_TARIFF_RECONCILED' as const,
-          ...(tariff.tariffId ? { tariffId: tariff.tariffId } : {}),
-          ...(tariff.pricePerUnit ? { pricePerUnit: tariff.pricePerUnit } : {}),
-        }
-      : {
-          amount: null,
-          currency: 'EUR' as const,
-          status: 'NOT_AVAILABLE' as const,
-          reason: 'PROVIDER_TARIFF_NOT_RECONCILED' as const,
-        };
 
   return {
     campaign: {
@@ -785,6 +818,9 @@ export async function updateMarketingCampaign(args: {
   });
 }
 
+/** Code d'erreur d'une campagne mise en pause parce que son service visé est complet. */
+export const TARGET_SERVICE_FULL = 'TARGET_SERVICE_FULL';
+
 /** Jour UTC, comme les plafonds par destinataire. */
 export function dayWindow(now: Date): { start: Date; end: Date } {
   const start = new Date(now);
@@ -806,6 +842,19 @@ export async function remainingDailyEmailBudget(
   excludeCampaignId?: string,
 ): Promise<number> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('marketing_email_daily_budget'))`;
+  return countRemainingDailyEmailBudget(tx, sendAt, excludeCampaignId);
+}
+
+/** Même calcul, sans verrou : pour un chemin de lecture (aperçu, suggestions), jamais pour décider d'un envoi. */
+export function readRemainingDailyEmailBudget(now: Date): Promise<number> {
+  return countRemainingDailyEmailBudget(db, now);
+}
+
+async function countRemainingDailyEmailBudget(
+  tx: Prisma.TransactionClient,
+  sendAt: Date,
+  excludeCampaignId?: string,
+): Promise<number> {
   const { start, end } = dayWindow(sendAt);
   const [acceptedOnDay, awaitingSend] = await Promise.all([
     tx.campaignMessage.count({

@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   isMobile: false,
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  searchParams: new URLSearchParams(),
+  replace: vi.fn(),
 }));
 
 vi.mock('sonner', () => ({ toast: { success: mocks.toastSuccess, error: mocks.toastError } }));
@@ -23,6 +25,12 @@ vi.mock('@/lib/api', () => ({
 
 vi.mock('@/lib/useMediaQuery', () => ({
   useIsMobile: () => mocks.isMobile,
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: mocks.replace }),
+  usePathname: () => '/dashboard/reservations',
+  useSearchParams: () => mocks.searchParams,
 }));
 
 vi.mock('@/components/ConfirmDialog', () => ({
@@ -920,5 +928,40 @@ describe('ReservationsPage — jour affiché', () => {
     await waitFor(() => {
       expect(mocks.get).toHaveBeenCalledWith('restaurants/org_test/waiting-list?date=2026-10-17');
     });
+  });
+});
+
+describe('ReservationsPage — lien depuis la carte « Ce soir »', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.isMobile = false;
+    Element.prototype.scrollIntoView = vi.fn();
+    mocks.searchParams = new URLSearchParams();
+  });
+
+  it('ouvre la réservation de l’URL dans le jour demandé', async () => {
+    mocks.searchParams = new URLSearchParams({ date: '2099-06-05', reservation: 'r1' });
+    mocks.get.mockResolvedValue([makeReservation({ id: 'r1', customerName: 'Alice' })]);
+    render(<ReservationsPage />);
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Détail de la réservation' }),
+    ).toBeInTheDocument();
+    expect(mocks.get).toHaveBeenCalledWith('reservations?date=2099-06-05');
+  });
+
+  it('retire la réservation et le jour de l’URL à la fermeture, pour les rouvrir au clic suivant', async () => {
+    mocks.searchParams = new URLSearchParams({ date: '2099-06-05', reservation: 'r1' });
+    mocks.get.mockResolvedValue([makeReservation({ id: 'r1' })]);
+    render(<ReservationsPage />);
+    await screen.findByRole('dialog', { name: 'Détail de la réservation' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fermer' }));
+
+    expect(mocks.replace).toHaveBeenCalledTimes(1);
+    const [url, options] = mocks.replace.mock.calls[0];
+    expect(url).not.toContain('reservation=');
+    expect(url).not.toContain('date=');
+    expect(options).toEqual({ scroll: false });
   });
 });
