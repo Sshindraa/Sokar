@@ -64,14 +64,14 @@ function SidebarNavItem({
           aria-current={active ? 'page' : undefined}
           onClick={onClick}
           className={cn(
-            'flex h-11 flex-none items-center rounded-xl text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            'flex h-12 flex-none items-center rounded-xl text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             expanded ? 'w-full justify-start gap-3 px-3' : 'w-11 justify-center',
             active &&
-              'bg-primary text-primary-foreground shadow-sm hover:bg-primary hover:text-primary-foreground',
+              'bg-popover font-semibold text-foreground shadow-md hover:bg-popover hover:text-foreground',
           )}
         >
           <Icon size={19} strokeWidth={active ? 2.25 : 1.75} />
-          <span className={cn('truncate text-sm font-medium', !expanded && 'sr-only')}>
+          <span className={cn('truncate text-base font-semibold', !expanded && 'sr-only')}>
             {label}
           </span>
         </Link>
@@ -104,7 +104,7 @@ function SidebarGroupButton({
       aria-controls={`nav-group-${id}`}
       onClick={onClick}
       className={cn(
-        'flex h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'flex h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-base font-semibold text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         (active || open) && 'text-foreground',
       )}
     >
@@ -449,7 +449,7 @@ export function DashboardSidebar({
       </Link>
       <nav
         aria-label={salleMode ? 'Navigation Salle' : 'Navigation Copilot'}
-        className="dashboard-nav-scroll min-h-0 flex-1 space-y-1 overflow-y-auto"
+        className="dashboard-nav-scroll min-h-0 flex-1 space-y-2 overflow-y-auto"
       >
         {salleMode ? (
           <>
@@ -519,7 +519,7 @@ export function DashboardSidebar({
                   <div
                     ref={groupPanelRef}
                     id={`nav-group-${section.id}`}
-                    className="ml-5 space-y-1 border-l border-border py-1 pl-3"
+                    className="relative ml-5 space-y-1 py-1 pl-4 before:absolute before:bottom-6 before:left-0 before:top-0 before:border-l before:border-border"
                   >
                     {section.entries.map((entry) => (
                       <Link
@@ -528,9 +528,9 @@ export function DashboardSidebar({
                         aria-current={isNavEntryActive(pathname, entry) ? 'page' : undefined}
                         onClick={() => setOpenGroup(null)}
                         className={cn(
-                          'flex min-h-10 items-center rounded-xl px-3 text-sm text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          'relative flex min-h-11 items-center rounded-xl px-3 text-sm font-medium text-muted-foreground transition-all duration-200 before:pointer-events-none before:absolute before:-left-4 before:top-0 before:h-1/2 before:w-4 before:rounded-bl-xl before:border-b before:border-l before:border-border hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                           isNavEntryActive(pathname, entry) &&
-                            'bg-background font-semibold text-foreground shadow-sm',
+                            'bg-popover font-semibold text-foreground shadow-md hover:bg-popover',
                         )}
                       >
                         {tNav(entry.key)}
