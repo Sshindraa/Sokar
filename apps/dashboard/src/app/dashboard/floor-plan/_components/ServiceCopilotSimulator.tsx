@@ -260,9 +260,9 @@ function ServiceCopilotSimulatorContent({
               <Search size={18} aria-hidden="true" />
             </span>
             <div>
-              <h2 className="text-lg font-semibold text-foreground">Walk-in</h2>
+              <h2 className="text-lg font-semibold text-foreground">Simuler un placement</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Trouvez une table pour un groupe sans réservation.
+                Prévisualisez des options pour un groupe sans réservation, sans placer de client.
               </p>
             </div>
           </div>

@@ -2500,7 +2500,6 @@ export function FloorPlanCanvas({
   initialDelayImpact,
   onInitialDelayApplied,
   onRequestEdit,
-  onRequestWalkIn,
   planOptions,
   onSelectPlan,
 }: {
@@ -2515,7 +2514,6 @@ export function FloorPlanCanvas({
   } | null;
   onInitialDelayApplied?: () => void;
   onRequestEdit?: () => void;
-  onRequestWalkIn?: () => void;
   planOptions?: Array<{ id: string; name: string }>;
   onSelectPlan?: (id: string) => void;
 }) {
@@ -2598,6 +2596,7 @@ export function FloorPlanCanvas({
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [loadedLiveDate, setLoadedLiveDate] = useState<string | null>(null);
   const [selectedServiceTableId, setSelectedServiceTableId] = useState<string | null>(null);
+  const [showWalkInHelp, setShowWalkInHelp] = useState(false);
   const [mobileServiceDetailsOpen, setMobileServiceDetailsOpen] = useState(false);
   const [updatingReservationStateId, setUpdatingReservationStateId] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<TableSuggestion[]>([]);
@@ -4172,6 +4171,7 @@ export function FloorPlanCanvas({
       return;
     }
     if (live) {
+      setShowWalkInHelp(false);
       setSelectedServiceTableId(table.id);
       return;
     }
@@ -8457,6 +8457,19 @@ export function FloorPlanCanvas({
                     Ajuster le plan
                   </Button>
                 ) : null}
+                {serviceIsToday && serviceTab === 'plan' && placedTables.length > 0 ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 gap-1.5 transition-all duration-200"
+                    aria-expanded={showWalkInHelp}
+                    aria-controls={showWalkInHelp ? 'walk-in-help' : undefined}
+                    onClick={() => setShowWalkInHelp((open) => !open)}
+                  >
+                    <Users size={14} aria-hidden="true" />
+                    Client sans réservation
+                  </Button>
+                ) : null}
                 {hasServerFilter ? (
                   <Select
                     value={selectedServerFilter ?? '_all_'}
@@ -8503,6 +8516,17 @@ export function FloorPlanCanvas({
             </>
           ) : null}
         </CardHeader>
+
+        {live && serviceIsToday && serviceTab === 'plan' && showWalkInHelp ? (
+          <div
+            id="walk-in-help"
+            role="status"
+            className="border-b border-border bg-accent/50 px-4 py-3 text-sm text-foreground"
+          >
+            Sélectionnez une table disponible sur le plan, puis choisissez « Placer un client sans
+            réservation ».
+          </div>
+        ) : null}
 
         {error || reservationsError ? (
           <div className="sokar-error m-4 text-sm">

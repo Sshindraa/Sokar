@@ -36,6 +36,7 @@ import { SubscribeFromPricing } from './SubscribeFromPricing';
 import { SiteProvider, SiteSwitcher, useSiteSelection } from '@/features/sites/site-context';
 import { SERVICE_STAFF_HOME, canOpenDashboardPath, isServiceStaff } from '@/features/team/roles';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { CreateOfferDialog } from '@/features/offers/create-offer-dialog';
 import { SectionTabs } from '@/components/SectionTabs';
 import { navSections, isNavEntryActive, type NavSectionId } from '@/features/navigation/sections';
@@ -56,21 +57,28 @@ function SidebarNavItem({
   onClick?: () => void;
 }) {
   return (
-    <Link
-      href={href}
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className={cn(
-        'flex h-10 flex-none items-center rounded-xl text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        expanded ? 'w-full justify-start gap-3 px-3' : 'w-10 justify-center',
-        active &&
-          'bg-primary text-primary-foreground shadow-sm hover:bg-primary hover:text-primary-foreground',
-      )}
-    >
-      <Icon size={17} strokeWidth={active ? 2.25 : 1.75} />
-      <span className={cn('truncate text-sm font-medium', !expanded && 'sr-only')}>{label}</span>
-    </Link>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link
+          href={href}
+          aria-label={label}
+          aria-current={active ? 'page' : undefined}
+          onClick={onClick}
+          className={cn(
+            'flex h-11 flex-none items-center rounded-xl text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            expanded ? 'w-full justify-start gap-3 px-3' : 'w-11 justify-center',
+            active &&
+              'bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/30 ring-offset-2 ring-offset-card hover:bg-primary hover:text-primary-foreground',
+          )}
+        >
+          <Icon size={19} strokeWidth={active ? 2.25 : 1.75} />
+          <span className={cn('truncate text-sm font-medium', !expanded && 'sr-only')}>
+            {label}
+          </span>
+        </Link>
+      </TooltipTrigger>
+      {!expanded ? <TooltipContent side="right">{label}</TooltipContent> : null}
+    </Tooltip>
   );
 }
 
@@ -446,14 +454,14 @@ function DashboardSidebar({
           <>
             <SidebarNavItem
               href="/dashboard/floor-plan?view=service-live"
-              label="Live service"
+              label={tNav('live')}
               icon={Radio}
               active={salleView !== 'edit-plan'}
             />
             {!serviceStaff && (
               <SidebarNavItem
                 href="/dashboard/floor-plan?view=edit-plan"
-                label="Salle édition"
+                label={tNav('edition')}
                 icon={PencilRuler}
                 active={salleView === 'edit-plan'}
               />

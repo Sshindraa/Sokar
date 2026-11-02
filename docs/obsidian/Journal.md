@@ -3607,3 +3607,7 @@ Les tables de huit places maximum affichent le nombre réel de chaises ; au-del�
 ### 2026-11-02 — Service : lisibilité et barre de suivi
 
 La vue service regroupe date, direct ou archive, fraîcheur et compteurs dans une barre ; un bouton recadre le plan et le retour à aujourd’hui reste visible hors du jour courant. Les cartes de table sont plus lisibles et les anciens compteurs sont masqués pendant le chargement d’une autre date. Qualification et livraison via la PR du plan de salle.
+
+### 2026-11-02 — Service : accueil et navigation
+
+L’action « Client sans réservation » guide vers une table libre avant le placement réel ; le simulateur Copilot est identifié comme prévisualisation sans placement. Navigation Salle : libellés explicites, infobulles clavier/souris et état actif accessible ; cibles tactiles contrôlées en formats tablette portrait et paysage.

@@ -1163,6 +1163,25 @@ describe('FloorPlanCanvas — actions Live service', () => {
       });
     });
 
+    it('guide vers une table disponible avant de proposer le placement réel', async () => {
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      const action = await screen.findByRole('button', { name: 'Client sans réservation' });
+      fireEvent.click(action);
+      expect(screen.getByText(/Sélectionnez une table disponible sur le plan/)).toHaveAttribute(
+        'role',
+        'status',
+      );
+      expect(apiMocks.post).not.toHaveBeenCalled();
+      fireEvent.click(await screen.findByRole('button', { name: 'T4 · 4 places' }));
+      expect(
+        screen.getAllByRole('button', { name: 'Placer un client sans réservation' }).length,
+      ).toBeGreaterThan(0);
+      expect(
+        screen.queryByText(/Sélectionnez une table disponible sur le plan/),
+      ).not.toBeInTheDocument();
+      expect(apiMocks.post).not.toHaveBeenCalled();
+    });
+
     it('envoie 2 personnes par défaut sur une table de 4, sous le nom « Sans réservation »', async () => {
       apiMocks.post.mockResolvedValue({ id: 'seated-1' });
       render(<FloorPlanCanvas orgId="org_test" mode="service" />);
