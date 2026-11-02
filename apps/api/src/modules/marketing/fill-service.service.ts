@@ -11,7 +11,22 @@ import { COUNTED_RESERVATION_STATES } from '../../shared/reservations/reservatio
 import { DEFAULT_RESTAURANT_TIMEZONE, zonedTimeToUtc } from '../../shared/timezone/restaurant-time';
 import { addDays, parisParts } from '../companion/query-data';
 import { isInService, type TonightService } from '../companion/tonight';
-import { dayBounds, serviceWindow, type ServiceWindow } from './fill-forecast';
+import {
+  dayBounds,
+  forecastEmptyPlaces,
+  loadForecastHistory,
+  serviceWindow,
+  type ForecastRow,
+  type ForecastSource,
+  type ServiceWindow,
+} from './fill-forecast';
+import {
+  countByTier,
+  selectFillAudience,
+  tierOf,
+  type FillTier,
+  type VisitStats,
+} from './fill-targeting';
 import { CapacityAwareAvailabilityService } from '../floor-plan/availability-capacity-aware.service';
 import {
   HOLDOUT_INCLUSION_REASON,
@@ -19,21 +34,20 @@ import {
   buildAudience,
   createMarketingCampaign,
   estimateCampaignCost,
+  remainingDailyEmailBudget,
   renderMarketingTemplate,
   type CampaignAudienceMemberDraft,
   type CampaignChannelCode,
 } from './marketing-campaign.service';
 
-/**
- * shortcut: hypothèse, pas une mesure. Part des clients ciblés qui réservent après le message ;
- * à remplacer par le taux mesuré sur les campagnes envoyées.
- */
-export const TAUX_REPONSE = 0.2;
 export const HOLDOUT_RATE = 0.1;
 export const HOLDOUT_MIN_CUSTOMERS = 20;
 /** shortcut: pas d'historique de taille de groupe, valeur de repli ; à remplacer par la moyenne réelle. */
 const FALLBACK_GROUP_SIZE = 2;
 const HISTORY_MS = 365 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Un client déjà attendu dans les 7 jours autour du service est laissé tranquille. */
+const NEARBY_DAYS = 7;
 
 export type { ServiceWindow };
 export { serviceWindow };
@@ -54,11 +68,21 @@ export type ServiceFillPlan =
       capacity: number;
       booked: number;
       freePlaces: number;
+      /** Places libres − arrivées tardives attendues (prévision). */
+      emptyPlaces: number;
+      lateArrivals: number;
+      forecastSource: ForecastSource;
       groupSize: number;
+      /** Nombre de clients retenus, témoin compris. */
       targetSize: number;
-      /** Clients après consentement, opposition, fréquence et sans réservation ce jour-là. */
+      /** Clients après consentement, opposition, fréquence, sans réservation proche du service. */
       candidateCount: number;
       excludedSameDay: number;
+      /** Réservation active dans les 7 jours autour du service (hors même jour). */
+      excludedNearby: number;
+      tiers: Partial<Record<FillTier, number>>;
+      /** E-mail et budget du jour épuisé : aucun brouillon possible. */
+      budgetExhausted: boolean;
       excludedByReason: Record<string, number>;
       seed: number;
       holdoutCount: number;
@@ -156,102 +180,168 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-export async function planServiceFill(args: {
-  restaurantId: string;
-  /** Jour de Paris, AAAA-MM-JJ. */
-  date: string;
-  service: TonightService;
-  channel: CampaignChannelCode;
-  now?: Date;
-  /** Graine du témoin ; absente, tirée au hasard puis enregistrée dans chaque membre. */
-  seed?: number;
-}): Promise<ServiceFillPlan> {
-  const now = args.now ?? new Date();
-  const window = serviceWindow(args.date, args.service);
-  const capacity = await serviceCapacity({ restaurantId: args.restaurantId, ...window });
-  if (!capacity.known) return { status: 'CAPACITY_UNKNOWN' };
-  const availability = await serviceAvailability({ restaurantId: args.restaurantId, ...window });
-  if (!availability.open) return { status: 'SERVICE_CLOSED' };
-  if (!availability.bookable) {
-    return { status: 'SERVICE_FULL', capacity: capacity.capacity, booked: capacity.booked };
-  }
+type ActiveReservation = { customerId: string | null; reservedAt: Date };
 
+/** Ce qui ne dépend pas du service visé : chargé une fois pour plusieurs dates. */
+export type ServiceFillContext = {
+  restaurantId: string;
+  channel: CampaignChannelCode;
+  members: CampaignAudienceMemberDraft[];
+  excludedByReason: Record<string, number>;
+  groupSize: number;
+  honored: Array<{ customerId: string | null; reservedAt: Date }>;
+  /** Réservations actives des clients joignables, du début de la journée de Paris à through + 8 j. */
+  active: ActiveReservation[];
+  history: ForecastRow[];
+  /** Reste du budget e-mail du jour ; `null` hors e-mail. */
+  budget: number | null;
+};
+
+export async function loadServiceFillContext(args: {
+  restaurantId: string;
+  channel: CampaignChannelCode;
+  /** Dernière date visée (jour de Paris, AAAA-MM-JJ). */
+  through: string;
+  now: Date;
+}): Promise<ServiceFillContext> {
+  const { restaurantId, channel, now } = args;
   const historySince = new Date(now.getTime() - HISTORY_MS);
-  const [groupAverage, audience] = await Promise.all([
+  const [groupAverage, audience, history, budget] = await Promise.all([
     db.reservation.aggregate({
       _avg: { partySize: true },
       where: {
-        restaurantId: args.restaurantId,
+        restaurantId,
         isTest: false,
         state: { in: [...COUNTED_RESERVATION_STATES] },
         reservedAt: { gte: historySince, lt: now },
       },
     }),
-    buildAudience({
-      restaurantId: args.restaurantId,
-      channel: args.channel,
-      allCustomers: true,
-      now,
-    }),
+    buildAudience({ restaurantId, channel, allCustomers: true, now }),
+    loadForecastHistory(restaurantId, now),
+    channel === 'EMAIL'
+      ? db.$transaction((tx) => remainingDailyEmailBudget(tx, now))
+      : Promise.resolve(null),
   ]);
-  const groupSize = groupAverage._avg.partySize ?? FALLBACK_GROUP_SIZE;
-  const targetSize = Math.min(
-    MAX_CAMPAIGN_AUDIENCE,
-    Math.ceil(Math.max(0, capacity.free) / groupSize / TAUX_REPONSE),
-  );
+  const customerIds = audience.members.map((member) => member.customerId);
+  const [honored, active] =
+    customerIds.length === 0
+      ? [[], []]
+      : await Promise.all([
+          db.reservation.findMany({
+            where: {
+              restaurantId,
+              isTest: false,
+              customerId: { in: customerIds },
+              state: 'HONORED',
+              reservedAt: { gte: historySince, lt: now },
+            },
+            select: { customerId: true, reservedAt: true },
+          }),
+          db.reservation.findMany({
+            where: {
+              restaurantId,
+              isTest: false,
+              customerId: { in: customerIds },
+              state: { in: [...ACTIVE_RESERVATION_STATES] },
+              reservedAt: {
+                gte: dayBounds(parisParts(now).dayKey).start,
+                lt: dayBounds(addDays(args.through, NEARBY_DAYS + 1)).start,
+              },
+            },
+            select: { customerId: true, reservedAt: true },
+          }),
+        ]);
+  return {
+    restaurantId,
+    channel,
+    members: audience.members,
+    excludedByReason: audience.excludedByReason,
+    groupSize: groupAverage._avg.partySize ?? FALLBACK_GROUP_SIZE,
+    honored,
+    active,
+    history,
+    budget,
+  };
+}
+
+export async function planFromContext(
+  context: ServiceFillContext,
+  args: { date: string; service: TonightService; seed?: number; now: Date },
+): Promise<ServiceFillPlan> {
+  const { now } = args;
+  const window = serviceWindow(args.date, args.service);
+  const capacity = await serviceCapacity({ restaurantId: context.restaurantId, ...window });
+  if (!capacity.known) return { status: 'CAPACITY_UNKNOWN' };
+  const availability = await serviceAvailability({ restaurantId: context.restaurantId, ...window });
+  if (!availability.open) return { status: 'SERVICE_CLOSED' };
+  if (!availability.bookable) {
+    return { status: 'SERVICE_FULL', capacity: capacity.capacity, booked: capacity.booked };
+  }
+
+  const { emptyPlaces, lateArrivals, forecastSource } = forecastEmptyPlaces({
+    rows: context.history,
+    date: args.date,
+    service: args.service,
+    freePlaces: Math.max(0, capacity.free),
+    now,
+  });
 
   const day = dayBounds(args.date);
-  const consented = audience.members.map((member) => member.customerId);
-  const busyToday = new Set(
-    consented.length === 0
-      ? []
-      : (
-          await db.reservation.findMany({
-            where: {
-              restaurantId: args.restaurantId,
-              isTest: false,
-              customerId: { in: consented },
-              state: { in: [...ACTIVE_RESERVATION_STATES] },
-              reservedAt: { gte: day.start, lt: day.end },
-            },
-            select: { customerId: true },
-          })
-        ).flatMap((row) => (row.customerId ? [row.customerId] : [])),
-  );
-  const pool = audience.members.filter((member) => !busyToday.has(member.customerId));
-
-  // Affinité : visites honorées sur le même jour de semaine et le même service, puis récence.
-  const honored =
-    pool.length === 0
-      ? []
-      : await db.reservation.findMany({
-          where: {
-            restaurantId: args.restaurantId,
-            isTest: false,
-            customerId: { in: pool.map((member) => member.customerId) },
-            state: 'HONORED',
-            reservedAt: { gte: historySince, lt: now },
-          },
-          select: { customerId: true, reservedAt: true },
-        });
-  const weekday = parisParts(window.start).weekday;
-  const affinity = new Map<string, { matches: number; last: number }>();
-  for (const row of honored) {
+  const busyToday = new Set<string>();
+  const busyNearby = new Set<string>();
+  const nearbyFrom = window.start.getTime() - NEARBY_DAYS * DAY_MS;
+  const nearbyTo = window.end.getTime() + NEARBY_DAYS * DAY_MS;
+  for (const row of context.active) {
     if (!row.customerId) continue;
-    const entry = affinity.get(row.customerId) ?? { matches: 0, last: 0 };
+    if (row.reservedAt >= day.start && row.reservedAt < day.end) busyToday.add(row.customerId);
+    else if (row.reservedAt.getTime() >= nearbyFrom && row.reservedAt.getTime() < nearbyTo) {
+      busyNearby.add(row.customerId);
+    }
+  }
+  const available = context.members.filter((member) => !busyToday.has(member.customerId));
+  // Le même jour passe avant : un client déjà compté en `busyToday` n'est jamais compté deux fois.
+  const pool = available.filter((member) => !busyNearby.has(member.customerId));
+
+  // Paliers : visites honorées sur 12 mois, dont celles du même jour de semaine et du même service.
+  const weekday = parisParts(window.start).weekday;
+  const stats = new Map<string, VisitStats>();
+  for (const row of context.honored) {
+    if (!row.customerId) continue;
+    const entry = stats.get(row.customerId) ?? {
+      slotVisits: 0,
+      visits: 0,
+      lastSlotAt: 0,
+      lastAt: 0,
+    };
+    const at = row.reservedAt.getTime();
+    entry.visits++;
+    entry.lastAt = Math.max(entry.lastAt, at);
     if (
       parisParts(row.reservedAt).weekday === weekday &&
       isInService(row.reservedAt, args.service)
     ) {
-      entry.matches++;
+      entry.slotVisits++;
+      entry.lastSlotAt = Math.max(entry.lastSlotAt, at);
     }
-    entry.last = Math.max(entry.last, row.reservedAt.getTime());
-    affinity.set(row.customerId, entry);
+    stats.set(row.customerId, entry);
   }
-  const ranked = pool
-    .map((member) => ({ member, ...(affinity.get(member.customerId) ?? { matches: 0, last: 0 }) }))
-    .sort((a, b) => b.matches - a.matches || b.last - a.last);
-  const selected = ranked.slice(0, targetSize);
+  const candidates = pool.map((member) => {
+    const visit = stats.get(member.customerId) ?? {
+      slotVisits: 0,
+      visits: 0,
+      lastSlotAt: 0,
+      lastAt: 0,
+    };
+    return { member, stats: visit, tier: tierOf(visit, now) };
+  });
+  const budgetExhausted = context.budget === 0;
+  const selected = selectFillAudience({
+    candidates,
+    emptyPlaces,
+    groupSize: context.groupSize,
+    holdoutRate: HOLDOUT_RATE,
+    maxSends: Math.min(MAX_CAMPAIGN_AUDIENCE, context.budget ?? MAX_CAMPAIGN_AUDIENCE),
+  });
 
   // Témoin : tirage mélangé avec la graine enregistrée ; les premiers tirés ne reçoivent aucun message.
   const seed = args.seed ?? randomInt(0x7fffffff);
@@ -270,21 +360,47 @@ export async function planServiceFill(args: {
     capacity: capacity.capacity,
     booked: capacity.booked,
     freePlaces: capacity.free,
-    groupSize,
-    targetSize,
+    emptyPlaces,
+    lateArrivals,
+    forecastSource,
+    groupSize: context.groupSize,
+    targetSize: selected.length,
     candidateCount: pool.length,
-    excludedSameDay: consented.length - pool.length,
-    excludedByReason: audience.excludedByReason,
+    excludedSameDay: context.members.length - available.length,
+    excludedNearby: available.length - pool.length,
+    excludedByReason: context.excludedByReason,
+    tiers: countByTier(selected.map((row) => row.tier)),
+    budgetExhausted,
     seed,
     holdoutCount,
-    members: selected.map(({ member, matches }) => ({
+    members: selected.map(({ member, stats: visit }) => ({
       customerId: member.customerId,
       inclusionReason: holdoutIds.has(member.customerId)
         ? HOLDOUT_INCLUSION_REASON
         : member.inclusionReason,
-      snapshot: { ...member.snapshot, affinity: matches, holdoutSeed: seed },
+      snapshot: { ...member.snapshot, affinity: visit.slotVisits, holdoutSeed: seed },
     })),
   };
+}
+
+export async function planServiceFill(args: {
+  restaurantId: string;
+  /** Jour de Paris, AAAA-MM-JJ. */
+  date: string;
+  service: TonightService;
+  channel: CampaignChannelCode;
+  now?: Date;
+  /** Graine du témoin ; absente, tirée au hasard puis enregistrée dans chaque membre. */
+  seed?: number;
+}): Promise<ServiceFillPlan> {
+  const now = args.now ?? new Date();
+  const context = await loadServiceFillContext({
+    restaurantId: args.restaurantId,
+    channel: args.channel,
+    through: args.date,
+    now,
+  });
+  return planFromContext(context, { date: args.date, service: args.service, seed: args.seed, now });
 }
 
 /** Brouillon de campagne pour un service : passe par le circuit de création existant, n'envoie rien. */
@@ -327,6 +443,27 @@ export type FillServiceInput = {
   channel: CampaignChannelCode;
 };
 
+/** Coût sur le texte par défaut rendu avec le nom du restaurant : un lien de réservation indicatif. */
+export function estimateFillCost(args: {
+  restaurantName: string | null;
+  channel: CampaignChannelCode;
+  sends: number;
+  now: Date;
+}) {
+  const body = renderMarketingTemplate(DEFAULT_FILL_BODY, {
+    customer: { firstName: 'Client', name: 'Client' },
+    restaurant: { name: args.restaurantName ?? 'Votre restaurant' },
+    reservationLink: 'https://sokar.tech/book/restaurant',
+    unsubscribeUrl: 'https://sokar.tech/marketing/unsubscribe?token=preview',
+  });
+  return estimateCampaignCost({
+    channel: args.channel,
+    body,
+    audienceCount: args.sends,
+    occurredAt: args.now,
+  });
+}
+
 /**
  * Aperçu chiffré d'un service, sans rien écrire : états, places, candidats, audience, témoin et coût.
  * Aucun nom ni téléphone n'est renvoyé.
@@ -359,18 +496,11 @@ export async function previewServiceFill(args: FillServiceInput & { now?: Date }
   }
   const holdoutCount = plan.holdoutCount;
   const sends = plan.members.length - holdoutCount;
-  // Coût sur le texte par défaut rendu avec le nom du restaurant : un lien de réservation indicatif.
-  const body = renderMarketingTemplate(DEFAULT_FILL_BODY, {
-    customer: { firstName: 'Client', name: 'Client' },
-    restaurant: { name: restaurant?.name ?? 'Votre restaurant' },
-    reservationLink: 'https://sokar.tech/book/restaurant',
-    unsubscribeUrl: 'https://sokar.tech/marketing/unsubscribe?token=preview',
-  });
-  const costEstimate = await estimateCampaignCost({
+  const costEstimate = await estimateFillCost({
+    restaurantName: restaurant?.name ?? null,
     channel: args.channel,
-    body,
-    audienceCount: sends,
-    occurredAt: args.now ?? new Date(),
+    sends,
+    now: args.now ?? new Date(),
   });
   return {
     ...base,
@@ -378,10 +508,15 @@ export async function previewServiceFill(args: FillServiceInput & { now?: Date }
     capacity: plan.capacity,
     booked: plan.booked,
     freePlaces: plan.freePlaces,
+    emptyPlaces: plan.emptyPlaces,
+    forecastSource: plan.forecastSource,
     groupSize: plan.groupSize,
     targetSize: plan.targetSize,
     candidateCount: plan.candidateCount,
     excludedSameDay: plan.excludedSameDay,
+    excludedNearby: plan.excludedNearby,
+    tiers: plan.tiers,
+    budgetExhausted: plan.budgetExhausted,
     excludedByReason: plan.excludedByReason,
     audience: plan.members.length,
     holdout: holdoutCount,

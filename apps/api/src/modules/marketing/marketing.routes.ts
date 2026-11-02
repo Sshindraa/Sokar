@@ -153,6 +153,10 @@ const FillServiceCreateSchema = FillServiceSchema.extend({
 });
 /** Refus d'un remplissage, avec un message lisible ; le code reste stable pour le dashboard. */
 const FILL_SERVICE_CONFLICTS: Record<string, { error: string; message: string }> = {
+  BUDGET_EXHAUSTED: {
+    error: 'FILL_SERVICE_BUDGET_EXHAUSTED',
+    message: 'Le budget d’e-mails du jour est épuisé : choisissez le SMS ou réessayez demain.',
+  },
   SERVICE_CLOSED: {
     error: 'FILL_SERVICE_CLOSED',
     message: 'Le restaurant n’ouvre pas ce service ce jour-là.',
@@ -529,7 +533,13 @@ export async function marketingRoutes(app: FastifyInstance) {
         });
         if (!campaign) {
           const conflict =
-            FILL_SERVICE_CONFLICTS[plan.status === 'PLANNED' ? 'NO_CANDIDATE' : plan.status];
+            FILL_SERVICE_CONFLICTS[
+              plan.status !== 'PLANNED'
+                ? plan.status
+                : plan.budgetExhausted
+                  ? 'BUDGET_EXHAUSTED'
+                  : 'NO_CANDIDATE'
+            ];
           return reply.status(409).send(conflict);
         }
         await invalidateFillSuggestions(request.restaurantId!);

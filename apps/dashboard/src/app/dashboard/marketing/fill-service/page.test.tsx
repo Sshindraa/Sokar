@@ -28,8 +28,13 @@ const plannedPreview = {
   full: false,
   capacityKnown: true,
   freePlaces: 116,
+  emptyPlaces: 62,
+  forecastSource: 'historique',
   candidateCount: 108,
   excludedSameDay: 0,
+  excludedNearby: 0,
+  tiers: { CRENEAU: 9, REGULIER: 12 },
+  budgetExhausted: false,
   excludedByReason: { NO_CONSENT: 4 },
   audience: 108,
   holdout: 11,
@@ -81,6 +86,55 @@ describe('FillServicePage', () => {
       service: 'midi',
       channel: 'SMS',
     });
+  });
+
+  it('places vides probables et mention d’estimation affichées', async () => {
+    renderPage();
+
+    expect(await screen.findByText('Places vides probables')).toBeInTheDocument();
+    expect(screen.getByText('62')).toBeInTheDocument();
+    expect(
+      screen.getByText('Estimation de départ, pas encore mesurée sur vos campagnes.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Estimation sans historique suffisant')).not.toBeInTheDocument();
+  });
+
+  it('composition lisible : « 9 habitués de ce créneau, 12 clients réguliers »', async () => {
+    renderPage();
+
+    expect(
+      await screen.findByText('9 habitués de ce créneau, 12 clients réguliers'),
+    ).toBeInTheDocument();
+  });
+
+  it('mention dédiée quand forecastSource vaut simple', async () => {
+    apiMocks.post.mockResolvedValueOnce({
+      data: { ...plannedPreview, forecastSource: 'simple' },
+    });
+    renderPage();
+
+    expect(await screen.findByText('Estimation sans historique suffisant')).toBeInTheDocument();
+  });
+
+  it('prévision à 0 : message dédié, sans formulaire', async () => {
+    apiMocks.post.mockResolvedValueOnce({
+      data: { ...plannedPreview, emptyPlaces: 0, audience: 0, sends: 0, holdout: 0 },
+    });
+    renderPage();
+
+    expect(await screen.findByText(/aucune place vide probable/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Créer la campagne' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument();
+  });
+
+  it('budget épuisé : message dédié, sans formulaire', async () => {
+    apiMocks.post.mockResolvedValueOnce({
+      data: { ...plannedPreview, channel: 'EMAIL', budgetExhausted: true, audience: 0, sends: 0 },
+    });
+    renderPage();
+
+    expect(await screen.findByText(/budget d’e-mails du jour est épuisé/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Créer la campagne' })).not.toBeInTheDocument();
   });
 
   it('service plein : le dit et ne propose pas de créer la campagne', async () => {
