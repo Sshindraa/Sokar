@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { parisToday } from '@/lib/paris-date';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, RotateCcw, Send, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { ArrowUp, Loader2, RotateCcw, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api-error';
 import { useApi } from '@/lib/api';
@@ -104,6 +104,7 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
   const { post } = useApi();
   const [messages, setMessages] = useState<Message[]>(() => (siteId ? readHistory(siteId) : []));
   const [draft, setDraft] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -340,7 +341,10 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
       </div>
 
       <form
-        className="flex items-end gap-2"
+        className={cn(
+          'flex gap-2 border border-border bg-primary p-1.5 text-primary-foreground shadow-sm transition-all duration-200 focus-within:ring-2 focus-within:ring-ring',
+          inputFocused || draft ? 'flex-col rounded-2xl' : 'items-center rounded-full',
+        )}
         onSubmit={(event) => {
           event.preventDefault();
           ask(draft);
@@ -349,13 +353,15 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
+          onFocus={() => setInputFocused(true)}
+          onBlur={() => setInputFocused(false)}
           onKeyDown={onKeyDown}
           disabled={pending}
           maxLength={MAX_CHARS}
-          rows={2}
+          rows={inputFocused || draft ? 3 : 1}
           placeholder={t('placeholder')}
           aria-label={t('placeholder')}
-          className="min-h-10 flex-1 resize-none rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+          className="min-h-9 w-full flex-1 resize-none border-0 bg-transparent px-3 py-2 text-sm text-primary-foreground placeholder:text-primary-foreground/65 focus:outline-none disabled:opacity-60"
         />
         <Button
           type="submit"
@@ -363,9 +369,9 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
           disabled={pending || draft.trim().length === 0}
           aria-label={t('send')}
           title={t('send')}
-          className="transition-all duration-200"
+          className="h-9 w-9 shrink-0 self-end rounded-full bg-primary-foreground text-primary transition-all duration-200 hover:bg-primary-foreground/85 disabled:opacity-50"
         >
-          <Send size={16} />
+          <ArrowUp size={16} aria-hidden="true" />
         </Button>
       </form>
     </div>

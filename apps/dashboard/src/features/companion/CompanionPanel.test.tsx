@@ -77,6 +77,18 @@ afterEach(() => {
 });
 
 describe('CompanionPanel', () => {
+  it('déploie la saisie au focus et conserve le brouillon après la perte du focus', () => {
+    renderPanel();
+    const field = screen.getByRole('textbox');
+    expect(field).toHaveAttribute('rows', '1');
+    fireEvent.focus(field);
+    expect(field).toHaveAttribute('rows', '3');
+    fireEvent.change(field, { target: { value: 'Mes réservations' } });
+    fireEvent.blur(field);
+    expect(field).toHaveAttribute('rows', '3');
+    expect(field).toHaveValue('Mes réservations');
+  });
+
   it('envoie la suggestion comme question et affiche la réponse avec un seul lien par écran', async () => {
     mocks.post.mockResolvedValue({
       reply: 'Vous avez 12 couverts prévus.',
