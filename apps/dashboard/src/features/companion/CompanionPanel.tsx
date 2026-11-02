@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { parisToday } from '@/lib/paris-date';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, RotateCcw, Send, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Loader2, RotateCcw, Send, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api-error';
 import { useApi } from '@/lib/api';
@@ -248,14 +248,8 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 flex-none items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Sparkles size={16} />
-          </span>
-          <p className="text-sm font-semibold text-foreground">{t('title')}</p>
-        </div>
-        {messages.length > 0 && (
+      {messages.length > 0 && (
+        <div className="flex justify-end">
           <Button
             type="button"
             variant="ghost"
@@ -267,8 +261,8 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
             <RotateCcw size={14} />
             {t('newConversation')}
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       <div
         ref={threadRef}
@@ -278,7 +272,6 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
         {messages.length === 0 ? (
           <div className="space-y-3">
             <TonightCard />
-            <p className="text-sm leading-relaxed text-muted-foreground">{t('greeting')}</p>
             <div className="flex flex-col gap-2">
               {SUGGESTION_KEYS.map((key) => (
                 <Button
@@ -375,8 +368,6 @@ function CompanionConversation({ siteId }: { siteId: string | undefined }) {
           <Send size={16} />
         </Button>
       </form>
-
-      <p className="text-[11px] leading-relaxed text-muted-foreground">{t('disclaimer')}</p>
     </div>
   );
 }

@@ -98,15 +98,9 @@ describe('CompanionPanel', () => {
     expect(links[0]).toHaveAttribute('href', '/dashboard');
   });
 
-  it('affiche la mention permanente et envoie avec Entrée, sans Maj+Entrée', () => {
+  it('envoie avec Entrée, sans Maj+Entrée', () => {
     mocks.post.mockResolvedValue({ reply: 'OK.', sources: [] });
     renderPanel();
-
-    expect(
-      screen.getByText(
-        'Réponses générées par IA, à vérifier. Ne saisissez pas de coordonnées client.',
-      ),
-    ).toBeInTheDocument();
 
     typeInDraft('Combien de no-shows ?');
     const field = screen.getByRole('textbox');
@@ -158,7 +152,7 @@ describe('CompanionPanel', () => {
     mocks.siteId = 'site_2';
     renderPanel();
     expect(screen.queryByText('Réponse ancienne')).not.toBeInTheDocument();
-    expect(screen.getByText(/Je suis l'assistant IA de Sokar/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: WEEK_QUESTION })).toBeInTheDocument();
   });
 
   it('lit une entrée ancienne qui contient toolRuns sans ce champ', async () => {
