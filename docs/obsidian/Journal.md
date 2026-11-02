@@ -3112,10 +3112,65 @@ Vérification d’identité et export rouverts après qualification SMS en stagi
 ### 2026-10-30 — Rollback staging : dépendances restaurées
 
 Le test de rollback de Sshindraa/Sokar#577 échouait : l'artefact de la release précédente exige `zod-to-json-schema`, retiré par la PR (passage à Zod 4), donc absent de node_modules après le déploiement. Correctif : chaque snapshot garde le lockfile et les package.json de son commit (`deps/`), et le rollback réinstalle via `pnpm install --frozen-lockfile` avant de redémarrer. Une release sans lockfile est refusée avant d'arrêter les services. Non validé sur le VPS : la prochaine exécution de staging le vérifiera (le pré-build utilise `.latest-hash`).
+### 2026-10-30 — Qualification du lot réservations
+
+La PR #617 (0d4aaaff) contient les correctifs d'audit réservations ; workflows CI, déploiement staging et production et smoke tests réussis. Production vérifiée sur 0d4aaaff ; staging sur le snapshot de ce même commit. Réexécution locale isolée sur PostgreSQL : 53 tests de concurrence/modification réussis ; 146 tests ciblés allocation, disponibilité, confirmation et service réussis. Disponibilité publique Chez Sokar demo : HTTP 200 en staging et production, 22 créneaux renvoyés. Aucun hold ni réservation réel, SMS ou autre notification envoyé ; création, rejeu, modification et annulation via les environnements déployés restent à qualifier de bout en bout avec un dispositif de test sans notification à des tiers.
+
+### 2026-10-30 — Réservation staging sans SMS
+
+À la demande de l'utilisateur, aucun SMS : disponibilité publique et création d'un hold en mode test réussies sur Chez Sokar demo en staging (HTTP 200), refus d'un jeton de confirmation invalide (410). Aucun appel de confirmation valide ni réservation créé ; le hold temporaire expire automatiquement. Le parcours complet reste non qualifié sur les environnements déployés, car la confirmation de test peut notifier le client ou le responsable.
+
+### 2026-10-30 — Contrôle production sans SMS
+
+Sur Chez Sokar demo en production : disponibilité et hold en mode test HTTP 200, confirmation avec jeton invalide refusée 410. Aucune confirmation valide ni SMS. Hold temporaire expire automatiquement. Vérification de préférence de section étrangère impossible en staging : aucune section d'un autre établissement trouvée ; scénario couvert par test PostgreSQL local mais pas validé en staging.
+
+### 2026-10-30 — Réservations : vérification de l'annulation sans notification
+
+Test PostgreSQL local dédié supplémentaire réussi : annulations simultanées, libération de la table et audit. Les 53 tests de concurrence et modification comprennent aussi la confirmation publique rejouée sans doublon et sa cohérence des consentements. Confirmation déployée non exécutée : même en mode test elle crée une intention de notification ; consigne utilisateur explicite de ne pas envoyer de SMS. Aucun changement de configuration en staging ou production.
+
+### 2026-10-30 — Confirmation réelle de réservation de test en staging
+
+Avec autorisation de l'utilisateur pour les SMS : hold et confirmation publics HTTP 200, rejeu HTTP 200 pour la même réservation avec reused=true, réservation marquée isTest ; page personnelle HTTP 200. Le restaurant demo a smsConfirmEnabled=false et aucune intention SMS associée : aucun envoi observé. Modification et annulation client refusées par les conditions du restaurant (contact requis), donc parcours positif non qualifié en staging ; aucune modification de configuration. La réservation de test restante est soumise à la purge habituelle après 24 h. Aucun code ni identifiant de réservation consigné.
+
+### 2026-10-30 — Qualification réservation staging complète
+
+Sur la réservation isTest créée pour ce test uniquement, condition d'annulation factice libre-service appliquée au snapshot sans modifier les réglages du restaurant. Page personnelle, options, modification et rejeu HTTP 200 vers le même créneau ; annulation et rejeu HTTP 200, état CANCELLED. Vérification en base : aucun profil client ni événement outbox ; une seule trace pour création, modification et annulation. Aucun SMS envoyé. Les conditions de test modifiées ne qualifient pas les conditions commerciales du restaurant ; scénarios concurrents et isolation entre restaurants vérifiés sur PostgreSQL local, pas sur deux établissements staging.
+
+### 2026-10-30 — Confirmation de test en production
+
+Chez Sokar demo, après vérification que smsConfirmEnabled=false : hold et confirmation HTTP 200, rejeu HTTP 200 avec la même réservation et reused=true. Ligne vérifiée isTest, aucun client ni événement outbox associés ; aucun SMS envoyé. La réservation de test confirmée reste soumise à la purge automatique après 24 h. Flags de gestion personnelle absents ou faux dans la configuration lue : modification et annulation positives en production non testées et configuration inchangée. Validation positive effectuée en staging avec conditions fictives limitées à la réservation de test.
+
+### 2026-10-30 — Qualification facturation et paiements
+
+Les correctifs de facturation, cartes cadeaux et paiements de réservation sont inclus dans #617, déployée staging et production. Configuration lue : clé Stripe staging test, clé production live ; paiements de réservation et expériences non activés dans les .env consultés, variables correspondantes absentes de PM2. Tests sur bases PostgreSQL locales dédiées : 24 réussis et 4 Stripe ignorés sans clé ; puis 6 tests billing réussis avec la clé Stripe test du staging, incluant concurrence et reprise. Les objets Stripe test créés par les tests sont nettoyés ou archivés par leur fixture. 126 tests ciblés routes/services réussis. Aucun paiement réel, aucune vérification complète des webhooks déployés ni des remboursements Stripe de bout en bout.
+
+### 2026-10-30 — Stripe test et webhook staging
+
+Paiement fictif Stripe test de 10 EUR puis remboursements de 3 et 7 EUR réussis, montant remboursé total vérifié. Un événement charge.refunded issu de ce paiement a été signé avec le secret staging et envoyé deux fois au webhook générique : 200/200 ; signature invalide : 400. La carte utilisée est une méthode de test Stripe, sans débit réel ; le paiement reste dans l'historique du compte Stripe test. Ce paiement n'est associé à aucune réservation ou carte cadeau Sokar : résultat ne valide pas la projection métier des remboursements ni l'ordre des événements. Le webhook paiement réservation staging répond 503 car la fonction reste désactivée ; aucune activation ni changement de configuration.
+
+### 2026-10-30 — Projection carte cadeau avec Stripe test et PostgreSQL staging
+
+Service de remboursement de la version staging exécuté sur une carte fictive non persistée dans une transaction PostgreSQL annulée à la fin. Paiement Stripe test 10 EUR ; remboursement partiel 3 EUR => solde 7 EUR, rejeu => 7 EUR, remboursement final 7 EUR => solde 0 et état CANCELLED. Aucun envoi ; aucune donnée client utilisée. Les objets Stripe restent dans le compte test, le paiement est intégralement remboursé. Exécution directe du service, pas webhook HTTP lié à cette carte ; paiement de réservation demeure désactivé.
+
+### 2026-10-30 — Webhooks et projections paiements en processus isolé staging
+
+Code déployé staging exécuté dans Fastify inject sur transaction PostgreSQL staging annulée, sans serveur supplémentaire ni données persistées. Carte cadeau fictive : événement charge.refunded réel de Stripe test signé, route webhook HTTP simulée 200, solde 7 EUR après remboursement 3/10 EUR et après rejeu. Paiement réservation fictif : activation du flag uniquement dans ce processus isolé ; événements Stripe test enrichis des métadonnées fictives puis signés, 200 pour partiel, rejeu, total et rejeu ancien ; états PARTIALLY_REFUNDED puis REFUNDED. Paiements test entièrement remboursés ; aucun paiement réel ni SMS. La route staging réellement exposée reste désactivée (503) ; ces tests injectés ne valident pas le transport public de cette route ni les comptes Stripe connectés.
+
+### 2026-10-30 — Contrôles de cohérence paiement et compte connecté staging
+
+Le compte Stripe connecté de Chez Sokar demo en staging est incomplet : charges_enabled=false, payouts_enabled=false, details_submitted=false ; aucune modification du compte. Test Fastify inject sur code et PostgreSQL staging, transaction annulée, flag activé uniquement dans le processus isolé : événement Stripe test signé avec données fictives, restaurant incohérent refusé 403 ; montant, compte et identifiant de paiement incohérents refusés 500, état CAPTURED inchangé et aucun événement enregistré. Les 500 méritent une gestion explicite avant activation pour éviter des erreurs techniques opaques et des retransmissions fournisseur répétées. Paiement test intégralement remboursé. Les comptes connectés et le transport public du webhook restent à qualifier ; aucune activation staging/production.
+
+### 2026-10-30 — CI #621 et qualification Stripe Connect
+
+PR #621 : un job PostgreSQL a échoué sur le test concurrent service-copilot-packaging (DelayRecoveryConflictError), alors que l'autre exécution CI a réussi. Le job en échec a été relancé ; résultat à suivre. Lecture du code : une hypothèse de course existe entre la recherche d'opération déjà appliquée et la simulation préliminaire, mais elle n'est pas encore reproduite de façon déterministe. Ne pas attribuer l'échec au correctif webhook sans preuve. Compte Stripe Connect de démonstration staging toujours incomplet ; aucun changement d'identité ni d'activation.
 
 ### 2026-10-30 — Companion, phase 1 : API de chat (sans UI)
 
 Ajout de `POST /companion/chat` (`apps/api/src/modules/companion/`) : réponse JSON `{ reply, sources }`, modèle `COMPANION_LLM_MODEL` (défaut `anthropic/claude-haiku-5.5`, slug vérifié sur OpenRouter le 30/10). Quatre outils en lecture seule (`reservation_stats`, `upcoming_days`, `no_shows`, `monthly_roi`) appellent en process les calculs des routes dashboard, extraits en fonctions exportées dans `dashboard.routes.ts` (sortie inchangée, tests dashboard verts sans modification) ; `monthly_roi` reprend `computeRoi`. Plafond 100 messages par jour et par restaurant via `checkRateLimit`, dont la fenêtre devient un paramètre optionnel. Rôles : STAFF et READ_ONLY reçoivent 403 de la politique existante, qui n'a pas été modifiée. Décisions ouvertes : pas de SSE, 4 tours d'outils puis une réponse finale sans outils, quota fail-open si Redis tombe (convention de `checkRateLimit`), et `href` vers `/dashboard` pour `monthly_roi` faute d'écran qui consomme `/analytics/roi`. Correctif : chaque requête porte `provider.data_collection: deny` (test sur les cinq corps d'une boucle complète). Clé `OPENROUTER_API_KEY` de `apps/api/.env` renouvelée (auth/key 200) ; deux curls en 200 sur l'API dev. Fichiers : `apps/api/src/modules/companion/*`, `dashboard.routes.ts`, `rate-limit.ts`, `env.ts`, `main.ts`, `docs/runbooks/environment.md`.
+
+### 2026-10-30 — Description de Sokar alignée sur la plateforme
+
+AGENTS.md, README.md, `docs/obsidian/README.md` et la ligne Voice de `PROJECT_MAP.md` ne réduisent plus Sokar à un agent téléphonique : plateforme réservations multicanal + service + relation client, la voix est une fonction. Textes visibles côté client (tagline dashboard, manifest, FAQ, kicker « Assistant vocal restaurant ») encore à revoir, sur décision de Hamza.
 
 ### 2026-10-30 — Companion, phase 2 : panneau dashboard et prompt
 

@@ -1,11 +1,11 @@
 # Sokar
 
-French-first restaurant reservation and AI call-management platform.
+French-first restaurant platform: reservations on every channel, service organisation and customer relationship. The AI voice agent is one of its features. See `docs/PROJECT_MAP.md`.
 
 ## Stack
 
 - API: Fastify 5, Prisma 6, Redis, BullMQ, Telnyx.
-- Dashboard: Next.js 14 App Router, React 18, Tailwind 3, Shadcn UI.
+- Dashboard: Next.js 16 App Router, React 19, Tailwind 3, Shadcn UI.
 - Voice: Telnyx Media Stream, ElevenLabs Scribe Realtime STT, Cartesia TTS.
 - Monorepo: pnpm 10.8, Turbo, TypeScript 5.8.
 
