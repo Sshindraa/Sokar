@@ -193,6 +193,7 @@
     "bodyHelp": "Mantenga '{reservationLink}' y '{unsubscribeUrl}': son obligatorios para enviar.",
     "create": "Crear la campaña",
     "creating": "Creando…",
+    "today": "Hoy",
     "openFromQuietDay": "Llenar este servicio",
     "report": {
       "title": "Servicio objetivo",

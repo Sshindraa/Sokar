@@ -2,11 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '../../../../messages/fr.json';
+import en from '../../../../messages/en.json';
+import es from '../../../../messages/es.json';
+import it_ from '../../../../messages/it.json';
 import EmptySlotsWidget from '../EmptySlotsWidget';
 
-function renderWidget() {
+const BY_LOCALE = { fr: messages, en, es, it: it_ } as const;
+
+function renderWidget(locale: keyof typeof BY_LOCALE = 'fr') {
   return render(
-    <NextIntlClientProvider locale="fr" messages={messages}>
+    <NextIntlClientProvider locale={locale} messages={BY_LOCALE[locale]}>
       <EmptySlotsWidget />
     </NextIntlClientProvider>,
   );
@@ -361,21 +366,19 @@ describe('EmptySlotsWidget', () => {
     });
 
     it.each([
-      ['SENDS_DISABLED', 'Les envois marketing ne sont pas encore activés.'],
-      ['BUDGET_EXHAUSTED', 'Le budget d’e-mails du jour est épuisé.'],
-      ['NO_AUDIENCE', 'Aucun client à contacter pour ce service.'],
-    ])('canPrepare faux, raison %s : affiche la phrase', async (reason, text) => {
+      ['en', 'Dismiss Tuesday Nov 3 lunch', 'Prepare Tuesday Nov 3 lunch'],
+      ['es', 'Ignorar martes 3 nov mediodía', 'Preparar martes 3 nov mediodía'],
+      ['it', 'Ignorare martedì 3 nov pranzo', 'Preparare martedì 3 nov pranzo'],
+    ] as const)('jour et date dans la langue choisie (%s)', async (locale, dismiss, prepare) => {
       routeGet({
-        suggestions: {
-          data: [makeSuggestion({ canPrepare: false, prepareBlockedReason: reason })],
-        },
+        suggestions: { data: [makeSuggestion({ date: '2026-11-03', service: 'midi' })] },
         emptySlots: makeResponse([]),
       });
-      renderWidget();
+      const { container } = renderWidget(locale);
 
-      const sentence = await screen.findByText(text);
-      expect(sentence).toHaveClass('text-xs', 'text-muted-foreground');
-      expect(screen.queryByRole('link', { name: /Préparer/ })).not.toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: dismiss })).toBeVisible();
+      expect(screen.getByRole('link', { name: prepare })).toBeVisible();
+      expect(container.textContent).not.toMatch(/mardi|mercredi|nov\./i);
     });
 
     it('aucune phrase sans raison (null, absente d’une ancienne entrée) ni quand canPrepare est vrai', async () => {

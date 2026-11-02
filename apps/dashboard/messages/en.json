@@ -194,6 +194,7 @@
     "bodyHelp": "Keep '{reservationLink}' and '{unsubscribeUrl}': they are required to send.",
     "create": "Create the campaign",
     "creating": "Creating…",
+    "today": "Today",
     "openFromQuietDay": "Fill this service",
     "report": {
       "title": "Targeted service",
