@@ -951,6 +951,60 @@ describe('FloorPlanCanvas — actions Live service', () => {
     expect(screen.queryByRole('button', { name: 'Aujourd’hui' })).not.toBeInTheDocument();
   });
 
+  it('regroupe date, fraîcheur et compteurs et propose le recadrage en service', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+    const width = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(500);
+    const height = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(400);
+    const scrollTo = vi.fn();
+    const previous = Element.prototype.scrollTo;
+    Element.prototype.scrollTo = scrollTo;
+    try {
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      const bar = await screen.findByRole('region', { name: 'État du service' });
+      expect(within(bar).getByText('Aujourd’hui')).toBeInTheDocument();
+      expect(within(bar).getByText('En direct')).toBeInTheDocument();
+      expect(await within(bar).findByText(/Actualisé il y a/)).toBeInTheDocument();
+      expect(
+        within(bar).getByRole('status', { name: 'Vue d’ensemble de la salle' }),
+      ).toHaveTextContent('1 disponible');
+      fireEvent.click(within(bar).getByRole('button', { name: 'Ajuster le plan' }));
+      await waitFor(() => expect(scrollTo).toHaveBeenCalled());
+    } finally {
+      width.mockRestore();
+      height.mockRestore();
+      Element.prototype.scrollTo = previous;
+    }
+  });
+
+  it('ne présente pas les compteurs du jour précédent pendant le changement de date', async () => {
+    let resolveReservations!: (value: PlanningReservation[]) => void;
+    const pending = new Promise<PlanningReservation[]>((resolve) => {
+      resolveReservations = resolve;
+    });
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) {
+        return path.includes('2026-01-05') ? pending : [makeReservation('SEATED')];
+      }
+      if (path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    expect(await screen.findByText('couverts')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Date du service'), {
+      target: { value: '2026-01-05' },
+    });
+    const bar = screen.getByRole('region', { name: 'État du service' });
+    expect(within(bar).getByText('Actualisation…')).toBeInTheDocument();
+    expect(
+      within(bar).queryByRole('status', { name: 'Vue d’ensemble de la salle' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('couverts')).not.toBeInTheDocument();
+    await act(async () => resolveReservations([]));
+  });
+
   it('propose une sortie claire quand le plan Live ne contient aucune table', async () => {
     const onRequestEdit = vi.fn();
     apiMocks.get.mockImplementation(async (path: string) => {

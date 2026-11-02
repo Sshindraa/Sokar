@@ -1465,7 +1465,7 @@ function TableCard({
           : status?.status === 'reserved'
             ? 'text-brand'
             : status?.status === 'free'
-              ? 'text-floor-table-text/80'
+              ? 'text-floor-table-text'
               : 'text-floor-table-muted';
   const liveStatusDotClass =
     status?.status === 'occupied'
@@ -1635,16 +1635,16 @@ function TableCard({
                   : 'items-start justify-between px-3 py-2 pr-5 text-left',
             )}
           >
-            <p className="max-w-full truncate pr-2 text-[11px] font-bold leading-none text-floor-table-text">
+            <p className="max-w-full truncate pr-2 text-[13px] font-bold leading-none text-floor-table-text">
               {displayName}
             </p>
-            <p className="max-w-full truncate text-[9px] font-medium leading-none text-floor-table-text/75">
+            <p className="max-w-full truncate text-[11px] font-medium leading-none text-floor-table-text/90">
               {table.capacity} {status ? 'places' : 'pl.'}
             </p>
             <div className="min-w-0 max-w-full leading-tight">
               <p
                 className={cn(
-                  'flex min-w-0 items-center gap-1 truncate text-[9px] font-medium',
+                  'flex min-w-0 items-center gap-1 truncate text-[11px] font-medium',
                   referenceStatusTextClass,
                 )}
               >
@@ -6671,35 +6671,48 @@ export function FloorPlanCanvas({
             ? 'bg-brand'
             : 'bg-floor-table-muted/80';
 
+  const serviceCounts = (
+    <p
+      role="status"
+      aria-label="Vue d’ensemble de la salle"
+      className="text-[13px] text-foreground"
+    >
+      {loadedLiveDate !== liveDate ? (
+        reservationsError ? (
+          'Données indisponibles'
+        ) : (
+          'Actualisation…'
+        )
+      ) : (
+        <>
+          <span className="font-semibold tabular-nums text-foreground">
+            {[...tableStatuses.values()].filter((item) => item.status === 'occupied').length}
+          </span>{' '}
+          occupées ·{' '}
+          <span className="font-semibold tabular-nums text-foreground">
+            {
+              [...tableStatuses.values()].filter((item) =>
+                ['reserved', 'upcoming', 'late'].includes(item.status),
+              ).length
+            }
+          </span>{' '}
+          attendues ·{' '}
+          <span className="font-semibold tabular-nums text-foreground">
+            {
+              allTables.filter(
+                (table) =>
+                  table.isActive && (tableStatuses.get(table.id)?.status ?? 'free') === 'free',
+              ).length
+            }
+          </span>{' '}
+          disponibles
+        </>
+      )}
+    </p>
+  );
   const serviceOverview = (
     <div className="space-y-3">
-      <p
-        role="status"
-        aria-label="Vue d’ensemble de la salle"
-        className="text-xs text-muted-foreground"
-      >
-        <span className="font-semibold tabular-nums text-foreground">
-          {[...tableStatuses.values()].filter((item) => item.status === 'occupied').length}
-        </span>{' '}
-        occupées ·{' '}
-        <span className="font-semibold tabular-nums text-foreground">
-          {
-            [...tableStatuses.values()].filter((item) =>
-              ['reserved', 'upcoming', 'late'].includes(item.status),
-            ).length
-          }
-        </span>{' '}
-        attendues ·{' '}
-        <span className="font-semibold tabular-nums text-foreground">
-          {
-            allTables.filter(
-              (table) =>
-                table.isActive && (tableStatuses.get(table.id)?.status ?? 'free') === 'free',
-            ).length
-          }
-        </span>{' '}
-        disponibles
-      </p>
+      {serviceCounts}
       <details className="group">
         <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
           Légende des statuts
@@ -7131,29 +7144,6 @@ export function FloorPlanCanvas({
         selectedServiceTable ? 'hidden lg:flex' : 'flex',
       )}
     >
-      {/* L'en-tête live n'a de sens que dans la sidebar desktop : sur téléphone,
-          l'inspecteur s'empile sous le plan et répétait une troisième fois le
-          statut déjà porté par le cockpit et le badge. */}
-      <div className="hidden border-b border-border p-4 lg:block">
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-50" />
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
-          </span>
-          <p className="text-sm font-semibold">
-            {lastUpdatedAt ? (
-              <ElapsedSince date={lastUpdatedAt} prefix="Service en direct · mis à jour " />
-            ) : (
-              'Service en direct · connexion…'
-            )}
-          </p>
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {lastUpdatedAt
-            ? 'Le plan se met à jour automatiquement.'
-            : 'Synchronisation du service en cours…'}
-        </p>
-      </div>
       <div className="border-b border-border p-4">{serviceOverview}</div>
       {selectedServiceTable ? (
         <div className="flex-1 space-y-5 overflow-y-auto p-4">
@@ -8316,7 +8306,7 @@ export function FloorPlanCanvas({
                   restent portés par le bandeau d'état ci-dessus. Sur téléphone, une
                   seule ligne porte valeurs et jauge : deux étages de chiffres
                   consommaient la hauteur utile du plan. */}
-              {compactServiceCockpit ? null : (
+              {compactServiceCockpit || loadedLiveDate !== liveDate ? null : (
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border px-4 py-2 lg:flex-nowrap lg:gap-8">
                   <div className="flex min-w-0 items-center gap-x-3 text-[11px] text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
@@ -8368,10 +8358,15 @@ export function FloorPlanCanvas({
 
               {/* Navigation du service : jour et filtre serveur. Les onglets sont
                   placés en tête du cockpit pour remplacer l'ancien bandeau de pouls. */}
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 border-t border-border px-3 py-2 sm:flex-nowrap sm:px-4">
+              <div
+                role="region"
+                aria-label="État du service"
+                className="flex flex-wrap items-center gap-x-2 gap-y-2 border-t border-border px-3 py-2 sm:px-4"
+              >
+                {serviceIsToday ? <span className="text-sm font-semibold">Aujourd’hui</span> : null}
                 <div
                   title={serviceDateLabel}
-                  className="order-1 flex min-w-0 items-center gap-0.5 rounded-md border border-border bg-background p-0.5 sm:order-none"
+                  className="flex min-w-0 items-center gap-0.5 rounded-md border border-border bg-background p-0.5"
                 >
                   <Button
                     type="button"
@@ -8414,10 +8409,7 @@ export function FloorPlanCanvas({
                 <Badge
                   variant="outline"
                   className={cn(
-                    // En direct, l'onglet et la date suffisent à identifier le
-                    // contexte ; le badge n'est donc affiché que pour Archive.
-                    'h-7 gap-1.5 whitespace-nowrap px-2 text-[10px] sm:h-8 sm:px-2.5 sm:text-[11px]',
-                    serviceIsToday ? 'hidden sm:inline-flex' : 'inline-flex',
+                    'h-7 gap-1.5 whitespace-nowrap px-2 text-xs sm:h-8 sm:px-2.5',
                     serviceIsToday
                       ? 'border-brand/40 text-brand'
                       : 'border-border text-muted-foreground',
@@ -8443,6 +8435,28 @@ export function FloorPlanCanvas({
                     Aujourd’hui
                   </Button>
                 ) : null}
+                <span className="text-[13px] text-foreground/80">
+                  {lastUpdatedAt && loadedLiveDate === liveDate ? (
+                    <ElapsedSince date={lastUpdatedAt} prefix="Actualisé " />
+                  ) : reservationsError ? (
+                    'Données indisponibles'
+                  ) : (
+                    'Actualisation…'
+                  )}
+                </span>
+                {loadedLiveDate === liveDate ? serviceCounts : null}
+                {serviceTab === 'plan' && placedTables.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 transition-all duration-200"
+                    onClick={resetView}
+                  >
+                    <LocateFixed size={14} aria-hidden="true" />
+                    Ajuster le plan
+                  </Button>
+                ) : null}
                 {hasServerFilter ? (
                   <Select
                     value={selectedServerFilter ?? '_all_'}
@@ -8451,7 +8465,7 @@ export function FloorPlanCanvas({
                     <SelectTrigger
                       aria-label="Filtrer par serveur"
                       title="Filtrer par serveur"
-                      className="order-3 ml-auto h-8 w-9 justify-center gap-1 border-border bg-background px-0 text-xs font-medium sm:order-none sm:w-auto sm:justify-start sm:px-2.5"
+                      className="ml-auto h-8 w-9 justify-center gap-1 border-border bg-background px-0 text-xs font-medium sm:w-auto sm:justify-start sm:px-2.5"
                     >
                       {selectedServerFilter === '_unassigned_' ? (
                         <UserX size={13} className="shrink-0 text-muted-foreground" />
@@ -8703,7 +8717,7 @@ export function FloorPlanCanvas({
                     ref={canvasViewportRef}
                     style={{ touchAction: 'pan-x pan-y' }}
                     className={cn(
-                      'relative min-h-0 w-full flex-1 overflow-auto bg-muted/50',
+                      'relative min-h-0 w-full flex-1 overflow-auto bg-muted/70',
                       livePlanIsEmpty ? 'min-h-0' : 'min-h-[14rem] md:min-h-[22rem]',
                       activeDragData?.kind === 'table' ||
                         activeDragData?.kind === 'wall' ||

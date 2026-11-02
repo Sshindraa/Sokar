@@ -3603,3 +3603,7 @@ Correctif local : les tables présentes dans une section et dans la liste géné
 ### 2026-11-02 — Plan de salle : chaises et vue d’ensemble
 
 Les tables de huit places maximum affichent le nombre réel de chaises ; au-delà, les chaises sont masquées pour éviter un comptage trompeur et la capacité reste affichée. En service, le résumé et la légende restent accessibles pendant la sélection et la fiche se ferme explicitement sur ordinateur comme sur téléphone.
+
+### 2026-11-02 — Service : lisibilité et barre de suivi
+
+La vue service regroupe date, direct ou archive, fraîcheur et compteurs dans une barre ; un bouton recadre le plan et le retour à aujourd’hui reste visible hors du jour courant. Les cartes de table sont plus lisibles et les anciens compteurs sont masqués pendant le chargement d’une autre date. Qualification et livraison via la PR du plan de salle.
