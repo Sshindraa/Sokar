@@ -16,6 +16,8 @@ import {
   ShieldCheck,
   ChevronDown,
   Check,
+  PanelLeftOpen,
+  PanelLeftClose,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -88,6 +90,7 @@ function SidebarGroupButton({
   active,
   open,
   onClick,
+  compact = false,
 }: {
   id: NavSectionId;
   label: string;
@@ -95,6 +98,7 @@ function SidebarGroupButton({
   active: boolean;
   open: boolean;
   onClick: () => void;
+  compact?: boolean;
 }) {
   return (
     <button
@@ -102,19 +106,23 @@ function SidebarGroupButton({
       aria-label={label}
       aria-expanded={open}
       aria-controls={`nav-group-${id}`}
+      title={label}
       onClick={onClick}
       className={cn(
         'flex h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-base font-semibold text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        compact && 'justify-center px-0',
         (active || open) && 'text-foreground',
       )}
     >
       <Icon size={19} aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      <ChevronDown
-        size={16}
-        aria-hidden="true"
-        className={cn('transition-transform duration-200', open && 'rotate-180')}
-      />
+      {!compact && <span className="min-w-0 flex-1 truncate">{label}</span>}
+      {!compact && (
+        <ChevronDown
+          size={16}
+          aria-hidden="true"
+          className={cn('transition-transform duration-200', open && 'rotate-180')}
+        />
+      )}
     </button>
   );
 }
@@ -391,11 +399,15 @@ export function DashboardSidebar({
   salleView,
   isSokarOperator,
   onCreateOffer,
+  expanded = true,
+  onExpandedChange,
 }: {
   pathname: string;
   salleView: string;
   isSokarOperator: boolean;
   onCreateOffer: () => void;
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
   const tNav = useTranslations('nav');
   const tOfferChooser = useTranslations('offerChooser');
@@ -438,15 +450,33 @@ export function DashboardSidebar({
   }, [openGroup]);
 
   return (
-    <aside className="dashboard-desktop-sidebar fixed bottom-4 left-4 top-4 z-40 w-56 flex-col rounded-2xl border border-border bg-card/95 p-3 shadow-xl shadow-background/30 backdrop-blur-xl">
-      <Link
-        href="/dashboard"
-        aria-label="Sokar"
-        title="Sokar"
-        className="mb-4 flex h-11 items-center gap-3 rounded-xl px-2 text-sm font-semibold text-foreground transition-all duration-200 hover:bg-accent"
+    <aside
+      className={cn(
+        'dashboard-desktop-sidebar fixed bottom-4 left-4 top-4 z-40 flex-col rounded-2xl border border-border bg-card/95 p-3 shadow-xl shadow-background/30 backdrop-blur-xl',
+        expanded ? 'w-56' : 'w-16',
+      )}
+    >
+      <div
+        className={cn('mb-3 flex items-center', expanded ? 'justify-between' : 'flex-col gap-2')}
       >
-        <SokarLogo className="h-8 w-8 text-foreground" /> Sokar
-      </Link>
+        <Link
+          href="/dashboard"
+          aria-label="Sokar"
+          title="Sokar"
+          className="flex h-11 items-center gap-3 rounded-xl px-2 text-sm font-semibold text-foreground transition-all duration-200 hover:bg-accent"
+        >
+          <SokarLogo className="h-8 w-8 text-foreground" /> {expanded && 'Sokar'}
+        </Link>
+        <button
+          type="button"
+          aria-label={expanded ? 'Replier le menu' : 'Déployer le menu'}
+          aria-expanded={expanded}
+          onClick={() => onExpandedChange?.(!expanded)}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {expanded ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+        </button>
+      </div>
       <nav
         aria-label={salleMode ? 'Navigation Salle' : 'Navigation Copilot'}
         className="dashboard-nav-scroll min-h-0 flex-1 space-y-2 overflow-y-auto"
@@ -458,7 +488,7 @@ export function DashboardSidebar({
               label={tNav('live')}
               icon={Radio}
               active={salleView !== 'edit-plan'}
-              expanded
+              expanded={expanded}
             />
             {!serviceStaff && (
               <SidebarNavItem
@@ -466,7 +496,7 @@ export function DashboardSidebar({
                 label={tNav('edition')}
                 icon={PencilRuler}
                 active={salleView === 'edit-plan'}
-                expanded
+                expanded={expanded}
               />
             )}
           </>
@@ -477,14 +507,14 @@ export function DashboardSidebar({
               label={tNav('reservations')}
               icon={CalendarCheck}
               active={pathname.startsWith('/dashboard/reservations')}
-              expanded
+              expanded={expanded}
             />
             <SidebarNavItem
               href="/dashboard/floor-plan?view=service-live"
               label={tNav('floorPlan')}
               icon={Radio}
               active={false}
-              expanded
+              expanded={expanded}
             />
           </>
         ) : (
@@ -498,7 +528,7 @@ export function DashboardSidebar({
                   label={tNav(entry.key)}
                   icon={entry.icon}
                   active={isNavEntryActive(pathname, entry)}
-                  expanded
+                  expanded={expanded}
                   onClick={() => setOpenGroup(null)}
                 />
               );
@@ -512,10 +542,16 @@ export function DashboardSidebar({
                   label={tNav(section.labelKey)}
                   icon={section.icon}
                   active={active}
-                  open={open}
-                  onClick={() => setOpenGroup(open ? null : section.id)}
+                  open={expanded && open}
+                  compact={!expanded}
+                  onClick={() => {
+                    if (!expanded) {
+                      onExpandedChange?.(true);
+                      setOpenGroup(section.id);
+                    } else setOpenGroup(open ? null : section.id);
+                  }}
                 />
-                {open && (
+                {expanded && open && (
                   <div
                     ref={groupPanelRef}
                     id={`nav-group-${section.id}`}
@@ -563,11 +599,16 @@ export function DashboardSidebar({
           label={tNav('admin')}
           icon={ShieldCheck}
           active={pathname.startsWith('/admin')}
-          expanded
+          expanded={expanded}
           onClick={() => setOpenGroup(null)}
         />
       )}
-      <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
+      <div
+        className={cn(
+          'mt-3 flex items-center gap-2 border-t border-border pt-3',
+          !expanded && 'flex-col',
+        )}
+      >
         <ThemeToggle />
         <SettingsButton active={pathname.startsWith('/dashboard/settings')} />
       </div>
@@ -589,6 +630,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
   const [floorPlanRefreshKey, setFloorPlanRefreshKey] = useState(0);
   const [operatorAccess, setOperatorAccess] = useState<boolean | null>(null);
   const [createOfferOpen, setCreateOfferOpen] = useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const { activeSite, accountId } = useSiteSelection();
   // Same rule as the settings page: on a multi-site account, only the owner manages billing.
   const canManageBilling = !accountId || activeSite?.role === 'OWNER';
@@ -735,7 +777,12 @@ function DashboardShell({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="dashboard-shell sokar-page relative min-h-screen overflow-hidden">
+    <div
+      className={cn(
+        'dashboard-shell sokar-page relative min-h-screen overflow-hidden',
+        !sidebarExpanded && 'dashboard-shell--sidebar-compact',
+      )}
+    >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(var(--foreground)/0.10),transparent_36%),linear-gradient(hsl(var(--border)/0.18)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.14)_1px,transparent_1px)] bg-[auto,72px_72px,72px_72px] opacity-70" />
       <SubscribeFromPricing />
       <DashboardModeSwitcher
@@ -750,9 +797,16 @@ function DashboardShell({ children }: { children: ReactNode }) {
         salleView={searchParams.get('view') ?? ''}
         isSokarOperator={operatorAccess === true}
         onCreateOffer={() => setCreateOfferOpen(true)}
+        expanded={sidebarExpanded}
+        onExpandedChange={setSidebarExpanded}
       />
       <CreateOfferDialog open={createOfferOpen} onOpenChange={setCreateOfferOpen} />
-      <div className="dashboard-desktop-only fixed left-64 top-6 z-50 h-12 max-w-[calc(50vw-22rem)] items-center gap-3">
+      <div
+        className={cn(
+          'dashboard-desktop-only fixed top-6 z-50 h-12 items-center gap-3',
+          sidebarExpanded ? 'left-64 max-w-[calc(50vw-22rem)]' : 'left-24 max-w-[calc(50vw-18rem)]',
+        )}
+      >
         <SiteSwitcher />
       </div>
       <div className="dashboard-desktop-only fixed right-8 top-6 z-50 h-12 items-center gap-2">

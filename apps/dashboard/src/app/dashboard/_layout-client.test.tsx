@@ -38,6 +38,30 @@ function renderSwitcher() {
   return render(switcherTree());
 }
 
+it('affiche les icônes en mode replié et permet de déployer le menu', () => {
+  mocks.role = 'OWNER';
+  const change = vi.fn();
+  render(
+    <NextIntlClientProvider locale="fr" messages={messages}>
+      <TooltipProvider>
+        <DashboardSidebar
+          pathname="/dashboard"
+          salleView="service-live"
+          isSokarOperator={false}
+          onCreateOffer={vi.fn()}
+          expanded={false}
+          onExpandedChange={change}
+        />
+      </TooltipProvider>
+    </NextIntlClientProvider>,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Déployer le menu' }));
+  expect(change).toHaveBeenCalledWith(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Service' }));
+  expect(change).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole('link', { name: 'Réservations' })).not.toBeInTheDocument();
+});
+
 it('ferme le menu latéral au clic extérieur ou avec Échap, sans intercepter les actions', () => {
   mocks.role = 'OWNER';
   const outside = vi.fn();

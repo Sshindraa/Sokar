@@ -3635,3 +3635,7 @@ Pour les salles de dimensions comparables à la zone occupée, le cadrage initia
 ### 2026-11-02 — Navigation latérale du tableau de bord
 
 La navigation bureau affiche les rubriques et leurs sous-menus directement dans une barre latérale élargie ; la section active est ouverte à la navigation et un clic extérieur ou Échap la referme. La navigation tactile existante et les restrictions de rôle sont conservées.
+
+### 2026-11-03 — Navigation latérale repliable
+
+La navigation bureau démarre en barre d’icônes ; le bouton de menu ou une catégorie la déplie, et le contenu récupère l’espace lorsqu’elle est repliée. La navigation tactile conserve son fonctionnement.

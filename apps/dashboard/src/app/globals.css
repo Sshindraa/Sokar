@@ -1680,6 +1680,14 @@ body {
     padding-left: 16rem;
     padding-top: 0;
   }
+
+  .dashboard-shell--sidebar-compact .dashboard-shell-content {
+    padding-left: 6rem;
+  }
+
+  .dashboard-shell--sidebar-compact .dashboard-mode-switcher {
+    left: 6rem;
+  }
 }
 
 /*
