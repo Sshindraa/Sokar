@@ -260,51 +260,41 @@ export async function upsertMarketingPermission(
   };
 
   let registerFailed = false;
-  let permission: MarketingPermission;
-  try {
-    permission = await db.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM customers WHERE id = ${input.customerId} AND restaurant_id = ${input.restaurantId} FOR UPDATE`;
-      const contact = await assertCustomerTenant(input.customerId, input.restaurantId, tx);
-      const permission = await tx.marketingPermission.upsert({
-        ...permissionArgs,
-        where: { ...permissionArgs.where, restaurantId: input.restaurantId },
-      });
-      await tx.marketingPermissionEvent.create({
-        data: { ...eventData, restaurantId: input.restaurantId, permissionId: permission.id },
-      });
-
-      try {
-        await syncOptOutRegister(
-          {
-            restaurantId: input.restaurantId,
-            channel,
-            status: input.status,
-            source,
-            occurredAt,
-            contact,
-          },
-          tx,
-        );
-      } catch (error) {
-        registerFailed = true;
-        throw error;
-      }
-
-      return permission;
+  const permission = await db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM customers WHERE id = ${input.customerId} AND restaurant_id = ${input.restaurantId} FOR UPDATE`;
+    const contact = await assertCustomerTenant(input.customerId, input.restaurantId, tx);
+    const permission = await tx.marketingPermission.upsert({
+      ...permissionArgs,
+      where: { ...permissionArgs.where, restaurantId: input.restaurantId },
     });
-  } catch (error) {
-    if (registerFailed && input.status === MarketingPermissionStatus.OPTED_OUT) {
-      // Keep the current profile blocked and its proof event even if the durable register failed.
-      const kept = await db.marketingPermission.upsert({
-        ...permissionArgs,
-        where: { ...permissionArgs.where, restaurantId: input.restaurantId },
-      });
-      await db.marketingPermissionEvent.create({
-        data: { ...eventData, restaurantId: input.restaurantId, permissionId: kept.id },
-      });
+    await tx.marketingPermissionEvent.create({
+      data: { ...eventData, restaurantId: input.restaurantId, permissionId: permission.id },
+    });
+
+    // A failed PostgreSQL write must be rolled back before committing the withdrawal and proof.
+    await tx.$executeRaw`SAVEPOINT marketing_register`;
+    try {
+      await syncOptOutRegister(
+        {
+          restaurantId: input.restaurantId,
+          channel,
+          status: input.status,
+          source,
+          occurredAt,
+          contact,
+        },
+        tx,
+      );
+    } catch (error) {
+      if (input.status !== MarketingPermissionStatus.OPTED_OUT) throw error;
+      await tx.$executeRaw`ROLLBACK TO SAVEPOINT marketing_register`;
+      registerFailed = true;
     }
-    throw error;
-  }
+    await tx.$executeRaw`RELEASE SAVEPOINT marketing_register`;
+
+    return permission;
+  });
+  if (registerFailed) throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
   await appendCustomerTimelineEvent({
     restaurantId: input.restaurantId,
     customerId: input.customerId,

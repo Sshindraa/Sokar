@@ -12,6 +12,7 @@ import {
 vi.mock('../../../shared/db/client', () => ({
   db: {
     $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(db)),
     customer: { findFirst: vi.fn(), findUnique: vi.fn() },
     customerConsent: { findMany: vi.fn() },
@@ -190,15 +191,12 @@ describe('marketing permission projection', () => {
           occurredAt: new Date('2026-10-23T10:00:00.000Z'),
         }),
       ).rejects.toThrow('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
-      // Once in the rolled-back transaction, once in the fallback.
-      expect(db.marketingPermission.upsert).toHaveBeenCalledTimes(2);
+      expect(db.marketingPermission.upsert).toHaveBeenCalledTimes(1);
       expect(db.marketingPermission.upsert).toHaveBeenLastCalledWith(
         expect.objectContaining({ update: expect.objectContaining({ status: 'OPTED_OUT' }) }),
       );
-      expect(db.marketingPermissionEvent.create).toHaveBeenCalledTimes(2);
-      const [first, fallback] = vi.mocked(db.marketingPermissionEvent.create).mock.calls;
-      expect(fallback[0]).toEqual(first[0]);
-      expect(fallback[0].data).toMatchObject({
+      expect(db.marketingPermissionEvent.create).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(db.marketingPermissionEvent.create).mock.calls[0][0].data).toMatchObject({
         permissionId: 'permission-1',
         channel: 'EMAIL',
         status: 'OPTED_OUT',
@@ -225,18 +223,16 @@ describe('marketing permission projection', () => {
       expect(db.marketingPermissionEvent.create).toHaveBeenCalledTimes(1);
     });
 
-    it('lets a failing fallback error propagate', async () => {
-      optOut().upsert.mockRejectedValue(new Error('db down'));
-      vi.mocked(db.marketingPermission.upsert)
-        .mockResolvedValueOnce({ id: 'permission-1' } as never)
-        .mockRejectedValueOnce(new Error('fallback down'));
+    it('lets a failing proof write propagate without attempting the register', async () => {
+      vi.mocked(db.marketingPermissionEvent.create).mockRejectedValueOnce(new Error('proof down'));
       await expect(
         withdrawMarketingPermission({
           restaurantId: 'restaurant-1',
           customerId: 'customer-1',
           channel: 'EMAIL',
         }),
-      ).rejects.toThrow('fallback down');
+      ).rejects.toThrow('proof down');
+      expect(optOut().upsert).not.toHaveBeenCalled();
     });
 
     it('fails when the register key is missing', async () => {

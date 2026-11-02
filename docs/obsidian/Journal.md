@@ -3115,3 +3115,7 @@ Correctif local : une opposition échoue explicitement si son registre durable n
 ### 2026-10-30 — Opposition : concurrence locale
 
 La fiche client est verrouillée pendant la mise à jour transactionnelle de son consentement et du registre ; essai PostgreSQL concurrent accord/opposition réussi sur une même fiche. Le traitement des plaintes fournisseur et les scénarios impliquant plusieurs fiches ou un échec du registre restent à coordonner avant livraison. PR #620 en brouillon.
+
+### 2026-11-02 — Opposition marketing : repli atomique et qualification
+
+La permission et sa preuve restent dans la transaction verrouillée lorsque le registre échoue ; un point de sauvegarde PostgreSQL isole l'erreur du registre. Testé sur PostgreSQL local migré : erreur SQL du registre avec réinscription concurrente et échec de preuve ; les tests dédiés sont ajoutés à la CI. Le fichier de configuration de production contient une clé de registre valide et désactive les envois ; l'état effectif des processus reste à confirmer. La qualification de l'effacement, des plaintes fournisseur et des fiches multiples reste ouverte ; opposition et envois restent bloqués.

@@ -14,6 +14,7 @@ import {
 vi.mock('../../../shared/db/client', () => ({
   db: {
     $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(db)),
     customer: { findFirst: vi.fn(), findUnique: vi.fn() },
     marketingPermission: { upsert: vi.fn() },

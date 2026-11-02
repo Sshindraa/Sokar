@@ -131,4 +131,102 @@ describe.skipIf(!url)('marketing opt-out on PostgreSQL', () => {
       expect(registered).toBe(permission.status === 'OPTED_OUT' ? 1 : 0);
     }
   });
+
+  it('keeps withdrawal proof when a register write fails during a concurrent opt-in', async () => {
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+    const restaurant = await db.restaurant.create({
+      data: {
+        name: 'Failed register race',
+        managerPhone: '',
+        managerEmail: '',
+        phoneNumber: randomUUID(),
+        openingHours: {},
+      },
+    });
+    const customer = await db.customer.create({
+      data: { restaurantId: restaurant.id, phone: '+33612345670' },
+    });
+    await db.$executeRawUnsafe(`CREATE FUNCTION audit_fail_optout() RETURNS trigger AS $$
+      BEGIN PERFORM pg_sleep(0.5); RAISE EXCEPTION 'simulated register failure'; END;
+      $$ LANGUAGE plpgsql`);
+    await db.$executeRawUnsafe(`CREATE TRIGGER audit_fail_optout BEFORE INSERT ON marketing_opt_outs
+      FOR EACH ROW WHEN (NEW.source = 'AUDIT_FAIL') EXECUTE FUNCTION audit_fail_optout()`);
+    try {
+      const withdrawal = withdrawMarketingPermission({
+        restaurantId: restaurant.id,
+        customerId: customer.id,
+        channel: 'SMS',
+        source: 'AUDIT_FAIL',
+      });
+      const failed = expect(withdrawal).rejects.toThrow('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+      let waiting = false;
+      for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
+        const rows = await db.$queryRaw<{ waiting: boolean }[]>`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event = 'PgSleep'
+        ) AS waiting`;
+        waiting = rows[0].waiting;
+        if (!waiting) await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(waiting).toBe(true);
+      const optIn = upsertMarketingPermission({
+        restaurantId: restaurant.id,
+        customerId: customer.id,
+        channel: 'SMS',
+        status: 'OPTED_IN',
+        source: 'AUDIT_OPT_IN',
+        proofVersion: 'test',
+        proof: 'test',
+      });
+      await Promise.all([failed, optIn]);
+      const permission = await db.marketingPermission.findUniqueOrThrow({
+        where: { customerId_channel: { customerId: customer.id, channel: 'SMS' } },
+      });
+      expect(permission.status).toBe('OPTED_IN');
+      expect(
+        await db.marketingPermissionEvent.count({
+          where: { restaurantId: restaurant.id, customerId: customer.id, source: 'AUDIT_FAIL' },
+        }),
+      ).toBe(1);
+    } finally {
+      await db.$executeRawUnsafe('DROP TRIGGER audit_fail_optout ON marketing_opt_outs');
+      await db.$executeRawUnsafe('DROP FUNCTION audit_fail_optout()');
+    }
+  });
+
+  it('rolls back the withdrawal if its proof cannot be saved', async () => {
+    const restaurant = await db.restaurant.create({
+      data: {
+        name: 'Failed proof',
+        managerPhone: '',
+        managerEmail: '',
+        phoneNumber: randomUUID(),
+        openingHours: {},
+      },
+    });
+    const customer = await db.customer.create({
+      data: { restaurantId: restaurant.id, phone: '+33612345671' },
+    });
+    await db.$executeRawUnsafe(`CREATE FUNCTION audit_fail_proof() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'simulated proof failure'; END; $$ LANGUAGE plpgsql`);
+    await db.$executeRawUnsafe(`CREATE TRIGGER audit_fail_proof BEFORE INSERT ON marketing_permission_events
+      FOR EACH ROW WHEN (NEW.source = 'AUDIT_PROOF_FAIL') EXECUTE FUNCTION audit_fail_proof()`);
+    try {
+      await expect(
+        withdrawMarketingPermission({
+          restaurantId: restaurant.id,
+          customerId: customer.id,
+          channel: 'SMS',
+          source: 'AUDIT_PROOF_FAIL',
+        }),
+      ).rejects.toThrow();
+      expect(
+        await db.marketingPermission.count({
+          where: { restaurantId: restaurant.id, customerId: customer.id },
+        }),
+      ).toBe(0);
+    } finally {
+      await db.$executeRawUnsafe('DROP TRIGGER audit_fail_proof ON marketing_permission_events');
+      await db.$executeRawUnsafe('DROP FUNCTION audit_fail_proof()');
+    }
+  });
 });
