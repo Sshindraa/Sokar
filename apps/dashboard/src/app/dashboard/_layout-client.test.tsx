@@ -34,6 +34,20 @@ function renderSwitcher() {
 }
 
 describe('DashboardModeSwitcher : Companion', () => {
+  it('garde trois rubriques de même largeur et le menu des salles accessible', () => {
+    mocks.role = 'OWNER';
+    render(
+      <NextIntlClientProvider locale="fr" messages={messages}>
+        <DashboardModeSwitcher salleMode />
+      </NextIntlClientProvider>,
+    );
+
+    const nav = screen.getByRole('navigation', { name: 'Espaces Sokar' });
+    for (const item of Array.from(nav.children)) expect(item).toHaveClass('flex-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Choisir un plan de salle' }));
+    expect(screen.getByRole('listbox', { name: 'Plans de salle' })).toBeInTheDocument();
+  });
+
   it.each(['STAFF', 'READ_ONLY'])('masque le bouton Companion pour le rôle %s', (role) => {
     mocks.role = role;
     renderSwitcher();

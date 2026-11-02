@@ -286,14 +286,14 @@ export function DashboardModeSwitcher({
         <div
           className={cn(
             'dashboard-mode-switcher__item group relative flex min-w-0 items-center justify-center rounded-full font-medium transition-all duration-200',
-            'h-10 flex-[2] px-1 text-sm',
+            'h-10 flex-1 px-1 text-sm',
             'bg-primary text-primary-foreground shadow-sm',
           )}
         >
           <Link
             href={salleHref}
             aria-current="page"
-            className="absolute inset-0 z-0 flex min-w-0 items-center justify-center rounded-full py-2 pl-3 pr-10 hover:text-primary-foreground"
+            className="absolute inset-0 z-0 flex min-w-0 items-center justify-center rounded-full px-10 py-2 hover:text-primary-foreground"
           >
             <span className="max-w-full truncate">{salleLabel}</span>
           </Link>
