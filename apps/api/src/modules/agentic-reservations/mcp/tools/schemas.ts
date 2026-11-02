@@ -53,14 +53,14 @@ export type SearchRestaurantsInput = z.infer<typeof SearchRestaurantsInputSchema
 // ─── get_restaurant_details ─────────────────────────────────────
 
 export const GetRestaurantDetailsInputSchema = z.object({
-  restaurantId: z.string().uuid(),
+  restaurantId: z.string().guid(),
 });
 export type GetRestaurantDetailsInput = z.infer<typeof GetRestaurantDetailsInputSchema>;
 
 // ─── check_availability ─────────────────────────────────────────
 
 export const CheckAvailabilityInputSchema = z.object({
-  restaurantId: z.string().uuid(),
+  restaurantId: z.string().guid(),
   partySize: z.number().int().min(1).max(50),
   slotStart: McpDateTimeSchema,
   slotEnd: McpDateTimeSchema.optional().describe(
@@ -72,7 +72,7 @@ export type CheckAvailabilityInput = z.infer<typeof CheckAvailabilityInputSchema
 
 // Quotes and holds affect a requested time range, so they require an explicit end.
 const ExplicitReservationSlotInputSchema = z.object({
-  restaurantId: z.string().uuid(),
+  restaurantId: z.string().guid(),
   partySize: z.number().int().min(1).max(50),
   slotStart: McpDateTimeSchema,
   slotEnd: McpDateTimeSchema,
@@ -84,7 +84,7 @@ export const CreateHoldInputSchema = ExplicitReservationSlotInputSchema;
 // ─── create_reservation ──────────────────────────────────────────
 
 export const CreateReservationInputSchema = z.object({
-  restaurantId: z.string().uuid(),
+  restaurantId: z.string().guid(),
   partySize: z.number().int().min(1).max(50),
   startsAt: McpDateTimeSchema,
   endsAt: McpDateTimeSchema,
@@ -110,7 +110,7 @@ export type CreateReservationInput = z.infer<typeof CreateReservationInputSchema
 // ─── cancel_reservation ──────────────────────────────────────────
 
 export const CancelReservationInputSchema = z.object({
-  reservationId: z.string().uuid(),
+  reservationId: z.string().guid(),
   customerPhone: z
     .string()
     .regex(/^\+[1-9]\d{9,14}$/)
@@ -121,7 +121,7 @@ export type CancelReservationInput = z.infer<typeof CancelReservationInputSchema
 
 export const ModifyReservationInputSchema = z
   .object({
-    reservationId: z.string().uuid(),
+    reservationId: z.string().guid(),
     customerPhone: z
       .string()
       .regex(/^\+[1-9]\d{9,14}$/)
@@ -143,7 +143,7 @@ export type ModifyReservationInput = z.infer<typeof ModifyReservationInputSchema
 // ─── get_reservation_status (interne) ────────────────────────────
 
 export const GetReservationStatusInputSchema = z.object({
-  reservationId: z.string().uuid(),
+  reservationId: z.string().guid(),
   customerPhone: z
     .string()
     .regex(/^\+[1-9]\d{9,14}$/)
@@ -152,7 +152,7 @@ export const GetReservationStatusInputSchema = z.object({
 export type GetReservationStatusInput = z.infer<typeof GetReservationStatusInputSchema>;
 
 export const JoinWaitingListInputSchema = z.object({
-  restaurantId: z.string().uuid(),
+  restaurantId: z.string().guid(),
   partySize: z.number().int().min(1).max(50),
   slotStart: McpDateTimeSchema,
   slotEnd: McpDateTimeSchema,
@@ -178,14 +178,14 @@ export const JoinWaitingListInputSchema = z.object({
 });
 
 export const CancelWaitingListInputSchema = z.object({
-  restaurantId: z.string().uuid(),
-  entryId: z.string().uuid(),
+  restaurantId: z.string().guid(),
+  entryId: z.string().guid(),
   actionToken: z.string().min(20).max(100),
 });
 
 // ─── output schemas MCP ────────────────────────────────────────
 
-const OutputUuidSchema = z.string().uuid();
+const OutputUuidSchema = z.string().guid();
 const OutputDateTimeSchema = z.string();
 const NullableOutputStringSchema = z.string().nullable();
 

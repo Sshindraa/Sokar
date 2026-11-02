@@ -23,7 +23,7 @@ const optionalText = (max: number) =>
     .transform((value) => (value ? value : undefined));
 
 const PublicDemoRequestBody = z.object({
-  idempotencyKey: z.string().uuid(),
+  idempotencyKey: z.string().guid(),
   establishmentName: z.string().trim().min(2).max(120),
   contactEmail: z
     .string()

@@ -824,10 +824,27 @@ describeIntegration('concurrency — un créneau gardé bloque une table, pas le
       }),
     ).toBe(true);
     await prisma.reservation.update({ where: { id: row.id }, data: { tableId: null } });
-    const candidate = await prisma.$transaction((tx) =>
-      allocation.allocate({ restaurantId: multiRestaurantId, partySize: 2, ...interval }, tx),
-    );
-    expect(candidate).toBeNull();
+    const allocate = () =>
+      prisma.$transaction((tx) =>
+        allocation.allocate({ restaurantId: multiRestaurantId, partySize: 2, ...interval }, tx),
+      );
+    // Sans table, l'ancienne réservation n'occupe qu'une table : il en reste une pour le candidat.
+    expect(await allocate()).not.toBeNull();
+    // Les autres tables prises, sa durée reconstruite au-delà de minuit occupe la dernière.
+    await prisma.reservation.createMany({
+      data: multiTableIds.slice(1).map((tableId) => ({
+        restaurantId: multiRestaurantId,
+        tableId,
+        reservedAt: interval.startsAt,
+        startsAt: interval.startsAt,
+        endsAt: interval.endsAt,
+        partySize: 2,
+        customerName: 'Occupée',
+        state: 'CONFIRMED' as const,
+        status: 'CONFIRMED' as const,
+      })),
+    });
+    expect(await allocate()).toBeNull();
   });
 
   it('ignore les réservations test avec et sans table dans les contrôles de capacité', async () => {

@@ -35,7 +35,7 @@ selon le suivi courant.
 
 - **Dashboard** : espace privé restaurateur (Next.js + Clerk).
 - **Sokar Connect** : site public et widget de réservation (Next.js).
-- **Voice** : agent téléphonique (Telnyx + ElevenLabs + Cartesia TTS).
+- **Voice** : assistant vocal, une fonction de la plateforme (Telnyx + ElevenLabs + Cartesia TTS).
 - **MCP / OpenAI Reserve** : couche agentic pour ChatGPT, Claude, etc.
 
 ## Layout du monorepo

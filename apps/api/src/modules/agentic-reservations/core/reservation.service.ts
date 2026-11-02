@@ -55,6 +55,7 @@ import {
 import { GiftCardService } from '../../gift-cards/gift-card.service.js';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
+import { findUnassignedSeatingConflict } from '../../floor-plan/unassigned-seating.js';
 import type { GiftCardApplicationResult } from '../../gift-cards/gift-card.types.js';
 import {
   IDEMPOTENCY_POLL_INTERVAL_MS,
@@ -322,22 +323,23 @@ export class ReservationService {
         let consumedHoldId: string | null = null;
         let shouldConsumeAfterReservation = false;
 
-        // Les réservations/holds sans table utilisent une capacité globale
-        // conservatrice. Le verrou advisory est posé au niveau du restaurant
-        // (et non du seul startsAt) : deux créneaux qui se chevauchent doivent
-        // être sérialisés, sinon chacun pourrait lire l'absence de blocker
-        // avant le commit de l'autre.
+        // Le verrou advisory est posé au niveau du restaurant (et non du seul
+        // startsAt) : deux créneaux qui se chevauchent doivent être sérialisés,
+        // sinon chacun pourrait lire l'absence de conflit avant le commit de
+        // l'autre. Le verdict de placement est celui de la disponibilité.
         await this.lockCapacitySlot(tx, input.restaurantId);
-        const globalBlocker = input.allowOverbook
+        const seating = input.allowOverbook
           ? null
-          : await this.findGlobalUnassignedBlocker(tx, {
+          : await findUnassignedSeatingConflict(tx, {
               restaurantId: input.restaurantId,
+              partySize: input.partySize,
               startsAt: input.startsAt,
               endsAt: input.endsAt,
+              tableId,
               now,
               excludeHoldId: holdId,
             });
-        if (globalBlocker) {
+        if (seating?.conflict) {
           throw new ReservationSlotUnavailableError(
             input.restaurantId,
             input.startsAt,
@@ -488,8 +490,9 @@ export class ReservationService {
           }
         }
 
+        // Avec un plan de salle, le verdict de placement couvre déjà les réservations et holds.
         const blockingReservation =
-          input.allowOverbook || tableId
+          input.allowOverbook || tableId || seating?.hasTables
             ? null
             : await this.findBlockingReservation(tx, {
                 restaurantId: input.restaurantId,
@@ -504,7 +507,7 @@ export class ReservationService {
             input.partySize,
           );
         }
-        if (!input.allowOverbook && !tableId) {
+        if (!input.allowOverbook && !tableId && !seating?.hasTables) {
           const blockingHold = await tx.agenticHold.findFirst({
             where: {
               restaurantId: input.restaurantId,
@@ -892,14 +895,16 @@ export class ReservationService {
       let tableId = current.tableId;
       if (capacityChanged) {
         if (!endsAt) throw new ReservationModificationNotAllowedError();
-        const blocker = await this.findGlobalUnassignedBlocker(tx, {
+        const seating = await findUnassignedSeatingConflict(tx, {
           restaurantId: args.restaurantId,
+          partySize,
           startsAt,
           endsAt,
+          tableId,
           now: new Date(),
           excludeReservationId: current.id,
         });
-        if (blocker) {
+        if (seating.conflict) {
           throw new ReservationSlotUnavailableError(args.restaurantId, startsAt, partySize);
         }
         if (tableId) {
@@ -917,7 +922,7 @@ export class ReservationService {
             throw new ReservationSlotUnavailableError(args.restaurantId, startsAt, partySize);
           }
           tableId = table.id;
-        } else {
+        } else if (!seating.hasTables) {
           const otherReservation = await tx.reservation.findFirst({
             where: {
               restaurantId: args.restaurantId,
@@ -1141,54 +1146,6 @@ export class ReservationService {
       },
       select: { id: true },
     });
-  }
-
-  private async findGlobalUnassignedBlocker(
-    tx: Prisma.TransactionClient,
-    args: {
-      restaurantId: string;
-      startsAt: Date;
-      endsAt: Date;
-      now: Date;
-      excludeHoldId?: string | null;
-      excludeReservationId?: string;
-    },
-  ): Promise<{ kind: 'reservation' | 'hold'; id: string } | null> {
-    const settings = await tx.restaurantExposureSettings.findUnique({
-      where: { restaurantId: args.restaurantId },
-      select: { capacitySpecials: true },
-    });
-    const reservation = await tx.reservation.findFirst({
-      where: {
-        restaurantId: args.restaurantId,
-        isTest: false,
-        ...(args.excludeReservationId ? { id: { not: args.excludeReservationId } } : {}),
-        tableId: null,
-        state: { in: [...ACTIVE_RESERVATION_STATES] },
-        OR: reservationOverlapWhere(
-          args.startsAt,
-          args.endsAt,
-          resolveServiceDurationMinutes(settings?.capacitySpecials),
-        ),
-      },
-      select: { id: true },
-    });
-    if (reservation) return { kind: 'reservation', id: reservation.id };
-
-    const hold = await tx.agenticHold.findFirst({
-      where: {
-        restaurantId: args.restaurantId,
-        type: 'HOLD',
-        status: 'ACTIVE',
-        tableId: null,
-        expiresAt: { gt: args.now },
-        ...(args.excludeHoldId ? { id: { not: args.excludeHoldId } } : {}),
-        slotStart: { lt: args.endsAt },
-        slotEnd: { gt: args.startsAt },
-      },
-      select: { id: true },
-    });
-    return hold ? { kind: 'hold', id: hold.id } : null;
   }
 
   private async lockCapacitySlot(

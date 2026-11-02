@@ -3,11 +3,16 @@ import { MarketingCampaignStatus, MarketingMessageStatus } from '@prisma/client'
 import type { Job } from 'bullmq';
 import type { PrismaClient } from '@prisma/client';
 import { marketingOptOutHash } from '../marketing-opt-out.service';
+import { isTargetServiceFull } from '../fill-service.service';
 import {
   marketingRecipientAllowlist,
   processMarketingCampaignJob,
   type MarketingCampaignWorkerDependencies,
 } from '../marketing-campaign.worker';
+
+vi.mock('../fill-service.service', () => ({
+  isTargetServiceFull: vi.fn().mockResolvedValue(false),
+}));
 
 function makeJob(): Job<{ campaignId: string; restaurantId: string }> {
   return {
@@ -343,6 +348,36 @@ describe('marketing campaign worker', () => {
       }),
     );
   });
+  it('se met en pause sans rien envoyer quand le service visé est complet', async () => {
+    const { db, deps, sendSms } = makeDependencies();
+    vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);
+    vi.mocked(db.marketingCampaign.findFirst).mockResolvedValueOnce({
+      id: 'campaign-1',
+      restaurantId: 'restaurant-1',
+      channel: 'SMS',
+      status: MarketingCampaignStatus.READY,
+      subject: null,
+      bodyTemplate: 'Bonjour {{customer.firstName}} {{unsubscribeUrl}}',
+      restaurant: { name: 'Chez Sokar', slug: 'chez-sokar' },
+      targetServiceStart: new Date('2026-11-04T11:00:00.000Z'),
+      targetServiceEnd: new Date('2026-11-04T15:00:00.000Z'),
+    } as never);
+    vi.mocked(db.campaignMessage.count).mockResolvedValueOnce(1);
+    vi.mocked(isTargetServiceFull).mockResolvedValueOnce(true);
+
+    await expect(processMarketingCampaignJob(makeJob(), deps)).resolves.toEqual({
+      processed: 0,
+      accepted: 0,
+      failed: 0,
+    });
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(db.marketingCampaign.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: MarketingCampaignStatus.PAUSED, lastErrorCode: 'TARGET_SERVICE_FULL' },
+      }),
+    );
+  });
+
   it('lit la liste blanche sans tenir compte de la casse ni des espaces', () => {
     expect(marketingRecipientAllowlist({})).toBeNull();
     expect(marketingRecipientAllowlist({ MARKETING_RECIPIENT_ALLOWLIST: ' , ' })).toBeNull();

@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+import { ServiceFillReport, type ServiceFillReportData } from './ServiceFillReport';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,6 +83,8 @@ type CampaignReport = {
     confirmedRevenue: number;
   };
   cost: { amount: number | string | null; currency: string; status: string };
+  /** Présent seulement pour une campagne de remplissage de service. */
+  serviceFill?: ServiceFillReportData;
 };
 
 type ProviderReadiness = {
@@ -324,6 +327,17 @@ export default function MarketingPage() {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<AutomationType, DraftErrors>>>({});
   const [editingAutomation, setEditingAutomation] = useState<AutomationType | null>(null);
   const [campaignToCancel, setCampaignToCancel] = useState<Campaign | null>(null);
+  // Campagne créée depuis le remplissage de service : mise en évidence et amenée à l'écran.
+  const [highlightedCampaign, setHighlightedCampaign] = useState<string | null>(null);
+
+  useEffect(() => {
+    setHighlightedCampaign(new URLSearchParams(window.location.search).get('campaign'));
+  }, []);
+
+  useEffect(() => {
+    if (!highlightedCampaign) return;
+    document.getElementById(`campaign-${highlightedCampaign}`)?.scrollIntoView({ block: 'center' });
+  }, [highlightedCampaign, campaigns.length]);
 
   const load = useCallback(async () => {
     if (!orgId) {
@@ -606,7 +620,11 @@ export default function MarketingPage() {
             {campaigns.map((campaign) => {
               const report = reports[campaign.id];
               return (
-                <Card key={campaign.id}>
+                <Card
+                  key={campaign.id}
+                  id={`campaign-${campaign.id}`}
+                  className={cn(highlightedCampaign === campaign.id && 'ring-2 ring-primary')}
+                >
                   <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between md:p-5">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -674,6 +692,7 @@ export default function MarketingPage() {
                           </span>
                         </div>
                       )}
+                      {report?.serviceFill && <ServiceFillReport fill={report.serviceFill} />}
                     </div>
                     <div className="flex flex-wrap gap-2 md:justify-end">
                       {campaign.status === 'DRAFT' ? (

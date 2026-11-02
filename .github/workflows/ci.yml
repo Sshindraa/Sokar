@@ -244,6 +244,11 @@ jobs:
       - name: Run API integration suite
         run: pnpm --filter @sokar/api test:int
 
+      - name: Test inbound review deduplication on Redis
+        env:
+          REDIS_INBOUND_REVIEW_TEST_URL: redis://127.0.0.1:6379/14
+        run: pnpm --filter @sokar/api exec vitest run src/modules/sms/__tests__/inbound-review.redis.integration.test.ts
+
   # ─────────────────────────────────────────────────────────────
   # Dashboard: ESLint CLI (flat config), TypeScript via tsc --noEmit,
   # and next build (catches server/client component boundary errors).

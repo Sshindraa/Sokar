@@ -22,11 +22,7 @@ import type {
 } from './floor-plan.types';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
 import { CapacityAwareAvailabilityService } from './availability-capacity-aware.service.js';
-import {
-  ACTIVE_RESERVATION_STATES,
-  reservationOverlapWhere,
-} from '../../shared/reservations/capacity.js';
-import { resolveServiceDurationMinutes } from './floor-plan.types';
+import { findUnassignedSeatingConflict } from './unassigned-seating.js';
 
 export class TableAllocationService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -243,6 +239,8 @@ export class TableAllocationService {
             partySize: reservation.partySize,
             startsAt: reservation.startsAt as Date,
             endsAt: reservation.endsAt as Date,
+            excludeReservationId: reservation.id,
+            tableId: newTableId,
           },
           tx,
         )
@@ -327,6 +325,8 @@ export class TableAllocationService {
           partySize: args.partySize,
           startsAt: args.startsAt,
           endsAt: args.endsAt,
+          excludeReservationId: args.excludeReservationId,
+          tableId: args.tableId,
         },
         tx,
       )
@@ -516,47 +516,26 @@ export class TableAllocationService {
     return rows.length > 0 && Number(rows[0].exists) === 1;
   }
 
+  /**
+   * Conflit de placement pour un groupe sans table fixée : même verdict que la création et la
+   * disponibilité (voir unassigned-seating.ts).
+   */
   private async hasGlobalCapacityConflict(
-    input: AllocateTableInput,
+    input: AllocateTableInput & { tableId?: string | null },
     tx?: Prisma.TransactionClient,
     excludeHoldId?: string,
   ): Promise<boolean> {
-    const prisma = tx ?? this.prisma;
-    const settings = await prisma.restaurantExposureSettings.findUnique({
-      where: { restaurantId: input.restaurantId },
-      select: { capacitySpecials: true },
+    const { conflict } = await findUnassignedSeatingConflict(tx ?? this.prisma, {
+      restaurantId: input.restaurantId,
+      partySize: input.partySize,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      tableId: input.tableId ?? null,
+      now: new Date(),
+      excludeReservationId: input.excludeReservationId,
+      excludeHoldId: excludeHoldId ?? null,
     });
-    const reservation = await prisma.reservation.findFirst({
-      where: {
-        restaurantId: input.restaurantId,
-        isTest: false,
-        tableId: null,
-        ...(input.excludeReservationId ? { id: { not: input.excludeReservationId } } : {}),
-        state: { in: [...ACTIVE_RESERVATION_STATES] },
-        OR: reservationOverlapWhere(
-          input.startsAt,
-          input.endsAt,
-          resolveServiceDurationMinutes(settings?.capacitySpecials),
-        ),
-      },
-      select: { id: true },
-    });
-    if (reservation) return true;
-
-    const hold = await prisma.agenticHold.findFirst({
-      where: {
-        restaurantId: input.restaurantId,
-        type: 'HOLD',
-        status: 'ACTIVE',
-        tableId: null,
-        expiresAt: { gt: new Date() },
-        ...(excludeHoldId ? { id: { not: excludeHoldId } } : {}),
-        slotStart: { lt: input.endsAt },
-        slotEnd: { gt: input.startsAt },
-      },
-      select: { id: true },
-    });
-    return Boolean(hold);
+    return conflict;
   }
 
   async lockRestaurantCapacity(tx: Prisma.TransactionClient, restaurantId: string): Promise<void> {

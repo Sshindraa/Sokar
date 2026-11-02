@@ -10,6 +10,7 @@
 
 - [ ] Réponses SMS/WhatsApp Telnyx : protéger les réponses non corrélées ; revue par référence fournisseur en préparation, sans numéro ni contenu. La consultation Telnyx et le traitement opérateur restent à qualifier ; la disponibilité et la durée de reprise fournisseur ne sont pas garanties. Voir `docs/runbooks/inbound-reply-review.md`.
 
+- [ ] Marketing : avant tout envoi réel, rouvrir l'effacement et l'opposition, et mentionner le ciblage selon l'historique dans la notice client (`privacy-client-annex.md`).
 - [ ] Incident RGPD : vérification SMS et export rouverts en production ; effacement et opposition marketing restent bloqués (503) jusqu’à correction. Correctif SMS livré et qualifié en staging ; examiner les anciens journaux. Les demandes manuelles passent par privacy@sokar.tech.
 
 - [ ] Notifications : #484 qualifiée staging/off prod; WEB/outbox/WhatsApp locaux. Annulation/modification #485–#487 actives et qualifiées staging; liens off prod. Après délai : contact, aucun frais auto.
@@ -50,6 +51,8 @@
 - [ ] ChatGPT/OpenAI Reserve : Cloudflare Pages publié ; l’URL `.html` redirige (308) vers `/restaurant-reservation` (200), CORS prod vérifié. Accord « ChatGPT merchants » non confirmé ; attendre l’accord avant activation.
 
 ## Décisions récentes
+
+- 2026-10-31 — [Companion] Modèle de production : Claude Sonnet 5.5 (`anthropic/claude-sonnet-5.5`), raisonnement bas, pour tous les restaurants ; aucun réglage par restaurant ni aiguillage entre modèles. Banc : questions simples 105/105 contre 101/105 pour Haiku, ancrage 139/141.
 
 - 2026-10-28 — [Fidélité et intégrations] Fidélité manuelle ouverte à Pro/Multi-site après livraison ; POS et groupes restent coupés jusqu’au premier client L’Addition / multi-site.
 

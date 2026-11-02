@@ -181,11 +181,11 @@ const UpdateRestaurantSchema = RestaurantProfileSchema.omit({ phoneNumber: true 
 
 const OnboardingPlaceSearchSchema = z.object({
   query: z.string().trim().min(2).max(120),
-  sessionToken: z.string().uuid(),
+  sessionToken: z.string().guid(),
 });
 const OnboardingPlaceDetailsSchema = z.object({
   placeId: z.string().trim().min(5).max(200),
-  sessionToken: z.string().uuid(),
+  sessionToken: z.string().guid(),
 });
 
 const UpdateConnectSchema = z.object({

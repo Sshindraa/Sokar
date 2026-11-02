@@ -30,10 +30,28 @@ function makeService(
 ) {
   let current = { ...original, ...overrides, specialRequests: null as string | null };
   const tx = {
+    restaurant: { findUnique: vi.fn().mockResolvedValue({ timezone: 'Europe/Paris' }) },
     restaurantExposureSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+    table: { findMany: vi.fn().mockResolvedValue([]) },
     $executeRaw: vi.fn().mockResolvedValue(1),
     $queryRaw: vi.fn().mockResolvedValue([{ id: reservationId }]),
     reservation: {
+      // Un bloqueur sans table couvre toute la journée : aucun placement ne peut l'absorber.
+      findMany: vi.fn().mockImplementation(async () =>
+        blocker
+          ? [
+              {
+                id: 'other',
+                partySize: 2,
+                tableId: null,
+                reservedAt: new Date('2026-12-02T00:00:00Z'),
+                startsAt: new Date('2026-12-02T00:00:00Z'),
+                endsAt: new Date('2026-12-03T00:00:00Z'),
+                createdAt: new Date('2026-11-01T00:00:00Z'),
+              },
+            ]
+          : [],
+      ),
       // Deux lectures distinctes : la réservation verrouillée (where.id) et un
       // éventuel bloqueur de créneau. Le mock les distingue par le where.
       findFirst: vi
@@ -52,7 +70,10 @@ function makeService(
         return current;
       }),
     },
-    agenticHold: { findFirst: vi.fn().mockResolvedValue(null) },
+    agenticHold: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     reservationAuditLog: { create: vi.fn().mockResolvedValue({}) },
   };
   const prisma = {
