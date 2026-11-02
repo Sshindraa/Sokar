@@ -194,6 +194,18 @@
       "inconclusive": "Non concluant : moins de 20 clients dans le témoin."
     },
     "back": "Tableau de bord",
-    "closed": "Le restaurant n’ouvre pas ce service ce jour-là : rien à remplir."
+    "closed": "Le restaurant n’ouvre pas ce service ce jour-là : rien à remplir.",
+    "suggestions": {
+      "title": "Services creux à remplir",
+      "subtitle": "Services des prochains jours où il devrait rester des places vides, d’après vos réservations passées.",
+      "empty": "Aucun service creux à remplir pour le moment.",
+      "emptyPlaces": "{count, plural, one {# place vide probable} other {# places vides probables}}",
+      "sourceSimple": "Estimation sans historique suffisant",
+      "prepare": "Préparer",
+      "dismiss": "Ignorer",
+      "dismissError": "Impossible d’ignorer ce service pour le moment. Réessayez.",
+      "midi": "Midi",
+      "soir": "Soir"
+    }
   }
 }

@@ -14,11 +14,12 @@ function renderWidget() {
 
 // Mock contrôlable du hook useApi — on délègue à un objet mutable
 const mockGet = vi.fn();
+const mockPost = vi.fn();
 const mockUseApi = vi.fn(() => ({
   orgId: 'org_test_123' as string | undefined,
   isSignedIn: true,
   get: mockGet,
-  post: vi.fn(),
+  post: mockPost,
   put: vi.fn(),
   patch: vi.fn(),
   del: vi.fn(),
@@ -60,6 +61,26 @@ function makeResponse(
   };
 }
 
+function makeSuggestion(overrides: Record<string, unknown> = {}) {
+  return {
+    date: '2026-11-04',
+    service: 'midi',
+    capacity: 40,
+    freePlaces: 30,
+    emptyPlaces: 18,
+    forecastSource: 'historique',
+    ...overrides,
+  };
+}
+
+// Répond selon l'URL : une valeur Error fait échouer la route, sinon elle répond la valeur.
+function routeGet(routes: { suggestions?: unknown; emptySlots?: unknown }) {
+  mockGet.mockImplementation((path: string) => {
+    const value = path === 'marketing/fill-suggestions' ? routes.suggestions : routes.emptySlots;
+    return value instanceof Error ? Promise.reject(value) : Promise.resolve(value);
+  });
+}
+
 describe('EmptySlotsWidget', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -67,11 +88,13 @@ describe('EmptySlotsWidget', () => {
       orgId: 'org_test_123',
       isSignedIn: true,
       get: mockGet,
-      post: vi.fn(),
+      post: mockPost,
       put: vi.fn(),
       patch: vi.fn(),
       del: vi.fn(),
     });
+    // Par défaut la route des suggestions est refusée : la vue actuelle reste affichée.
+    routeGet({ suggestions: new Error('Forbidden') });
   });
 
   it('état loading : affiche un skeleton', () => {
@@ -83,8 +106,7 @@ describe('EmptySlotsWidget', () => {
   });
 
   it('état error : annonce la panne avec un bouton pour réessayer, sans afficher la grille', async () => {
-    mockGet.mockRejectedValueOnce(new Error('Network error'));
-    mockGet.mockResolvedValueOnce(makeResponse([makeDay({ date: '2026-07-01' })], {}));
+    routeGet({ suggestions: new Error('Forbidden'), emptySlots: new Error('Network error') });
     renderWidget();
 
     // Une panne ne doit pas ressembler à « aucun jour à renforcer ».
@@ -93,12 +115,16 @@ describe('EmptySlotsWidget', () => {
       screen.queryByText('Au moins 3 réservations sur chaque journée ouverte.'),
     ).not.toBeInTheDocument();
 
+    routeGet({
+      suggestions: new Error('Forbidden'),
+      emptySlots: makeResponse([makeDay({ date: '2026-07-01' })], {}),
+    });
     fireEvent.click(screen.getByRole('button', { name: /réessayer/i }));
 
     await waitFor(() => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
-    expect(mockGet).toHaveBeenCalledTimes(2);
+    expect(mockGet).toHaveBeenCalledTimes(4);
   });
 
   it('état data : affiche les jours sous-réservés (actionableDays)', async () => {
@@ -117,7 +143,10 @@ describe('EmptySlotsWidget', () => {
       makeDay({ date: '2026-07-05', dayName: 'dim', isOpen: false }),
       makeDay({ date: '2026-07-06', dayName: 'lun', reservationCount: 7 }),
     ];
-    mockGet.mockResolvedValue(makeResponse(days, { underbookedDays: 1, revenueAtRisk: 120 }));
+    routeGet({
+      suggestions: new Error('Forbidden'),
+      emptySlots: makeResponse(days, { underbookedDays: 1, revenueAtRisk: 120 }),
+    });
 
     renderWidget();
 
@@ -156,7 +185,10 @@ describe('EmptySlotsWidget', () => {
       makeDay({ date: '2026-07-10', dayName: 'mar' }),
       makeDay({ date: '2026-07-11', dayName: 'mer' }),
     ];
-    mockGet.mockResolvedValue(makeResponse(days, { underbookedDays: 0 }));
+    routeGet({
+      suggestions: new Error('Forbidden'),
+      emptySlots: makeResponse(days, { underbookedDays: 0 }),
+    });
 
     renderWidget();
 
@@ -172,12 +204,112 @@ describe('EmptySlotsWidget', () => {
       orgId: undefined,
       isSignedIn: false,
       get: mockGet,
-      post: vi.fn(),
+      post: mockPost,
       put: vi.fn(),
       patch: vi.fn(),
       del: vi.fn(),
     });
     const { container } = renderWidget();
     expect(container.firstChild).toBeNull();
+  });
+
+  describe('suggestions de services creux', () => {
+    it('affiche service, places vides et lien Préparer', async () => {
+      routeGet({ suggestions: { data: [makeSuggestion()] }, emptySlots: makeResponse([]) });
+      renderWidget();
+
+      expect(await screen.findByText('Midi')).toBeInTheDocument();
+      expect(screen.getByText(/18 places vides/)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Préparer' })).toHaveAttribute(
+        'href',
+        '/dashboard/marketing/fill-service?date=2026-11-04&service=midi',
+      );
+      expect(screen.queryByText(/Estimation sans historique suffisant/)).not.toBeInTheDocument();
+    });
+
+    it('liste vide : annonce qu’il n’y a rien à remplir', async () => {
+      routeGet({ suggestions: { data: [] }, emptySlots: makeResponse([]) });
+      renderWidget();
+
+      expect(
+        await screen.findByText('Aucun service creux à remplir pour le moment.'),
+      ).toBeInTheDocument();
+    });
+
+    it('route en 403 ou en panne : vue actuelle, avec ses 3 jours et ses libellés', async () => {
+      const days = ['01', '02', '03', '04'].map((d) =>
+        makeDay({ date: `2026-07-${d}`, reservationCount: 1, isUnderbooked: true }),
+      );
+      routeGet({
+        suggestions: new Error('Forbidden'),
+        emptySlots: makeResponse(days, { underbookedDays: 4 }),
+      });
+      renderWidget();
+
+      expect(await screen.findByText('Journées peu remplies')).toBeInTheDocument();
+      expect(screen.getAllByRole('link', { name: 'Remplir ce service' })).toHaveLength(3);
+      expect(screen.getByText('+1 autre jour')).toBeInTheDocument();
+      expect(screen.queryByText('Aucun service creux à remplir pour le moment.')).toBeNull();
+    });
+
+    it('les deux routes en panne : DataFetchError', async () => {
+      routeGet({ suggestions: new Error('Panne A'), emptySlots: new Error('Panne B') });
+      renderWidget();
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Panne B');
+    });
+
+    it('suggestions OK et empty-slots en panne : affiche les suggestions, sans erreur', async () => {
+      routeGet({ suggestions: { data: [makeSuggestion()] }, emptySlots: new Error('Panne') });
+      renderWidget();
+
+      expect(await screen.findByText('Midi')).toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('Ignorer : POST dismiss, la ligne disparaît', async () => {
+      routeGet({
+        suggestions: {
+          data: [makeSuggestion(), makeSuggestion({ date: '2026-11-05', service: 'soir' })],
+        },
+        emptySlots: makeResponse([]),
+      });
+      mockPost.mockResolvedValue({});
+      renderWidget();
+
+      await screen.findByText('Midi');
+      fireEvent.click(screen.getAllByRole('button', { name: /Ignorer/ })[0]);
+
+      await waitFor(() => expect(screen.queryByText('Midi')).not.toBeInTheDocument());
+      expect(mockPost).toHaveBeenCalledWith('marketing/fill-suggestions/dismiss', {
+        date: '2026-11-04',
+        service: 'midi',
+      });
+      expect(screen.getByText('Soir')).toBeInTheDocument();
+    });
+
+    it('Ignorer en échec : la ligne reste et le message d’erreur s’affiche', async () => {
+      routeGet({ suggestions: { data: [makeSuggestion()] }, emptySlots: makeResponse([]) });
+      mockPost.mockRejectedValue(new Error('503'));
+      renderWidget();
+
+      await screen.findByText('Midi');
+      fireEvent.click(screen.getByRole('button', { name: /Ignorer/ }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Impossible d’ignorer ce service pour le moment. Réessayez.',
+      );
+      expect(screen.getByText('Midi')).toBeInTheDocument();
+    });
+
+    it('source simple : mention « Estimation sans historique suffisant »', async () => {
+      routeGet({
+        suggestions: { data: [makeSuggestion({ forecastSource: 'simple' })] },
+        emptySlots: makeResponse([]),
+      });
+      renderWidget();
+
+      expect(await screen.findByText(/Estimation sans historique suffisant/)).toBeInTheDocument();
+    });
   });
 });

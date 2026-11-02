@@ -194,6 +194,18 @@
       "inconclusive": "Inconclusive: fewer than 20 guests in the control group."
     },
     "back": "Dashboard",
-    "closed": "The restaurant does not open this service that day: nothing to fill."
+    "closed": "The restaurant does not open this service that day: nothing to fill.",
+    "suggestions": {
+      "title": "Quiet services to fill",
+      "subtitle": "Services in the coming days that should still have empty places, based on your past bookings.",
+      "empty": "No quiet service to fill for now.",
+      "emptyPlaces": "{count, plural, one {# likely empty place} other {# likely empty places}}",
+      "sourceSimple": "Estimate without enough history",
+      "prepare": "Prepare",
+      "dismiss": "Dismiss",
+      "dismissError": "Unable to dismiss this service right now. Please try again.",
+      "midi": "Lunch",
+      "soir": "Dinner"
+    }
   }
 }

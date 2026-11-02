@@ -193,6 +193,18 @@
       "inconclusive": "Non conclusivo: meno di 20 clienti nel gruppo di controllo."
     },
     "back": "Dashboard",
-    "closed": "Il ristorante non apre questo servizio quel giorno: non c’è nulla da riempire."
+    "closed": "Il ristorante non apre questo servizio quel giorno: non c’è nulla da riempire.",
+    "suggestions": {
+      "title": "Servizi poco pieni da riempire",
+      "subtitle": "Servizi dei prossimi giorni che dovrebbero avere ancora posti liberi, in base alle vostre prenotazioni passate.",
+      "empty": "Nessun servizio poco pieno da riempire per ora.",
+      "emptyPlaces": "{count, plural, one {# posto libero probabile} other {# posti liberi probabili}}",
+      "sourceSimple": "Stima senza storico sufficiente",
+      "prepare": "Preparare",
+      "dismiss": "Ignorare",
+      "dismissError": "Impossibile ignorare questo servizio per ora. Riprovate.",
+      "midi": "Pranzo",
+      "soir": "Sera"
+    }
   }
 }

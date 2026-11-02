@@ -193,6 +193,18 @@
       "inconclusive": "No concluyente: menos de 20 clientes en el grupo de control."
     },
     "back": "Panel",
-    "closed": "El restaurante no abre este servicio ese día: no hay nada que llenar."
+    "closed": "El restaurante no abre este servicio ese día: no hay nada que llenar.",
+    "suggestions": {
+      "title": "Servicios flojos por llenar",
+      "subtitle": "Servicios de los próximos días que deberían tener plazas libres, según sus reservas anteriores.",
+      "empty": "Ningún servicio flojo por llenar por ahora.",
+      "emptyPlaces": "{count, plural, one {# plaza libre probable} other {# plazas libres probables}}",
+      "sourceSimple": "Estimación sin historial suficiente",
+      "prepare": "Preparar",
+      "dismiss": "Ignorar",
+      "dismissError": "No se puede ignorar este servicio por ahora. Inténtelo de nuevo.",
+      "midi": "Mediodía",
+      "soir": "Noche"
+    }
   }
 }
