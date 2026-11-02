@@ -10,7 +10,8 @@ import { ACTIVE_RESERVATION_STATES } from '../../shared/reservations/capacity';
 import { COUNTED_RESERVATION_STATES } from '../../shared/reservations/reservation-state';
 import { DEFAULT_RESTAURANT_TIMEZONE, zonedTimeToUtc } from '../../shared/timezone/restaurant-time';
 import { addDays, parisParts } from '../companion/query-data';
-import { SERVICE_SPLIT_HOUR, isInService, type TonightService } from '../companion/tonight';
+import { isInService, type TonightService } from '../companion/tonight';
+import { dayBounds, serviceWindow, type ServiceWindow } from './fill-forecast';
 import { CapacityAwareAvailabilityService } from '../floor-plan/availability-capacity-aware.service';
 import {
   HOLDOUT_INCLUSION_REASON,
@@ -34,7 +35,8 @@ export const HOLDOUT_MIN_CUSTOMERS = 20;
 const FALLBACK_GROUP_SIZE = 2;
 const HISTORY_MS = 365 * 24 * 60 * 60 * 1000;
 
-export type ServiceWindow = { start: Date; end: Date };
+export type { ServiceWindow };
+export { serviceWindow };
 
 export type ServiceCapacity =
   | { known: false }
@@ -70,20 +72,6 @@ const BOOKABLE_PARTY_SIZE = 2;
 export const DEFAULT_FILL_BODY =
   'Bonjour {{customer.firstName}}, une table est disponible chez {{restaurant.name}} pour ce service. Réservez ici : {{reservationLink}} STOP : {{unsubscribeUrl}}';
 export const DEFAULT_FILL_SUBJECT = 'Une table disponible ce soir-là';
-
-// Même découpage que « Ce soir » : midi avant 16 h (Paris), soir à partir de 16 h.
-function dayBounds(date: string): ServiceWindow {
-  return {
-    start: zonedTimeToUtc(date, '00:00', DEFAULT_RESTAURANT_TIMEZONE),
-    end: zonedTimeToUtc(addDays(date, 1), '00:00', DEFAULT_RESTAURANT_TIMEZONE),
-  };
-}
-
-export function serviceWindow(date: string, service: TonightService): ServiceWindow {
-  const day = dayBounds(date);
-  const cut = zonedTimeToUtc(date, `${SERVICE_SPLIT_HOUR}:00`, DEFAULT_RESTAURANT_TIMEZONE);
-  return service === 'midi' ? { start: day.start, end: cut } : { start: cut, end: day.end };
-}
 
 /**
  * Places libres = capacité − couverts réservés (états actifs, comme le moteur de disponibilité).
