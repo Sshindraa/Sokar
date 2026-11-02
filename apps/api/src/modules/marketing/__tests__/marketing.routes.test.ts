@@ -1111,6 +1111,24 @@ describe('remplissage de service (routes)', () => {
     expect(response.json()).toMatchObject({ error: 'FILL_SERVICE_BUDGET_EXHAUSTED' });
   });
 
+  it('prévision à 0 → 409 FILL_SERVICE_NO_EMPTY_FORECAST', async () => {
+    const app = await getApp();
+    vi.mocked(createServiceFillDraft).mockResolvedValue({
+      plan: { status: 'PLANNED', budgetExhausted: false, emptyPlaces: 0, members: [] },
+      campaign: null,
+    } as never);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/fill-service',
+      headers: AUTH,
+      payload: DRAFT_BODY,
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: 'FILL_SERVICE_NO_EMPTY_FORECAST' });
+  });
+
   it('refuse l’équipe de service et la lecture seule', async () => {
     const app = await getApp();
     for (const role of ['STAFF', 'READ_ONLY']) {

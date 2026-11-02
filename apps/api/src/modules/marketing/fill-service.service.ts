@@ -264,19 +264,42 @@ export async function loadServiceFillContext(args: {
   };
 }
 
-export async function planFromContext(
-  context: ServiceFillContext,
-  args: { date: string; service: TonightService; seed?: number; now: Date },
-): Promise<ServiceFillPlan> {
-  const { now } = args;
-  const window = serviceWindow(args.date, args.service);
-  const capacity = await serviceCapacity({ restaurantId: context.restaurantId, ...window });
+type OpenService = Extract<ServiceCapacity, { known: true }>;
+
+/** États qui arrêtent le plan avant tout chargement d'audience (capacité inconnue, fermé, plein). */
+async function checkServiceState(
+  restaurantId: string,
+  window: ServiceWindow,
+): Promise<
+  Exclude<ServiceFillPlan, { status: 'PLANNED' }> | { status: 'OPEN'; capacity: OpenService }
+> {
+  const capacity = await serviceCapacity({ restaurantId, ...window });
   if (!capacity.known) return { status: 'CAPACITY_UNKNOWN' };
-  const availability = await serviceAvailability({ restaurantId: context.restaurantId, ...window });
+  const availability = await serviceAvailability({ restaurantId, ...window });
   if (!availability.open) return { status: 'SERVICE_CLOSED' };
   if (!availability.bookable) {
     return { status: 'SERVICE_FULL', capacity: capacity.capacity, booked: capacity.booked };
   }
+  return { status: 'OPEN', capacity };
+}
+
+export async function planFromContext(
+  context: ServiceFillContext,
+  args: { date: string; service: TonightService; seed?: number; now: Date },
+): Promise<ServiceFillPlan> {
+  const window = serviceWindow(args.date, args.service);
+  const state = await checkServiceState(context.restaurantId, window);
+  if (state.status !== 'OPEN') return state;
+  return planOpenService(context, args, window, state.capacity);
+}
+
+function planOpenService(
+  context: ServiceFillContext,
+  args: { date: string; service: TonightService; seed?: number; now: Date },
+  window: ServiceWindow,
+  capacity: OpenService,
+): ServiceFillPlan {
+  const { now } = args;
 
   const { emptyPlaces, lateArrivals, forecastSource } = forecastEmptyPlaces({
     rows: context.history,
@@ -394,13 +417,22 @@ export async function planServiceFill(args: {
   seed?: number;
 }): Promise<ServiceFillPlan> {
   const now = args.now ?? new Date();
+  const window = serviceWindow(args.date, args.service);
+  // Fermé, plein ou capacité inconnue : on s'arrête avant de charger l'audience.
+  const state = await checkServiceState(args.restaurantId, window);
+  if (state.status !== 'OPEN') return state;
   const context = await loadServiceFillContext({
     restaurantId: args.restaurantId,
     channel: args.channel,
     through: args.date,
     now,
   });
-  return planFromContext(context, { date: args.date, service: args.service, seed: args.seed, now });
+  return planOpenService(
+    context,
+    { date: args.date, service: args.service, seed: args.seed, now },
+    window,
+    state.capacity,
+  );
 }
 
 /** Brouillon de campagne pour un service : passe par le circuit de création existant, n'envoie rien. */

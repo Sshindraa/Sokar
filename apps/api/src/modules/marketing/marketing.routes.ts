@@ -153,6 +153,10 @@ const FillServiceCreateSchema = FillServiceSchema.extend({
 });
 /** Refus d'un remplissage, avec un message lisible ; le code reste stable pour le dashboard. */
 const FILL_SERVICE_CONFLICTS: Record<string, { error: string; message: string }> = {
+  NO_EMPTY_FORECAST: {
+    error: 'FILL_SERVICE_NO_EMPTY_FORECAST',
+    message: 'Aucune place vide probable pour ce service : il devrait se remplir sans message.',
+  },
   BUDGET_EXHAUSTED: {
     error: 'FILL_SERVICE_BUDGET_EXHAUSTED',
     message: 'Le budget d’e-mails du jour est épuisé : choisissez le SMS ou réessayez demain.',
@@ -538,7 +542,9 @@ export async function marketingRoutes(app: FastifyInstance) {
                 ? plan.status
                 : plan.budgetExhausted
                   ? 'BUDGET_EXHAUSTED'
-                  : 'NO_CANDIDATE'
+                  : plan.emptyPlaces === 0
+                    ? 'NO_EMPTY_FORECAST'
+                    : 'NO_CANDIDATE'
             ];
           return reply.status(409).send(conflict);
         }

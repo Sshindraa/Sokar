@@ -134,7 +134,6 @@ describe('remplissage de service', () => {
 
   it('dit que la capacité est inconnue quand il n’y a pas de plan de salle, sans rien cibler', async () => {
     mockFloor({ tables: [] });
-    mockAudience([]);
     const plan = await planServiceFill({
       restaurantId: 'r1',
       date: DATE,
@@ -143,6 +142,7 @@ describe('remplissage de service', () => {
       now: NOW,
     });
     expect(plan).toEqual({ status: 'CAPACITY_UNKNOWN' });
+    expect(buildAudience).not.toHaveBeenCalled();
   });
 
   it('places libres = capacité des tables actives − couverts réservés', async () => {
@@ -166,7 +166,6 @@ describe('remplissage de service', () => {
 
   it('service non ouvert ce jour-là : ni plein ni ciblé', async () => {
     mockFloor({ tables: [{ capacity: 30, minCapacity: 1 }], open: false });
-    mockAudience([]);
     const plan = await planServiceFill({
       restaurantId: 'r1',
       date: DATE,
@@ -175,11 +174,11 @@ describe('remplissage de service', () => {
       now: NOW,
     });
     expect(plan).toEqual({ status: 'SERVICE_CLOSED' });
+    expect(buildAudience).not.toHaveBeenCalled();
   });
 
   it('service plein (aucun créneau pour 2 couverts, moteur de disponibilité) : aucune audience', async () => {
     mockFloor({ tables: [{ capacity: 30, minCapacity: 1 }], booked: 30, bookable: false });
-    mockAudience([]);
     const plan = await planServiceFill({
       restaurantId: 'r1',
       date: DATE,
@@ -188,6 +187,7 @@ describe('remplissage de service', () => {
       now: NOW,
     });
     expect(plan).toEqual({ status: 'SERVICE_FULL', capacity: 30, booked: 30 });
+    expect(buildAudience).not.toHaveBeenCalled();
   });
 
   it('classe par palier : le créneau d’abord, puis les réguliers', async () => {
@@ -484,5 +484,6 @@ describe('remplissage de service', () => {
       now: NOW,
     });
     expect(preview).toMatchObject({ status: 'SERVICE_FULL', full: true });
+    expect(buildAudience).not.toHaveBeenCalled();
   });
 });
