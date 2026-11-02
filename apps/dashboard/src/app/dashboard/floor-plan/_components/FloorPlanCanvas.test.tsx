@@ -326,6 +326,17 @@ describe('FloorPlanCanvas — taille des tables', () => {
     expect(table.querySelector('.bg-floor-table-accent')).not.toBeNull();
   });
 
+  it('dessine quatre assises allongées autour de la table ronde en service', async () => {
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    const table = await screen.findByRole('button', { name: 'T4 · 4 places' });
+    const chairs = table.querySelectorAll<HTMLElement>('.bg-floor-table-chair');
+    expect(chairs).toHaveLength(4);
+    for (const chair of chairs) {
+      expect(parseFloat(chair.style.width)).toBeGreaterThan(parseFloat(chair.style.height));
+    }
+    expect(chairs[1].style.transform).toBe('rotate(90deg)');
+  });
+
   it('évite les assises superposées et garde la capacité des tables rapprochées', async () => {
     const first = { ...floorPlan.tables![0], shape: 'rect' as const };
     const second = { ...first, id: 'table-t5', name: 'T5', positionX: 90 };
@@ -1114,8 +1125,8 @@ describe('FloorPlanCanvas — actions Live service', () => {
   });
 
   it.each([
-    [0, 114],
-    [45, 85],
+    [0, 120],
+    [45, 90],
   ])('inclut les assises dans le cadrage initial, rotation %i°', async (rotation, maxZoom) => {
     apiMocks.get.mockImplementation(async (path: string) => {
       if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
@@ -1142,7 +1153,7 @@ describe('FloorPlanCanvas — actions Live service', () => {
     try {
       render(<FloorPlanCanvas orgId="org_test" mode="service" />);
       const zoom = await screen.findByLabelText('Niveau de zoom');
-      await waitFor(() => expect(parseInt(zoom.textContent!)).toBeLessThanOrEqual(143));
+      await waitFor(() => expect(parseInt(zoom.textContent!)).toBeLessThanOrEqual(150));
     } finally {
       width.mockRestore();
       height.mockRestore();
@@ -2201,7 +2212,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
         expect(screen.queryByRole('button', { name: 'Zoom arrière' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Zoom avant' })).not.toBeInTheDocument();
         await waitFor(() =>
-          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '336px' }),
+          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '320px' }),
         );
 
         // Le canvas recouvre l'espaceur qui fournit l'aire de défilement. S'il
@@ -2254,7 +2265,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
 
         expect(await screen.findByRole('button', { name: 'T4 · 4 places' })).toBeInTheDocument();
         await waitFor(() =>
-          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '336px' }),
+          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '320px' }),
         );
       } finally {
         widthSpy.mockRestore();

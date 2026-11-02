@@ -1470,18 +1470,18 @@ function TableCard({
   const liveBodyTop = isRound
     ? Math.round((height - liveBodyHeight) / 2)
     : Math.max(8, Math.round((height - (liveBodyHeight + TABLE_CARD_SEAT_HEIGHT)) / 2));
-  const roundChairSize = editable ? (compact ? 20 : 24) : 14;
+  const roundChairHeight = editable ? 32 : 16;
   // shortcut: au-delà de huit places, masquer les chaises pour éviter leur chevauchement ; agrandir le plan pour les représenter toutes.
   const chairCount = !hideChairs && table.capacity <= 8 ? Math.max(0, table.capacity) : 0;
   const roundChairPositions = isRound
     ? Array.from({ length: chairCount }, (_, index) => {
         const angle = (index / chairCount) * Math.PI * 2 - Math.PI / 2;
-        const chairOffset = roundChairSize / 2 + (editable ? 6 : 2);
-        const radiusX = liveBodyWidth / 2 + chairOffset;
-        const radiusY = liveBodyHeight / 2 + chairOffset;
+        const radiusX = liveBodyWidth / 2;
+        const radiusY = liveBodyHeight / 2;
         return {
-          left: liveBodyLeft + liveBodyWidth / 2 + Math.cos(angle) * radiusX - roundChairSize / 2,
-          top: liveBodyTop + liveBodyHeight / 2 + Math.sin(angle) * radiusY - roundChairSize / 2,
+          left: liveBodyLeft + liveBodyWidth / 2 + Math.cos(angle) * radiusX - liveChairWidth / 2,
+          top: liveBodyTop + liveBodyHeight / 2 + Math.sin(angle) * radiusY - roundChairHeight / 2,
+          rotation: (angle * 180) / Math.PI + 90,
         };
       })
     : [];
@@ -1561,8 +1561,9 @@ function TableCard({
                 style={{
                   left: chair.left,
                   top: chair.top,
-                  width: roundChairSize,
-                  height: roundChairSize,
+                  width: liveChairWidth,
+                  height: roundChairHeight,
+                  transform: `rotate(${chair.rotation}deg)`,
                 }}
                 aria-hidden="true"
               />
@@ -3699,8 +3700,8 @@ export function FloorPlanCanvas({
       const sin = Math.sin(angle);
       const centerX = table.positionX! + width / 2 - offsetY * sin;
       const centerY = table.positionY! + height / 2 + offsetY * cos;
-      const outerWidth = bodyWidth + (round ? 32 : 0);
-      const outerHeight = bodyHeight + (round ? 32 : 16);
+      const outerWidth = bodyWidth + (round ? 24 : 0);
+      const outerHeight = bodyHeight + (round ? 24 : 16);
       const halfWidth = (outerWidth * Math.abs(cos) + outerHeight * Math.abs(sin)) / 2;
       const halfHeight = (outerWidth * Math.abs(sin) + outerHeight * Math.abs(cos)) / 2;
       return {
