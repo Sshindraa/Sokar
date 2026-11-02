@@ -8393,53 +8393,6 @@ export function FloorPlanCanvas({
                 aria-label="État du service"
                 className="space-y-2 border-t border-border px-3 py-2 sm:px-4"
               >
-                <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1">
-                  {serviceOverview}
-                  {hasServerFilter ? (
-                    <Select
-                      value={selectedServerFilter ?? '_all_'}
-                      onValueChange={(val) => setSelectedServerFilter(val === '_all_' ? null : val)}
-                    >
-                      <SelectTrigger
-                        aria-label="Filtrer par serveur"
-                        title="Filtrer par serveur"
-                        className="ml-auto h-8 w-9 justify-center gap-1 border-border bg-background px-0 text-xs font-medium xl:w-auto xl:justify-start xl:px-2.5"
-                      >
-                        {selectedServerFilter === '_unassigned_' ? (
-                          <UserX size={13} className="shrink-0 text-muted-foreground" />
-                        ) : (
-                          <UserRound size={13} className="shrink-0 text-primary" />
-                        )}
-                        {/* Sur téléphone le filtre reste une icône : la ligne du jour
-                          doit tenir sans repousser les onglets sur une 3e ligne. */}
-                        <span className="!hidden min-w-0 truncate xl:!inline-flex">
-                          <SelectValue placeholder="Tous les serveurs" />
-                        </span>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_all_">
-                          Toutes les tables ({allTables.length})
-                        </SelectItem>
-                        {unassignedCount > 0 ? (
-                          <SelectItem value="_unassigned_">
-                            <span className="flex items-center gap-1.5">
-                              <UserX size={13} className="shrink-0 text-muted-foreground" />
-                              Sans serveur affecté ({unassignedCount})
-                            </span>
-                          </SelectItem>
-                        ) : null}
-                        {allServers.map((server) => {
-                          const count = serverTableCounts.get(server) ?? 0;
-                          return (
-                            <SelectItem key={server} value={server}>
-                              {server} ({count} {count > 1 ? 'tables' : 'table'})
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
-                  ) : null}
-                </div>
                 <div className="flex w-full flex-wrap items-center gap-2">
                   {serviceIsToday ? (
                     <span className="text-sm font-semibold">Aujourd’hui</span>
@@ -8573,6 +8526,51 @@ export function FloorPlanCanvas({
                         </div>
                       ) : null}
                     </div>
+                  ) : null}
+                  {serviceOverview}
+                  {hasServerFilter ? (
+                    <Select
+                      value={selectedServerFilter ?? '_all_'}
+                      onValueChange={(val) => setSelectedServerFilter(val === '_all_' ? null : val)}
+                    >
+                      <SelectTrigger
+                        aria-label="Filtrer par serveur"
+                        title="Filtrer par serveur"
+                        className="h-8 w-9 justify-center gap-1 border-border bg-background px-0 text-xs font-medium xl:w-auto xl:justify-start xl:px-2.5"
+                      >
+                        {selectedServerFilter === '_unassigned_' ? (
+                          <UserX size={13} className="shrink-0 text-muted-foreground" />
+                        ) : (
+                          <UserRound size={13} className="shrink-0 text-primary" />
+                        )}
+                        {/* Sur téléphone le filtre reste une icône : la ligne du jour
+                          doit tenir sans repousser les onglets sur une 3e ligne. */}
+                        <span className="!hidden min-w-0 truncate xl:!inline-flex">
+                          <SelectValue placeholder="Tous les serveurs" />
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_all_">
+                          Toutes les tables ({allTables.length})
+                        </SelectItem>
+                        {unassignedCount > 0 ? (
+                          <SelectItem value="_unassigned_">
+                            <span className="flex items-center gap-1.5">
+                              <UserX size={13} className="shrink-0 text-muted-foreground" />
+                              Sans serveur affecté ({unassignedCount})
+                            </span>
+                          </SelectItem>
+                        ) : null}
+                        {allServers.map((server) => {
+                          const count = serverTableCounts.get(server) ?? 0;
+                          return (
+                            <SelectItem key={server} value={server}>
+                              {server} ({count} {count > 1 ? 'tables' : 'table'})
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
                   ) : null}
                 </div>
               </div>
