@@ -16,6 +16,7 @@ vi.mock('../../../shared/db/client', () => ({
     marketingSuppression: { upsert: vi.fn() },
     customer: { findFirst: vi.fn() },
     marketingOptOut: { upsert: vi.fn() },
+    $executeRaw: vi.fn(),
     marketingProviderReconciliation: {
       upsert: vi.fn().mockResolvedValue({ id: 'reconciliation-1' }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -415,6 +416,7 @@ describe('marketing provider reconciliation', () => {
     }) as never;
 
   it('supprime le contact après une plainte pour spam, sans rejouer deux fois', async () => {
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
     vi.mocked(db.campaignMessage.findFirst).mockResolvedValue(sentEmail());
 
     await expect(

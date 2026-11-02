@@ -11,6 +11,8 @@ import {
 } from '../marketing-permission.service';
 import { previewMarketingAudience } from '../marketing-campaign.service';
 import { loadOptedOutCustomerIds } from '../marketing-opt-out.service';
+import { applyMarketingProviderEvent } from '../marketing-provider.service';
+import { ErasureService } from '../../rgpd/erasure.service';
 
 const url = process.env.MARKETING_OPTOUT_TEST_DATABASE_URL;
 if (url) {
@@ -170,6 +172,140 @@ describe.skipIf(!url)('marketing opt-out on PostgreSQL', () => {
     });
     expect(result.checked).toBe(true);
     expect(result.optedOut).toEqual(new Set([first.id, second.id]));
+  });
+
+  it('keeps a complaint suppressed and retryable when the register fails', async () => {
+    const restaurant = await db.restaurant.create({
+      data: {
+        name: 'Complaint',
+        managerPhone: '',
+        managerEmail: '',
+        phoneNumber: randomUUID(),
+        openingHours: {},
+      },
+    });
+    const customer = await db.customer.create({
+      data: {
+        restaurantId: restaurant.id,
+        phone: '+33612345674',
+        emailNormalized: 'complaint@example.test',
+      },
+    });
+    const campaign = await db.marketingCampaign.create({
+      data: {
+        restaurantId: restaurant.id,
+        name: 'Test',
+        objective: 'TEST',
+        channel: 'EMAIL',
+        bodyTemplate: 'test',
+        createdByHash: 'test',
+      },
+    });
+    const member = await db.campaignAudienceMember.create({
+      data: {
+        campaignId: campaign.id,
+        customerId: customer.id,
+        audienceVersion: 1,
+        inclusionReason: 'TEST',
+        capturedAt: new Date(),
+      },
+    });
+    const message = await db.campaignMessage.create({
+      data: {
+        campaignId: campaign.id,
+        customerId: customer.id,
+        audienceMemberId: member.id,
+        channel: 'EMAIL',
+        status: 'SENT',
+        provider: 'resend',
+        providerMessageId: randomUUID(),
+        idempotencyKey: randomUUID(),
+      },
+    });
+    const event = {
+      provider: 'resend' as const,
+      providerMessageId: message.providerMessageId!,
+      eventType: 'email.complained',
+    };
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', '');
+    await expect(applyMarketingProviderEvent(event)).rejects.toThrow(
+      'MARKETING_OPTOUT_REGISTER_UNAVAILABLE',
+    );
+    expect((await db.campaignMessage.findUniqueOrThrow({ where: { id: message.id } })).status).toBe(
+      'SENT',
+    );
+    expect(
+      await db.marketingSuppression.count({
+        where: { restaurantId: restaurant.id, customerId: customer.id, reason: 'COMPLAINED' },
+      }),
+    ).toBe(1);
+    expect(
+      (await db.marketingCampaign.findUniqueOrThrow({ where: { id: campaign.id } })).failedCount,
+    ).toBe(0);
+
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+    await db.customer.update({ where: { id: customer.id }, data: { emailNormalized: null } });
+    await expect(applyMarketingProviderEvent(event)).rejects.toThrow(
+      'MARKETING_OPTOUT_REGISTER_UNAVAILABLE',
+    );
+    expect((await db.campaignMessage.findUniqueOrThrow({ where: { id: message.id } })).status).toBe(
+      'SENT',
+    );
+    await db.customer.update({
+      where: { id: customer.id },
+      data: { emailNormalized: customer.emailNormalized },
+    });
+    await db.$executeRawUnsafe(`CREATE FUNCTION audit_fail_complaint() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'simulated register failure'; END; $$ LANGUAGE plpgsql`);
+    await db.$executeRawUnsafe(`CREATE TRIGGER audit_fail_complaint BEFORE INSERT ON marketing_opt_outs
+      FOR EACH ROW WHEN (NEW.source = 'RESEND_WEBHOOK') EXECUTE FUNCTION audit_fail_complaint()`);
+    try {
+      await expect(applyMarketingProviderEvent(event)).rejects.toThrow(
+        'MARKETING_OPTOUT_REGISTER_UNAVAILABLE',
+      );
+      expect(
+        (await db.campaignMessage.findUniqueOrThrow({ where: { id: message.id } })).status,
+      ).toBe('SENT');
+      expect(
+        await db.marketingSuppression.count({
+          where: { restaurantId: restaurant.id, customerId: customer.id, reason: 'COMPLAINED' },
+        }),
+      ).toBe(1);
+    } finally {
+      await db.$executeRawUnsafe('DROP TRIGGER audit_fail_complaint ON marketing_opt_outs');
+      await db.$executeRawUnsafe('DROP FUNCTION audit_fail_complaint()');
+    }
+    await expect(applyMarketingProviderEvent(event)).resolves.toMatchObject({
+      changed: true,
+      status: 'COMPLAINED',
+    });
+    expect(
+      await db.marketingOptOut.count({
+        where: { restaurantId: restaurant.id, channel: 'EMAIL', reason: 'COMPLAINT' },
+      }),
+    ).toBe(1);
+    await expect(applyMarketingProviderEvent(event)).resolves.toMatchObject({ changed: false });
+    expect(
+      (await db.marketingCampaign.findUniqueOrThrow({ where: { id: campaign.id } })).failedCount,
+    ).toBe(1);
+    await new ErasureService(db).eraseSubject({
+      subject: customer.phone,
+      reason: 'TEST',
+      actor: 'test',
+    });
+    const replacement = await db.customer.create({
+      data: {
+        restaurantId: restaurant.id,
+        phone: customer.phone,
+        emailNormalized: customer.emailNormalized,
+      },
+    });
+    const afterErasure = await loadOptedOutCustomerIds({
+      restaurantId: restaurant.id,
+      channel: 'EMAIL',
+      customers: [replacement],
+    });
+    expect(afterErasure.optedOut.has(replacement.id)).toBe(true);
   });
 
   it('keeps withdrawal proof when a register write fails during a concurrent opt-in', async () => {
