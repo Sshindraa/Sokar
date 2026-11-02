@@ -145,15 +145,23 @@ Clerk propose `auth.has({ reverification: ... })` côté serveur et
 second facteur peut être ramené au premier si l’utilisateur n’en dispose pas :
 ce comportement ne doit pas être présenté comme une authentification à deux
 facteurs obligatoire. Le proxy conserve le défi reconnu par Clerk et le client
-le transmet au mécanisme de revérification. Il reste à vérifier avec Clerk réel
-que la requête retentée utilise un jeton de session actualisé. Référence :
+le transmet au mécanisme de revérification. Un essai isolé avec Clerk réel a
+confirmé le rejeu réussi après revérification (détails ci-dessous). Référence :
 [revérification Clerk](https://clerk.com/docs/guides/secure/reverification).
 
+Le 2 novembre 2026, un essai complet a été exécuté localement avec la branche
+Sokar, PostgreSQL et Redis isolés, un propriétaire et une organisation fictifs
+Clerk de test, et un compte Stripe de test. Après création du compte Stripe
+depuis le dashboard, la session a attendu onze minutes : la route a répondu 403
+et l’interface a demandé le mot de passe. Un mot de passe erroné a été refusé ;
+le bon mot de passe a déclenché le rejeu, obtenu une réponse 200 et affiché à
+nouveau le formulaire Stripe. Le compte Stripe a été fermé et les ressources
+fictives supprimées. L’annulation a été vérifiée dans un essai séparé du
+composant Clerk, pas dans ce même parcours complet. Aucun paiement réel.
+
 Le staging de démonstration utilise actuellement une identité injectée sans
-session Clerk. Ce mode ne permet donc pas de qualifier la protection réelle. Les
-tests devront couvrir un propriétaire authentifié avec Clerk réel, une session
-ancienne, une revérification annulée ou échouée, le renouvellement de session,
-un autre restaurant, et l’absence de facteur supplémentaire. Conserver un refus
+session Clerk. Ce mode ne permet donc pas de qualifier la protection réelle. La qualification complémentaire devra couvrir l’annulation dans le parcours
+Sokar complet, un autre restaurant et l’absence de facteur supplémentaire. Conserver un refus
 par défaut hors démonstration et ne pas considérer le mode démo comme une preuve
 pour la production.
 
