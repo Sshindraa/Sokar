@@ -61,6 +61,7 @@ import {
   marketingCampaignReportToCsv,
 } from './marketing-report.service';
 import { getMarketingProviderReadiness } from './marketing-provider.service';
+import { createServiceFillDraft, previewServiceFill } from './fill-service.service';
 import { RATE_LIMIT_PUBLIC_TOKEN } from '../../plugins/rate-limit.policy';
 
 /**
@@ -132,6 +133,39 @@ const CampaignUpdateSchema = z
     timezone: z.string().trim().min(1).max(80).optional(),
   })
   .refine((body) => Object.keys(body).length > 0, { message: 'at least one field is required' });
+
+const FillServiceSchema = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)), 'date invalide'),
+  service: z.enum(['midi', 'soir']),
+  channel: z.enum(CAMPAIGN_CHANNELS),
+});
+const FillServiceCreateSchema = FillServiceSchema.extend({
+  subject: z.string().trim().min(1).max(200).nullable().optional(),
+  bodyTemplate: z.string().trim().min(1).max(10_000),
+});
+/** Refus d'un remplissage, avec un message lisible ; le code reste stable pour le dashboard. */
+const FILL_SERVICE_CONFLICTS: Record<string, { error: string; message: string }> = {
+  SERVICE_CLOSED: {
+    error: 'FILL_SERVICE_CLOSED',
+    message: 'Le restaurant n’ouvre pas ce service ce jour-là.',
+  },
+  CAPACITY_UNKNOWN: {
+    error: 'FILL_SERVICE_CAPACITY_UNKNOWN',
+    message: 'Le plan de salle n’est pas renseigné : la capacité de ce service est inconnue.',
+  },
+  SERVICE_FULL: {
+    error: 'FILL_SERVICE_FULL',
+    message: 'Ce service est complet : plus aucun créneau pour 2 couverts.',
+  },
+  NO_CANDIDATE: {
+    error: 'FILL_SERVICE_NO_CANDIDATE',
+    message:
+      'Aucun client joignable pour ce service : consentement, opposition ou réservation le jour même.',
+  },
+};
 
 const CampaignIdParamsSchema = z.object({
   id: z.string().trim().min(1).max(128),
@@ -446,6 +480,66 @@ export async function marketingRoutes(app: FastifyInstance) {
         const status = statusForError(error);
         if (status === 404) return reply.status(status).send({ error: 'SEGMENT_NOT_FOUND' });
         if (status === 413) return reply.status(status).send({ error: 'AUDIENCE_TOO_LARGE' });
+        const problem = marketingContentProblem(error);
+        if (problem) return reply.status(400).send({ error: 'INVALID_CAMPAIGN', message: problem });
+        throw error;
+      }
+    },
+  );
+
+  // Remplissage d'un service creux : direction seule (voir role-policy.ts), rien n'est envoyé.
+  app.post(
+    '/marketing/fill-service/preview',
+    { preHandler: requireMarketingCampaigns },
+    async (request, reply) => {
+      const body = FillServiceSchema.parse(request.body);
+      try {
+        const preview = await previewServiceFill({ restaurantId: request.restaurantId!, ...body });
+        return reply.send({ data: preview });
+      } catch (error) {
+        if (statusForError(error) === 413) {
+          return reply.status(413).send({ error: 'AUDIENCE_TOO_LARGE' });
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.post(
+    '/marketing/fill-service',
+    { preHandler: requireMarketingCampaigns },
+    async (request, reply) => {
+      const body = FillServiceCreateSchema.parse(request.body);
+      try {
+        const { plan, campaign } = await createServiceFillDraft({
+          restaurantId: request.restaurantId!,
+          date: body.date,
+          service: body.service,
+          channel: body.channel,
+          name: `Service ${body.service} du ${body.date}`,
+          objective: 'Remplir un service creux',
+          subject: body.subject,
+          bodyTemplate: body.bodyTemplate,
+          createdBy: request.userId ?? undefined,
+        });
+        if (!campaign) {
+          const conflict =
+            FILL_SERVICE_CONFLICTS[plan.status === 'PLANNED' ? 'NO_CANDIDATE' : plan.status];
+          return reply.status(409).send(conflict);
+        }
+        return reply.status(201).send({
+          data: {
+            id: campaign.id,
+            status: campaign.status,
+            audienceCount: campaign.audienceCount,
+            targetServiceStart: campaign.targetServiceStart,
+            targetServiceEnd: campaign.targetServiceEnd,
+          },
+        });
+      } catch (error) {
+        if (statusForError(error) === 413) {
+          return reply.status(413).send({ error: 'AUDIENCE_TOO_LARGE' });
+        }
         const problem = marketingContentProblem(error);
         if (problem) return reply.status(400).send({ error: 'INVALID_CAMPAIGN', message: problem });
         throw error;

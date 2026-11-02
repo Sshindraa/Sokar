@@ -4,6 +4,13 @@ import { MARKETING_CONSENT_VERSION } from '@sokar/shared';
 import { closeApp, getApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { queues } from '../../../shared/queue/queues';
+import { createServiceFillDraft, previewServiceFill } from '../fill-service.service';
+
+vi.mock('../fill-service.service', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../fill-service.service')>()),
+  createServiceFillDraft: vi.fn(),
+  previewServiceFill: vi.fn(),
+}));
 
 const AUTH = { authorization: 'Bearer test' };
 const NOW = new Date('2026-09-14T10:00:00.000Z');
@@ -971,5 +978,121 @@ describe('marketing control plane routes', () => {
       expect(forged.statusCode).toBe(400);
       expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('remplissage de service (routes)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'PRO' } as never);
+  });
+
+  const SERVICE_BODY = { date: '2026-11-04', service: 'midi', channel: 'SMS' };
+  const DRAFT_BODY = {
+    ...SERVICE_BODY,
+    bodyTemplate: 'Bonjour {{customer.firstName}}, réservez {{reservationLink}} {{unsubscribeUrl}}',
+  };
+
+  it('renvoie l’aperçu du moteur sans rien écrire ni contacter un fournisseur', async () => {
+    const app = await getApp();
+    vi.mocked(previewServiceFill).mockResolvedValue({
+      status: 'PLANNED',
+      full: false,
+      audience: 30,
+      holdout: 3,
+      sends: 27,
+    } as never);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/fill-service/preview',
+      headers: AUTH,
+      payload: SERVICE_BODY,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ data: { status: 'PLANNED', holdout: 3 } });
+    expect(previewServiceFill).toHaveBeenCalledWith({
+      restaurantId: 'test-rest-1',
+      ...SERVICE_BODY,
+    });
+    expect(createServiceFillDraft).not.toHaveBeenCalled();
+    expect(queues.marketingCampaign.add).not.toHaveBeenCalled();
+  });
+
+  it('refuse une date ou un service invalides', async () => {
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/fill-service/preview',
+      headers: AUTH,
+      payload: { ...SERVICE_BODY, service: 'nuit' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(previewServiceFill).not.toHaveBeenCalled();
+  });
+
+  it('crée le brouillon et renvoie son id, sans envoi', async () => {
+    const app = await getApp();
+    vi.mocked(createServiceFillDraft).mockResolvedValue({
+      plan: { status: 'PLANNED' },
+      campaign: {
+        id: 'campaign-fill-1',
+        status: MarketingCampaignStatus.DRAFT,
+        audienceCount: 27,
+        targetServiceStart: new Date('2026-11-03T23:00:00.000Z'),
+        targetServiceEnd: new Date('2026-11-04T15:00:00.000Z'),
+      },
+    } as never);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/fill-service',
+      headers: AUTH,
+      payload: DRAFT_BODY,
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toEqual({
+      data: expect.objectContaining({ id: 'campaign-fill-1', audienceCount: 27 }),
+    });
+    expect(queues.marketingCampaign.add).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['SERVICE_CLOSED', 409, 'FILL_SERVICE_CLOSED'],
+    ['SERVICE_FULL', 409, 'FILL_SERVICE_FULL'],
+    ['CAPACITY_UNKNOWN', 409, 'FILL_SERVICE_CAPACITY_UNKNOWN'],
+    ['PLANNED', 409, 'FILL_SERVICE_NO_CANDIDATE'],
+  ])('refuse un service %s sans brouillon (%i)', async (status, code, error) => {
+    const app = await getApp();
+    vi.mocked(createServiceFillDraft).mockResolvedValue({
+      plan: { status },
+      campaign: null,
+    } as never);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/fill-service',
+      headers: AUTH,
+      payload: DRAFT_BODY,
+    });
+
+    expect(response.statusCode).toBe(code);
+    expect(response.json()).toMatchObject({ error });
+  });
+
+  it('refuse l’équipe de service et la lecture seule', async () => {
+    const app = await getApp();
+    for (const role of ['STAFF', 'READ_ONLY']) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/fill-service/preview',
+        headers: { ...AUTH, 'x-test-site-role': role, 'x-test-enforce-role-policy': '1' },
+        payload: SERVICE_BODY,
+      });
+      expect(response.statusCode).toBe(403);
+    }
+    expect(previewServiceFill).not.toHaveBeenCalled();
   });
 });

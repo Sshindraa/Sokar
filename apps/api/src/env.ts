@@ -448,6 +448,8 @@ const EnvSchema = z
     // Partner channels remain local-only until signed provider contracts,
     // health checks and bidirectional sync are qualified with a pilot.
     DISTRIBUTION_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Companion (assistant du dashboard) : OpenRouter, avec OPENROUTER_API_KEY et OPENROUTER_BASE_URL partagées avec la voix.
+    COMPANION_LLM_MODEL: z.string().default('anthropic/claude-sonnet-5.5'),
   })
   .merge(VoiceConfigSchema)
   .refine((data) => data.CALL_RECORDING_ENABLED !== 'true' || !!data.CALL_RECORDINGS_BUCKET, {

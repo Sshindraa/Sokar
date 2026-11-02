@@ -22,6 +22,7 @@ import {
   renderMarketingTemplate,
   toMarketingHtml,
 } from './marketing-campaign.service';
+import { isTargetServiceFull } from './fill-service.service';
 import { loadOptedOutCustomerIds } from './marketing-opt-out.service';
 import {
   resolveMarketingPermission,
@@ -575,6 +576,27 @@ export async function processMarketingCampaignJob(
       },
     });
     if (messages.length === 0) break;
+    // Avant chaque lot : service visé complet = la campagne se met en pause, sans envoi.
+    if (
+      campaign.targetServiceStart &&
+      campaign.targetServiceEnd &&
+      (await isTargetServiceFull({
+        restaurantId: campaign.restaurantId,
+        start: campaign.targetServiceStart,
+        end: campaign.targetServiceEnd,
+      }))
+    ) {
+      await dependencies.db.marketingCampaign.updateMany({
+        where: {
+          id: campaign.id,
+          restaurantId: campaign.restaurantId,
+          status: MarketingCampaignStatus.SENDING,
+        },
+        data: { status: MarketingCampaignStatus.PAUSED, lastErrorCode: 'TARGET_SERVICE_FULL' },
+      });
+      log.warn({ campaignId: campaign.id }, 'marketing campaign paused: target service is full');
+      break;
+    }
     for (const message of messages) {
       const current = await dependencies.db.marketingCampaign.findFirst({
         where: { id: campaign.id, restaurantId: campaign.restaurantId },

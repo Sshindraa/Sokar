@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { NextIntlClientProvider } from 'next-intl';
+import messages from '../../../../messages/fr.json';
 import EmptySlotsWidget from '../EmptySlotsWidget';
+
+function renderWidget() {
+  return render(
+    <NextIntlClientProvider locale="fr" messages={messages}>
+      <EmptySlotsWidget />
+    </NextIntlClientProvider>,
+  );
+}
 
 // Mock contrôlable du hook useApi — on délègue à un objet mutable
 const mockGet = vi.fn();
@@ -67,7 +77,7 @@ describe('EmptySlotsWidget', () => {
   it('état loading : affiche un skeleton', () => {
     // get ne résout jamais → loading reste true
     mockGet.mockReturnValue(new Promise(() => {}));
-    render(<EmptySlotsWidget />);
+    renderWidget();
     // Le skeleton est rendu dans une section
     expect(document.querySelector('section')).toBeInTheDocument();
   });
@@ -75,7 +85,7 @@ describe('EmptySlotsWidget', () => {
   it('état error : annonce la panne avec un bouton pour réessayer, sans afficher la grille', async () => {
     mockGet.mockRejectedValueOnce(new Error('Network error'));
     mockGet.mockResolvedValueOnce(makeResponse([makeDay({ date: '2026-07-01' })], {}));
-    render(<EmptySlotsWidget />);
+    renderWidget();
 
     // Une panne ne doit pas ressembler à « aucun jour à renforcer ».
     expect(await screen.findByRole('alert')).toHaveTextContent('Network error');
@@ -109,7 +119,7 @@ describe('EmptySlotsWidget', () => {
     ];
     mockGet.mockResolvedValue(makeResponse(days, { underbookedDays: 1, revenueAtRisk: 120 }));
 
-    render(<EmptySlotsWidget />);
+    renderWidget();
 
     // Le titre reste court et directement exploitable en salle
     await waitFor(() => {
@@ -125,6 +135,10 @@ describe('EmptySlotsWidget', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/120 €/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Remplir ce service' })).toHaveAttribute(
+      'href',
+      '/dashboard/marketing/fill-service?date=2026-07-01&service=soir',
+    );
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     fireEvent.focus(
       screen.getByRole('button', { name: 'Comprendre le seuil des journées peu remplies' }),
@@ -144,7 +158,7 @@ describe('EmptySlotsWidget', () => {
     ];
     mockGet.mockResolvedValue(makeResponse(days, { underbookedDays: 0 }));
 
-    render(<EmptySlotsWidget />);
+    renderWidget();
 
     await waitFor(() => {
       expect(
@@ -163,7 +177,7 @@ describe('EmptySlotsWidget', () => {
       patch: vi.fn(),
       del: vi.fn(),
     });
-    const { container } = render(<EmptySlotsWidget />);
+    const { container } = renderWidget();
     expect(container.firstChild).toBeNull();
   });
 });

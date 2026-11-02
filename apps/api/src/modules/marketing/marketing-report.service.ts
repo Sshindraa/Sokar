@@ -1,5 +1,8 @@
 import { MarketingMessageStatus, MarketingConversionType, Prisma } from '@prisma/client';
 import { db } from '../../shared/db/client';
+import { ACTIVE_RESERVATION_STATES } from '../../shared/reservations/capacity';
+import { HOLDOUT_INCLUSION_REASON } from './marketing-campaign.service';
+import { HOLDOUT_MIN_CUSTOMERS } from './fill-service.service';
 
 export type MarketingCampaignReport = {
   campaign: {
@@ -39,6 +42,8 @@ export type MarketingCampaignReport = {
     currency: 'EUR';
     status: 'NOT_AVAILABLE' | 'UNPRICED' | 'PARTIAL' | 'PRICED';
   };
+  /** Présent seulement pour une campagne de remplissage (service visé). */
+  serviceFill?: ServiceFillReport;
 };
 
 function csvCell(value: string | number | null): string {
@@ -119,6 +124,9 @@ export async function getMarketingCampaignReport(args: {
       audienceCount: true,
       createdAt: true,
       completedAt: true,
+      startedAt: true,
+      targetServiceStart: true,
+      targetServiceEnd: true,
     },
   });
   if (!campaign) throw new Error('CAMPAIGN_NOT_FOUND');
@@ -126,7 +134,7 @@ export async function getMarketingCampaignReport(args: {
   const [audience, messages, links, conversions] = await Promise.all([
     db.campaignAudienceMember.findMany({
       where: { campaignId: campaign.id },
-      select: { customerId: true },
+      select: { customerId: true, inclusionReason: true },
     }),
     db.campaignMessage.findMany({
       where: { campaignId: campaign.id },
@@ -238,6 +246,14 @@ export async function getMarketingCampaignReport(args: {
           ? 'UNPRICED'
           : 'PARTIAL';
 
+  const serviceFill = await serviceFillReport({
+    restaurantId: args.restaurantId,
+    startedAt: campaign.startedAt,
+    targetServiceStart: campaign.targetServiceStart,
+    targetServiceEnd: campaign.targetServiceEnd,
+    members: audience ?? [],
+  });
+
   return {
     campaign: {
       id: campaign.id,
@@ -276,5 +292,79 @@ export async function getMarketingCampaignReport(args: {
       currency: 'EUR',
       status: costStatus,
     },
+    ...(serviceFill ? { serviceFill } : {}),
+  };
+}
+
+export type ServiceFillGroup = { customers: number; covers: number; coversPerCustomer: number };
+
+export type ServiceFillReport = {
+  service: { start: Date; end: Date };
+  treated: ServiceFillGroup;
+  holdout: ServiceFillGroup;
+  /** Couverts par client : destinataires moins témoin. */
+  difference: number;
+  /** Faux sous HOLDOUT_MIN_CUSTOMERS clients dans le témoin. */
+  conclusive: boolean;
+};
+
+/**
+ * Couverts réservés pour le service visé, par client, pour les destinataires et pour le témoin. Les
+ * réservations comptées sont celles créées entre l'envoi et la fin du service ; téléphone compris.
+ */
+async function serviceFillReport(args: {
+  restaurantId: string;
+  startedAt: Date | null;
+  targetServiceStart: Date | null;
+  targetServiceEnd: Date | null;
+  members: Array<{ customerId: string; inclusionReason: string }>;
+}): Promise<ServiceFillReport | undefined> {
+  const { startedAt, targetServiceStart: start, targetServiceEnd: end } = args;
+  if (!start || !end) return undefined;
+  const treatedIds = new Set(
+    args.members
+      .filter((member) => member.inclusionReason !== HOLDOUT_INCLUSION_REASON)
+      .map((member) => member.customerId),
+  );
+  const holdoutIds = new Set(
+    args.members
+      .filter((member) => member.inclusionReason === HOLDOUT_INCLUSION_REASON)
+      .map((member) => member.customerId),
+  );
+  // Pas encore envoyée : aucune réservation ne peut être attribuée à l'envoi.
+  const rows =
+    startedAt && args.members.length > 0
+      ? await db.reservation.findMany({
+          where: {
+            restaurantId: args.restaurantId,
+            isTest: false,
+            customerId: { in: args.members.map((member) => member.customerId) },
+            state: { in: [...ACTIVE_RESERVATION_STATES, 'HONORED'] },
+            reservedAt: { gte: start, lt: end },
+            createdAt: { gte: startedAt, lt: end },
+          },
+          select: { customerId: true, partySize: true },
+        })
+      : [];
+  const group = (ids: Set<string>): ServiceFillGroup => {
+    const covers = rows.reduce(
+      (sum, row) => (row.customerId && ids.has(row.customerId) ? sum + row.partySize : sum),
+      0,
+    );
+    const coversPerCustomer = ids.size === 0 ? 0 : covers / ids.size;
+    return {
+      customers: ids.size,
+      covers,
+      coversPerCustomer: Number(coversPerCustomer.toFixed(2)),
+    };
+  };
+  const treated = group(treatedIds);
+  const holdout = group(holdoutIds);
+  return {
+    service: { start, end },
+    treated,
+    holdout,
+    difference: Number((treated.coversPerCustomer - holdout.coversPerCustomer).toFixed(2)),
+    conclusive: holdout.customers >= HOLDOUT_MIN_CUSTOMERS,
   };
 }

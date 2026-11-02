@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -72,6 +73,7 @@ function formatDayName(date: string, fallback: string) {
 }
 
 export default function EmptySlotsWidget() {
+  const t = useTranslations('fillService');
   const { get, orgId } = useApi();
   const [data, setData] = useState<EmptySlotsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -186,7 +188,7 @@ export default function EmptySlotsWidget() {
           {days.map((day) => (
             <li
               key={day.date}
-              className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-3 text-sm"
+              className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-3 py-3 text-sm"
             >
               <div>
                 <p className="font-medium text-foreground">
@@ -201,6 +203,13 @@ export default function EmptySlotsWidget() {
                 {day.reservationCount} réservation{day.reservationCount > 1 ? 's' : ''}
               </span>
               <span className="tabular-nums text-muted-foreground">{day.covers} couverts</span>
+              <Button asChild variant="outline" size="sm">
+                <Link
+                  href={`/dashboard/marketing/fill-service?date=${encodeURIComponent(day.date)}&service=soir`}
+                >
+                  {t('openFromQuietDay')}
+                </Link>
+              </Button>
             </li>
           ))}
         </ul>
