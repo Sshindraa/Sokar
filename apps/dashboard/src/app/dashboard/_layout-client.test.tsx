@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '../../../messages/fr.json';
-import { DashboardModeSwitcher } from './_layout-client';
+import { DashboardModeSwitcher, DashboardSidebar } from './_layout-client';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const mocks = vi.hoisted(() => ({
   role: 'OWNER' as string | undefined,
@@ -14,6 +15,10 @@ vi.mock('@/features/sites/site-context', () => ({
 }));
 vi.mock('@/features/companion/CompanionPanel', () => ({
   CompanionPanel: () => <p>Panneau du Companion</p>,
+}));
+vi.mock('@/features/theme/dashboard-theme', () => ({
+  DashboardThemeProvider: ({ children }: { children: React.ReactNode }) => children,
+  useDashboardTheme: () => ({ theme: 'light', toggleTheme: vi.fn() }),
 }));
 vi.mock('next/navigation', () => ({
   usePathname: () => mocks.pathname,
@@ -32,6 +37,37 @@ function switcherTree() {
 function renderSwitcher() {
   return render(switcherTree());
 }
+
+it('ferme le menu latéral au clic extérieur ou avec Échap, sans intercepter les actions', () => {
+  mocks.role = 'OWNER';
+  const outside = vi.fn();
+  render(
+    <NextIntlClientProvider locale="fr" messages={messages}>
+      <TooltipProvider>
+        <DashboardSidebar
+          pathname="/dashboard"
+          salleView="service-live"
+          isSokarOperator={false}
+          onCreateOffer={vi.fn()}
+        />
+        <button onClick={outside}>Autre action</button>
+      </TooltipProvider>
+    </NextIntlClientProvider>,
+  );
+  const trigger = screen.getByRole('button', { name: 'Service' });
+  fireEvent.click(trigger);
+  expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  fireEvent.pointerDown(screen.getByRole('link', { name: 'Réservations' }));
+  expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  const other = screen.getByRole('button', { name: 'Autre action' });
+  fireEvent.pointerDown(other);
+  fireEvent.click(other);
+  expect(outside).toHaveBeenCalledOnce();
+  expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  fireEvent.click(trigger);
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(trigger).toHaveAttribute('aria-expanded', 'false');
+});
 
 describe('DashboardModeSwitcher : Companion', () => {
   it('garde trois rubriques de même largeur et le menu des salles accessible', () => {

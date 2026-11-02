@@ -414,7 +414,7 @@ export function DashboardModeSwitcher({
   );
 }
 
-function DashboardSidebar({
+export function DashboardSidebar({
   pathname,
   salleView,
   isSokarOperator,
@@ -431,7 +431,31 @@ function DashboardSidebar({
   const { activeSite } = useSiteSelection();
   const serviceStaff = isServiceStaff(activeSite?.role);
   const [openGroup, setOpenGroup] = useState<NavSectionId | null>(null);
+  const groupPanelRef = useRef<HTMLDivElement>(null);
   const openGroupDefinition = navSections.find((section) => section.id === openGroup) ?? null;
+
+  useEffect(() => {
+    if (!openGroup) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (
+        groupPanelRef.current?.contains(target) ||
+        target.closest('[aria-controls^="nav-group-"]')
+      )
+        return;
+      setOpenGroup(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenGroup(null);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [openGroup]);
 
   return (
     <aside className="dashboard-desktop-sidebar fixed bottom-4 left-4 top-4 z-40 w-16 flex-col items-center rounded-[1.4rem] border border-border bg-card/85 p-2 pt-[9px] shadow-2xl shadow-background/40 backdrop-blur-xl">
@@ -522,6 +546,7 @@ function DashboardSidebar({
 
       {openGroupDefinition && !salleMode && (
         <div
+          ref={groupPanelRef}
           id={`nav-group-${openGroupDefinition.id}`}
           className="absolute left-20 top-16 z-50 w-56 rounded-2xl border border-border bg-background p-2 shadow-2xl shadow-background/50"
         >
