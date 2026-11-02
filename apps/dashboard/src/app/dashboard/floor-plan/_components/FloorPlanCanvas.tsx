@@ -38,6 +38,11 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import {
   format,
@@ -709,6 +714,15 @@ const statusMeta: Record<TableStatus, { label: string; icon: LucideIcon }> = {
   late: { label: 'En retard', icon: AlertTriangle },
   occupied: { label: 'Occupée', icon: Users },
   inactive: { label: 'Inactive', icon: Lock },
+};
+
+const statusDotClasses: Record<TableStatus, string> = {
+  free: 'bg-floor-table-muted/80',
+  reserved: 'bg-brand',
+  upcoming: 'bg-warning',
+  late: 'bg-destructive',
+  occupied: 'bg-floor-table-accent',
+  inactive: 'bg-floor-table-muted/80',
 };
 
 function getTableStatus(
@@ -1456,18 +1470,7 @@ function TableCard({
             : status?.status === 'free'
               ? 'text-floor-table-text'
               : 'text-floor-table-muted';
-  const liveStatusDotClass =
-    status?.status === 'occupied'
-      ? 'bg-floor-table-accent'
-      : status?.status === 'late'
-        ? 'bg-destructive'
-        : status?.status === 'upcoming'
-          ? 'bg-warning'
-          : status?.status === 'reserved'
-            ? 'bg-brand'
-            : status
-              ? 'bg-floor-table-muted/80'
-              : null;
+  const liveStatusDotClass = status ? statusDotClasses[status.status] : null;
   const isRound = table.shape === 'round';
   const cardMinWidth = compact ? COMPACT_TABLE_CARD_MIN_WIDTH : TABLE_CARD_MIN_WIDTH;
   const cardMinHeight = compact ? COMPACT_TABLE_CARD_MIN_HEIGHT : TABLE_CARD_MIN_HEIGHT;
@@ -1524,7 +1527,7 @@ function TableCard({
     <div
       ref={dragRef}
       className={cn(
-        'relative box-border min-w-0 min-h-0 select-none outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        'group/table relative box-border min-w-0 min-h-0 select-none outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         'overflow-visible',
         !isOverlay && 'absolute',
         className,
@@ -1560,6 +1563,14 @@ function TableCard({
       title={title}
       {...dragProps}
     >
+      {isCombinable ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-9 left-0 z-40 hidden whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md group-hover/table:block group-focus-visible/table:block"
+        >
+          Peut être combinée avec d’autres tables
+        </span>
+      ) : null}
       <>
         {isRound
           ? roundChairPositions.map((chair, index) => (
@@ -2564,6 +2575,7 @@ export function FloorPlanCanvas({
   // recentrage. Lue via une ref pour que le déplacement d'une table pendant
   // l'édition ne déclenche pas de recadrage automatique.
   const contentBoundsRef = useRef<ContentBounds | null>(null);
+  const tableBoundsRef = useRef<ContentBounds | null>(null);
   // Repère d'édition : masqué par défaut en service pour garder la salle lisible
   // pendant le coup de feu (le bouton et la touche « G » restent disponibles).
   const [gridVisible, setGridVisible] = useState(mode !== 'service');
@@ -2595,6 +2607,7 @@ export function FloorPlanCanvas({
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [loadedLiveDate, setLoadedLiveDate] = useState<string | null>(null);
   const [selectedServiceTableId, setSelectedServiceTableId] = useState<string | null>(null);
+  const [overlayServiceInspector, setOverlayServiceInspector] = useState(true);
   const [showWalkInHelp, setShowWalkInHelp] = useState(false);
   const [mobileServiceDetailsOpen, setMobileServiceDetailsOpen] = useState(false);
   const [updatingReservationStateId, setUpdatingReservationStateId] = useState<string | null>(null);
@@ -2793,61 +2806,80 @@ export function FloorPlanCanvas({
    * renvoie l'échelle appliquée ainsi que le défilement qui centre la zone,
    * pour pouvoir enchaîner le cadrage sans attendre le prochain rendu.
    */
-  const fitCanvasToViewport = useCallback(() => {
-    const viewport = canvasViewportRef.current;
-    if (!viewport) return null;
-    const viewportWidth = viewport.clientWidth;
-    const viewportHeight = viewport.clientHeight;
-    if (viewportWidth < 40 || viewportHeight < 40) return null;
-    const fitFloor =
-      live && serviceTab === 'plan' ? TOUCH_FIT_FLOOR : touchCanvasLayout ? TOUCH_FIT_FLOOR : 1;
-    // Plancher du dézoom manuel : cadrer le plan entier.
-    const fullCanvasZoom = computeFitZoom({
-      viewportWidth,
-      viewportHeight,
-      canvasWidth,
-      canvasHeight,
-      minZoom,
-      floor: fitFloor,
-    });
-    const bounds = contentBoundsRef.current;
-    let nextZoom = fullCanvasZoom;
-    if (bounds) {
-      const contentZoom = computeFitZoom({
+  const fitCanvasToViewport = useCallback(
+    (focusTables = false) => {
+      const viewport = canvasViewportRef.current;
+      if (!viewport) return null;
+      const viewportWidth = viewport.clientWidth;
+      const viewportHeight = viewport.clientHeight;
+      if (viewportWidth < 40 || viewportHeight < 40) return null;
+      const fitMinimum = live && !focusTables ? 0.01 : minZoom;
+      const fitFloor =
+        live && !focusTables
+          ? fitMinimum
+          : live && serviceTab === 'plan'
+            ? TOUCH_FIT_FLOOR
+            : touchCanvasLayout
+              ? TOUCH_FIT_FLOOR
+              : 1;
+      // Plancher du dézoom manuel : cadrer le plan entier.
+      const fullCanvasZoom = computeFitZoom({
         viewportWidth,
         viewportHeight,
-        canvasWidth: bounds.width,
-        canvasHeight: bounds.height,
+        canvasWidth,
+        canvasHeight,
         minZoom,
         floor: fitFloor,
       });
-      // En Live, le cadre est déjà réduit au groupe de tables : on peut donc
-      // dépasser 100 % pour remplir utilement la fenêtre sans réintroduire la
-      // hauteur vide de la zone d'édition. L'éditeur garde son plafond à 100 %.
-      const fitCeiling = live && serviceTab === 'plan' ? MAX_ZOOM : 1;
-      nextZoom = clampZoom(
-        Math.max(Math.min(contentZoom, fitCeiling), fullCanvasZoom),
-        minZoom,
-        MAX_ZOOM,
-      );
-    }
-    const scroll =
-      live && serviceTab === 'plan' && bounds
-        ? {
-            left: Math.max(0, (bounds.width * nextZoom - viewportWidth) / 2),
-            top: Math.max(0, (bounds.height * nextZoom - viewportHeight) / 2),
-          }
-        : computeFocusScroll({
-            viewportWidth,
-            viewportHeight,
-            region: bounds ?? { x: 0, y: 0, width: canvasWidth, height: canvasHeight },
-            zoom: nextZoom,
-          });
-    zoomRef.current = nextZoom;
-    fitZoomRef.current = fullCanvasZoom;
-    setZoom(nextZoom);
-    return { zoom: nextZoom, scroll };
-  }, [canvasHeight, canvasWidth, live, minZoom, serviceTab, touchCanvasLayout]);
+      const stageBounds = contentBoundsRef.current;
+      const bounds = live && focusTables ? (tableBoundsRef.current ?? stageBounds) : stageBounds;
+      let nextZoom = fullCanvasZoom;
+      if (bounds) {
+        const contentZoom = computeFitZoom({
+          viewportWidth,
+          viewportHeight,
+          canvasWidth: bounds.width,
+          canvasHeight: bounds.height,
+          minZoom: fitMinimum,
+          floor: fitFloor,
+        });
+        // En Live, le cadre est déjà réduit au groupe de tables : on peut donc
+        // dépasser 100 % pour remplir utilement la fenêtre sans réintroduire la
+        // hauteur vide de la zone d'édition. L'éditeur garde son plafond à 100 %.
+        const fitCeiling = live && serviceTab === 'plan' ? MAX_ZOOM : 1;
+        nextZoom = clampZoom(
+          live
+            ? Math.min(contentZoom, fitCeiling)
+            : Math.max(Math.min(contentZoom, fitCeiling), fullCanvasZoom),
+          fitMinimum,
+          MAX_ZOOM,
+        );
+      }
+      const scroll =
+        live && serviceTab === 'plan' && bounds && stageBounds
+          ? {
+              left: Math.max(
+                0,
+                (bounds.x - stageBounds.x + bounds.width / 2) * nextZoom - viewportWidth / 2,
+              ),
+              top: Math.max(
+                0,
+                (bounds.y - stageBounds.y + bounds.height / 2) * nextZoom - viewportHeight / 2,
+              ),
+            }
+          : computeFocusScroll({
+              viewportWidth,
+              viewportHeight,
+              region: bounds ?? { x: 0, y: 0, width: canvasWidth, height: canvasHeight },
+              zoom: nextZoom,
+            });
+      zoomRef.current = nextZoom;
+      fitZoomRef.current = live && !focusTables ? nextZoom : fullCanvasZoom;
+      setZoom(nextZoom);
+      return { zoom: nextZoom, scroll };
+    },
+    [canvasHeight, canvasWidth, live, minZoom, serviceTab, touchCanvasLayout],
+  );
 
   /**
    * Plancher du zoom manuel sur écran tactile : quand le plan tient déjà
@@ -2856,10 +2888,11 @@ export function FloorPlanCanvas({
    * tactile (plan plus grand que la fenêtre), on garde la marge MIN_ZOOM_TOUCH.
    */
   const manualMinZoom = useCallback(() => {
+    if (live) return Math.min(touchCanvasLayout ? MIN_ZOOM_TOUCH : MIN_ZOOM, fitZoomRef.current);
     if (!touchCanvasLayout) return MIN_ZOOM;
     const fit = fitZoomRef.current;
     return fit >= TOUCH_FIT_FLOOR ? fit : MIN_ZOOM_TOUCH;
-  }, [touchCanvasLayout]);
+  }, [live, touchCanvasLayout]);
 
   /** Zoom manuel : il ne doit plus être écrasé par le cadrage automatique. */
   function changeZoom(delta: number) {
@@ -2904,12 +2937,12 @@ export function FloorPlanCanvas({
     userAdjustedZoomRef.current = false;
     let retryFrame: number | null = null;
     const applyInitialFit = () => {
-      const fit = fitCanvasToViewport();
+      const fit = fitCanvasToViewport(live);
       if (!viewport || !fit) {
         // Le premier frame peut précéder la mesure finale du panneau sur
         // Safari. Un second essai suffit sans installer d'observateur durable.
         retryFrame = window.requestAnimationFrame(() => {
-          const retryFit = fitCanvasToViewport();
+          const retryFit = fitCanvasToViewport(live);
           if (!viewport || !retryFit) return;
           viewport.scrollLeft = retryFit.scroll.left;
           viewport.scrollTop = retryFit.scroll.top;
@@ -2927,18 +2960,16 @@ export function FloorPlanCanvas({
     };
   }, [touchCanvasLayout, live, loading, error, serviceTab, floorPlan?.id, fitCanvasToViewport]);
 
-  const previousServiceTableIdRef = useRef<string | null>(null);
   useIsomorphicLayoutEffect(() => {
-    if (previousServiceTableIdRef.current === selectedServiceTableId) return;
-    previousServiceTableIdRef.current = selectedServiceTableId;
-    if (!live || serviceTab !== 'plan' || userAdjustedZoomRef.current) return;
+    if (!live || serviceTab !== 'plan' || overlayServiceInspector || userAdjustedZoomRef.current)
+      return;
     const viewport = canvasViewportRef.current;
-    const fit = fitCanvasToViewport();
+    const fit = fitCanvasToViewport(true);
     if (viewport && fit) {
       viewport.scrollLeft = fit.scroll.left;
       viewport.scrollTop = fit.scroll.top;
     }
-  }, [fitCanvasToViewport, live, selectedServiceTableId, serviceTab]);
+  }, [fitCanvasToViewport, live, overlayServiceInspector, selectedServiceTableId, serviceTab]);
 
   // Gestes du plan : pincer pour zoomer, double-tap pour recadrer. Le
   // défilement à un doigt reste natif (voir `touch-action` sur la fenêtre).
@@ -3754,6 +3785,9 @@ export function FloorPlanCanvas({
   // lecture par ref dans le cadrage évite tout recadrage automatique quand le
   // restaurateur déplace ou redimensionne une table.
   contentBoundsRef.current = contentBounds;
+  tableBoundsRef.current = live
+    ? computeLiveContentBounds([], placedTables, canvasWidth, canvasHeight)
+    : null;
   const tableCombinations = useMemo<FloorPlanTableCombination[]>(
     () => floorPlan?.tableCombinations ?? [],
     [floorPlan?.tableCombinations],
@@ -4238,6 +4272,24 @@ export function FloorPlanCanvas({
       return;
     }
     if (live) {
+      const viewport = canvasViewportRef.current;
+      if (viewport) {
+        const view = viewport.getBoundingClientRect();
+        const overlaps =
+          view.width >= 288 &&
+          Array.from(viewport.querySelectorAll('[role="button"][aria-description]')).some(
+            (element) => {
+              const rect = element.getBoundingClientRect();
+              return (
+                rect.right > view.right - 288 &&
+                rect.left < view.right &&
+                rect.bottom > view.top &&
+                rect.top < view.bottom
+              );
+            },
+          );
+        setOverlayServiceInspector(!overlaps);
+      }
       setShowWalkInHelp(false);
       setSelectedServiceTableId(table.id);
       return;
@@ -6778,39 +6830,40 @@ export function FloorPlanCanvas({
     </p>
   );
   const serviceOverview = (
-    <div className="space-y-3">
-      <details className="group">
-        <summary
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1 px-2 text-xs"
           aria-label="Légende des statuts"
-          className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
         >
-          Légende
-          <ChevronDown
-            size={14}
-            aria-hidden="true"
-            className="transition-transform duration-200 group-open:rotate-180"
-          />
-        </summary>
-        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border pt-3">
-          {(['free', 'reserved', 'upcoming', 'late', 'occupied'] as TableStatus[]).map((status) => {
-            const StatusIcon = statusMeta[status].icon;
-            return (
-              <div key={status} className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span
-                  className={cn(
-                    'flex size-6 shrink-0 items-center justify-center rounded-md border',
-                    statusClasses[status],
-                  )}
-                >
-                  <StatusIcon className="size-3.5" aria-hidden="true" />
-                </span>
-                <span>{statusMeta[status].label}</span>
-              </div>
-            );
-          })}
+          Légende <ChevronDown size={14} aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72 space-y-3 p-3">
+        <div className="grid grid-cols-2 gap-3">
+          {(['free', 'reserved', 'upcoming', 'late', 'occupied'] as TableStatus[]).map((status) => (
+            <div key={status} className="flex items-center gap-2 text-xs text-foreground">
+              <span
+                aria-hidden="true"
+                className={cn('size-2 shrink-0 rounded-full', statusDotClasses[status])}
+              />
+              {statusMeta[status].label}
+            </div>
+          ))}
         </div>
-      </details>
-    </div>
+        <p className="border-t border-border pt-2 text-xs text-foreground/80">
+          Attendues : tables affectées à une réservation à venir ou en retard. Une arrivée est
+          imminente dans les 30 minutes. Les réservations sans table affectée ne sont pas comptées
+          ici.
+        </p>
+        <p className="flex items-center gap-2 text-xs text-foreground/80">
+          <Link2 size={14} aria-hidden="true" /> Peut être combinée avec d’autres tables
+        </p>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 
   const mobileServiceInspector =
@@ -7214,6 +7267,7 @@ export function FloorPlanCanvas({
     <aside
       className={cn(
         'order-3 h-auto max-h-72 w-full min-w-0 flex-col overflow-hidden border-t border-border bg-card lg:h-full lg:max-h-none lg:w-72 lg:min-w-72 lg:border-l lg:border-t-0',
+        overlayServiceInspector && 'lg:absolute lg:inset-y-0 lg:right-0 lg:z-40 lg:shadow-xl',
         selectedServiceTable ? 'hidden lg:flex' : 'hidden',
       )}
     >
@@ -7483,7 +7537,7 @@ export function FloorPlanCanvas({
                 )}
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-border p-4 text-center">
+            <div className="space-y-2 text-left">
               <p className="text-sm font-medium">Table disponible</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 Aucune réservation en cours ou imminente.
@@ -8400,6 +8454,50 @@ export function FloorPlanCanvas({
                     </>
                   ) : null}
                   {serviceOverview}
+                  {hasServerFilter ? (
+                    <Select
+                      value={selectedServerFilter ?? '_all_'}
+                      onValueChange={(val) => setSelectedServerFilter(val === '_all_' ? null : val)}
+                    >
+                      <SelectTrigger
+                        aria-label="Filtrer par serveur"
+                        title="Filtrer par serveur"
+                        className="ml-auto h-8 w-9 justify-center gap-1 border-border bg-background px-0 text-xs font-medium xl:w-auto xl:justify-start xl:px-2.5"
+                      >
+                        {selectedServerFilter === '_unassigned_' ? (
+                          <UserX size={13} className="shrink-0 text-muted-foreground" />
+                        ) : (
+                          <UserRound size={13} className="shrink-0 text-primary" />
+                        )}
+                        {/* Sur téléphone le filtre reste une icône : la ligne du jour
+                          doit tenir sans repousser les onglets sur une 3e ligne. */}
+                        <span className="!hidden min-w-0 truncate xl:!inline-flex">
+                          <SelectValue placeholder="Tous les serveurs" />
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_all_">
+                          Toutes les tables ({allTables.length})
+                        </SelectItem>
+                        {unassignedCount > 0 ? (
+                          <SelectItem value="_unassigned_">
+                            <span className="flex items-center gap-1.5">
+                              <UserX size={13} className="shrink-0 text-muted-foreground" />
+                              Non affectées ({unassignedCount})
+                            </span>
+                          </SelectItem>
+                        ) : null}
+                        {allServers.map((server) => {
+                          const count = serverTableCounts.get(server) ?? 0;
+                          return (
+                            <SelectItem key={server} value={server}>
+                              {server} ({count} {count > 1 ? 'tables' : 'table'})
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
                 </div>
                 <div className="flex w-full flex-wrap items-center gap-2">
                   {serviceIsToday ? (
@@ -8477,16 +8575,37 @@ export function FloorPlanCanvas({
                     </Button>
                   ) : null}
                   {serviceTab === 'plan' && placedTables.length > 0 ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1.5 transition-all duration-200"
-                      onClick={resetView}
-                    >
-                      <LocateFixed size={14} aria-hidden="true" />
-                      Ajuster le plan
-                    </Button>
+                    <div role="group" aria-label="Zoom du plan" className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        aria-label="Réduire le plan"
+                        onClick={() => changeZoom(-ZOOM_STEP)}
+                      >
+                        <ZoomOut size={14} />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 transition-all duration-200"
+                        onClick={resetView}
+                      >
+                        <LocateFixed size={14} aria-hidden="true" /> Ajuster le plan
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        aria-label="Agrandir le plan"
+                        onClick={() => changeZoom(ZOOM_STEP)}
+                      >
+                        <ZoomIn size={14} />
+                      </Button>
+                    </div>
                   ) : null}
                   {serviceIsToday && serviceTab === 'plan' && placedTables.length > 0 ? (
                     <Button
@@ -8498,69 +8617,14 @@ export function FloorPlanCanvas({
                       onClick={() => setShowWalkInHelp((open) => !open)}
                     >
                       <Users size={14} aria-hidden="true" />
-                      Client sans réservation
+                      Choisir une table pour un client
                     </Button>
-                  ) : null}
-                  {hasServerFilter ? (
-                    <Select
-                      value={selectedServerFilter ?? '_all_'}
-                      onValueChange={(val) => setSelectedServerFilter(val === '_all_' ? null : val)}
-                    >
-                      <SelectTrigger
-                        aria-label="Filtrer par serveur"
-                        title="Filtrer par serveur"
-                        className="ml-auto h-8 w-9 justify-center gap-1 border-border bg-background px-0 text-xs font-medium xl:w-auto xl:justify-start xl:px-2.5"
-                      >
-                        {selectedServerFilter === '_unassigned_' ? (
-                          <UserX size={13} className="shrink-0 text-muted-foreground" />
-                        ) : (
-                          <UserRound size={13} className="shrink-0 text-primary" />
-                        )}
-                        {/* Sur téléphone le filtre reste une icône : la ligne du jour
-                          doit tenir sans repousser les onglets sur une 3e ligne. */}
-                        <span className="!hidden min-w-0 truncate xl:!inline-flex">
-                          <SelectValue placeholder="Tous les serveurs" />
-                        </span>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_all_">
-                          Toutes les tables ({allTables.length})
-                        </SelectItem>
-                        {unassignedCount > 0 ? (
-                          <SelectItem value="_unassigned_">
-                            <span className="flex items-center gap-1.5">
-                              <UserX size={13} className="shrink-0 text-muted-foreground" />
-                              Non affectées ({unassignedCount})
-                            </span>
-                          </SelectItem>
-                        ) : null}
-                        {allServers.map((server) => {
-                          const count = serverTableCounts.get(server) ?? 0;
-                          return (
-                            <SelectItem key={server} value={server}>
-                              {server} ({count} {count > 1 ? 'tables' : 'table'})
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
                   ) : null}
                 </div>
               </div>
             </>
           ) : null}
         </CardHeader>
-
-        {live && serviceIsToday && serviceTab === 'plan' && showWalkInHelp ? (
-          <div
-            id="walk-in-help"
-            role="status"
-            className="border-b border-border bg-accent/50 px-4 py-3 text-sm text-foreground"
-          >
-            Sélectionnez une table disponible sur le plan, puis choisissez « Placer un client sans
-            réservation ».
-          </div>
-        ) : null}
 
         {error || reservationsError ? (
           <div className="sokar-error m-4 text-sm">
@@ -8713,11 +8777,7 @@ export function FloorPlanCanvas({
             'overflow-hidden p-0',
             live
               ? liveViewportBounds
-                ? // Les tables cadrées occupent parfois moins de hauteur que
-                  // l'écran d'un téléphone. Garder une surface utile jusqu'au
-                  // dessus de la navigation tactile évite le vide mort entre
-                  // la légende et la barre fixe.
-                  'h-auto min-h-[calc(100dvh-15rem)] md:min-h-0'
+                ? 'h-[calc(100dvh-15rem)] min-h-[18rem] md:h-[min(600px,calc(100dvh-15rem))] md:min-h-[22rem]'
                 : cn(
                     // Sur téléphone, la surface du plan prend la hauteur restante de
                     // l'écran : un cockpit compact laisse plus de place qu'un
@@ -8754,7 +8814,7 @@ export function FloorPlanCanvas({
               onDragEnd={handleDragEnd}
               onDragCancel={handleDragCancel}
             >
-              <div className="flex h-full min-h-0 flex-col lg:flex-row">
+              <div className="relative flex h-full min-h-0 flex-col lg:flex-row">
                 <div className="order-2 lg:order-1 lg:contents">
                   {!live ? (
                     <FloorPlanPalette
@@ -8786,6 +8846,16 @@ export function FloorPlanCanvas({
                           : undefined,
                     )}
                   >
+                    {live && serviceIsToday && showWalkInHelp ? (
+                      <div
+                        id="walk-in-help"
+                        role="status"
+                        className="pointer-events-none absolute left-3 top-3 z-30 w-fit max-w-[calc(100%-1.5rem)] rounded-lg border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg"
+                      >
+                        Sélectionnez une table disponible, puis choisissez « Placer un client sans
+                        réservation ».
+                      </div>
+                    ) : null}
                     {displayedInitialDelayImpact && !reportedDelayBannerDismissed ? (
                       <div
                         role="region"

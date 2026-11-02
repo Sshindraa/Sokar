@@ -1040,6 +1040,55 @@ describe('FloorPlanCanvas — actions Live service', () => {
     }
   });
 
+  it('cadre les tables à l’ouverture et ajuste ensuite toute la zone', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return {
+        ...floorPlan,
+        width: 10000,
+        zones: [
+          {
+            id: 'zone',
+            floorPlanId: floorPlan.id,
+            sectionId: null,
+            name: 'Salle',
+            x: 0,
+            y: 0,
+            width: 10000,
+            height: 400,
+            rotation: 0,
+          },
+        ],
+      };
+    });
+    const width = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(500);
+    const height = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(400);
+    const previous = Element.prototype.scrollTo;
+    const scrollTo = vi.fn();
+    Element.prototype.scrollTo = scrollTo;
+    try {
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      const stage = await screen.findByTestId('floor-plan-live-stage');
+      const focusedWidth = parseFloat(stage.style.width);
+      fireEvent.click(screen.getByRole('button', { name: 'Ajuster le plan' }));
+      await waitFor(() => expect(parseFloat(stage.style.width)).toBeLessThan(focusedWidth));
+      expect(parseFloat(stage.style.width)).toBeLessThanOrEqual(500);
+      await waitFor(() => expect(scrollTo).toHaveBeenCalled());
+    } finally {
+      width.mockRestore();
+      height.mockRestore();
+      Element.prototype.scrollTo = previous;
+    }
+  });
+
+  it('affiche la légende dans un menu et explique les tables attendues', async () => {
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    const trigger = await screen.findByRole('button', { name: 'Légende des statuts' });
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    expect(await screen.findByRole('menu')).toHaveTextContent('Arrivée imminente');
+    expect(screen.getByRole('menu')).toHaveTextContent('Les réservations sans table affectée');
+  });
+
   it('ne présente pas les compteurs du jour précédent pendant le changement de date', async () => {
     let resolveReservations!: (value: PlanningReservation[]) => void;
     const pending = new Promise<PlanningReservation[]>((resolve) => {
@@ -1199,6 +1248,37 @@ describe('FloorPlanCanvas — actions Live service', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('réserve une colonne si la fiche flottante masquerait une table', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    const table = await screen.findByRole('button', { name: 'T4 · 4 places' });
+    const viewport = table.closest('.overflow-auto')!;
+    vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      right: 800,
+      top: 0,
+      bottom: 600,
+      width: 800,
+      height: 600,
+    } as DOMRect);
+    vi.spyOn(table, 'getBoundingClientRect').mockReturnValue({
+      left: 700,
+      right: 780,
+      top: 100,
+      bottom: 180,
+      width: 80,
+      height: 80,
+    } as DOMRect);
+    fireEvent.click(table);
+    const inspector = screen
+      .getByRole('button', { name: 'Fermer la fiche de la table' })
+      .closest('aside');
+    expect(inspector).not.toHaveClass('lg:absolute');
+  });
+
   describe('placer un client sans réservation', () => {
     const openForm = async () => {
       fireEvent.click(await screen.findByRole('button', { name: 'T4 · 4 places' }));
@@ -1222,9 +1302,11 @@ describe('FloorPlanCanvas — actions Live service', () => {
 
     it('guide vers une table disponible avant de proposer le placement réel', async () => {
       render(<FloorPlanCanvas orgId="org_test" mode="service" />);
-      const action = await screen.findByRole('button', { name: 'Client sans réservation' });
+      const action = await screen.findByRole('button', {
+        name: 'Choisir une table pour un client',
+      });
       fireEvent.click(action);
-      expect(screen.getByText(/Sélectionnez une table disponible sur le plan/)).toHaveAttribute(
+      expect(screen.getByText(/Sélectionnez une table disponible, puis/)).toHaveAttribute(
         'role',
         'status',
       );
@@ -1233,9 +1315,7 @@ describe('FloorPlanCanvas — actions Live service', () => {
       expect(
         screen.getAllByRole('button', { name: 'Placer un client sans réservation' }).length,
       ).toBeGreaterThan(0);
-      expect(
-        screen.queryByText(/Sélectionnez une table disponible sur le plan/),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText(/Sélectionnez une table disponible, puis/)).not.toBeInTheDocument();
       expect(apiMocks.post).not.toHaveBeenCalled();
     });
 

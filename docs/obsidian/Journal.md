@@ -3619,3 +3619,7 @@ La démo non authentifiée partageait le budget anonyme de 100 requêtes/minute/
 ### 2026-11-02 — Service : cadrage et lisibilité du plan
 
 Le cadrage Live inclut les zones occupées en entier ; l’inspecteur s’ouvre à la sélection et la barre garde un résumé unique avec les couverts prévus. Les tables combinables sont expliquées sur la carte et dans la fiche. Les assises sont réduites et masquées quand leurs enveloppes se chevaucheraient, sans modifier la capacité ni les coordonnées enregistrées.
+
+### 2026-11-02 — Service : zoom, fiche stable et légende flottante
+
+La vue s’ouvre cadrée sur les tables tout en conservant la géométrie complète des zones ; « Ajuster le plan » cadre la salle et des commandes règlent le zoom. La fiche reste en surimpression quand elle ne masque aucune table et prend sinon une colonne. La légende flottante reprend les points des statuts et explique les tables attendues ; l’accueil guide vers le choix d’une table sans déplacer le plan.
