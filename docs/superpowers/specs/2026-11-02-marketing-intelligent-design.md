@@ -112,7 +112,9 @@ chiffrée.
 
 ## Phase 2 : cibler simplement
 
-**Paliers.** Calculés à partir des visites honorées des 12 derniers mois. La requête d'affinité de
+**Paliers.** Calculés à partir des visites des 12 derniers mois : réservations passées confirmées,
+en salle ou honorées, jamais les absences ni les annulations, car l'équipe ne marque pas toujours
+« honorée ». La requête d'affinité de
 `planServiceFill` les charge déjà ; on y ajoute le nombre total de visites.
 
 | Palier        | Condition                                       | Probabilité de départ |
@@ -120,7 +122,7 @@ chiffrée.
 | `CRENEAU`     | ≥ 2 visites sur ce créneau, la dernière < 120 j | 0,30                  |
 | `REGULIER`    | ≥ 3 visites, la dernière < 180 j                | 0,15                  |
 | `CONNU`       | Au moins 1 visite                               | 0,08                  |
-| `SANS_VISITE` | Aucune visite honorée sur 12 mois               | 0,03                  |
+| `SANS_VISITE` | Aucune visite sur 12 mois                       | 0,03                  |
 
 `shortcut: probabilités posées à la main, utilisées seulement pour dimensionner l'audience ; à
 remplacer quand la mesure par palier existe.`

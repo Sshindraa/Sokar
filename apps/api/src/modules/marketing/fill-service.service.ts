@@ -194,7 +194,7 @@ export type ServiceFillContext = {
   members: CampaignAudienceMemberDraft[];
   excludedByReason: Record<string, number>;
   groupSize: number;
-  honored: Array<{ customerId: string | null; reservedAt: Date }>;
+  visits: Array<{ customerId: string | null; reservedAt: Date }>;
   /** Réservations actives des clients joignables, du début de la journée de Paris à through + 8 j. */
   active: ActiveReservation[];
   history: ForecastRow[];
@@ -226,7 +226,7 @@ export async function loadServiceFillContext(args: {
     channel === 'EMAIL' ? readRemainingDailyEmailBudget(now) : Promise.resolve(null),
   ]);
   const customerIds = audience.members.map((member) => member.customerId);
-  const [honored, active] =
+  const [visits, active] =
     customerIds.length === 0
       ? [[], []]
       : await Promise.all([
@@ -235,7 +235,8 @@ export async function loadServiceFillContext(args: {
               restaurantId,
               isTest: false,
               customerId: { in: customerIds },
-              state: 'HONORED',
+              // Une réservation passée et confirmée compte : l'équipe ne marque pas toujours « honorée ».
+              state: { in: [...COUNTED_RESERVATION_STATES] },
               reservedAt: { gte: historySince, lt: now },
             },
             select: { customerId: true, reservedAt: true },
@@ -260,7 +261,7 @@ export async function loadServiceFillContext(args: {
     members: audience.members,
     excludedByReason: audience.excludedByReason,
     groupSize: groupAverage._avg.partySize ?? FALLBACK_GROUP_SIZE,
-    honored,
+    visits,
     active,
     history,
     budget,
@@ -318,10 +319,10 @@ export function planOpenService(
   // Le même jour passe avant : un client déjà compté en `busyToday` n'est jamais compté deux fois.
   const pool = available.filter((member) => !busyNearby.has(member.customerId));
 
-  // Paliers : visites honorées sur 12 mois, dont celles du même jour de semaine et du même service.
+  // Paliers : visites sur 12 mois, dont celles du même jour de semaine et du même service.
   const weekday = parisParts(window.start).weekday;
   const stats = new Map<string, VisitStats>();
-  for (const row of context.honored) {
+  for (const row of context.visits) {
     if (!row.customerId) continue;
     const entry = stats.get(row.customerId) ?? {
       slotVisits: 0,

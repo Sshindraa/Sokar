@@ -112,13 +112,13 @@ function mockFloor({
     Promise.resolve(
       args._sum ? { _sum: { partySize: booked } } : { _avg: { partySize: 2 } },
     )) as never);
-  // Visites honorées (état simple), historique de prévision (createdAt) et réservations actives.
+  // Visites passées (états avec HONORED), historique de prévision (createdAt) et réservations actives.
   vi.mocked(db.reservation.findMany).mockImplementation(((args: {
-    where: { state: unknown };
+    where: { state?: { in?: string[] } };
     select?: { createdAt?: boolean };
   }) => {
     if (args.select?.createdAt) return Promise.resolve(history);
-    if (typeof args.where.state === 'string') return Promise.resolve(honored);
+    if (args.where.state?.in?.includes('HONORED')) return Promise.resolve(honored);
     return Promise.resolve(busy.map((row) => ({ reservedAt: SERVICE_DAY_NOON, ...row })));
   }) as never);
 }
@@ -384,6 +384,24 @@ describe('remplissage de service', () => {
       now: NOW,
     });
     expect(preview).toMatchObject({ candidateCount: 3, audience: 0, excludedLowProbability: 3 });
+  });
+
+  it('compte comme visite une réservation passée confirmée, jamais un no-show', async () => {
+    mockFloor({ tables: [{ capacity: 36, minCapacity: 1 }] });
+    mockAudience(members(1));
+    await planServiceFill({
+      restaurantId: 'r1',
+      date: DATE,
+      service: 'midi',
+      channel: 'SMS',
+      now: NOW,
+    });
+    const visitQuery = vi
+      .mocked(db.reservation.findMany)
+      .mock.calls.map(([args]) => args?.where)
+      .find((where) => (where?.state as { in?: string[] })?.in?.includes('HONORED'));
+    expect((visitQuery?.state as { in: string[] }).in).toEqual(['CONFIRMED', 'SEATED', 'HONORED']);
+    expect(visitQuery?.reservedAt).toMatchObject({ lt: NOW });
   });
 
   it("témoin : 30 % de l'audience, sans message, et reproductible avec la même graine", async () => {
