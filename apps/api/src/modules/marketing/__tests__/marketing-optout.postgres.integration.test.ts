@@ -308,6 +308,124 @@ describe.skipIf(!url)('marketing opt-out on PostgreSQL', () => {
     expect(afterErasure.optedOut.has(replacement.id)).toBe(true);
   });
 
+  it('preserves a pending complaint before erasing the customer', async () => {
+    const restaurant = await db.restaurant.create({
+      data: {
+        name: 'Pending complaint',
+        managerPhone: '',
+        managerEmail: '',
+        phoneNumber: randomUUID(),
+        openingHours: {},
+      },
+    });
+    const customer = await db.customer.create({
+      data: {
+        restaurantId: restaurant.id,
+        phone: '+33612345676',
+        emailNormalized: 'pending@example.test',
+      },
+    });
+    const campaign = await db.marketingCampaign.create({
+      data: {
+        restaurantId: restaurant.id,
+        name: 'Test',
+        objective: 'TEST',
+        channel: 'EMAIL',
+        bodyTemplate: 'test',
+        createdByHash: 'test',
+      },
+    });
+    const member = await db.campaignAudienceMember.create({
+      data: {
+        campaignId: campaign.id,
+        customerId: customer.id,
+        audienceVersion: 1,
+        inclusionReason: 'TEST',
+        capturedAt: new Date(),
+      },
+    });
+    const message = await db.campaignMessage.create({
+      data: {
+        campaignId: campaign.id,
+        customerId: customer.id,
+        audienceMemberId: member.id,
+        channel: 'EMAIL',
+        status: 'SENT',
+        provider: 'resend',
+        providerMessageId: randomUUID(),
+        idempotencyKey: randomUUID(),
+      },
+    });
+    const event = {
+      provider: 'resend' as const,
+      providerMessageId: message.providerMessageId!,
+      eventType: 'email.complained',
+    };
+    const erase = () =>
+      new ErasureService(db).eraseSubject({
+        subject: customer.phone,
+        reason: 'TEST',
+        actor: 'test',
+      });
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', '');
+    await expect(applyMarketingProviderEvent(event)).rejects.toThrow(
+      'MARKETING_OPTOUT_REGISTER_UNAVAILABLE',
+    );
+    await expect(erase()).rejects.toThrow('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+    expect(await db.campaignMessage.count({ where: { id: message.id } })).toBe(1);
+    expect(
+      (await db.customer.findUniqueOrThrow({ where: { id: customer.id } })).archivedAt,
+    ).toBeNull();
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+    await db.$executeRawUnsafe(`CREATE FUNCTION audit_fail_erasure_register() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'simulated register failure'; END; $$ LANGUAGE plpgsql`);
+    await db.$executeRawUnsafe(`CREATE TRIGGER audit_fail_erasure_register BEFORE INSERT ON marketing_opt_outs
+      FOR EACH ROW WHEN (NEW.source = 'RGPD_ERASURE') EXECUTE FUNCTION audit_fail_erasure_register()`);
+    try {
+      await expect(erase()).rejects.toThrow();
+      expect(await db.campaignMessage.count({ where: { id: message.id } })).toBe(1);
+      expect(
+        (await db.customer.findUniqueOrThrow({ where: { id: customer.id } })).archivedAt,
+      ).toBeNull();
+    } finally {
+      await db.$executeRawUnsafe('DROP TRIGGER audit_fail_erasure_register ON marketing_opt_outs');
+      await db.$executeRawUnsafe('DROP FUNCTION audit_fail_erasure_register()');
+    }
+    await db.$executeRawUnsafe(`CREATE FUNCTION audit_delay_erasure() RETURNS trigger AS $$
+      BEGIN PERFORM pg_sleep(0.5); RETURN NEW; END; $$ LANGUAGE plpgsql`);
+    await db.$executeRawUnsafe(`CREATE TRIGGER audit_delay_erasure BEFORE INSERT ON marketing_opt_outs
+      FOR EACH ROW WHEN (NEW.source = 'RGPD_ERASURE') EXECUTE FUNCTION audit_delay_erasure()`);
+    try {
+      const erasure = erase();
+      let waiting = false;
+      for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
+        const rows = await db.$queryRaw<{ waiting: boolean }[]>`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event = 'PgSleep'
+        ) AS waiting`;
+        waiting = rows[0].waiting;
+        if (!waiting) await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(waiting).toBe(true);
+      await Promise.all([erasure, applyMarketingProviderEvent(event)]);
+    } finally {
+      await db.$executeRawUnsafe('DROP TRIGGER audit_delay_erasure ON marketing_opt_outs');
+      await db.$executeRawUnsafe('DROP FUNCTION audit_delay_erasure()');
+    }
+    const replacement = await db.customer.create({
+      data: {
+        restaurantId: restaurant.id,
+        phone: customer.phone,
+        emailNormalized: customer.emailNormalized,
+      },
+    });
+    const result = await loadOptedOutCustomerIds({
+      restaurantId: restaurant.id,
+      channel: 'EMAIL',
+      customers: [replacement],
+    });
+    expect(result.optedOut.has(replacement.id)).toBe(true);
+  });
+
   it('keeps withdrawal proof when a register write fails during a concurrent opt-in', async () => {
     vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
     const restaurant = await db.restaurant.create({

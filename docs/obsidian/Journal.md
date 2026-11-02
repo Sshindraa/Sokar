@@ -3612,3 +3612,7 @@ La permission et sa preuve restent dans la transaction verrouillée lorsque le r
 ### 2026-11-02 — Plainte fournisseur : échec rejouable
 
 Si le registre d'opposition échoue, si sa clé manque ou si l'adresse n'est plus disponible, la suppression de la fiche est conservée, mais le statut fournisseur et les compteurs ne sont pas validés ; le webhook renvoie une erreur et peut être rejoué. PostgreSQL local : clé absente, adresse manquante, erreur SQL, reprise sans double comptage, puis effacement et recréation après plainte enregistrée. Une plainte non enregistrée suivie d'un effacement reste à traiter : l'effacement peut supprimer la suppression et le message avant le rejeu. La livraison et la réouverture restent bloquées ; qualification simultanée multi-fiches, fournisseur et staging encore nécessaire.
+
+### 2026-11-02 — Effacement et opposition connue : correctif local en revue
+
+Dans la PR #620 en brouillon, une opposition ou plainte connue est préservée dans le registre avant anonymisation ; une clé absente, une plainte sans adresse exploitable ou une erreur d'écriture interrompt la transaction. Effacement et plainte prennent le verrou de la fiche ; essais PostgreSQL : clé absente, erreur SQL, puis plainte concurrente et recréation. Ce changement ajoute un cas d'échec de l'effacement, accepté par Hamza ; le jeton d'identité est déjà consommé à ce stade. Les plaintes arrivant après effacement et les courses entre fiches restent à résoudre ; routes et envois toujours fermés.

@@ -132,6 +132,7 @@ type ProviderDb = Pick<
   | 'customer'
   | 'marketingOptOut'
   | '$executeRaw'
+  | '$queryRaw'
 > & {
   $transaction: <T>(callback: (tx: ProviderDb) => Promise<T>) => Promise<T>;
 };
@@ -417,6 +418,18 @@ export async function applyMarketingProviderEvent(
         transition.status === MarketingMessageStatus.COMPLAINED &&
         message.campaign?.restaurantId
       ) {
+        const locked = await tx.$queryRaw<
+          { id: string }[]
+        >`SELECT id FROM customers WHERE id = ${message.customerId} AND restaurant_id = ${message.campaign.restaurantId} AND archived_at IS NULL FOR UPDATE`;
+        if (locked.length === 0) {
+          const reconciliationId = await recordUnknownProviderEvent(
+            tx,
+            input,
+            transition,
+            occurredAt,
+          );
+          return { matched: false, changed: false, reconciliationId };
+        }
         await tx.marketingSuppression.upsert({
           where: {
             customerId_channel_reason: {

@@ -218,9 +218,16 @@ describe('ErasureService.eraseSubject', () => {
       customerIdentity: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       customerPreference: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       customerTagAssignment: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
-      marketingPermission: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      marketingPermission: {
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       marketingPermissionEvent: { deleteMany: vi.fn().mockResolvedValue({ count: 2 }) },
-      marketingSuppression: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      marketingSuppression: {
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      $queryRaw: vi.fn().mockResolvedValue([]),
       campaignAudienceMember: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       campaignMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       marketingConversion: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },

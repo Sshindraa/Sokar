@@ -17,6 +17,7 @@ vi.mock('../../../shared/db/client', () => ({
     customer: { findFirst: vi.fn() },
     marketingOptOut: { upsert: vi.fn() },
     $executeRaw: vi.fn(),
+    $queryRaw: vi.fn().mockResolvedValue([{ id: 'customer-1' }]),
     marketingProviderReconciliation: {
       upsert: vi.fn().mockResolvedValue({ id: 'reconciliation-1' }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
