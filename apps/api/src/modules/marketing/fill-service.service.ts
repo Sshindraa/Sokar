@@ -21,6 +21,7 @@ import {
   type ServiceWindow,
 } from './fill-forecast';
 import {
+  FILL_MODEL_VERSION,
   countByTier,
   selectFillAudience,
   tierOf,
@@ -40,7 +41,7 @@ import {
   type CampaignChannelCode,
 } from './marketing-campaign.service';
 
-export const HOLDOUT_RATE = 0.1;
+export const HOLDOUT_RATE = 0.3;
 export const HOLDOUT_MIN_CUSTOMERS = 20;
 /** shortcut: pas d'historique de taille de groupe, valeur de repli ; à remplacer par la moyenne réelle. */
 const FALLBACK_GROUP_SIZE = 2;
@@ -396,12 +397,18 @@ export function planOpenService(
     budgetExhausted,
     seed,
     holdoutCount,
-    members: selected.map(({ member, stats: visit }) => ({
+    members: selected.map(({ member, stats: visit, tier }) => ({
       customerId: member.customerId,
       inclusionReason: holdoutIds.has(member.customerId)
         ? HOLDOUT_INCLUSION_REASON
         : member.inclusionReason,
-      snapshot: { ...member.snapshot, affinity: visit.slotVisits, holdoutSeed: seed },
+      snapshot: {
+        ...member.snapshot,
+        affinity: visit.slotVisits,
+        holdoutSeed: seed,
+        tier,
+        modelVersion: FILL_MODEL_VERSION,
+      },
     })),
   };
 }

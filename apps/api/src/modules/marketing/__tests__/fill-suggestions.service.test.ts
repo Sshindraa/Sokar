@@ -29,7 +29,7 @@ vi.mock('../fill-forecast', async (importOriginal) => ({
   forecastEmptyPlaces: vi.fn(),
 }));
 vi.mock('../fill-service.service', () => ({
-  HOLDOUT_RATE: 0.1,
+  HOLDOUT_RATE: 0.3,
   serviceCapacity: vi.fn(),
   serviceAvailability: vi.fn(),
   loadServiceFillContext: vi.fn(),
@@ -411,8 +411,8 @@ describe('suggestions de services creux', () => {
     it('classement : canPrepare d’abord, puis couverts attendus par envoi, puis date', async () => {
       mockFloor({
         [`2026-11-03:soir`]: { capacity: 30, free: 25 }, // non préparable, le plus de places vides
-        [`2026-11-04:soir`]: { capacity: 30, free: 12 }, // préparable, score 0,3 × 2 × 0,9
-        [`2026-11-05:soir`]: { capacity: 30, free: 11 }, // préparable, score 0,03 × 2 × 0,9
+        [`2026-11-04:soir`]: { capacity: 30, free: 12 }, // préparable, score 0,3 × 2 × 0,7
+        [`2026-11-05:soir`]: { capacity: 30, free: 11 }, // préparable, score 0,03 × 2 × 0,7
         [`2026-11-06:soir`]: { capacity: 30, free: 10 }, // préparable, même score que le 4
       });
       mockPlans({

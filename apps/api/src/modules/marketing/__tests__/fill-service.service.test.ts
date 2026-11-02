@@ -229,18 +229,18 @@ describe('remplissage de service', () => {
       now: NOW,
       seed: 7,
     });
-    // 36 libres − 10 arrivées tardives = 26 vides ; 0,3 × 2 × 0,9 = 0,54 attendu par client → 49.
+    // 36 libres − 10 arrivées tardives = 26 vides ; 0,3 × 2 × 0,7 = 0,42 attendu par client → 62.
     expect(plan).toMatchObject({
       freePlaces: 36,
       emptyPlaces: 26,
       lateArrivals: 10,
       forecastSource: 'historique',
-      targetSize: 49,
+      targetSize: 62,
       candidateCount: 100,
-      tiers: { CRENEAU: 49 },
+      tiers: { CRENEAU: 62 },
       budgetExhausted: false,
     });
-    expect(plan.status === 'PLANNED' && plan.members).toHaveLength(49);
+    expect(plan.status === 'PLANNED' && plan.members).toHaveLength(62);
   });
 
   it('vivier insuffisant : prend tous les éligibles', async () => {
@@ -263,8 +263,8 @@ describe('remplissage de service', () => {
     vi.mocked(remainingDailyEmailBudget).mockResolvedValue(5);
     const args = { restaurantId: 'r1', date: DATE, service: 'midi' as const, now: NOW, seed: 7 };
     const email = await planServiceFill({ ...args, channel: 'EMAIL' });
-    // 6 clients dont 1 témoin = 5 envois.
-    expect(email).toMatchObject({ targetSize: 6, holdoutCount: 1, budgetExhausted: false });
+    // 7 clients dont 2 témoins = 5 envois.
+    expect(email).toMatchObject({ targetSize: 7, holdoutCount: 2, budgetExhausted: false });
     expect(remainingDailyEmailBudget).toHaveBeenCalledWith(expect.anything(), NOW);
     vi.mocked(remainingDailyEmailBudget).mockClear();
     const sms = await planServiceFill({ ...args, channel: 'SMS' });
@@ -346,7 +346,7 @@ describe('remplissage de service', () => {
     expect(plan).toMatchObject({ candidateCount: 3, targetSize: 0, members: [], tiers: {} });
   });
 
-  it('témoin : 10 % de l’audience, sans message, et reproductible avec la même graine', async () => {
+  it("témoin : 30 % de l'audience, sans message, et reproductible avec la même graine", async () => {
     mockFloor({ tables: [{ capacity: 36, minCapacity: 1 }], honored: slotRegulars(30) });
     mockAudience(members(30));
     const args = {
@@ -364,10 +364,50 @@ describe('remplissage de service', () => {
       plan.members
         .filter((m) => m.inclusionReason === HOLDOUT_INCLUSION_REASON)
         .map((m) => m.customerId);
-    expect(first.holdoutCount).toBe(3);
-    expect(holdout(first)).toHaveLength(3);
+    expect(first.holdoutCount).toBe(9);
+    expect(holdout(first)).toHaveLength(9);
     expect(holdout(first)).toEqual(holdout(second));
     expect(first.members[0].snapshot.holdoutSeed).toBe(42);
+  });
+
+  it("la part contactée de l'arrêt à l'objectif vaut 70 %", async () => {
+    // 10 places vides, 0,3 × 2 × 0,7 = 0,42 attendu par client : 23 × 0,42 < 10 ≤ 24 × 0,42.
+    mockFloor({ tables: [{ capacity: 10, minCapacity: 1 }], honored: slotRegulars(30) });
+    mockAudience(members(30));
+    const plan = await planServiceFill({
+      restaurantId: 'r1',
+      date: DATE,
+      service: 'midi',
+      channel: 'SMS',
+      now: NOW,
+      seed: 7,
+    });
+    expect(plan).toMatchObject({ emptyPlaces: 10, targetSize: 24, holdoutCount: 7 });
+  });
+
+  it('snapshot : tier et modelVersion v1 ; aucune phrase ni probabilité stockée', async () => {
+    mockFloor({ tables: [{ capacity: 36, minCapacity: 1 }], honored: slotRegulars(3) });
+    mockAudience(members(3));
+    const plan = await planServiceFill({
+      restaurantId: 'r1',
+      date: DATE,
+      service: 'midi',
+      channel: 'SMS',
+      now: NOW,
+      seed: 3,
+    });
+    if (plan.status !== 'PLANNED') throw new Error('expected a plan');
+    expect(plan.members).toHaveLength(3);
+    for (const m of plan.members) {
+      expect(m.snapshot).toMatchObject({ tier: 'CRENEAU', modelVersion: 'v1' });
+      expect(Object.keys(m.snapshot).sort()).toEqual([
+        'affinity',
+        'holdoutSeed',
+        'modelVersion',
+        'permissionSource',
+        'tier',
+      ]);
+    }
   });
 
   it('exclut le client qui a déjà une réservation ce jour-là', async () => {
@@ -464,8 +504,8 @@ describe('remplissage de service', () => {
       tiers: { CRENEAU: 10 },
       budgetExhausted: false,
       targetSize: 10,
-      holdout: 1,
-      sends: 9,
+      holdout: 3,
+      sends: 7,
     });
     expect(preview.template.bodyTemplate).toContain('{{reservationLink}}');
     expect(preview.template.bodyTemplate).toContain('{{unsubscribeUrl}}');
