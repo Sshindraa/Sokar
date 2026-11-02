@@ -68,7 +68,7 @@ function SidebarNavItem({
             'flex h-11 flex-none items-center rounded-xl text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             expanded ? 'w-full justify-start gap-3 px-3' : 'w-11 justify-center',
             active &&
-              'bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/30 ring-offset-2 ring-offset-card hover:bg-primary hover:text-primary-foreground',
+              'bg-primary text-primary-foreground shadow-sm hover:bg-primary hover:text-primary-foreground',
           )}
         >
           <Icon size={19} strokeWidth={active ? 2.25 : 1.75} />
