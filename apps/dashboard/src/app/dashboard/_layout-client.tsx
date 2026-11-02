@@ -286,7 +286,7 @@ export function DashboardModeSwitcher({
         <div
           className={cn(
             'dashboard-mode-switcher__item group relative flex min-w-0 items-center justify-center rounded-full font-medium transition-all duration-200',
-            'h-10 flex-1 px-1 text-sm',
+            'h-10 flex-1 px-3 text-sm',
             'bg-primary text-primary-foreground shadow-sm',
           )}
         >
