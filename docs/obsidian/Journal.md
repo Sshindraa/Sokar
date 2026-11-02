@@ -3112,3 +3112,11 @@ Vérification d’identité et export rouverts après qualification SMS en stagi
 ### 2026-10-30 — Rollback staging : dépendances restaurées
 
 Le test de rollback de Sshindraa/Sokar#577 échouait : l'artefact de la release précédente exige `zod-to-json-schema`, retiré par la PR (passage à Zod 4), donc absent de node_modules après le déploiement. Correctif : chaque snapshot garde le lockfile et les package.json de son commit (`deps/`), et le rollback réinstalle via `pnpm install --frozen-lockfile` avant de redémarrer. Une release sans lockfile est refusée avant d'arrêter les services. Non validé sur le VPS : la prochaine exécution de staging le vérifiera (le pré-build utilise `.latest-hash`).
+
+### 2026-11-02 — Réservations sans table : placement virtuel (branche feat/reservations-sans-table)
+
+Une réservation ou un hold sans table n'occupe plus tout le restaurant : il prend virtuellement la plus petite table libre compatible, dans l'ordre d'arrivée, et ne bloque globalement son intervalle que si aucune table ne peut l'absorber. Logique unique dans `apps/api/src/modules/floor-plan/unassigned-seating.ts`, appelée par la disponibilité (`availability-capacity-aware.service.ts`), la création et la modification (`agentic-reservations/core/reservation.service.ts`, qui remplace `findGlobalUnassignedBlocker`) et `TableAllocationService.hasGlobalCapacityConflict`. Sans plan de salle, les règles restent celles d'avant. Seed démo (`apps/api/seed.ts`) : table attribuée quand le restaurant a un plan de salle.
+
+Tests : planificateur pur (une table, saturation, aucune table compatible, table fixée, ordre d'arrivée, section), cohérence disponibilité / création sur chaque créneau, holds sans table, création refusée quand la disponibilité dit non. Suite API complète verte (4801 tests), typecheck et lint propres.
+
+Reste ouvert : l'index unique partiel `one_active_hold_per_slot_no_table` (migration `20261018120000`) refuse un second hold actif sans table pour le même créneau et les mêmes couverts, même si d'autres tables sont libres. Ce n'est pas levé ici : changer le schéma demande une confirmation. Diagnostic : la base de dev locale ne contient aucune réservation future active sans table (93 réservations, toutes de test) ; la mesure de production reste à faire par la requête lecture seule fournie dans la PR.
