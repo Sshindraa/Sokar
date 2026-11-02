@@ -818,6 +818,9 @@ export async function updateMarketingCampaign(args: {
   });
 }
 
+/** Code d'erreur d'une campagne mise en pause parce que son service visé est complet. */
+export const TARGET_SERVICE_FULL = 'TARGET_SERVICE_FULL';
+
 /** Jour UTC, comme les plafonds par destinataire. */
 export function dayWindow(now: Date): { start: Date; end: Date } {
   const start = new Date(now);
@@ -839,6 +842,19 @@ export async function remainingDailyEmailBudget(
   excludeCampaignId?: string,
 ): Promise<number> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('marketing_email_daily_budget'))`;
+  return countRemainingDailyEmailBudget(tx, sendAt, excludeCampaignId);
+}
+
+/** Même calcul, sans verrou : pour un chemin de lecture (aperçu, suggestions), jamais pour décider d'un envoi. */
+export function readRemainingDailyEmailBudget(now: Date): Promise<number> {
+  return countRemainingDailyEmailBudget(db, now);
+}
+
+async function countRemainingDailyEmailBudget(
+  tx: Prisma.TransactionClient,
+  sendAt: Date,
+  excludeCampaignId?: string,
+): Promise<number> {
   const { start, end } = dayWindow(sendAt);
   const [acceptedOnDay, awaitingSend] = await Promise.all([
     tx.campaignMessage.count({

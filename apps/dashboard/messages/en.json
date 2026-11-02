@@ -169,6 +169,14 @@
     "errorTitle": "The preview could not be computed",
     "retry": "Retry",
     "freePlaces": "Free seats",
+    "emptyPlaces": "Likely empty places",
+    "forecastSimple": "Estimate without enough history",
+    "estimateNote": "Starting estimate, not yet measured on your campaigns.",
+    "composition": {
+      "CRENEAU": "{count, plural, one {# regular for this slot} other {# regulars for this slot}}",
+      "REGULIER": "{count, plural, one {# frequent customer} other {# frequent customers}}",
+      "CONNU": "{count, plural, one {# past customer} other {# past customers}}"
+    },
     "candidates": "Candidate guests",
     "audience": "Recipients",
     "holdout": "Control group (no message)",
@@ -178,7 +186,9 @@
     "capacityUnknown": "No floor plan is set up: this service’s capacity is unknown, so nothing is proposed.",
     "full": "This service is full: no slot is left for 2 guests.",
     "noCandidate": "No reachable guest for this service.",
-    "noCandidateReasons": "No consent: {noConsent} · Opted out: {optedOut} · Already booked that day: {sameDay} · Frequency cap: {frequency}",
+    "noCandidateReasons": "No consent: {noConsent} · Opted out: {optedOut} · Already booked that day: {sameDay} · Booking nearby: {nearby} · Frequency cap: {frequency} · Low probability: {lowProbability}",
+    "noEmptyPlaces": "No likely empty place: this service should fill without a message.",
+    "budgetExhausted": "Today’s email budget is used up: choose SMS or try again tomorrow.",
     "subject": "Subject",
     "body": "Message",
     "bodyHelp": "Keep '{reservationLink}' and '{unsubscribeUrl}': they are required to send.",
@@ -191,9 +201,37 @@
       "holdout": "Control",
       "perCustomer": "covers per guest",
       "difference": "Difference",
-      "inconclusive": "Inconclusive: fewer than 20 guests in the control group."
+      "inconclusive": "Inconclusive: fewer than 20 guests in the control group.",
+      "effectRange": "Guests who booked, compared with the control group: between {low} and {high} points",
+      "proof": "Effect shown",
+      "noProof": "No evidence of an effect yet",
+      "truncated": "The service filled up before the sending was complete: the measure is inconclusive.",
+      "netTitle": "Over 30 days, all services",
+      "netValue": "{treated} vs {holdout} covers per guest",
+      "netPending": "Available 30 days after sending",
+      "byTierTitle": "By guest type",
+      "byTierRow": "{tier}: {treatedReserved} of {treatedCustomers} vs {holdoutReserved} of {holdoutCustomers}",
+      "tiers": {
+        "CRENEAU": "Regulars at this time slot",
+        "REGULIER": "Regular guests",
+        "CONNU": "Known guests",
+        "SANS_VISITE": "No visit yet"
+      }
     },
     "back": "Dashboard",
-    "closed": "The restaurant does not open this service that day: nothing to fill."
+    "closed": "The restaurant does not open this service that day: nothing to fill.",
+    "suggestions": {
+      "title": "Quiet services to fill",
+      "subtitle": "Services in the coming days that should still have empty places, based on your past bookings.",
+      "empty": "No quiet service to fill for now.",
+      "emptyPlaces": "{count, plural, one {# likely empty place} other {# likely empty places}}",
+      "sourceSimple": "Estimate without enough history",
+      "prepare": "Prepare",
+      "sends": "{count, plural, one {# message to send} other {# messages to send}}",
+      "dismiss": "Dismiss",
+      "dismissError": "Unable to dismiss this service right now. Please try again.",
+      "midi": "Lunch",
+      "soir": "Dinner"
+    }
   }
 }
