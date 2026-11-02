@@ -1040,6 +1040,40 @@ describe('FloorPlanCanvas — actions Live service', () => {
     }
   });
 
+  it('montre la salle entière quand elle reste lisible', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return {
+        ...floorPlan,
+        zones: [{ id: 'zone', name: 'Salle', x: 0, y: 0, width: 650, height: 360, rotation: 0 }],
+        tables: Array.from({ length: 4 }, (_, index) => ({
+          ...floorPlan.tables![0],
+          id: `table-${index}`,
+          name: `T${index + 1}`,
+          positionX: 30 + (index % 2) * 180,
+          positionY: 30 + Math.floor(index / 2) * 140,
+          width: 120,
+          height: 70,
+          shape: 'rect',
+        })),
+      };
+    });
+    const width = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(1200);
+    const height = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(500);
+    try {
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      const stage = await screen.findByTestId('floor-plan-live-stage');
+      await waitFor(() => {
+        expect(parseFloat(stage.style.width)).toBeLessThanOrEqual(1200);
+        expect(parseFloat(stage.style.height)).toBeLessThanOrEqual(500.01);
+        expect(parseInt(screen.getByLabelText('Niveau de zoom').textContent!)).toBeGreaterThan(100);
+      });
+    } finally {
+      width.mockRestore();
+      height.mockRestore();
+    }
+  });
+
   it('cadre les tables à l’ouverture et ajuste ensuite toute la zone', async () => {
     apiMocks.get.mockImplementation(async (path: string) => {
       if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
@@ -2068,7 +2102,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
         1400,
         900,
       ),
-    ).toEqual({ x: 52, y: 72, width: 596, height: 396 });
+    ).toEqual({ x: 76, y: 96, width: 548, height: 348 });
     expect(
       computeLiveContentBounds(
         [],
@@ -2076,7 +2110,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
         700,
         420,
       ),
-    ).toEqual({ x: -48, y: -48, width: 160, height: 160 });
+    ).toEqual({ x: -24, y: -24, width: 112, height: 112 });
   });
 
   it('centre la zone des tables dans la fenêtre', () => {

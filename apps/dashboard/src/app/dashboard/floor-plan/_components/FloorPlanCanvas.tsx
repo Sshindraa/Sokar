@@ -259,7 +259,7 @@ export function computeCenterScroll({
 /** Marge (coordonnées plan) ajoutée autour des tables au cadrage d'ouverture. */
 export const CONTENT_FIT_PADDING = 48;
 // Les cartes et leurs chaises peuvent dépasser les dimensions métier des tables.
-export const LIVE_CONTENT_FIT_PADDING = 48;
+export const LIVE_CONTENT_FIT_PADDING = 24;
 
 export type ContentBounds = { x: number; y: number; width: number; height: number };
 
@@ -2833,7 +2833,16 @@ export function FloorPlanCanvas({
         floor: fitFloor,
       });
       const stageBounds = contentBoundsRef.current;
-      const bounds = live && focusTables ? (tableBoundsRef.current ?? stageBounds) : stageBounds;
+      let bounds = live && focusTables ? (tableBoundsRef.current ?? stageBounds) : stageBounds;
+      if (live && focusTables && bounds && stageBounds) {
+        const roomZoom = Math.min(
+          viewportWidth / stageBounds.width,
+          viewportHeight / stageBounds.height,
+        );
+        const tableZoom = Math.min(viewportWidth / bounds.width, viewportHeight / bounds.height);
+        // shortcut: seuil empirique de moitié ; ajuster si des plans réels restent illisibles.
+        if (roomZoom >= tableZoom / 2) bounds = stageBounds;
+      }
       let nextZoom = fullCanvasZoom;
       if (bounds) {
         const contentZoom = computeFitZoom({

@@ -3627,3 +3627,7 @@ La vue s’ouvre cadrée sur les tables tout en conservant la géométrie compl�
 ### 2026-11-02 — Service : cadrage intermédiaire et lisibilité des états
 
 Le cadrage initial tient compte des empreintes visuelles des tables et de leurs assises, de la rotation et de la hauteur disponible ; le zoom est indiqué en pourcentage. L’aide au placement est ancrée au bouton et ne recouvre pas le plan. Une salle de cinq tables et les états simultanés ont été vérifiés avec des données de test ; la fiche conserve une colonne si une table à droite serait masquée.
+
+### 2026-11-02 — Service : correction du cadrage initial
+
+Pour les salles de dimensions comparables à la zone occupée, le cadrage initial montre la salle entière avec une marge réduite. Les salles très étendues restent cadrées sur les tables ; la géométrie enregistrée ne change pas.
