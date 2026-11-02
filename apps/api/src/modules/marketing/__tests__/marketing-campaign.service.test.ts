@@ -6,6 +6,7 @@ import {
   cancelMarketingCampaign,
   createMarketingCampaign,
   assertDailyEmailBudget,
+  readRemainingDailyEmailBudget,
   prepareMarketingCampaign,
   scheduleMarketingCampaign,
   startMarketingCampaign,
@@ -372,6 +373,30 @@ describe('marketing campaign control plane', () => {
     await expect(assertDailyEmailBudget(tx, 21, BUDGET_NOW)).rejects.toThrow(
       'MARKETING_DAILY_BUDGET_EXCEEDED',
     );
+  });
+
+  it('lecture du budget : même calcul que le lancement, mais sans verrou global', async () => {
+    mockMessages(
+      emailRows(20, {
+        status: 'PENDING',
+        acceptedAt: null,
+        campaign: { status: 'SENDING', scheduledAt: null },
+      }),
+    );
+    vi.mocked(db.$executeRaw).mockClear();
+    const locked = await assertDailyEmailBudget(
+      db as unknown as Prisma.TransactionClient,
+      20,
+      BUDGET_NOW,
+    );
+    expect(db.$executeRaw).toHaveBeenCalledTimes(1);
+    vi.mocked(db.$executeRaw).mockClear();
+
+    const remaining = await readRemainingDailyEmailBudget(BUDGET_NOW);
+
+    expect(locked).toBeUndefined();
+    expect(remaining).toBeGreaterThanOrEqual(20);
+    expect(db.$executeRaw).not.toHaveBeenCalled();
   });
 
   it('programme selon le jour d’envoi : une campagne d’un autre jour ne prend pas le budget', async () => {

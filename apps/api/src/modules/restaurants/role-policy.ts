@@ -64,6 +64,8 @@ export const DIRECTION_ONLY_RULES: readonly Rule[] = [
   { path: '/companion', below: true },
   // Remplissage d'un service : chiffres et texte d'une campagne, réservé à la direction.
   { path: '/marketing/fill-service', below: true },
+  // Suggestions de services creux : chiffres de remplissage, même périmètre.
+  { path: '/marketing/fill-suggestions', below: true },
 ];
 
 function matches(rule: Rule, method: string, route: string): boolean {

@@ -9,6 +9,7 @@ const apiMocks = vi.hoisted(() => ({
   post: vi.fn(),
   orgId: 'org_test_123' as string | undefined,
   push: vi.fn(),
+  search: 'date=2026-11-04&service=midi',
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -17,7 +18,7 @@ vi.mock('@/lib/api', () => ({
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: apiMocks.push }),
-  useSearchParams: () => new URLSearchParams('date=2026-11-04&service=midi'),
+  useSearchParams: () => new URLSearchParams(apiMocks.search),
 }));
 
 const plannedPreview = {
@@ -28,8 +29,13 @@ const plannedPreview = {
   full: false,
   capacityKnown: true,
   freePlaces: 116,
+  emptyPlaces: 62,
+  forecastSource: 'historique',
   candidateCount: 108,
   excludedSameDay: 0,
+  excludedNearby: 0,
+  tiers: { CRENEAU: 9, REGULIER: 12 },
+  budgetExhausted: false,
   excludedByReason: { NO_CONSENT: 4 },
   audience: 108,
   holdout: 11,
@@ -55,6 +61,7 @@ describe('FillServicePage', () => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
     apiMocks.orgId = 'org_test_123';
+    apiMocks.search = 'date=2026-11-04&service=midi';
     apiMocks.post.mockImplementation((path: string) => {
       if (path === 'marketing/fill-service/preview') {
         return Promise.resolve({ data: plannedPreview });
@@ -81,6 +88,77 @@ describe('FillServicePage', () => {
       service: 'midi',
       channel: 'SMS',
     });
+  });
+
+  it('?channel=EMAIL ouvre l’aperçu en e-mail ; sans paramètre, il reste en SMS', async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(apiMocks.post).toHaveBeenCalledWith('marketing/fill-service/preview', {
+        date: '2026-11-04',
+        service: 'midi',
+        channel: 'SMS',
+      }),
+    );
+
+    apiMocks.post.mockClear();
+    apiMocks.search = 'date=2026-11-04&service=midi&channel=EMAIL';
+    renderPage();
+    await waitFor(() =>
+      expect(apiMocks.post).toHaveBeenCalledWith('marketing/fill-service/preview', {
+        date: '2026-11-04',
+        service: 'midi',
+        channel: 'EMAIL',
+      }),
+    );
+  });
+
+  it('places vides probables et mention d’estimation affichées', async () => {
+    renderPage();
+
+    expect(await screen.findByText('Places vides probables')).toBeInTheDocument();
+    expect(screen.getByText('62')).toBeInTheDocument();
+    expect(
+      screen.getByText('Estimation de départ, pas encore mesurée sur vos campagnes.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Estimation sans historique suffisant')).not.toBeInTheDocument();
+  });
+
+  it('composition lisible : « 9 habitués de ce créneau, 12 clients réguliers »', async () => {
+    renderPage();
+
+    expect(
+      await screen.findByText('9 habitués de ce créneau, 12 clients réguliers'),
+    ).toBeInTheDocument();
+  });
+
+  it('mention dédiée quand forecastSource vaut simple', async () => {
+    apiMocks.post.mockResolvedValueOnce({
+      data: { ...plannedPreview, forecastSource: 'simple' },
+    });
+    renderPage();
+
+    expect(await screen.findByText('Estimation sans historique suffisant')).toBeInTheDocument();
+  });
+
+  it('prévision à 0 : message dédié, sans formulaire', async () => {
+    apiMocks.post.mockResolvedValueOnce({
+      data: { ...plannedPreview, emptyPlaces: 0, audience: 0, sends: 0, holdout: 0 },
+    });
+    renderPage();
+
+    expect(await screen.findByText(/aucune place vide probable/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Créer la campagne' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument();
+  });
+
+  it('budget épuisé : message dédié, sans formulaire', async () => {
+    apiMocks.post.mockResolvedValueOnce({
+      data: { ...plannedPreview, channel: 'EMAIL', budgetExhausted: true, audience: 0, sends: 0 },
+    });
+    renderPage();
+
+    expect(await screen.findByText(/budget d’e-mails du jour est épuisé/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Créer la campagne' })).not.toBeInTheDocument();
   });
 
   it('service plein : le dit et ne propose pas de créer la campagne', async () => {
@@ -117,6 +195,25 @@ describe('FillServicePage', () => {
     expect(
       screen.getByText(/Sans accord : 4 · Opposés : 0 · Déjà réservés ce jour : 2/),
     ).toBeInTheDocument();
+  });
+
+  it('candidats tous écartés pour faible probabilité (audience 0) : aucun candidat, pas de bouton', async () => {
+    apiMocks.post.mockResolvedValueOnce({
+      data: {
+        ...plannedPreview,
+        candidateCount: 5,
+        audience: 0,
+        holdout: 0,
+        sends: 0,
+        tiers: {},
+        excludedLowProbability: 5,
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByText('Aucun client joignable pour ce service.')).toBeInTheDocument();
+    expect(screen.getByText(/Faible probabilité : 5/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Préparer|Créer/ })).not.toBeInTheDocument();
   });
 
   it('reprend le texte du brouillon Companion, une seule fois', async () => {

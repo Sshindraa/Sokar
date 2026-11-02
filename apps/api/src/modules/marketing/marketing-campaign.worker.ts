@@ -19,6 +19,7 @@ import {
   ensureCampaignMessages,
   MAX_SENDS_PER_FREQUENCY_WINDOW,
   remainingDailyEmailBudget,
+  TARGET_SERVICE_FULL,
   renderMarketingTemplate,
   toMarketingHtml,
 } from './marketing-campaign.service';
@@ -592,7 +593,7 @@ export async function processMarketingCampaignJob(
           restaurantId: campaign.restaurantId,
           status: MarketingCampaignStatus.SENDING,
         },
-        data: { status: MarketingCampaignStatus.PAUSED, lastErrorCode: 'TARGET_SERVICE_FULL' },
+        data: { status: MarketingCampaignStatus.PAUSED, lastErrorCode: TARGET_SERVICE_FULL },
       });
       log.warn({ campaignId: campaign.id }, 'marketing campaign paused: target service is full');
       break;

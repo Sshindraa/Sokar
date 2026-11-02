@@ -168,6 +168,14 @@
     "errorTitle": "Impossibile calcolare l’anteprima",
     "retry": "Riprova",
     "freePlaces": "Posti liberi",
+    "emptyPlaces": "Posti liberi probabili",
+    "forecastSimple": "Stima senza storico sufficiente",
+    "estimateNote": "Stima iniziale, non ancora misurata sulle vostre campagne.",
+    "composition": {
+      "CRENEAU": "{count, plural, one {# habitué di questo turno} other {# habitué di questo turno}}",
+      "REGULIER": "{count, plural, one {# cliente abituale} other {# clienti abituali}}",
+      "CONNU": "{count, plural, one {# cliente già venuto} other {# clienti già venuti}}"
+    },
     "candidates": "Clienti candidati",
     "audience": "Destinatari",
     "holdout": "Gruppo di controllo (senza messaggio)",
@@ -177,7 +185,9 @@
     "capacityUnknown": "Non è stata impostata la planimetria: la capacità di questo servizio è sconosciuta, quindi non viene proposto nulla.",
     "full": "Questo servizio è completo: non resta alcun posto per 2 persone.",
     "noCandidate": "Nessun cliente raggiungibile per questo servizio.",
-    "noCandidateReasons": "Senza consenso: {noConsent} · Disiscritti: {optedOut} · Già prenotati quel giorno: {sameDay} · Limite di frequenza: {frequency}",
+    "noCandidateReasons": "Senza consenso: {noConsent} · Disiscritti: {optedOut} · Già prenotati quel giorno: {sameDay} · Prenotazione vicina: {nearby} · Limite di frequenza: {frequency} · Bassa probabilità: {lowProbability}",
+    "noEmptyPlaces": "Nessun posto libero probabile: questo servizio dovrebbe riempirsi senza messaggio.",
+    "budgetExhausted": "Il budget di e-mail di oggi è esaurito: scegliete l’SMS o riprovate domani.",
     "subject": "Oggetto",
     "body": "Messaggio",
     "bodyHelp": "Mantenga '{reservationLink}' e '{unsubscribeUrl}': sono obbligatori per l’invio.",
@@ -190,9 +200,37 @@
       "holdout": "Controllo",
       "perCustomer": "coperti per cliente",
       "difference": "Differenza",
-      "inconclusive": "Non conclusivo: meno di 20 clienti nel gruppo di controllo."
+      "inconclusive": "Non conclusivo: meno di 20 clienti nel gruppo di controllo.",
+      "effectRange": "Clienti che hanno prenotato, rispetto al gruppo di controllo: tra {low} e {high} punti",
+      "proof": "Effetto dimostrato",
+      "noProof": "Ancora nessuna prova di effetto",
+      "truncated": "Il servizio si è riempito prima della fine dell’invio: la misura non è conclusiva.",
+      "netTitle": "In 30 giorni, tutti i servizi",
+      "netValue": "{treated} contro {holdout} coperti per cliente",
+      "netPending": "Disponibile 30 giorni dopo l’invio",
+      "byTierTitle": "Per tipo di cliente",
+      "byTierRow": "{tier}: {treatedReserved} su {treatedCustomers} contro {holdoutReserved} su {holdoutCustomers}",
+      "tiers": {
+        "CRENEAU": "Habitués della fascia",
+        "REGULIER": "Clienti regolari",
+        "CONNU": "Clienti noti",
+        "SANS_VISITE": "Senza visite"
+      }
     },
     "back": "Dashboard",
-    "closed": "Il ristorante non apre questo servizio quel giorno: non c’è nulla da riempire."
+    "closed": "Il ristorante non apre questo servizio quel giorno: non c’è nulla da riempire.",
+    "suggestions": {
+      "title": "Servizi poco pieni da riempire",
+      "subtitle": "Servizi dei prossimi giorni che dovrebbero avere ancora posti liberi, in base alle vostre prenotazioni passate.",
+      "empty": "Nessun servizio poco pieno da riempire per ora.",
+      "emptyPlaces": "{count, plural, one {# posto libero probabile} other {# posti liberi probabili}}",
+      "sourceSimple": "Stima senza storico sufficiente",
+      "prepare": "Preparare",
+      "sends": "{count, plural, one {# messaggio da inviare} other {# messaggi da inviare}}",
+      "dismiss": "Ignorare",
+      "dismissError": "Impossibile ignorare questo servizio per ora. Riprovate.",
+      "midi": "Pranzo",
+      "soir": "Sera"
+    }
   }
 }

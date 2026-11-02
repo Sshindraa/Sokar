@@ -29,8 +29,14 @@ type FillPreview = {
   full: boolean;
   capacityKnown: boolean;
   freePlaces?: number;
+  emptyPlaces?: number;
+  forecastSource?: 'historique' | 'simple';
   candidateCount?: number;
   excludedSameDay?: number;
+  excludedNearby?: number;
+  excludedLowProbability?: number;
+  tiers?: Partial<Record<'CRENEAU' | 'REGULIER' | 'CONNU', number>>;
+  budgetExhausted?: boolean;
   excludedByReason?: Record<string, number>;
   audience?: number;
   holdout?: number;
@@ -58,7 +64,9 @@ function FillServiceView() {
   const [service, setService] = useState<Service>(
     params?.get('service') === 'midi' ? 'midi' : 'soir',
   );
-  const [channel, setChannel] = useState<Channel>('SMS');
+  const [channel, setChannel] = useState<Channel>(
+    params?.get('channel') === 'EMAIL' ? 'EMAIL' : 'SMS',
+  );
   // Texte modifié par le gérant ; `null` tant qu'il n'a rien touché : on affiche le modèle par défaut.
   const [subject, setSubject] = useState<string | null>(null);
   const [body, setBody] = useState<string | null>(null);
@@ -117,8 +125,13 @@ function FillServiceView() {
 
   const bodyValue = body ?? preview?.template.bodyTemplate ?? '';
   const subjectValue = subject ?? preview?.template.subject ?? '';
-  const planned = preview?.status === 'PLANNED' && (preview.candidateCount ?? 0) > 0;
+  const planned = preview?.status === 'PLANNED' && (preview.audience ?? 0) > 0;
   const canCreate = planned && !creating && bodyValue.trim().length > 0;
+  // Texte de composition produit ici (pluriels ICU) : le serveur ne renvoie que des comptes.
+  const composition = (['CRENEAU', 'REGULIER', 'CONNU'] as const)
+    .filter((tier) => (preview?.tiers?.[tier] ?? 0) > 0)
+    .map((tier) => t(`composition.${tier}`, { count: preview?.tiers?.[tier] ?? 0 }))
+    .join(', ');
   const formatter = new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' });
 
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -233,7 +246,11 @@ function FillServiceView() {
         <Notice tone="muted">{t('closed')}</Notice>
       ) : preview?.status === 'SERVICE_FULL' ? (
         <Notice tone="warning">{t('full')}</Notice>
-      ) : preview && (preview.candidateCount ?? 0) === 0 ? (
+      ) : preview?.budgetExhausted ? (
+        <Notice tone="warning">{t('budgetExhausted')}</Notice>
+      ) : preview?.emptyPlaces === 0 ? (
+        <Notice tone="muted">{t('noEmptyPlaces')}</Notice>
+      ) : preview && (preview.audience ?? 0) === 0 ? (
         <Notice tone="muted">
           <p>{t('noCandidate')}</p>
           <p className="mt-1 text-xs">
@@ -243,7 +260,9 @@ function FillServiceView() {
                 (preview.excludedByReason?.OPTED_OUT ?? 0) +
                 (preview.excludedByReason?.OPTED_OUT_REGISTER ?? 0),
               sameDay: preview.excludedSameDay ?? 0,
+              nearby: preview.excludedNearby ?? 0,
               frequency: preview.excludedByReason?.FREQUENCY_CAP ?? 0,
+              lowProbability: preview.excludedLowProbability ?? 0,
             })}
           </p>
         </Notice>
@@ -251,6 +270,7 @@ function FillServiceView() {
         <form onSubmit={create} className="space-y-6">
           <dl className="grid grid-cols-2 gap-3 md:grid-cols-3">
             <Figure label={t('freePlaces')} value={preview.freePlaces ?? 0} />
+            <Figure label={t('emptyPlaces')} value={preview.emptyPlaces ?? 0} />
             <Figure label={t('candidates')} value={preview.candidateCount ?? 0} />
             <Figure label={t('audience')} value={preview.audience ?? 0} />
             <Figure label={t('holdout')} value={preview.holdout ?? 0} />
@@ -264,6 +284,12 @@ function FillServiceView() {
               }
             />
           </dl>
+
+          {composition && <p className="text-sm text-foreground">{composition}</p>}
+          <div className="space-y-1 text-xs text-muted-foreground">
+            {preview.forecastSource === 'simple' && <p>{t('forecastSimple')}</p>}
+            <p>{t('estimateNote')}</p>
+          </div>
 
           <Card>
             <CardContent className="space-y-4 p-4 md:p-5">

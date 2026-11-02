@@ -169,6 +169,14 @@
     "errorTitle": "Impossible de calculer l’aperçu",
     "retry": "Réessayer",
     "freePlaces": "Places libres",
+    "emptyPlaces": "Places vides probables",
+    "forecastSimple": "Estimation sans historique suffisant",
+    "estimateNote": "Estimation de départ, pas encore mesurée sur vos campagnes.",
+    "composition": {
+      "CRENEAU": "{count, plural, one {# habitué de ce créneau} other {# habitués de ce créneau}}",
+      "REGULIER": "{count, plural, one {# client régulier} other {# clients réguliers}}",
+      "CONNU": "{count, plural, one {# client déjà venu} other {# clients déjà venus}}"
+    },
     "candidates": "Clients candidats",
     "audience": "Destinataires",
     "holdout": "Témoin (sans message)",
@@ -178,7 +186,9 @@
     "capacityUnknown": "Le plan de salle n’est pas renseigné : la capacité de ce service est inconnue, rien n’est proposé.",
     "full": "Ce service est complet : plus aucun créneau pour 2 couverts.",
     "noCandidate": "Aucun client joignable pour ce service.",
-    "noCandidateReasons": "Sans accord : {noConsent} · Opposés : {optedOut} · Déjà réservés ce jour : {sameDay} · Fréquence : {frequency}",
+    "noCandidateReasons": "Sans accord : {noConsent} · Opposés : {optedOut} · Déjà réservés ce jour : {sameDay} · Réservation proche : {nearby} · Fréquence : {frequency} · Faible probabilité : {lowProbability}",
+    "noEmptyPlaces": "Aucune place vide probable : ce service devrait se remplir sans message.",
+    "budgetExhausted": "Le budget d’e-mails du jour est épuisé : choisissez le SMS ou réessayez demain.",
     "subject": "Objet",
     "body": "Message",
     "bodyHelp": "Gardez '{reservationLink}' et '{unsubscribeUrl}' : ils sont obligatoires pour un envoi.",
@@ -191,9 +201,37 @@
       "holdout": "Témoin",
       "perCustomer": "couverts par client",
       "difference": "Écart",
-      "inconclusive": "Non concluant : moins de 20 clients dans le témoin."
+      "inconclusive": "Non concluant : moins de 20 clients dans le témoin.",
+      "effectRange": "Clients ayant réservé, par rapport au témoin : entre {low} et {high} points",
+      "proof": "Effet démontré",
+      "noProof": "Pas encore de preuve d’effet",
+      "truncated": "Le service s’est rempli avant la fin de l’envoi : la mesure n’est pas concluante.",
+      "netTitle": "Sur 30 jours, tous services",
+      "netValue": "{treated} contre {holdout} couverts par client",
+      "netPending": "Disponible 30 jours après l’envoi",
+      "byTierTitle": "Par type de client",
+      "byTierRow": "{tier} : {treatedReserved} sur {treatedCustomers} contre {holdoutReserved} sur {holdoutCustomers}",
+      "tiers": {
+        "CRENEAU": "Habitués du créneau",
+        "REGULIER": "Clients réguliers",
+        "CONNU": "Clients connus",
+        "SANS_VISITE": "Sans visite"
+      }
     },
     "back": "Tableau de bord",
-    "closed": "Le restaurant n’ouvre pas ce service ce jour-là : rien à remplir."
+    "closed": "Le restaurant n’ouvre pas ce service ce jour-là : rien à remplir.",
+    "suggestions": {
+      "title": "Services creux à remplir",
+      "subtitle": "Services des prochains jours où il devrait rester des places vides, d’après vos réservations passées.",
+      "empty": "Aucun service creux à remplir pour le moment.",
+      "emptyPlaces": "{count, plural, one {# place vide probable} other {# places vides probables}}",
+      "sourceSimple": "Estimation sans historique suffisant",
+      "prepare": "Préparer",
+      "sends": "{count, plural, one {# message à envoyer} other {# messages à envoyer}}",
+      "dismiss": "Ignorer",
+      "dismissError": "Impossible d’ignorer ce service pour le moment. Réessayez.",
+      "midi": "Midi",
+      "soir": "Soir"
+    }
   }
 }

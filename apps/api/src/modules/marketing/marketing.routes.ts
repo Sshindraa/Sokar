@@ -62,6 +62,11 @@ import {
 } from './marketing-report.service';
 import { getMarketingProviderReadiness } from './marketing-provider.service';
 import { createServiceFillDraft, previewServiceFill } from './fill-service.service';
+import {
+  dismissFillSuggestion,
+  invalidateFillSuggestions,
+  listFillSuggestions,
+} from './fill-suggestions.service';
 import { RATE_LIMIT_PUBLIC_TOKEN } from '../../plugins/rate-limit.policy';
 
 /**
@@ -148,6 +153,14 @@ const FillServiceCreateSchema = FillServiceSchema.extend({
 });
 /** Refus d'un remplissage, avec un message lisible ; le code reste stable pour le dashboard. */
 const FILL_SERVICE_CONFLICTS: Record<string, { error: string; message: string }> = {
+  NO_EMPTY_FORECAST: {
+    error: 'FILL_SERVICE_NO_EMPTY_FORECAST',
+    message: 'Aucune place vide probable pour ce service : il devrait se remplir sans message.',
+  },
+  BUDGET_EXHAUSTED: {
+    error: 'FILL_SERVICE_BUDGET_EXHAUSTED',
+    message: 'Le budget d’e-mails du jour est épuisé : choisissez le SMS ou réessayez demain.',
+  },
   SERVICE_CLOSED: {
     error: 'FILL_SERVICE_CLOSED',
     message: 'Le restaurant n’ouvre pas ce service ce jour-là.',
@@ -524,9 +537,18 @@ export async function marketingRoutes(app: FastifyInstance) {
         });
         if (!campaign) {
           const conflict =
-            FILL_SERVICE_CONFLICTS[plan.status === 'PLANNED' ? 'NO_CANDIDATE' : plan.status];
+            FILL_SERVICE_CONFLICTS[
+              plan.status !== 'PLANNED'
+                ? plan.status
+                : plan.budgetExhausted
+                  ? 'BUDGET_EXHAUSTED'
+                  : plan.emptyPlaces === 0
+                    ? 'NO_EMPTY_FORECAST'
+                    : 'NO_CANDIDATE'
+            ];
           return reply.status(409).send(conflict);
         }
+        await invalidateFillSuggestions(request.restaurantId!);
         return reply.status(201).send({
           data: {
             id: campaign.id,
@@ -544,6 +566,29 @@ export async function marketingRoutes(app: FastifyInstance) {
         if (problem) return reply.status(400).send({ error: 'INVALID_CAMPAIGN', message: problem });
         throw error;
       }
+    },
+  );
+
+  // Services creux à remplir : lecture seule, sans nom ni téléphone.
+  app.get(
+    '/marketing/fill-suggestions',
+    { preHandler: requireMarketingCampaigns },
+    async (request, reply) =>
+      reply.send({ data: await listFillSuggestions({ restaurantId: request.restaurantId! }) }),
+  );
+
+  app.post(
+    '/marketing/fill-suggestions/dismiss',
+    { preHandler: requireMarketingCampaigns },
+    async (request, reply) => {
+      const body = FillServiceSchema.pick({ date: true, service: true }).parse(request.body);
+      try {
+        await dismissFillSuggestion({ restaurantId: request.restaurantId!, ...body });
+      } catch (error) {
+        request.log.warn({ err: error }, 'fill suggestion dismiss unavailable');
+        return reply.status(503).send({ error: 'DISMISS_UNAVAILABLE' });
+      }
+      return reply.status(204).send();
     },
   );
 

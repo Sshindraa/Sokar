@@ -120,6 +120,21 @@ describe('autres rôles', () => {
     }
   });
 
+  it('suggestions de services creux : lecture et ignorance réservées à la direction', () => {
+    for (const [method, path] of [
+      ['GET', '/marketing/fill-suggestions'],
+      ['POST', '/marketing/fill-suggestions/dismiss'],
+    ]) {
+      expect(decide('STAFF', method, path)).toEqual({ allowed: false, code: 'ROLE_FORBIDDEN' });
+      expect(decide('READ_ONLY', method, path)).toEqual({
+        allowed: false,
+        code: method === 'GET' ? 'ROLE_FORBIDDEN' : 'READ_ONLY_ACCESS',
+      });
+      expect(decide('OWNER', method, path)).toEqual({ allowed: true });
+      expect(decide('MANAGER', method, path)).toEqual({ allowed: true });
+    }
+  });
+
   it('READ_ONLY lit tout et n’écrit rien', () => {
     expect(decide('READ_ONLY', 'GET', '/customers')).toEqual({ allowed: true });
     expect(decide('READ_ONLY', 'HEAD', '/calls')).toEqual({ allowed: true });
