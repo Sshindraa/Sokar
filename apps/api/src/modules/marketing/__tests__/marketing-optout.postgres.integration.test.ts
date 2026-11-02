@@ -10,6 +10,7 @@ import {
   withdrawMarketingPermission,
 } from '../marketing-permission.service';
 import { previewMarketingAudience } from '../marketing-campaign.service';
+import { loadOptedOutCustomerIds } from '../marketing-opt-out.service';
 
 const url = process.env.MARKETING_OPTOUT_TEST_DATABASE_URL;
 if (url) {
@@ -130,6 +131,45 @@ describe.skipIf(!url)('marketing opt-out on PostgreSQL', () => {
       });
       expect(registered).toBe(permission.status === 'OPTED_OUT' ? 1 : 0);
     }
+  });
+
+  it('excludes both profiles sharing an email after one withdraws', async () => {
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+    const restaurant = await db.restaurant.create({
+      data: {
+        name: 'Shared email',
+        managerPhone: '',
+        managerEmail: '',
+        phoneNumber: randomUUID(),
+        openingHours: {},
+      },
+    });
+    const first = await db.customer.create({
+      data: {
+        restaurantId: restaurant.id,
+        phone: '+33612345672',
+        emailNormalized: 'shared@example.test',
+      },
+    });
+    const second = await db.customer.create({
+      data: {
+        restaurantId: restaurant.id,
+        phone: '+33612345673',
+        emailNormalized: 'shared@example.test',
+      },
+    });
+    await withdrawMarketingPermission({
+      restaurantId: restaurant.id,
+      customerId: first.id,
+      channel: 'EMAIL',
+    });
+    const result = await loadOptedOutCustomerIds({
+      restaurantId: restaurant.id,
+      channel: 'EMAIL',
+      customers: [first, second],
+    });
+    expect(result.checked).toBe(true);
+    expect(result.optedOut).toEqual(new Set([first.id, second.id]));
   });
 
   it('keeps withdrawal proof when a register write fails during a concurrent opt-in', async () => {
