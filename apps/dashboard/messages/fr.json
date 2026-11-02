@@ -186,7 +186,7 @@
     "capacityUnknown": "Le plan de salle n’est pas renseigné : la capacité de ce service est inconnue, rien n’est proposé.",
     "full": "Ce service est complet : plus aucun créneau pour 2 couverts.",
     "noCandidate": "Aucun client joignable pour ce service.",
-    "noCandidateReasons": "Sans accord : {noConsent} · Opposés : {optedOut} · Déjà réservés ce jour : {sameDay} · Réservation proche : {nearby} · Fréquence : {frequency}",
+    "noCandidateReasons": "Sans accord : {noConsent} · Opposés : {optedOut} · Déjà réservés ce jour : {sameDay} · Réservation proche : {nearby} · Fréquence : {frequency} · Faible probabilité : {lowProbability}",
     "noEmptyPlaces": "Aucune place vide probable : ce service devrait se remplir sans message.",
     "budgetExhausted": "Le budget d’e-mails du jour est épuisé : choisissez le SMS ou réessayez demain.",
     "subject": "Objet",

@@ -42,8 +42,14 @@ export function ServiceFillReport({ fill }: { fill: ServiceFillReportData }) {
   const t = useTranslations('fillService.report');
   const sign = fill.difference > 0 ? '+' : '';
   const effect = fill.effect;
+  // Au moins 5 réservants par groupe : 4 sur 40 contre 0 sur 20 n'est pas une preuve.
   const proven =
-    !!effect && fill.conclusive && !fill.truncated && effect.difference - effect.margin95 > 0;
+    !!effect &&
+    fill.conclusive &&
+    !fill.truncated &&
+    effect.difference - effect.margin95 > 0 &&
+    (fill.treated.reservedCustomers ?? 0) >= 5 &&
+    (fill.holdout.reservedCustomers ?? 0) >= 5;
   const tiers = TIERS.filter((tier) => fill.byTier?.[tier]);
   return (
     <div className="mt-3 rounded-lg border border-border bg-muted/30 p-3 text-xs">

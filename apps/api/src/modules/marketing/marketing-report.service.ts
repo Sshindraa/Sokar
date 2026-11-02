@@ -1,7 +1,7 @@
 import { MarketingMessageStatus, MarketingConversionType, Prisma } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { ACTIVE_RESERVATION_STATES } from '../../shared/reservations/capacity';
-import { HOLDOUT_INCLUSION_REASON } from './marketing-campaign.service';
+import { HOLDOUT_INCLUSION_REASON, TARGET_SERVICE_FULL } from './marketing-campaign.service';
 import { HOLDOUT_MIN_CUSTOMERS } from './fill-service.service';
 import { TIER_PROBABILITY, type FillTier } from './fill-targeting';
 
@@ -253,7 +253,7 @@ export async function getMarketingCampaignReport(args: {
     startedAt: campaign.startedAt,
     targetServiceStart: campaign.targetServiceStart,
     targetServiceEnd: campaign.targetServiceEnd,
-    truncated: campaign.lastErrorCode === 'TARGET_SERVICE_FULL',
+    truncated: campaign.lastErrorCode === TARGET_SERVICE_FULL,
     members: audience ?? [],
   });
 
@@ -395,7 +395,8 @@ async function serviceFillReport(args: {
   const holdout = group(holdoutIds);
 
   let effect: ServiceFillReport['effect'] = null;
-  if (treated.customers > 0 && holdout.customers > 0) {
+  // Brouillon (jamais envoyé) : aucun effet à mesurer, ni « entre 0 et 0 points ».
+  if (startedAt && treated.customers > 0 && holdout.customers > 0) {
     const p1 = treated.reservedCustomers / treated.customers;
     const p2 = holdout.reservedCustomers / holdout.customers;
     const margin =
@@ -420,8 +421,9 @@ async function serviceFillReport(args: {
   }
 
   // Effet net : mêmes clients, tous services, 30 jours après l'envoi, une fois l'échéance passée.
+  // Une campagne tronquée (service rempli) ne sert pas de mesure.
   let netEffect30d: ServiceFillReport['netEffect30d'] = null;
-  if (startedAt && treated.customers > 0 && holdout.customers > 0) {
+  if (startedAt && !args.truncated && treated.customers > 0 && holdout.customers > 0) {
     const deadline = new Date(startedAt.getTime() + NET_EFFECT_DAYS * 24 * 3600_000);
     if (deadline <= new Date()) {
       const netRows = await db.reservation.findMany({

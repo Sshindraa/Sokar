@@ -186,7 +186,7 @@
     "capacityUnknown": "No floor plan is set up: this service’s capacity is unknown, so nothing is proposed.",
     "full": "This service is full: no slot is left for 2 guests.",
     "noCandidate": "No reachable guest for this service.",
-    "noCandidateReasons": "No consent: {noConsent} · Opted out: {optedOut} · Already booked that day: {sameDay} · Booking nearby: {nearby} · Frequency cap: {frequency}",
+    "noCandidateReasons": "No consent: {noConsent} · Opted out: {optedOut} · Already booked that day: {sameDay} · Booking nearby: {nearby} · Frequency cap: {frequency} · Low probability: {lowProbability}",
     "noEmptyPlaces": "No likely empty place: this service should fill without a message.",
     "budgetExhausted": "Today’s email budget is used up: choose SMS or try again tomorrow.",
     "subject": "Subject",

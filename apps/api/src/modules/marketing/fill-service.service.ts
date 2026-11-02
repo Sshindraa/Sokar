@@ -22,6 +22,8 @@ import {
 } from './fill-forecast';
 import {
   FILL_MODEL_VERSION,
+  MIN_PROBABILITY,
+  TIER_PROBABILITY,
   countByTier,
   selectFillAudience,
   tierOf,
@@ -35,7 +37,7 @@ import {
   buildAudience,
   createMarketingCampaign,
   estimateCampaignCost,
-  remainingDailyEmailBudget,
+  readRemainingDailyEmailBudget,
   renderMarketingTemplate,
   type CampaignAudienceMemberDraft,
   type CampaignChannelCode,
@@ -81,6 +83,8 @@ export type ServiceFillPlan =
       excludedSameDay: number;
       /** Réservation active dans les 7 jours autour du service (hors même jour). */
       excludedNearby: number;
+      /** Clients dont le palier est sous la probabilité minimale : jamais contactés. */
+      excludedLowProbability: number;
       tiers: Partial<Record<FillTier, number>>;
       /** E-mail et budget du jour épuisé : aucun brouillon possible. */
       budgetExhausted: boolean;
@@ -219,9 +223,7 @@ export async function loadServiceFillContext(args: {
     }),
     buildAudience({ restaurantId, channel, allCustomers: true, now }),
     loadForecastHistory(restaurantId, now),
-    channel === 'EMAIL'
-      ? db.$transaction((tx) => remainingDailyEmailBudget(tx, now))
-      : Promise.resolve(null),
+    channel === 'EMAIL' ? readRemainingDailyEmailBudget(now) : Promise.resolve(null),
   ]);
   const customerIds = audience.members.map((member) => member.customerId);
   const [honored, active] =
@@ -282,16 +284,6 @@ async function checkServiceState(
     return { status: 'SERVICE_FULL', capacity: capacity.capacity, booked: capacity.booked };
   }
   return { status: 'OPEN', capacity };
-}
-
-export async function planFromContext(
-  context: ServiceFillContext,
-  args: { date: string; service: TonightService; seed?: number; now: Date },
-): Promise<ServiceFillPlan> {
-  const window = serviceWindow(args.date, args.service);
-  const state = await checkServiceState(context.restaurantId, window);
-  if (state.status !== 'OPEN') return state;
-  return planOpenService(context, args, window, state.capacity);
 }
 
 export function planOpenService(
@@ -392,6 +384,8 @@ export function planOpenService(
     candidateCount: pool.length,
     excludedSameDay: context.members.length - available.length,
     excludedNearby: available.length - pool.length,
+    excludedLowProbability: candidates.filter((c) => TIER_PROBABILITY[c.tier] < MIN_PROBABILITY)
+      .length,
     excludedByReason: context.excludedByReason,
     tiers: countByTier(selected.map((row) => row.tier)),
     budgetExhausted,
@@ -554,6 +548,7 @@ export async function previewServiceFill(args: FillServiceInput & { now?: Date }
     candidateCount: plan.candidateCount,
     excludedSameDay: plan.excludedSameDay,
     excludedNearby: plan.excludedNearby,
+    excludedLowProbability: plan.excludedLowProbability,
     tiers: plan.tiers,
     budgetExhausted: plan.budgetExhausted,
     excludedByReason: plan.excludedByReason,

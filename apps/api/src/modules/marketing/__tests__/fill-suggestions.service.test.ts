@@ -298,6 +298,13 @@ describe('suggestions de services creux', () => {
     expect(list).toHaveLength(1);
   });
 
+  it('lecture des services ignorés en échec : la liste est servie mais le cache n’est pas écrit', async () => {
+    mockFloor({ [`2026-11-03:soir`]: { capacity: 20, free: 15 } });
+    vi.mocked(redisCache.mget).mockRejectedValue(new Error('down'));
+    await listFillSuggestions({ restaurantId: 'r1', now: NOW });
+    expect(redisCache.set).not.toHaveBeenCalled();
+  });
+
   it('dismiss : clé marketing:fill-dismissed:{restaurant}:{date}:{service}, EX 604800, et supprime le cache', async () => {
     await dismissFillSuggestion({ restaurantId: 'r1', date: '2026-11-03', service: 'soir' });
     expect(redisCache.set).toHaveBeenCalledWith(
@@ -364,6 +371,27 @@ describe('suggestions de services creux', () => {
         sends: 18,
         now: NOW,
       });
+    });
+
+    it('le coût n’est estimé que pour les 3 services renvoyés', async () => {
+      mockFloor({
+        [`2026-11-03:soir`]: { capacity: 30, free: 12 },
+        [`2026-11-04:soir`]: { capacity: 30, free: 13 },
+        [`2026-11-05:soir`]: { capacity: 30, free: 14 },
+        [`2026-11-06:soir`]: { capacity: 30, free: 15 },
+        [`2026-11-07:soir`]: { capacity: 30, free: 16 },
+      });
+      mockPlans({
+        '2026-11-03:soir': { members: 10, tiers: { CRENEAU: 10 } },
+        '2026-11-04:soir': { members: 10, tiers: { CRENEAU: 10 } },
+        '2026-11-05:soir': { members: 10, tiers: { CRENEAU: 10 } },
+        '2026-11-06:soir': { members: 10, tiers: { CRENEAU: 10 } },
+        '2026-11-07:soir': { members: 10, tiers: { CRENEAU: 10 } },
+      });
+      const list = await listFillSuggestions({ restaurantId: 'r1', now: NOW });
+      expect(list).toHaveLength(3);
+      expect(estimateFillCost).toHaveBeenCalledTimes(3);
+      expect(list.every((s) => s.costEstimate !== null)).toBe(true);
     });
 
     it('canPrepare faux sans MARKETING_SENDS_ENABLED, budget épuisé ou zéro envoi : le service reste listé', async () => {

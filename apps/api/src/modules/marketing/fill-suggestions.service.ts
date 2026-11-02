@@ -50,13 +50,14 @@ export type FillSuggestion = {
   sends: number;
   /** Composition de l'audience par palier, en comptes : le texte est produit côté dashboard. */
   tiers: Partial<Record<FillTier, number>>;
-  costEstimate: Awaited<ReturnType<typeof estimateFillCost>> | null;
+  costEstimate: CostEstimate | null;
   /** Envois activés, budget restant et au moins un envoi : sinon le service est listé sans bouton. */
   canPrepare: boolean;
 };
 
 type Base = Omit<FillSuggestion, 'sends' | 'tiers' | 'costEstimate' | 'canPrepare'>;
 type OpenRow = Base & { booked: number };
+type CostEstimate = Awaited<ReturnType<typeof estimateFillCost>>;
 
 /**
  * Chiffre chaque service sur le canal e-mail : un seul chargement d'audience pour tous, lancé
@@ -66,7 +67,7 @@ async function enrich(
   restaurantId: string,
   rows: OpenRow[],
   now: Date,
-): Promise<Array<FillSuggestion & { score: number }>> {
+): Promise<Array<FillSuggestion & { score: number; estimateCost?: () => Promise<CostEstimate> }>> {
   const bare = (row: OpenRow) => {
     const { booked: _booked, ...base } = row;
     return { ...base, sends: 0, tiers: {}, costEstimate: null, canPrepare: false, score: 0 };
@@ -93,38 +94,38 @@ async function enrich(
     select: { name: true },
   });
   const sendsEnabled = process.env.MARKETING_SENDS_ENABLED === 'true';
-  return Promise.all(
-    rows.map(async (row) => {
-      const plan = planOpenService(
-        context,
-        { date: row.date, service: row.service, now },
-        serviceWindow(row.date, row.service),
-        { known: true, capacity: row.capacity, booked: row.booked, free: row.freePlaces },
-      );
-      if (plan.status !== 'PLANNED') return bare(row);
-      const sends = plan.members.length - plan.holdoutCount;
-      const expected = (Object.entries(plan.tiers) as Array<[FillTier, number]>).reduce(
-        (sum, [tier, count]) => sum + TIER_PROBABILITY[tier] * count,
-        0,
-      );
-      return {
-        ...bare(row),
-        sends,
-        tiers: plan.tiers,
-        costEstimate:
-          sends > 0
-            ? await estimateFillCost({
+  return rows.map((row) => {
+    const plan = planOpenService(
+      context,
+      { date: row.date, service: row.service, now },
+      serviceWindow(row.date, row.service),
+      { known: true, capacity: row.capacity, booked: row.booked, free: row.freePlaces },
+    );
+    if (plan.status !== 'PLANNED') return bare(row);
+    const sends = plan.members.length - plan.holdoutCount;
+    const expected = (Object.entries(plan.tiers) as Array<[FillTier, number]>).reduce(
+      (sum, [tier, count]) => sum + TIER_PROBABILITY[tier] * count,
+      0,
+    );
+    return {
+      ...bare(row),
+      sends,
+      tiers: plan.tiers,
+      // Chiffré plus tard, pour les seuls services renvoyés.
+      estimateCost:
+        sends > 0
+          ? () =>
+              estimateFillCost({
                 restaurantName: restaurant?.name ?? null,
                 channel: 'EMAIL',
                 sends,
                 now,
               })
-            : null,
-        canPrepare: sendsEnabled && !plan.budgetExhausted && sends > 0,
-        score: sends > 0 ? (expected * plan.groupSize * (1 - HOLDOUT_RATE)) / sends : 0,
-      };
-    }),
-  );
+          : undefined,
+      canPrepare: sendsEnabled && !plan.budgetExhausted && sends > 0,
+      score: sends > 0 ? (expected * plan.groupSize * (1 - HOLDOUT_RATE)) / sends : 0,
+    };
+  });
 }
 
 const cacheKey = (restaurantId: string) => `marketing:fill-suggestions:${restaurantId}`;
@@ -212,28 +213,33 @@ export async function listFillSuggestions(args: {
   }
 
   let dismissed: Array<string | null> = suggestions.map(() => null);
+  // Si la lecture des services ignorés échoue, la liste est servie mais pas mise en cache.
+  let dismissedReadFailed = false;
   if (suggestions.length > 0) {
     try {
       dismissed = await redisCache.mget(
         ...suggestions.map((s) => dismissKey(args.restaurantId, s.date, s.service)),
       );
     } catch (err) {
+      dismissedReadFailed = true;
       warn(err, 'fill suggestions dismissed read failed, ignoring');
     }
   }
   const kept = suggestions.filter((_, i) => !dismissed[i]);
   const enriched = await enrich(args.restaurantId, kept, now);
-  const result = enriched
+  const top = enriched
     .sort(
       (a, b) =>
         Number(b.canPrepare) - Number(a.canPrepare) ||
         (a.canPrepare ? b.score - a.score : b.emptyPlaces - a.emptyPlaces) ||
         a.date.localeCompare(b.date),
     )
-    .slice(0, SUGGESTION_LIMIT)
-    // Payload explicite : ni score ni identifiant client ne sortent ni n'entrent dans le cache.
-    .map(
-      ({
+    .slice(0, SUGGESTION_LIMIT);
+  // Le coût n'est estimé qu'après classement, pour les services renvoyés.
+  // Payload explicite : ni score ni identifiant client ne sortent ni n'entrent dans le cache.
+  const result = await Promise.all(
+    top.map(
+      async ({
         date,
         service,
         capacity,
@@ -242,9 +248,9 @@ export async function listFillSuggestions(args: {
         forecastSource,
         sends,
         tiers,
-        costEstimate,
+        estimateCost,
         canPrepare,
-      }): FillSuggestion => ({
+      }): Promise<FillSuggestion> => ({
         date,
         service,
         capacity,
@@ -253,11 +259,13 @@ export async function listFillSuggestions(args: {
         forecastSource,
         sends,
         tiers,
-        costEstimate,
+        costEstimate: estimateCost ? await estimateCost() : null,
         canPrepare,
       }),
-    );
+    ),
+  );
 
+  if (dismissedReadFailed) return result;
   try {
     await redisCache.set(
       cacheKey(args.restaurantId),

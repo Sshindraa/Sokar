@@ -72,11 +72,26 @@ describe('ServiceFillReport : mesure de l’effet', () => {
   });
 
   it('preuve d’effet si la marge exclut 0, sans chiffre de couverts gagnés', () => {
-    renderFill({ effect: { difference: 20, margin95: 8.5 } });
+    renderFill({
+      treated: { customers: 100, covers: 40, coversPerCustomer: 0.4, reservedCustomers: 30 },
+      holdout: { customers: 50, covers: 5, coversPerCustomer: 0.1, reservedCustomers: 5 },
+      effect: { difference: 20, margin95: 8.5 },
+    });
 
     expect(screen.queryByText('Pas encore de preuve d’effet')).not.toBeInTheDocument();
     expect(screen.getByText(/entre \+12 et \+29 points/)).toBeInTheDocument();
     expect(screen.getByText('Effet démontré')).toBeInTheDocument();
+  });
+
+  it('4 réservants sur 40 contre 0 sur 20 : pas une preuve, même si la marge exclut 0', () => {
+    renderFill({
+      treated: { customers: 40, covers: 6, coversPerCustomer: 0.15, reservedCustomers: 4 },
+      holdout: { customers: 20, covers: 0, coversPerCustomer: 0, reservedCustomers: 0 },
+      effect: { difference: 10, margin95: 9 },
+    });
+
+    expect(screen.getByText('Pas encore de preuve d’effet')).toBeInTheDocument();
+    expect(screen.queryByText('Effet démontré')).not.toBeInTheDocument();
   });
 
   it('3 réservants sur 10 contre 0 sur 5, non concluant : jamais de preuve d’effet, même si la marge exclut 0', () => {

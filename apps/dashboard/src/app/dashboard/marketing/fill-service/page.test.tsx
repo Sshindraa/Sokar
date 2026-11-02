@@ -197,6 +197,25 @@ describe('FillServicePage', () => {
     ).toBeInTheDocument();
   });
 
+  it('candidats tous écartés pour faible probabilité (audience 0) : aucun candidat, pas de bouton', async () => {
+    apiMocks.post.mockResolvedValueOnce({
+      data: {
+        ...plannedPreview,
+        candidateCount: 5,
+        audience: 0,
+        holdout: 0,
+        sends: 0,
+        tiers: {},
+        excludedLowProbability: 5,
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByText('Aucun client joignable pour ce service.')).toBeInTheDocument();
+    expect(screen.getByText(/Faible probabilité : 5/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Préparer|Créer/ })).not.toBeInTheDocument();
+  });
+
   it('reprend le texte du brouillon Companion, une seule fois', async () => {
     window.sessionStorage.setItem(
       CAMPAIGN_DRAFT_KEY,

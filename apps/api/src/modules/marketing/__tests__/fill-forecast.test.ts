@@ -12,7 +12,7 @@ const LEAD_MS = new Date('2026-11-04T17:00:00Z').getTime() - NOW.getTime();
 /** Un mercredi soir passé (weeksAgo semaines avant le 4 nov) : `late` couverts créés tard, 2 tôt. */
 function service(weeksAgo: number, late: number): ForecastRow[] {
   const day = new Date(Date.UTC(2026, 10, 4 - 7 * weeksAgo));
-  const reservedAt = new Date(day.getTime() + 18 * 3600_000 - 3600_000); // 18 h Paris, hiver ou été
+  const reservedAt = new Date(day.getTime() + 18 * 3600_000 - 3600_000); // 17:00Z : 18 h Paris en hiver, 19 h en été, dans le service du soir dans les deux cas
   const start = reservedAt.getTime();
   const rows: ForecastRow[] = [
     { reservedAt, createdAt: new Date(start - LEAD_MS - 86_400_000), partySize: 2 },
@@ -76,11 +76,13 @@ describe('forecastEmptyPlaces', () => {
   });
 
   it('fenêtres justes à travers le changement d heure', () => {
-    // 21 oct = UTC+2 : 18 h Paris = 16:00Z, dans la fenêtre soir (début 16 h Paris = 14:00Z).
-    // Mercredis d'été (21, 14, 7 oct., 30 sept.) à 16:00Z ; la cible est en heure d'hiver.
+    // Mercredis d'été (21, 14, 7 oct., 30 sept.) à 14:30Z = 16 h 30 Paris : dans la vraie fenêtre du
+    // soir (début 16 h Paris = 14:00Z), hors d'une fenêtre naïve de 7 × 24 h qui débute à 15:00Z
+    // (début du service cible, en heure d'hiver).
+    const delayMs = new Date('2026-11-04T15:00:00Z').getTime() - NOW.getTime();
     const rows: ForecastRow[] = [0, 1, 2, 3].map((w) => {
-      const at = new Date(Date.parse('2026-10-21T16:00:00Z') - w * 7 * 86_400_000);
-      return { reservedAt: at, createdAt: new Date(at.getTime() - LEAD_MS + 60_000), partySize: 3 };
+      const at = new Date(Date.parse('2026-10-21T14:30:00Z') - w * 7 * 86_400_000);
+      return { reservedAt: at, createdAt: new Date(at.getTime() - delayMs + 60_000), partySize: 3 };
     });
     const r = forecastEmptyPlaces({ ...base, rows, freePlaces: 20 });
     expect(r).toMatchObject({ forecastSource: 'historique', lateArrivals: 3 });

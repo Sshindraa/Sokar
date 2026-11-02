@@ -34,6 +34,7 @@ type FillPreview = {
   candidateCount?: number;
   excludedSameDay?: number;
   excludedNearby?: number;
+  excludedLowProbability?: number;
   tiers?: Partial<Record<'CRENEAU' | 'REGULIER' | 'CONNU', number>>;
   budgetExhausted?: boolean;
   excludedByReason?: Record<string, number>;
@@ -124,7 +125,7 @@ function FillServiceView() {
 
   const bodyValue = body ?? preview?.template.bodyTemplate ?? '';
   const subjectValue = subject ?? preview?.template.subject ?? '';
-  const planned = preview?.status === 'PLANNED' && (preview.candidateCount ?? 0) > 0;
+  const planned = preview?.status === 'PLANNED' && (preview.audience ?? 0) > 0;
   const canCreate = planned && !creating && bodyValue.trim().length > 0;
   // Texte de composition produit ici (pluriels ICU) : le serveur ne renvoie que des comptes.
   const composition = (['CRENEAU', 'REGULIER', 'CONNU'] as const)
@@ -249,7 +250,7 @@ function FillServiceView() {
         <Notice tone="warning">{t('budgetExhausted')}</Notice>
       ) : preview?.emptyPlaces === 0 ? (
         <Notice tone="muted">{t('noEmptyPlaces')}</Notice>
-      ) : preview && (preview.candidateCount ?? 0) === 0 ? (
+      ) : preview && (preview.audience ?? 0) === 0 ? (
         <Notice tone="muted">
           <p>{t('noCandidate')}</p>
           <p className="mt-1 text-xs">
@@ -261,6 +262,7 @@ function FillServiceView() {
               sameDay: preview.excludedSameDay ?? 0,
               nearby: preview.excludedNearby ?? 0,
               frequency: preview.excludedByReason?.FREQUENCY_CAP ?? 0,
+              lowProbability: preview.excludedLowProbability ?? 0,
             })}
           </p>
         </Notice>

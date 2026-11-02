@@ -584,7 +584,8 @@ export async function marketingRoutes(app: FastifyInstance) {
       const body = FillServiceSchema.pick({ date: true, service: true }).parse(request.body);
       try {
         await dismissFillSuggestion({ restaurantId: request.restaurantId!, ...body });
-      } catch {
+      } catch (error) {
+        request.log.warn({ err: error }, 'fill suggestion dismiss unavailable');
         return reply.status(503).send({ error: 'DISMISS_UNAVAILABLE' });
       }
       return reply.status(204).send();

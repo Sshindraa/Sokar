@@ -6,7 +6,7 @@ import {
   createMarketingCampaign,
   ensureCampaignMessages,
   HOLDOUT_INCLUSION_REASON,
-  remainingDailyEmailBudget,
+  readRemainingDailyEmailBudget,
   type CampaignAudienceMemberDraft,
 } from '../marketing-campaign.service';
 import {
@@ -14,6 +14,7 @@ import {
   isTargetServiceFull,
   planServiceFill,
   previewServiceFill,
+  serviceAvailability,
   serviceWindow,
 } from '../fill-service.service';
 
@@ -31,7 +32,7 @@ vi.mock('../marketing-campaign.service', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../marketing-campaign.service')>()),
   buildAudience: vi.fn(),
   createMarketingCampaign: vi.fn(),
-  remainingDailyEmailBudget: vi.fn(),
+  readRemainingDailyEmailBudget: vi.fn(),
   estimateCampaignCost: vi
     .fn()
     .mockResolvedValue({ amount: null, currency: 'EUR', status: 'NOT_AVAILABLE' }),
@@ -125,6 +126,24 @@ function mockFloor({
 describe('remplissage de service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('firstSlotAt : le premier créneau du service, même si l’API les renvoie non triés', async () => {
+    vi.mocked(CapacityAwareAvailabilityService).mockImplementation(function () {
+      return {
+        getAvailability: vi.fn().mockResolvedValue({
+          slots: [
+            { time: '13:00', available: true },
+            { time: '12:00', available: false },
+          ],
+        }),
+      };
+    } as never);
+    const result = await serviceAvailability({
+      restaurantId: 'r1',
+      ...serviceWindow(DATE, 'midi'),
+    });
+    expect(result.firstSlotAt?.toISOString()).toBe('2026-11-04T11:00:00.000Z');
   });
 
   it('coupe le service à 16 h, heure de Paris', () => {
@@ -260,22 +279,24 @@ describe('remplissage de service', () => {
   it('e-mail : plafonne les envois au budget restant ; SMS : pas de plafond budget', async () => {
     mockFloor({ tables: [{ capacity: 1000, minCapacity: 1 }], honored: slotRegulars(30) });
     mockAudience(members(30));
-    vi.mocked(remainingDailyEmailBudget).mockResolvedValue(5);
+    vi.mocked(readRemainingDailyEmailBudget).mockResolvedValue(5);
     const args = { restaurantId: 'r1', date: DATE, service: 'midi' as const, now: NOW, seed: 7 };
     const email = await planServiceFill({ ...args, channel: 'EMAIL' });
     // 7 clients dont 2 témoins = 5 envois.
     expect(email).toMatchObject({ targetSize: 7, holdoutCount: 2, budgetExhausted: false });
-    expect(remainingDailyEmailBudget).toHaveBeenCalledWith(expect.anything(), NOW);
-    vi.mocked(remainingDailyEmailBudget).mockClear();
+    expect(readRemainingDailyEmailBudget).toHaveBeenCalledWith(NOW);
+    // Chemin de lecture : aucune transaction, donc aucun verrou global.
+    expect(db.$transaction).not.toHaveBeenCalled();
+    vi.mocked(readRemainingDailyEmailBudget).mockClear();
     const sms = await planServiceFill({ ...args, channel: 'SMS' });
     expect(sms).toMatchObject({ targetSize: 30, budgetExhausted: false });
-    expect(remainingDailyEmailBudget).not.toHaveBeenCalled();
+    expect(readRemainingDailyEmailBudget).not.toHaveBeenCalled();
   });
 
   it('budget nul : aucun membre, budgetExhausted vrai ; le brouillon est refusé', async () => {
     mockFloor({ tables: [{ capacity: 1000, minCapacity: 1 }], honored: slotRegulars(30) });
     mockAudience(members(30));
-    vi.mocked(remainingDailyEmailBudget).mockResolvedValue(0);
+    vi.mocked(readRemainingDailyEmailBudget).mockResolvedValue(0);
     const result = await createServiceFillDraft({
       restaurantId: 'r1',
       date: DATE,
@@ -343,7 +364,26 @@ describe('remplissage de service', () => {
       now: NOW,
       seed: 3,
     });
-    expect(plan).toMatchObject({ candidateCount: 3, targetSize: 0, members: [], tiers: {} });
+    expect(plan).toMatchObject({
+      candidateCount: 3,
+      targetSize: 0,
+      members: [],
+      tiers: {},
+      excludedLowProbability: 3,
+    });
+  });
+
+  it('aperçu : les clients SANS_VISITE écartés sont comptés dans excludedLowProbability', async () => {
+    mockFloor({ tables: [{ capacity: 100, minCapacity: 1 }] });
+    mockAudience(members(3));
+    const preview = await previewServiceFill({
+      restaurantId: 'r1',
+      date: DATE,
+      service: 'midi',
+      channel: 'SMS',
+      now: NOW,
+    });
+    expect(preview).toMatchObject({ candidateCount: 3, audience: 0, excludedLowProbability: 3 });
   });
 
   it("témoin : 30 % de l'audience, sans message, et reproductible avec la même graine", async () => {
@@ -501,6 +541,7 @@ describe('remplissage de service', () => {
       emptyPlaces: 36,
       forecastSource: 'simple',
       excludedNearby: 0,
+      excludedLowProbability: 0,
       tiers: { CRENEAU: 10 },
       budgetExhausted: false,
       targetSize: 10,

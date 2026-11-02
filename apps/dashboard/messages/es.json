@@ -185,7 +185,7 @@
     "capacityUnknown": "No hay plano de sala: la capacidad de este servicio es desconocida, así que no se propone nada.",
     "full": "Este servicio está completo: no queda ningún hueco para 2 personas.",
     "noCandidate": "Ningún cliente localizable para este servicio.",
-    "noCandidateReasons": "Sin consentimiento: {noConsent} · Dados de baja: {optedOut} · Ya reservados ese día: {sameDay} · Reserva cercana: {nearby} · Límite de frecuencia: {frequency}",
+    "noCandidateReasons": "Sin consentimiento: {noConsent} · Dados de baja: {optedOut} · Ya reservados ese día: {sameDay} · Reserva cercana: {nearby} · Límite de frecuencia: {frequency} · Baja probabilidad: {lowProbability}",
     "noEmptyPlaces": "Ninguna plaza libre probable: este servicio debería llenarse sin mensaje.",
     "budgetExhausted": "El presupuesto de correos de hoy está agotado: elija el SMS o inténtelo mañana.",
     "subject": "Asunto",

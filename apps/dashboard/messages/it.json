@@ -185,7 +185,7 @@
     "capacityUnknown": "Non è stata impostata la planimetria: la capacità di questo servizio è sconosciuta, quindi non viene proposto nulla.",
     "full": "Questo servizio è completo: non resta alcun posto per 2 persone.",
     "noCandidate": "Nessun cliente raggiungibile per questo servizio.",
-    "noCandidateReasons": "Senza consenso: {noConsent} · Disiscritti: {optedOut} · Già prenotati quel giorno: {sameDay} · Prenotazione vicina: {nearby} · Limite di frequenza: {frequency}",
+    "noCandidateReasons": "Senza consenso: {noConsent} · Disiscritti: {optedOut} · Già prenotati quel giorno: {sameDay} · Prenotazione vicina: {nearby} · Limite di frequenza: {frequency} · Bassa probabilità: {lowProbability}",
     "noEmptyPlaces": "Nessun posto libero probabile: questo servizio dovrebbe riempirsi senza messaggio.",
     "budgetExhausted": "Il budget di e-mail di oggi è esaurito: scegliete l’SMS o riprovate domani.",
     "subject": "Oggetto",

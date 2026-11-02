@@ -355,6 +355,33 @@ describe('marketing campaign report', () => {
       }
     });
 
+    it('brouillon jamais envoyé : effect null, pas « entre 0 et 0 points »', async () => {
+      mockCampaign({ startedAt: null });
+      vi.mocked(db.campaignAudienceMember.findMany).mockResolvedValueOnce(members(30, 25));
+
+      const fill = await report();
+
+      expect(fill.effect).toBeNull();
+      expect(fill.netEffect30d).toBeNull();
+    });
+
+    it('campagne tronquée : netEffect30d null même après 30 jours, sans requête', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-11-05T10:00:00.000Z'));
+        mockCampaign({ lastErrorCode: 'TARGET_SERVICE_FULL' });
+        vi.mocked(db.campaignAudienceMember.findMany).mockResolvedValueOnce(members(30, 25));
+        vi.mocked(db.reservation.findMany).mockResolvedValueOnce([]);
+
+        const fill = await report();
+
+        expect(fill.netEffect30d).toBeNull();
+        expect(db.reservation.findMany).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('campagne avec lastErrorCode TARGET_SERVICE_FULL : truncated vrai, conclusive faux', async () => {
       mockCampaign({ lastErrorCode: 'TARGET_SERVICE_FULL' });
       vi.mocked(db.campaignAudienceMember.findMany).mockResolvedValueOnce(members(30, 25));
