@@ -283,6 +283,28 @@ describe('FloorPlanCanvas — guides et duplication de table', () => {
 });
 
 describe('FloorPlanCanvas — taille des tables', () => {
+  it.each([
+    ['rect', 2, 2],
+    ['rect', 6, 6],
+    ['round', 2, 2],
+    ['round', 6, 6],
+    ['rect', 10, 0],
+    ['round', 10, 0],
+  ] as const)(
+    'représente %i places sur une table %s sans comptage trompeur',
+    async (shape, capacity, chairs) => {
+      apiMocks.get.mockImplementation(async (path: string) => {
+        if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+        return { ...floorPlan, tables: [{ ...floorPlan.tables![0], shape, capacity }] };
+      });
+
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      const table = await screen.findByRole('button', { name: `T4 · ${capacity} places` });
+      expect(table.querySelectorAll('.bg-floor-table-chair')).toHaveLength(chairs);
+      expect(within(table).getByText(`${capacity} places`)).toBeInTheDocument();
+    },
+  );
+
   it('keeps a minimum-size round T4 card shrinkable to its explicit dimensions', async () => {
     render(<FloorPlanCanvas orgId="org_test" />);
 
@@ -1037,6 +1059,33 @@ describe('FloorPlanCanvas — actions Live service', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Martin Dupont/ }));
     // Même libellé sur le panneau du bureau et sur la feuille du téléphone.
     expect(await screen.findAllByRole('button', { name: 'Libérer la table' })).not.toHaveLength(0);
+  });
+
+  it('conserve le résumé et la légende pendant la sélection et permet de fermer la fiche', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+    const table = await screen.findByRole('button', { name: 'T4 · 4 places' });
+    fireEvent.click(table);
+    const close = screen.getByRole('button', { name: 'Fermer la fiche de la table' });
+    const inspector = close.closest('aside')!;
+    expect(
+      within(inspector).getByRole('status', { name: 'Vue d’ensemble de la salle' }),
+    ).toHaveTextContent('1 disponible');
+    expect(within(inspector).getByText('Légende des statuts')).toBeInTheDocument();
+    const mobile = screen.getByRole('dialog', { name: 'Actions pour T4' });
+    expect(
+      within(mobile).getByRole('status', { name: 'Vue d’ensemble de la salle' }),
+    ).toBeInTheDocument();
+    expect(within(mobile).getByText('Légende des statuts')).toBeInTheDocument();
+    fireEvent.click(close);
+    expect(table).toHaveAttribute('aria-pressed', 'false');
+    expect(
+      screen.queryByRole('button', { name: 'Fermer la fiche de la table' }),
+    ).not.toBeInTheDocument();
   });
 
   describe('placer un client sans réservation', () => {

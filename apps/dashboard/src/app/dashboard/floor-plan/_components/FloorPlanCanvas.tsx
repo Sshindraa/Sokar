@@ -1492,15 +1492,17 @@ function TableCard({
     ? roundDiameter
     : Math.max(cardMinHeight, Math.round(rectBodyWidth / 2));
   const liveBodyLeft = Math.round((width - liveBodyWidth) / 2);
-  const liveChairWidth = Math.min(36, Math.max(24, Math.round(rectBodyWidth * 0.28)));
+  const chairsPerRow = Math.ceil(table.capacity / 2);
+  const liveChairWidth = Math.min(36, (rectBodyWidth - 8) / (chairsPerRow + 1));
   const liveBodyTop = isRound
     ? Math.round((height - liveBodyHeight) / 2)
     : Math.max(8, Math.round((height - (liveBodyHeight + TABLE_CARD_SEAT_HEIGHT)) / 2));
   const roundChairSize = compact ? 20 : 24;
+  // shortcut: au-delà de huit places, masquer les chaises pour éviter leur chevauchement ; agrandir le plan pour les représenter toutes.
+  const chairCount = table.capacity <= 8 ? Math.max(0, table.capacity) : 0;
   const roundChairPositions = isRound
-    ? Array.from({ length: Math.min(Math.max(table.capacity, 1), 8) }, (_, index) => {
-        const angle =
-          (index / Math.min(Math.max(table.capacity, 1), 8)) * Math.PI * 2 - Math.PI / 2;
+    ? Array.from({ length: chairCount }, (_, index) => {
+        const angle = (index / chairCount) * Math.PI * 2 - Math.PI / 2;
         const radiusX = liveBodyWidth / 2 + roundChairSize / 2 + 6;
         const radiusY = liveBodyHeight / 2 + roundChairSize / 2 + 6;
         return {
@@ -1569,60 +1571,39 @@ function TableCard({
       {...dragProps}
     >
       <>
-        {isRound ? (
-          roundChairPositions.map((chair, index) => (
-            <span
-              key={`round-chair-${index}`}
-              className="absolute z-0 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
-              style={{
-                left: chair.left,
-                top: chair.top,
-                width: roundChairSize,
-                height: roundChairSize,
-              }}
-              aria-hidden="true"
-            />
-          ))
-        ) : (
-          <>
-            <span
-              className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
-              style={{
-                left: liveBodyLeft + liveBodyWidth * 0.25 - liveChairWidth / 2,
-                top: liveBodyTop,
-                width: liveChairWidth,
-              }}
-              aria-hidden="true"
-            />
-            <span
-              className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
-              style={{
-                left: liveBodyLeft + liveBodyWidth * 0.75 - liveChairWidth / 2,
-                top: liveBodyTop,
-                width: liveChairWidth,
-              }}
-              aria-hidden="true"
-            />
-            <span
-              className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
-              style={{
-                left: liveBodyLeft + liveBodyWidth * 0.25 - liveChairWidth / 2,
-                top: liveBodyTop + liveBodyHeight,
-                width: liveChairWidth,
-              }}
-              aria-hidden="true"
-            />
-            <span
-              className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
-              style={{
-                left: liveBodyLeft + liveBodyWidth * 0.75 - liveChairWidth / 2,
-                top: liveBodyTop + liveBodyHeight,
-                width: liveChairWidth,
-              }}
-              aria-hidden="true"
-            />
-          </>
-        )}
+        {isRound
+          ? roundChairPositions.map((chair, index) => (
+              <span
+                key={`round-chair-${index}`}
+                className="absolute z-0 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
+                style={{
+                  left: chair.left,
+                  top: chair.top,
+                  width: roundChairSize,
+                  height: roundChairSize,
+                }}
+                aria-hidden="true"
+              />
+            ))
+          : Array.from({ length: chairCount }, (_, index) => {
+              const rowCount =
+                index % 2 === 0 ? Math.ceil(chairCount / 2) : Math.floor(chairCount / 2);
+              return (
+                <span
+                  key={`chair-${index}`}
+                  className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
+                  style={{
+                    left:
+                      liveBodyLeft +
+                      (liveBodyWidth * (Math.floor(index / 2) + 1)) / (rowCount + 1) -
+                      liveChairWidth / 2,
+                    top: liveBodyTop + (index % 2) * liveBodyHeight,
+                    width: liveChairWidth,
+                  }}
+                  aria-hidden="true"
+                />
+              );
+            })}
         <div
           className={cn(
             'absolute z-10 overflow-hidden border border-floor-table-muted/15 bg-floor-table-surface shadow-sm',
@@ -1658,7 +1639,7 @@ function TableCard({
               {displayName}
             </p>
             <p className="max-w-full truncate text-[9px] font-medium leading-none text-floor-table-text/75">
-              {table.capacity} pl.
+              {table.capacity} {status ? 'places' : 'pl.'}
             </p>
             <div className="min-w-0 max-w-full leading-tight">
               <p
@@ -6690,6 +6671,66 @@ export function FloorPlanCanvas({
             ? 'bg-brand'
             : 'bg-floor-table-muted/80';
 
+  const serviceOverview = (
+    <div className="space-y-3">
+      <p
+        role="status"
+        aria-label="Vue d’ensemble de la salle"
+        className="text-xs text-muted-foreground"
+      >
+        <span className="font-semibold tabular-nums text-foreground">
+          {[...tableStatuses.values()].filter((item) => item.status === 'occupied').length}
+        </span>{' '}
+        occupées ·{' '}
+        <span className="font-semibold tabular-nums text-foreground">
+          {
+            [...tableStatuses.values()].filter((item) =>
+              ['reserved', 'upcoming', 'late'].includes(item.status),
+            ).length
+          }
+        </span>{' '}
+        attendues ·{' '}
+        <span className="font-semibold tabular-nums text-foreground">
+          {
+            allTables.filter(
+              (table) =>
+                table.isActive && (tableStatuses.get(table.id)?.status ?? 'free') === 'free',
+            ).length
+          }
+        </span>{' '}
+        disponibles
+      </p>
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+          Légende des statuts
+          <ChevronDown
+            size={14}
+            aria-hidden="true"
+            className="transition-transform duration-200 group-open:rotate-180"
+          />
+        </summary>
+        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border pt-3">
+          {(['free', 'reserved', 'upcoming', 'late', 'occupied'] as TableStatus[]).map((status) => {
+            const StatusIcon = statusMeta[status].icon;
+            return (
+              <div key={status} className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span
+                  className={cn(
+                    'flex size-6 shrink-0 items-center justify-center rounded-md border',
+                    statusClasses[status],
+                  )}
+                >
+                  <StatusIcon className="size-3.5" aria-hidden="true" />
+                </span>
+                <span>{statusMeta[status].label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </details>
+    </div>
+  );
+
   const mobileServiceInspector =
     live && serviceTab === 'plan' && selectedServiceTable ? (
       <aside
@@ -6701,6 +6742,7 @@ export function FloorPlanCanvas({
           className="mx-auto mb-2 h-1 w-10 rounded-full bg-muted-foreground/25"
           aria-hidden="true"
         />
+        <div className="mb-3 border-b border-border pb-3">{serviceOverview}</div>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-foreground">
@@ -7112,6 +7154,7 @@ export function FloorPlanCanvas({
             : 'Synchronisation du service en cours…'}
         </p>
       </div>
+      <div className="border-b border-border p-4">{serviceOverview}</div>
       {selectedServiceTable ? (
         <div className="flex-1 space-y-5 overflow-y-auto p-4">
           <div>
@@ -7125,11 +7168,23 @@ export function FloorPlanCanvas({
                   {selectedServiceTable.sectionName ? ` · ${selectedServiceTable.sectionName}` : ''}
                 </p>
               </div>
-              <Badge variant="outline">
-                {selectedServiceStatus
-                  ? statusMeta[selectedServiceStatus.status].label
-                  : 'Disponible'}
-              </Badge>
+              <div className="flex items-center gap-1">
+                <Badge variant="outline">
+                  {selectedServiceStatus
+                    ? statusMeta[selectedServiceStatus.status].label
+                    : 'Disponible'}
+                </Badge>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="size-8 shrink-0 rounded-full p-0 transition-all duration-200"
+                  aria-label="Fermer la fiche de la table"
+                  onClick={() => setSelectedServiceTableId(null)}
+                >
+                  <X size={16} />
+                </Button>
+              </div>
             </div>
           </div>
           {selectedServiceReservation ? (
@@ -7385,75 +7440,7 @@ export function FloorPlanCanvas({
             </div>
           )}
         </div>
-      ) : (
-        <div className="flex-1 space-y-3 p-4">
-          {/* Vue d'ensemble condensée : une ligne porte la volumétrie, la légende
-              se déplie à la demande. Sur téléphone, deux grandes cartes et un
-              texte d'invite consommaient la hauteur du plan pour peu
-              d'information — le détail d'une table vit dans la feuille qui
-              s'ouvre au toucher. */}
-          <p
-            role="status"
-            aria-label="Vue d’ensemble de la salle"
-            className="text-xs text-muted-foreground"
-          >
-            <span className="font-semibold tabular-nums text-foreground">
-              {[...tableStatuses.values()].filter((item) => item.status === 'occupied').length}
-            </span>{' '}
-            occupées ·{' '}
-            <span className="font-semibold tabular-nums text-foreground">
-              {
-                [...tableStatuses.values()].filter((item) =>
-                  ['reserved', 'upcoming', 'late'].includes(item.status),
-                ).length
-              }
-            </span>{' '}
-            attendues ·{' '}
-            <span className="font-semibold tabular-nums text-foreground">
-              {
-                allTables.filter(
-                  (table) =>
-                    table.isActive && (tableStatuses.get(table.id)?.status ?? 'free') === 'free',
-                ).length
-              }
-            </span>{' '}
-            disponibles
-          </p>
-          <details className="group">
-            <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
-              Légende des statuts
-              <ChevronDown
-                size={14}
-                aria-hidden="true"
-                className="transition-transform duration-200 group-open:rotate-180"
-              />
-            </summary>
-            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border pt-3">
-              {(['free', 'reserved', 'upcoming', 'late', 'occupied'] as TableStatus[]).map(
-                (status) => {
-                  const StatusIcon = statusMeta[status].icon;
-                  return (
-                    <div
-                      key={status}
-                      className="flex items-center gap-2 text-xs text-muted-foreground"
-                    >
-                      <span
-                        className={cn(
-                          'flex size-6 shrink-0 items-center justify-center rounded-md border',
-                          statusClasses[status],
-                        )}
-                      >
-                        <StatusIcon className="size-3.5" aria-hidden="true" />
-                      </span>
-                      <span>{statusMeta[status].label}</span>
-                    </div>
-                  );
-                },
-              )}
-            </div>
-          </details>
-        </div>
-      )}
+      ) : null}
     </aside>
   ) : selectedWall || selectedZone || selectedTables.length > 0 ? (
     <aside

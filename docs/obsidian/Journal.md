@@ -3599,3 +3599,7 @@ Ajouts : `GET /marketing/fill-suggestions` et `POST /marketing/fill-suggestions/
 ### 2026-11-02 — Plan de salle : compteurs et lisibilité
 
 Correctif local : les tables présentes dans une section et dans la liste générale du plan ne sont comptées et dessinées qu’une fois. En service, les tables rondes et les sélecteurs gagnent en lisibilité et le cadrage conserve une marge autour des chaises, même au bord du plan. Aucune donnée ni API modifiée ; qualification et livraison à suivre via la PR.
+
+### 2026-11-02 — Plan de salle : chaises et vue d’ensemble
+
+Les tables de huit places maximum affichent le nombre réel de chaises ; au-delà, les chaises sont masquées pour éviter un comptage trompeur et la capacité reste affichée. En service, le résumé et la légende restent accessibles pendant la sélection et la fiche se ferme explicitement sur ordinateur comme sur téléphone.
