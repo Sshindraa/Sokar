@@ -941,10 +941,7 @@ describe('FloorPlanCanvas — actions Live service', () => {
 
     render(<FloorPlanCanvas orgId="org_test" mode="service" />);
 
-    const summary = await screen.findByRole('status', { name: 'Vue d’ensemble de la salle' });
-    expect(summary).toHaveTextContent('1 occupée');
-    expect(screen.getByText(/couverts prévus/)).toBeInTheDocument();
-    const occupiedTable = screen.getByRole('button', { name: /Martin Dupont/ });
+    const occupiedTable = await screen.findByRole('button', { name: /Martin Dupont/ });
     fireEvent.click(occupiedTable.querySelector('[role="presentation"]')!);
     expect(screen.getByText('Martin Dupont')).toBeInTheDocument();
     expect(occupiedTable).toHaveAttribute('aria-pressed', 'true');
@@ -1027,10 +1024,7 @@ describe('FloorPlanCanvas — actions Live service', () => {
       const bar = await screen.findByRole('region', { name: 'État du service' });
       expect(within(bar).getByText('Aujourd’hui')).toBeInTheDocument();
       expect(within(bar).getByText('En direct')).toBeInTheDocument();
-      expect(await within(bar).findByText(/Actualisé il y a/)).toBeInTheDocument();
-      expect(
-        within(bar).getByRole('status', { name: 'Vue d’ensemble de la salle' }),
-      ).toHaveTextContent('1 disponible');
+      expect(within(bar).queryByText(/Actualisé il y a/)).not.toBeInTheDocument();
       fireEvent.click(within(bar).getByRole('button', { name: 'Ajuster le plan' }));
       await waitFor(() => expect(scrollTo).toHaveBeenCalled());
     } finally {
@@ -1208,32 +1202,6 @@ describe('FloorPlanCanvas — actions Live service', () => {
     },
   );
 
-  it('ne présente pas les compteurs du jour précédent pendant le changement de date', async () => {
-    let resolveReservations!: (value: PlanningReservation[]) => void;
-    const pending = new Promise<PlanningReservation[]>((resolve) => {
-      resolveReservations = resolve;
-    });
-    apiMocks.get.mockImplementation(async (path: string) => {
-      if (path.includes('/floor-plan/reservations')) {
-        return path.includes('2026-01-05') ? pending : [makeReservation('SEATED')];
-      }
-      if (path.includes('/waiting-list')) return [];
-      return floorPlan;
-    });
-    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
-    expect(await screen.findByText(/couverts prévus/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Date du service'), {
-      target: { value: '2026-01-05' },
-    });
-    const bar = screen.getByRole('region', { name: 'État du service' });
-    expect(within(bar).getByText('Actualisation…')).toBeInTheDocument();
-    expect(
-      within(bar).queryByRole('status', { name: 'Vue d’ensemble de la salle' }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText(/couverts prévus/)).not.toBeInTheDocument();
-    await act(async () => resolveReservations([]));
-  });
-
   it('propose une sortie claire quand le plan Live ne contient aucune table', async () => {
     const onRequestEdit = vi.fn();
     apiMocks.get.mockImplementation(async (path: string) => {
@@ -1355,11 +1323,7 @@ describe('FloorPlanCanvas — actions Live service', () => {
     fireEvent.click(table);
     const close = screen.getByRole('button', { name: 'Fermer la fiche de la table' });
     const bar = screen.getByRole('region', { name: 'État du service' });
-    expect(
-      within(bar).getByRole('status', { name: 'Vue d’ensemble de la salle' }),
-    ).toHaveTextContent('1 disponible');
     expect(within(bar).getByText('Légende')).toHaveAttribute('aria-label', 'Légende des statuts');
-    expect(screen.getAllByRole('status', { name: 'Vue d’ensemble de la salle' })).toHaveLength(1);
     fireEvent.click(close);
     expect(table).toHaveAttribute('aria-pressed', 'false');
     expect(
@@ -2215,7 +2179,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
         expect(await screen.findByRole('tablist', { name: 'Vue du service' })).toBeInTheDocument();
         expect(screen.queryByRole('status', { name: 'Pouls du service' })).not.toBeInTheDocument();
         // Ni volumétrie à zéro ni jauge ne mangent la hauteur utile du plan.
-        expect(await screen.findByText(/couverts prévus/)).toBeInTheDocument();
+        expect(screen.queryByText(/couverts prévus/)).not.toBeInTheDocument();
         expect(
           screen.queryByRole('progressbar', { name: /Taux d’occupation/ }),
         ).not.toBeInTheDocument();
@@ -2247,10 +2211,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
 
       render(<FloorPlanCanvas orgId="org_test" mode="service" />);
 
-      expect(await screen.findByText(/couverts prévus/)).toBeInTheDocument();
-      expect(
-        screen.getByRole('status', { name: 'Vue d’ensemble de la salle' }),
-      ).toBeInTheDocument();
+      expect(await screen.findByRole('region', { name: 'État du service' })).toBeInTheDocument();
       expect(
         screen.queryByText('Service en direct · Aucune réservation aujourd’hui'),
       ).not.toBeInTheDocument();

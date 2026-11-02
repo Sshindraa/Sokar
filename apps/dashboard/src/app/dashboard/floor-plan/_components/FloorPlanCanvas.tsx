@@ -2,15 +2,7 @@
 
 import { useServiceCopilotAccess } from '@/lib/use-service-copilot-access';
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useApi } from '@/lib/api';
 import {
@@ -2486,22 +2478,6 @@ function NewWallOverlay({ type, zoom }: { type: PaletteWallType; zoom: number })
         strokeDasharray={strokeDasharray}
       />
     </svg>
-  );
-}
-
-function ElapsedSince({ date, prefix }: { date: number; prefix: string }) {
-  const [, forceRender] = useReducer((n: number) => n + 1, 0);
-
-  useEffect(() => {
-    const id = setInterval(() => forceRender(), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  return (
-    <>
-      {prefix}
-      {formatDistanceToNow(date, { locale: fr, addSuffix: true })}
-    </>
   );
 }
 
@@ -6818,45 +6794,6 @@ export function FloorPlanCanvas({
             ? 'bg-brand'
             : 'bg-floor-table-muted/80';
 
-  const serviceCounts = (
-    <p
-      role="status"
-      aria-label="Vue d’ensemble de la salle"
-      className="text-[13px] text-foreground"
-    >
-      {loadedLiveDate !== liveDate ? (
-        reservationsError ? (
-          'Données indisponibles'
-        ) : (
-          'Actualisation…'
-        )
-      ) : (
-        <>
-          <span className="font-semibold tabular-nums text-foreground">
-            {[...tableStatuses.values()].filter((item) => item.status === 'occupied').length}
-          </span>{' '}
-          occupées ·{' '}
-          <span className="font-semibold tabular-nums text-foreground">
-            {
-              [...tableStatuses.values()].filter((item) =>
-                ['reserved', 'upcoming', 'late'].includes(item.status),
-              ).length
-            }
-          </span>{' '}
-          attendues ·{' '}
-          <span className="font-semibold tabular-nums text-foreground">
-            {
-              allTables.filter(
-                (table) =>
-                  table.isActive && (tableStatuses.get(table.id)?.status ?? 'free') === 'free',
-              ).length
-            }
-          </span>{' '}
-          disponibles
-        </>
-      )}
-    </p>
-  );
   const serviceOverview = (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -8173,13 +8110,6 @@ export function FloorPlanCanvas({
   // de jour, ce qui ferait diverger le badge du champ date.
   const serviceIsToday = liveDate === serviceToday;
   const serviceDateLabel = format(parseISO(liveDate), 'd MMM yyyy', { locale: fr });
-  const serviceReservations = reservations.filter(
-    (reservation) => !['CANCELLED', 'NO_SHOW'].includes(reservation.state),
-  );
-  const serviceCovers = serviceReservations.reduce(
-    (total, reservation) => total + (reservation.partySize ?? 0),
-    0,
-  );
   // Service vide : sans réservation ni action en attente, le cockpit complet
   // affichait deux bandes de zéros (statut + volumétrie) et un message d'état
   // vide, soit près de la moitié de l'écran d'un téléphone pour ne rien dire.
@@ -8464,23 +8394,6 @@ export function FloorPlanCanvas({
                 className="space-y-2 border-t border-border px-3 py-2 sm:px-4"
               >
                 <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1">
-                  <span className="text-[13px] text-foreground/80">
-                    {lastUpdatedAt && loadedLiveDate === liveDate ? (
-                      <ElapsedSince date={lastUpdatedAt} prefix="Actualisé " />
-                    ) : reservationsError ? (
-                      'Données indisponibles'
-                    ) : (
-                      'Actualisation…'
-                    )}
-                  </span>
-                  {loadedLiveDate === liveDate ? (
-                    <>
-                      {serviceCounts}
-                      <span className="text-[13px] text-foreground">
-                        {serviceCovers} couverts prévus · {serviceReservations.length} réservations
-                      </span>
-                    </>
-                  ) : null}
                   {serviceOverview}
                   {hasServerFilter ? (
                     <Select
