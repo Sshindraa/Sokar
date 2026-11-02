@@ -8,7 +8,6 @@ import { useTranslations } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   CalendarCheck,
-  Settings,
   Moon,
   Sun,
   Radio,
@@ -67,7 +66,7 @@ function SidebarNavItem({
           onClick={onClick}
           className={cn(
             'flex h-12 flex-none items-center rounded-xl text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            expanded ? 'w-full justify-start gap-3 px-3' : 'w-11 justify-center',
+            expanded ? 'w-full justify-start gap-3 px-3' : 'mx-auto w-10 justify-center',
             active &&
               'bg-popover font-semibold text-foreground shadow-md hover:bg-popover hover:text-foreground',
           )}
@@ -154,28 +153,6 @@ function ThemeToggle() {
     >
       {isLight ? <Moon size={16} /> : <Sun size={16} />}
     </button>
-  );
-}
-
-function SettingsButton({ active = false }: { active?: boolean }) {
-  const tNav = useTranslations('nav');
-  const { activeSite } = useSiteSelection();
-  // Les réglages sont fermés à l'équipe de service : l'API les refuse, le bouton ne les promet pas.
-  if (isServiceStaff(activeSite?.role)) return null;
-
-  return (
-    <Link
-      href="/dashboard/settings"
-      className={cn(
-        'inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-card/80 text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground',
-        active &&
-          'border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
-      )}
-      title={tNav('settings')}
-      aria-label={tNav('settings')}
-    >
-      <Settings size={16} />
-    </Link>
   );
 }
 
@@ -347,7 +324,7 @@ export function DashboardModeSwitcher({
           Salle
         </Link>
       )}
-      {!compact && companionAvailable && (
+      {companionAvailable && (
         <button
           type="button"
           aria-expanded={companionOpen}
@@ -376,7 +353,7 @@ export function DashboardModeSwitcher({
     >
       {modeNav}
       {/* Monté même fermé : une question en cours garde sa réponse, son attente et son erreur. */}
-      {!compact && companionAvailable && (
+      {companionAvailable && (
         <div
           id={companionDialogId}
           role="dialog"
@@ -452,7 +429,8 @@ export function DashboardSidebar({
   return (
     <aside
       className={cn(
-        'dashboard-desktop-sidebar fixed bottom-4 left-4 top-4 z-40 flex-col rounded-2xl border border-border bg-card/95 p-3 shadow-xl shadow-background/30 backdrop-blur-xl',
+        'dashboard-desktop-sidebar fixed bottom-4 left-4 top-4 z-40 flex-col rounded-2xl border border-border bg-card/95 shadow-xl shadow-background/30 backdrop-blur-xl',
+        expanded ? 'p-3' : 'p-2',
         expanded ? 'w-56' : 'w-16',
       )}
     >
@@ -463,7 +441,10 @@ export function DashboardSidebar({
           href="/dashboard"
           aria-label="Sokar"
           title="Sokar"
-          className="flex h-11 items-center gap-3 rounded-xl px-2 text-sm font-semibold text-foreground transition-all duration-200 hover:bg-accent"
+          className={cn(
+            'flex h-11 items-center gap-3 rounded-xl px-2 text-sm font-semibold text-foreground transition-all duration-200 hover:bg-accent',
+            !expanded && 'h-10 w-10 justify-center gap-0 px-0',
+          )}
         >
           <SokarLogo className="h-8 w-8 text-foreground" /> {expanded && 'Sokar'}
         </Link>
@@ -606,11 +587,10 @@ export function DashboardSidebar({
       <div
         className={cn(
           'mt-3 flex items-center gap-2 border-t border-border pt-3',
-          !expanded && 'flex-col',
+          !expanded && 'flex-col items-center',
         )}
       >
         <ThemeToggle />
-        <SettingsButton active={pathname.startsWith('/dashboard/settings')} />
       </div>
     </aside>
   );
@@ -635,6 +615,8 @@ function DashboardShell({ children }: { children: ReactNode }) {
   // Same rule as the settings page: on a multi-site account, only the owner manages billing.
   const canManageBilling = !accountId || activeSite?.role === 'OWNER';
   const siteRole = activeSite?.role;
+  const showRestaurantSettings = !isServiceStaff(siteRole);
+  const showThemeInHeader = salleMode || isServiceStaff(siteRole);
   const roleBlocked = !canOpenDashboardPath(siteRole, pathname, searchParams.get('view'));
   const isLegacyOperatorPath =
     pathname === '/dashboard/usage' ||
@@ -810,7 +792,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
         <SiteSwitcher />
       </div>
       <div className="dashboard-desktop-only fixed right-8 top-6 z-50 h-12 items-center gap-2">
-        <AccountMenu />
+        <AccountMenu showSettings={showRestaurantSettings} />
       </div>
       <div
         className={cn(
@@ -839,9 +821,8 @@ function DashboardShell({ children }: { children: ReactNode }) {
           />
           <div className="dashboard-flow-header__actions ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
             <TrialChip canManageBilling={canManageBilling} />
-            <ThemeToggle />
-            <SettingsButton active={pathname.startsWith('/dashboard/settings')} />
-            <AccountMenu />
+            {showThemeInHeader && <ThemeToggle />}
+            <AccountMenu showSettings={showRestaurantSettings} />
           </div>
         </div>
         <main

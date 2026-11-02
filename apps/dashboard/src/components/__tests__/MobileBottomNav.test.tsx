@@ -109,7 +109,7 @@ describe('MobileBottomNav', () => {
     const headings = within(menu)
       .getAllByRole('heading', { level: 3 })
       .map((heading) => heading.textContent);
-    expect(headings).toEqual(['Service', 'Clients', 'Marketing', 'Offres', 'Canaux', 'Réglages']);
+    expect(headings).toEqual(['Service', 'Clients', 'Marketing', 'Offres', 'Canaux']);
     expect(within(menu).getByRole('link', { name: 'Appels' })).toHaveAttribute(
       'href',
       '/dashboard/calls',
@@ -333,10 +333,7 @@ describe('MobileBottomNav', () => {
     expect(screen.getByText('Campagnes')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Vue d’ensemble' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Créer une offre' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Réglages/i })).toHaveClass(
-      'col-span-2',
-      'md:col-span-3',
-    );
+    expect(screen.queryByRole('link', { name: /Réglages/i })).not.toBeInTheDocument();
 
     // Close menu
     const closeButtons = screen.getAllByRole('button', { name: /Fermer/i });
