@@ -107,20 +107,25 @@ export async function serviceAvailability(args: {
   restaurantId: string;
   start: Date;
   end: Date;
-}): Promise<{ open: boolean; bookable: boolean }> {
+}): Promise<{ open: boolean; bookable: boolean; firstSlotAt: Date | null }> {
   const date = parisParts(args.start).dayKey;
   const availability = await new CapacityAwareAvailabilityService(db).getAvailability({
     restaurantId: args.restaurantId,
     date,
     partySize: BOOKABLE_PARTY_SIZE,
   });
-  const inService = availability.slots.filter((slot) => {
-    const at = zonedTimeToUtc(date, slot.time, DEFAULT_RESTAURANT_TIMEZONE).getTime();
-    return at >= args.start.getTime() && at < args.end.getTime();
+  const inService = availability.slots.flatMap((slot) => {
+    const at = zonedTimeToUtc(date, slot.time, DEFAULT_RESTAURANT_TIMEZONE);
+    return at >= args.start && at < args.end ? [{ at, available: slot.available }] : [];
   });
   return {
     open: inService.length > 0,
     bookable: inService.some((slot) => slot.available),
+    // Premier créneau du service (disponible ou non) : sert à exiger un délai avant le service.
+    firstSlotAt: inService.reduce<Date | null>(
+      (first, slot) => (first && first <= slot.at ? first : slot.at),
+      null,
+    ),
   };
 }
 

@@ -62,6 +62,11 @@ import {
 } from './marketing-report.service';
 import { getMarketingProviderReadiness } from './marketing-provider.service';
 import { createServiceFillDraft, previewServiceFill } from './fill-service.service';
+import {
+  dismissFillSuggestion,
+  invalidateFillSuggestions,
+  listFillSuggestions,
+} from './fill-suggestions.service';
 import { RATE_LIMIT_PUBLIC_TOKEN } from '../../plugins/rate-limit.policy';
 
 /**
@@ -527,6 +532,7 @@ export async function marketingRoutes(app: FastifyInstance) {
             FILL_SERVICE_CONFLICTS[plan.status === 'PLANNED' ? 'NO_CANDIDATE' : plan.status];
           return reply.status(409).send(conflict);
         }
+        await invalidateFillSuggestions(request.restaurantId!);
         return reply.status(201).send({
           data: {
             id: campaign.id,
@@ -544,6 +550,28 @@ export async function marketingRoutes(app: FastifyInstance) {
         if (problem) return reply.status(400).send({ error: 'INVALID_CAMPAIGN', message: problem });
         throw error;
       }
+    },
+  );
+
+  // Services creux à remplir : lecture seule, sans nom ni téléphone.
+  app.get(
+    '/marketing/fill-suggestions',
+    { preHandler: requireMarketingCampaigns },
+    async (request, reply) =>
+      reply.send({ data: await listFillSuggestions({ restaurantId: request.restaurantId! }) }),
+  );
+
+  app.post(
+    '/marketing/fill-suggestions/dismiss',
+    { preHandler: requireMarketingCampaigns },
+    async (request, reply) => {
+      const body = FillServiceSchema.pick({ date: true, service: true }).parse(request.body);
+      try {
+        await dismissFillSuggestion({ restaurantId: request.restaurantId!, ...body });
+      } catch {
+        return reply.status(503).send({ error: 'DISMISS_UNAVAILABLE' });
+      }
+      return reply.status(204).send();
     },
   );
 
