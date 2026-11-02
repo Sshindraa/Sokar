@@ -201,7 +201,22 @@
       "holdout": "Témoin",
       "perCustomer": "couverts par client",
       "difference": "Écart",
-      "inconclusive": "Non concluant : moins de 20 clients dans le témoin."
+      "inconclusive": "Non concluant : moins de 20 clients dans le témoin.",
+      "effectRange": "Clients ayant réservé, par rapport au témoin : entre {low} et {high} points",
+      "proof": "Effet démontré",
+      "noProof": "Pas encore de preuve d’effet",
+      "truncated": "Le service s’est rempli avant la fin de l’envoi : la mesure n’est pas concluante.",
+      "netTitle": "Sur 30 jours, tous services",
+      "netValue": "{treated} contre {holdout} couverts par client",
+      "netPending": "Disponible 30 jours après l’envoi",
+      "byTierTitle": "Par type de client",
+      "byTierRow": "{tier} : {treatedReserved} sur {treatedCustomers} contre {holdoutReserved} sur {holdoutCustomers}",
+      "tiers": {
+        "CRENEAU": "Habitués du créneau",
+        "REGULIER": "Clients réguliers",
+        "CONNU": "Clients connus",
+        "SANS_VISITE": "Sans visite"
+      }
     },
     "back": "Tableau de bord",
     "closed": "Le restaurant n’ouvre pas ce service ce jour-là : rien à remplir.",

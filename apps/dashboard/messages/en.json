@@ -201,7 +201,22 @@
       "holdout": "Control",
       "perCustomer": "covers per guest",
       "difference": "Difference",
-      "inconclusive": "Inconclusive: fewer than 20 guests in the control group."
+      "inconclusive": "Inconclusive: fewer than 20 guests in the control group.",
+      "effectRange": "Guests who booked, compared with the control group: between {low} and {high} points",
+      "proof": "Effect shown",
+      "noProof": "No evidence of an effect yet",
+      "truncated": "The service filled up before the sending was complete: the measure is inconclusive.",
+      "netTitle": "Over 30 days, all services",
+      "netValue": "{treated} vs {holdout} covers per guest",
+      "netPending": "Available 30 days after sending",
+      "byTierTitle": "By guest type",
+      "byTierRow": "{tier}: {treatedReserved} of {treatedCustomers} vs {holdoutReserved} of {holdoutCustomers}",
+      "tiers": {
+        "CRENEAU": "Regulars at this time slot",
+        "REGULIER": "Regular guests",
+        "CONNU": "Known guests",
+        "SANS_VISITE": "No visit yet"
+      }
     },
     "back": "Dashboard",
     "closed": "The restaurant does not open this service that day: nothing to fill.",

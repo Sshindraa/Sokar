@@ -200,7 +200,22 @@
       "holdout": "Controllo",
       "perCustomer": "coperti per cliente",
       "difference": "Differenza",
-      "inconclusive": "Non conclusivo: meno di 20 clienti nel gruppo di controllo."
+      "inconclusive": "Non conclusivo: meno di 20 clienti nel gruppo di controllo.",
+      "effectRange": "Clienti che hanno prenotato, rispetto al gruppo di controllo: tra {low} e {high} punti",
+      "proof": "Effetto dimostrato",
+      "noProof": "Ancora nessuna prova di effetto",
+      "truncated": "Il servizio si è riempito prima della fine dell’invio: la misura non è conclusiva.",
+      "netTitle": "In 30 giorni, tutti i servizi",
+      "netValue": "{treated} contro {holdout} coperti per cliente",
+      "netPending": "Disponibile 30 giorni dopo l’invio",
+      "byTierTitle": "Per tipo di cliente",
+      "byTierRow": "{tier}: {treatedReserved} su {treatedCustomers} contro {holdoutReserved} su {holdoutCustomers}",
+      "tiers": {
+        "CRENEAU": "Habitués della fascia",
+        "REGULIER": "Clienti regolari",
+        "CONNU": "Clienti noti",
+        "SANS_VISITE": "Senza visite"
+      }
     },
     "back": "Dashboard",
     "closed": "Il ristorante non apre questo servizio quel giorno: non c’è nulla da riempire.",

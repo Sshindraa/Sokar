@@ -3,6 +3,7 @@ import { db } from '../../shared/db/client';
 import { ACTIVE_RESERVATION_STATES } from '../../shared/reservations/capacity';
 import { HOLDOUT_INCLUSION_REASON } from './marketing-campaign.service';
 import { HOLDOUT_MIN_CUSTOMERS } from './fill-service.service';
+import { TIER_PROBABILITY, type FillTier } from './fill-targeting';
 
 export type MarketingCampaignReport = {
   campaign: {
@@ -127,6 +128,7 @@ export async function getMarketingCampaignReport(args: {
       startedAt: true,
       targetServiceStart: true,
       targetServiceEnd: true,
+      lastErrorCode: true,
     },
   });
   if (!campaign) throw new Error('CAMPAIGN_NOT_FOUND');
@@ -134,7 +136,7 @@ export async function getMarketingCampaignReport(args: {
   const [audience, messages, links, conversions] = await Promise.all([
     db.campaignAudienceMember.findMany({
       where: { campaignId: campaign.id },
-      select: { customerId: true, inclusionReason: true },
+      select: { customerId: true, inclusionReason: true, snapshot: true },
     }),
     db.campaignMessage.findMany({
       where: { campaignId: campaign.id },
@@ -251,6 +253,7 @@ export async function getMarketingCampaignReport(args: {
     startedAt: campaign.startedAt,
     targetServiceStart: campaign.targetServiceStart,
     targetServiceEnd: campaign.targetServiceEnd,
+    truncated: campaign.lastErrorCode === 'TARGET_SERVICE_FULL',
     members: audience ?? [],
   });
 
@@ -296,7 +299,15 @@ export async function getMarketingCampaignReport(args: {
   };
 }
 
-export type ServiceFillGroup = { customers: number; covers: number; coversPerCustomer: number };
+export type ServiceFillGroup = {
+  customers: number;
+  covers: number;
+  coversPerCustomer: number;
+  /** Clients distincts ayant réservé le service visé. */
+  reservedCustomers: number;
+};
+
+type TierGroup = { customers: number; reservedCustomers: number };
 
 export type ServiceFillReport = {
   service: { start: Date; end: Date };
@@ -304,9 +315,30 @@ export type ServiceFillReport = {
   holdout: ServiceFillGroup;
   /** Couverts par client : destinataires moins témoin. */
   difference: number;
-  /** Faux sous HOLDOUT_MIN_CUSTOMERS clients dans le témoin. */
+  /** Faux sous HOLDOUT_MIN_CUSTOMERS clients dans le témoin, ou si l'envoi a été tronqué. */
   conclusive: boolean;
+  /** Part des clients qui ont réservé, destinataires moins témoin, en points (marge à 95 %). */
+  effect: { difference: number; margin95: number } | null;
+  /** Anciennes campagnes : les membres sans palier valide n'y figurent pas. */
+  byTier: Partial<Record<FillTier, { treated: TierGroup; holdout: TierGroup }>>;
+  /** Couverts par client sur 30 jours après l'envoi, tous services ; null avant l'échéance. */
+  netEffect30d: {
+    treatedCoversPerCustomer: number;
+    holdoutCoversPerCustomer: number;
+    difference: number;
+  } | null;
+  /** Envoi réduit : le service s'est rempli avant la fin. */
+  truncated: boolean;
 };
+
+const NET_EFFECT_DAYS = 30;
+
+function tierOfSnapshot(snapshot: unknown): FillTier | null {
+  const tier = (snapshot as { tier?: unknown } | null)?.tier;
+  return typeof tier === 'string' && Object.hasOwn(TIER_PROBABILITY, tier)
+    ? (tier as FillTier)
+    : null;
+}
 
 /**
  * Couverts réservés pour le service visé, par client, pour les destinataires et pour le témoin. Les
@@ -317,20 +349,19 @@ async function serviceFillReport(args: {
   startedAt: Date | null;
   targetServiceStart: Date | null;
   targetServiceEnd: Date | null;
-  members: Array<{ customerId: string; inclusionReason: string }>;
+  truncated: boolean;
+  members: Array<{ customerId: string; inclusionReason: string; snapshot?: unknown }>;
 }): Promise<ServiceFillReport | undefined> {
   const { startedAt, targetServiceStart: start, targetServiceEnd: end } = args;
   if (!start || !end) return undefined;
+  const isHoldout = (member: { inclusionReason: string }) =>
+    member.inclusionReason === HOLDOUT_INCLUSION_REASON;
   const treatedIds = new Set(
-    args.members
-      .filter((member) => member.inclusionReason !== HOLDOUT_INCLUSION_REASON)
-      .map((member) => member.customerId),
+    args.members.filter((member) => !isHoldout(member)).map((member) => member.customerId),
   );
-  const holdoutIds = new Set(
-    args.members
-      .filter((member) => member.inclusionReason === HOLDOUT_INCLUSION_REASON)
-      .map((member) => member.customerId),
-  );
+  const holdoutIds = new Set(args.members.filter(isHoldout).map((member) => member.customerId));
+  const states = [...ACTIVE_RESERVATION_STATES, 'HONORED'] as const;
+  const customerIds = args.members.map((member) => member.customerId);
   // Pas encore envoyée : aucune réservation ne peut être attribuée à l'envoi.
   const rows =
     startedAt && args.members.length > 0
@@ -338,14 +369,15 @@ async function serviceFillReport(args: {
           where: {
             restaurantId: args.restaurantId,
             isTest: false,
-            customerId: { in: args.members.map((member) => member.customerId) },
-            state: { in: [...ACTIVE_RESERVATION_STATES, 'HONORED'] },
+            customerId: { in: customerIds },
+            state: { in: [...states] },
             reservedAt: { gte: start, lt: end },
             createdAt: { gte: startedAt, lt: end },
           },
           select: { customerId: true, partySize: true },
         })
       : [];
+  const reserved = new Set(rows.flatMap((row) => (row.customerId ? [row.customerId] : [])));
   const group = (ids: Set<string>): ServiceFillGroup => {
     const covers = rows.reduce(
       (sum, row) => (row.customerId && ids.has(row.customerId) ? sum + row.partySize : sum),
@@ -356,15 +388,81 @@ async function serviceFillReport(args: {
       customers: ids.size,
       covers,
       coversPerCustomer: Number(coversPerCustomer.toFixed(2)),
+      reservedCustomers: [...ids].filter((id) => reserved.has(id)).length,
     };
   };
   const treated = group(treatedIds);
   const holdout = group(holdoutIds);
+
+  let effect: ServiceFillReport['effect'] = null;
+  if (treated.customers > 0 && holdout.customers > 0) {
+    const p1 = treated.reservedCustomers / treated.customers;
+    const p2 = holdout.reservedCustomers / holdout.customers;
+    const margin =
+      1.96 * Math.sqrt((p1 * (1 - p1)) / treated.customers + (p2 * (1 - p2)) / holdout.customers);
+    effect = {
+      difference: Number(((p1 - p2) * 100).toFixed(1)),
+      margin95: Number((margin * 100).toFixed(1)),
+    };
+  }
+
+  const byTier: ServiceFillReport['byTier'] = {};
+  for (const member of args.members) {
+    const tier = tierOfSnapshot(member.snapshot);
+    if (!tier) continue;
+    const entry = (byTier[tier] ??= {
+      treated: { customers: 0, reservedCustomers: 0 },
+      holdout: { customers: 0, reservedCustomers: 0 },
+    });
+    const side = isHoldout(member) ? entry.holdout : entry.treated;
+    side.customers += 1;
+    if (reserved.has(member.customerId)) side.reservedCustomers += 1;
+  }
+
+  // Effet net : mêmes clients, tous services, 30 jours après l'envoi, une fois l'échéance passée.
+  let netEffect30d: ServiceFillReport['netEffect30d'] = null;
+  if (startedAt && treated.customers > 0 && holdout.customers > 0) {
+    const deadline = new Date(startedAt.getTime() + NET_EFFECT_DAYS * 24 * 3600_000);
+    if (deadline <= new Date()) {
+      const netRows = await db.reservation.findMany({
+        where: {
+          restaurantId: args.restaurantId,
+          isTest: false,
+          customerId: { in: customerIds },
+          state: { in: [...states] },
+          reservedAt: { gte: startedAt, lt: deadline },
+          createdAt: { gte: startedAt },
+        },
+        select: { customerId: true, partySize: true },
+      });
+      const perCustomer = (ids: Set<string>) =>
+        Number(
+          (
+            netRows.reduce(
+              (sum, row) => (row.customerId && ids.has(row.customerId) ? sum + row.partySize : sum),
+              0,
+            ) / ids.size
+          ).toFixed(2),
+        );
+      const treatedCovers = perCustomer(treatedIds);
+      const holdoutCovers = perCustomer(holdoutIds);
+      netEffect30d = {
+        treatedCoversPerCustomer: treatedCovers,
+        holdoutCoversPerCustomer: holdoutCovers,
+        difference: Number((treatedCovers - holdoutCovers).toFixed(2)),
+      };
+    }
+  }
+
   return {
     service: { start, end },
     treated,
     holdout,
     difference: Number((treated.coversPerCustomer - holdout.coversPerCustomer).toFixed(2)),
-    conclusive: holdout.customers >= HOLDOUT_MIN_CUSTOMERS,
+    conclusive: holdout.customers >= HOLDOUT_MIN_CUSTOMERS && !args.truncated,
+    effect,
+    byTier,
+    netEffect30d,
+    truncated: args.truncated,
   };
 }
