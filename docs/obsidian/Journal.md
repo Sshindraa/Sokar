@@ -3611,3 +3611,7 @@ La vue service regroupe date, direct ou archive, fraîcheur et compteurs dans un
 ### 2026-11-02 — Service : accueil et navigation
 
 L’action « Client sans réservation » guide vers une table libre avant le placement réel ; le simulateur Copilot est identifié comme prévisualisation sans placement. Navigation Salle : libellés explicites, infobulles clavier/souris et état actif accessible ; cibles tactiles contrôlées en formats tablette portrait et paysage.
+
+### 2026-11-02 — Démo locale : limitation des requêtes du plan
+
+La démo non authentifiée partageait le budget anonyme de 100 requêtes/minute/IP ; plusieurs vues locales et leurs actualisations pouvaient provoquer des 429. En développement, les lectures de la démo provenant de la boucle locale utilisent un compteur séparé plafonné à 600/minute ; écritures, trafic réseau, staging et production gardent leurs limites. Un onglet de service initialement masqué attend son affichage pour charger et lancer le polling.

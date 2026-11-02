@@ -751,6 +751,29 @@ describe("FloorPlanCanvas — liste d'attente Live service", () => {
 });
 
 describe('FloorPlanCanvas — actions Live service', () => {
+  it('attend le retour au premier plan avant de charger et actualiser le service', async () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+    try {
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      await screen.findByRole('button', { name: 'T4 · 4 places' });
+      expect(
+        apiMocks.get.mock.calls.some(([path]) => path.includes('/floor-plan/reservations')),
+      ).toBe(false);
+      hidden.mockReturnValue(false);
+      act(() => document.dispatchEvent(new Event('visibilitychange')));
+      await waitFor(() =>
+        expect(
+          apiMocks.get.mock.calls.some(([path]) => path.includes('/floor-plan/reservations')),
+        ).toBe(true),
+      );
+    } finally {
+      hidden.mockRestore();
+    }
+  });
   function makeReservation(state: 'CONFIRMED' | 'SEATED'): PlanningReservation {
     const now = Date.now();
     return {

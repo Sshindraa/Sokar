@@ -3579,7 +3579,6 @@ export function FloorPlanCanvas({
 
   useEffect(() => {
     if (!orgId || !live) return;
-    loadReservations({ force: true });
 
     let timer: ReturnType<typeof setInterval> | null = null;
     const startPolling = () => {
@@ -3603,7 +3602,10 @@ export function FloorPlanCanvas({
       }
     };
 
-    startPolling();
+    if (!document.hidden) {
+      loadReservations({ force: true });
+      startPolling();
+    }
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       pollAbortRef.current?.abort();
