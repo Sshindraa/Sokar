@@ -6,7 +6,10 @@ import { useApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { getErrorMessage } from '@/types/api';
-import { GiftCardStripeOnboarding } from './gift-card-stripe-onboarding';
+import {
+  GiftCardStripeOnboarding,
+  VerifiedGiftCardStripeOnboarding,
+} from './gift-card-stripe-onboarding';
 
 type ConnectStatus = {
   connected: boolean;
@@ -17,6 +20,7 @@ type ConnectStatus = {
   actionItems?: string[];
   deadline?: string | null;
   managedTestPublishableKey?: string;
+  managedTest?: boolean;
 };
 
 export function GiftCardStripeConnect({
@@ -103,6 +107,12 @@ export function GiftCardStripeConnect({
   const canResume =
     status?.canConfigure && (state === 'action_required' || state === 'configuration_required');
   const canManage = status?.canConfigure && ready;
+  const useVerification = Boolean(
+    (status?.managedTestPublishableKey || status?.managedTest) &&
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
+    !(process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID && process.env.NEXT_PUBLIC_DEMO_STAGING),
+  );
+  const Onboarding = useVerification ? VerifiedGiftCardStripeOnboarding : GiftCardStripeOnboarding;
   return (
     <Card>
       <CardContent className="space-y-4 p-4 md:p-5">
@@ -201,7 +211,7 @@ export function GiftCardStripeConnect({
           </div>
         )}
         {opening && orgId && status?.canConfigure && (
-          <GiftCardStripeOnboarding
+          <Onboarding
             key={orgId}
             restaurantId={orgId}
             onClose={closeOnboarding}

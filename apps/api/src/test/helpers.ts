@@ -2,6 +2,12 @@ import { buildApp } from '../main';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { vi } from 'vitest';
 
+vi.mock('../modules/gift-cards/managed-connect-verification', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../modules/gift-cards/managed-connect-verification')>();
+  return { ...actual, managedConnectVerified: vi.fn(() => true) };
+});
+
 vi.mock('../plugins/clerk', () => ({
   isClerkConfigured: vi.fn(() => true),
   registerClerk: vi.fn().mockResolvedValue(undefined),

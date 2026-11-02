@@ -1,7 +1,8 @@
 # Proposition : configuration des paiements dans Sokar
 
-Statut : prototype local réservé au mode test, sans activation ni modification
-des comptes existants. Il reste à qualifier en staging avant toute livraison.
+Statut : parcours réservé au mode test, qualifié en staging sur un compte fictif.
+La PR #622 reste en brouillon ; aucune activation en production ni modification
+des comptes existants. La qualification ne couvre pas encore tous les usages.
 
 ## Objectif et situation actuelle
 
@@ -12,9 +13,9 @@ demander des justificatifs ou des contrôles d'identité.
 
 Le tableau de bord utilise déjà `ConnectAccountOnboarding`. La création actuelle
 utilise Accounts v2 avec `dashboard: full` et les responsabilités de frais et
-de pertes attribuées à Stripe. Le formulaire intégré observé en staging reste en
-chargement ; sa cause n'est pas établie. Un changement de type de compte ne
-démontre pas à lui seul que ce problème sera résolu.
+de pertes attribuées à Stripe. Le formulaire intégré du compte existant a été observé en chargement en staging ;
+sa cause n'est pas établie. Le parcours réussi ci-dessous utilise un nouveau
+compte fictif et ne démontre pas que le problème du compte existant est résolu.
 
 ## Option à qualifier
 
@@ -70,10 +71,22 @@ Le 30 octobre 2026, un test de la route Sokar avec PostgreSQL local et Stripe
 test réels a créé le compte et la session puis repris le même compte ; le compte
 fictif a été fermé. Il a révélé que le jeton v2 contient plusieurs caractères
 `_`, ce qui a conduit à corriger sa validation. La création du jeton a aussi été
-vérifiée depuis un navigateur sur l'origine staging. Un essai séparé du composant
-Stripe dans un navigateur automatisé n'a pas montré d'étape du formulaire ; son
-résultat n'établit donc pas que le parcours complet fonctionne. Aucun paiement
-de bout en bout n'a encore été effectué.
+vérifiée depuis un navigateur sur l'origine staging. La première sonde du
+composant Stripe effaçait par erreur un élément nécessaire à son fonctionnement :
+son échec ne permettait pas de conclure sur Sokar. Après correction, le composant
+s'affiche en français et le parcours fictif a été terminé sans connexion Stripe.
+Avec les données de test recommandées par Stripe, les encaissements et les
+versements ont été activés sur le compte fictif. Un paiement direct fictif de
+10 € avec 0,50 € de commission, puis son remboursement complet avec remboursement
+de la commission, ont réussi via l'API Stripe. Le compte a été fermé. Cet essai
+ne testait pas encore l'achat de carte cadeau dans Sokar ni les notifications.
+
+Le 2 novembre 2026, un essai distinct en staging a terminé la configuration
+depuis Sokar, acheté une carte cadeau fictive de 25 € dans l’interface client,
+puis annulé la carte via l’API Sokar et confirmé son remboursement Stripe. Le
+compte fictif a été fermé et l’option de test désactivée. Lors d’essais
+antérieurs, la réception des trois e-mails de vente et des e-mails de remboursement
+a été confirmée. SMS et WhatsApp n’ont pas été qualifiés.
 
 ## Recueil de l'accord
 
@@ -118,6 +131,32 @@ l'information sur le traitement des données. Ne jamais inventer l'accord ni les
    restaurant ne dispose pas d'un Dashboard Stripe, ainsi que la surveillance
    des exigences, du risque, des soldes et des échecs de versement.
 
+## Protection de la session intégrée : points de mise en œuvre
+
+Le prototype vérifie côté API une authentification Clerk récente (`strict`)
+avant la création ou le renouvellement d’une session de compte géré, en plus
+du rôle propriétaire et du contrôle du site. Le tableau de bord déclenche la
+revérification Clerk lorsque nécessaire. Le composant test utilise
+`disable_stripe_user_authentication: true` ; Stripe ne vérifie donc pas lui-même
+la session du propriétaire.
+
+Clerk propose `auth.has({ reverification: ... })` côté serveur et
+`useReverification()` côté interface. Sa documentation précise que demander un
+second facteur peut être ramené au premier si l’utilisateur n’en dispose pas :
+ce comportement ne doit pas être présenté comme une authentification à deux
+facteurs obligatoire. Le proxy conserve le défi reconnu par Clerk et le client
+le transmet au mécanisme de revérification. Il reste à vérifier avec Clerk réel
+que la requête retentée utilise un jeton de session actualisé. Référence :
+[revérification Clerk](https://clerk.com/docs/guides/secure/reverification).
+
+Le staging de démonstration utilise actuellement une identité injectée sans
+session Clerk. Ce mode ne permet donc pas de qualifier la protection réelle. Les
+tests devront couvrir un propriétaire authentifié avec Clerk réel, une session
+ancienne, une revérification annulée ou échouée, le renouvellement de session,
+un autre restaurant, et l’absence de facteur supplémentaire. Conserver un refus
+par défaut hors démonstration et ne pas considérer le mode démo comme une preuve
+pour la production.
+
 ## Comptes existants et décision de mise en service
 
 Ne pas remplacer silencieusement un compte connecté ni supposer que son solde,
@@ -126,10 +165,28 @@ exige une procédure distincte, validée avec Stripe et le restaurant, avec
 rapprochement des opérations, gestion des litiges et plan de retour arrière.
 Le compte de démonstration actuel reste inchangé.
 
-Avant une mise en service : valider les conditions et les coûts, la responsabilité
-des soldes négatifs, le traitement des demandes de vérification, la sécurité,
-les tests Stripe et le parcours navigateur en staging. Cette proposition ne
-constitue pas une décision d'accepter ces responsabilités ou d'activer l'option.
+Avant une mise en service :
+
+- Confirmer les conditions et tarifs Stripe applicables au compte de plateforme.
+  Avec `fees_collector: application`, la commission Sokar de 5 % par défaut est
+  un revenu brut : Stripe facture les frais à Sokar. Le coût réel dépend du
+  contrat et des opérations ; aucun tarif ni marge nette n’est supposé ici.
+- Définir qui surveille et traite les exigences Stripe, les échecs de versement,
+  les litiges et les soldes négatifs, avec une procédure de reprise et d’alerte.
+  L’affichage actuel expose les états d’encaissement et de versement, mais ne
+  démontre pas une surveillance proactive ni la gestion complète des litiges.
+- Protéger les changements de coordonnées bancaires par une authentification
+  renforcée adaptée : la session de test désactive l’authentification Stripe et
+  le seul contrôle de rôle propriétaire ne démontre pas cette protection.
+- Qualifier les justificatifs, le changement de coordonnées, les refus et reprises,
+  les litiges, les versements et les notifications nécessaires en staging. Le
+  remboursement testé ci-dessus a été déclenché par API, pas par l’interface.
+- Préparer explicitement le déploiement de la migration additive, la gestion des
+  clés et du flag de production, un pilote limité, le suivi et le retour arrière.
+  Le code actuel exige une clé de test et refuse volontairement les clés réelles.
+
+L’utilisation réelle de ce modèle engage Sokar pour les frais et les soldes
+négatifs ; l’essai sandbox ne valide ni le contrat ni les opérations en production.
 
 Références : [configuration Accounts v2](https://docs.stripe.com/connect/accounts-v2/connected-account-configuration?locale=fr-FR),
 [composant de configuration intégré](https://docs.stripe.com/connect/supported-embedded-components/account-onboarding),

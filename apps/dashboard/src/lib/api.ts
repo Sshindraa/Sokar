@@ -18,6 +18,7 @@ interface ApiResult<T> {
 type ApiRequestOptions = {
   signal?: AbortSignal;
   headers?: Record<string, string>;
+  allowReverificationHint?: boolean;
 };
 
 /**
@@ -88,6 +89,13 @@ export function useApi(options: { requireSession?: boolean } = {}) {
         }
 
         if (!res.ok) {
+          const hint = data.clerk_error as { type?: string; reason?: string } | undefined;
+          if (
+            options?.allowReverificationHint &&
+            hint?.type === 'forbidden' &&
+            hint.reason === 'reverification-error'
+          )
+            return data as T;
           // Message français, code et statut : voir lib/api-error.ts.
           throw toApiError(res.status, data);
         }

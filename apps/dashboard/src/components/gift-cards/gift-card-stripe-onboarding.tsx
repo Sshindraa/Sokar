@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useReverification } from '@clerk/nextjs';
 import type { StripeConnectInstance } from '@stripe/connect-js';
 import { ConnectAccountOnboarding, ConnectComponentsProvider } from '@stripe/react-connect-js';
 import { LoaderCircle } from 'lucide-react';
@@ -9,17 +10,38 @@ import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '@/types/api';
 
 type Session = { clientSecret: string; publishableKey: string };
+type SessionPost = (
+  path: string,
+  body?: unknown,
+  options?: { signal?: AbortSignal },
+) => Promise<Session>;
 
-export function GiftCardStripeOnboarding({
-  restaurantId,
-  onClose,
-  managedTestPublishableKey,
-}: {
+export function VerifiedGiftCardStripeOnboarding(props: {
   restaurantId: string;
   onClose: () => void;
   managedTestPublishableKey?: string;
 }) {
   const { post } = useApi();
+  const verifiedPost = useReverification(
+    (path: string, body?: unknown, options?: { signal?: AbortSignal }) =>
+      post<Session>(path, body, { ...options, allowReverificationHint: true }),
+  );
+  return <GiftCardStripeOnboarding {...props} sessionPost={verifiedPost} />;
+}
+
+export function GiftCardStripeOnboarding({
+  restaurantId,
+  onClose,
+  managedTestPublishableKey,
+  sessionPost,
+}: {
+  restaurantId: string;
+  onClose: () => void;
+  managedTestPublishableKey?: string;
+  sessionPost?: SessionPost;
+}) {
+  const { post: apiPost } = useApi();
+  const post: SessionPost = sessionPost ?? apiPost;
   const [instance, setInstance] = useState<StripeConnectInstance | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -48,7 +70,7 @@ export function GiftCardStripeOnboarding({
       });
       const token: { id?: string } = await response.json();
       if (!response.ok || !token.id) throw new Error('Impossible de préparer la configuration.');
-      const session = await post<Session>(
+      const session = await post(
         `restaurants/${restaurantId}/gift-cards/stripe-connect/managed-test`,
         { accountToken: token.id },
       );
@@ -68,7 +90,7 @@ export function GiftCardStripeOnboarding({
     setInstance(null);
     setError('');
     const fetchSession = () =>
-      post<Session>(
+      post(
         `restaurants/${restaurantId}/gift-cards/stripe-connect/session`,
         {},
         { signal: abort.signal },

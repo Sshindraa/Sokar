@@ -5,6 +5,7 @@ import { db } from '../../../shared/db/client';
 import { constructWebhookEvent, retrievePaymentIntent } from '../stripe.service';
 import * as stripeService from '../stripe.service';
 import * as localTest from '../gift-card-local-test';
+import * as verification from '../managed-connect-verification';
 import { checkRateLimit } from '../../../shared/redis/rate-limit';
 import { logger } from '../../../shared/logger/pino.js';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service';
@@ -91,6 +92,30 @@ describe('gift-card routes', () => {
   });
 
   describe('embedded Connect onboarding', () => {
+    it('refuses account setup and session renewal until the owner has reverified', async () => {
+      vi.spyOn(stripeService, 'managedConnectTestEnabled').mockReturnValue(true);
+      vi.spyOn(stripeService, 'isManagedTestAccount').mockResolvedValue(true);
+      const session = vi.spyOn(stripeService, 'createManagedTestSession');
+      vi.mocked(verification.managedConnectVerified).mockReturnValue(false);
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+        giftCardStripeAccountId: 'acct_existing',
+      } as never);
+      const app = await getApp();
+      for (const route of ['managed-test', 'session']) {
+        const response = await app.inject({
+          method: 'POST',
+          url: `/restaurants/${RESTAURANT_ID}/gift-cards/stripe-connect/${route}`,
+          headers: AUTH,
+          payload:
+            route === 'managed-test' ? { accountToken: ['accttok', 'example'].join('_') } : {},
+        });
+        expect(response.statusCode).toBe(403);
+        expect(response.json().clerk_error.reason).toBe('reverification-error');
+      }
+      expect(session).not.toHaveBeenCalled();
+      vi.mocked(verification.managedConnectVerified).mockReturnValue(true);
+      vi.restoreAllMocks();
+    });
     it('resumes a completed test account after the original response was lost', async () => {
       const enabled = vi.spyOn(stripeService, 'managedConnectTestEnabled').mockReturnValue(true);
       const managed = vi.spyOn(stripeService, 'isManagedTestAccount').mockResolvedValue(true);

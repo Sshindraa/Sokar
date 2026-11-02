@@ -7,6 +7,10 @@ import { z } from 'zod';
 import type { Prisma, GiftCard, GiftCardRedemption } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { requireOrg } from '../../plugins/clerk';
+import {
+  managedConnectVerified,
+  managedConnectVerificationRequired,
+} from './managed-connect-verification';
 import { GiftCardService } from './gift-card.service';
 import { GiftCardSlotsService } from './gift-card-slots.service';
 import { GiftCardBookService } from './gift-card-book.service';
@@ -421,6 +425,10 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
         onboardingState: account.onboardingState,
         actionItems: account.actionItems,
         deadline: account.deadline,
+        ...(managedConnectTestEnabled(id) &&
+        (await isManagedTestAccount(id, restaurant.giftCardStripeAccountId))
+          ? { managedTest: true }
+          : {}),
       });
     },
   );
@@ -482,9 +490,12 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
           data: { giftCardStripeAccountId: accountId },
         });
       }
+      const managed = await isManagedTestAccount(id, accountId);
       reply.header('Cache-Control', 'no-store');
+      if (managed && !managedConnectVerified(req))
+        return reply.status(403).send(managedConnectVerificationRequired);
       return reply.send(
-        (await isManagedTestAccount(id, accountId))
+        managed
           ? await createManagedTestSession(id, accountId)
           : await createConnectedAccountSession(accountId),
       );
@@ -499,6 +510,9 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
       if (id !== req.restaurantId || req.siteRole !== 'OWNER')
         return reply.status(403).send({ error: 'Accès réservé au propriétaire' });
       if (!managedConnectTestEnabled(id)) return reply.status(404).send({ error: 'Indisponible' });
+      reply.header('Cache-Control', 'no-store');
+      if (!managedConnectVerified(req))
+        return reply.status(403).send(managedConnectVerificationRequired);
       const parsed = z
         .object({
           accountToken: z
