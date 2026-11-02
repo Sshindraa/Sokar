@@ -16,7 +16,15 @@ import {
   serviceWindow,
   type ForecastSource,
 } from './fill-forecast';
-import { serviceAvailability, serviceCapacity } from './fill-service.service';
+import {
+  HOLDOUT_RATE,
+  estimateFillCost,
+  loadServiceFillContext,
+  planOpenService,
+  serviceAvailability,
+  serviceCapacity,
+} from './fill-service.service';
+import { TIER_PROBABILITY, type FillTier } from './fill-targeting';
 
 const SUGGESTION_HORIZON_DAYS = 7;
 const SUGGESTION_LIMIT = 3;
@@ -38,7 +46,86 @@ export type FillSuggestion = {
   freePlaces: number;
   emptyPlaces: number;
   forecastSource: ForecastSource;
+  /** Messages réellement envoyés (hors témoin) sur le canal e-mail ; 0 si rien n'est calculable. */
+  sends: number;
+  /** Composition de l'audience par palier, en comptes : le texte est produit côté dashboard. */
+  tiers: Partial<Record<FillTier, number>>;
+  costEstimate: Awaited<ReturnType<typeof estimateFillCost>> | null;
+  /** Envois activés, budget restant et au moins un envoi : sinon le service est listé sans bouton. */
+  canPrepare: boolean;
 };
+
+type Base = Omit<FillSuggestion, 'sends' | 'tiers' | 'costEstimate' | 'canPrepare'>;
+type OpenRow = Base & { booked: number };
+
+/**
+ * Chiffre chaque service sur le canal e-mail : un seul chargement d'audience pour tous, lancé
+ * seulement s'il reste un service. Le score (réservations attendues par envoi) ne sert qu'au tri.
+ */
+async function enrich(
+  restaurantId: string,
+  rows: OpenRow[],
+  now: Date,
+): Promise<Array<FillSuggestion & { score: number }>> {
+  const bare = (row: OpenRow) => {
+    const { booked: _booked, ...base } = row;
+    return { ...base, sends: 0, tiers: {}, costEstimate: null, canPrepare: false, score: 0 };
+  };
+  if (rows.length === 0) return [];
+  let context;
+  try {
+    context = await loadServiceFillContext({
+      restaurantId,
+      channel: 'EMAIL',
+      through: rows.map((row) => row.date).sort()[rows.length - 1],
+      now,
+    });
+  } catch (err) {
+    // Audience au-delà du plafond : les services restent listés, sans chiffre ni bouton.
+    if (err instanceof Error && err.message.startsWith('AUDIENCE_TOO_LARGE:')) {
+      warn(err, 'fill suggestions audience too large, listing without sends');
+      return rows.map(bare);
+    }
+    throw err;
+  }
+  const restaurant = await db.restaurant.findUnique({
+    where: { id: restaurantId },
+    select: { name: true },
+  });
+  const sendsEnabled = process.env.MARKETING_SENDS_ENABLED === 'true';
+  return Promise.all(
+    rows.map(async (row) => {
+      const plan = planOpenService(
+        context,
+        { date: row.date, service: row.service, now },
+        serviceWindow(row.date, row.service),
+        { known: true, capacity: row.capacity, booked: row.booked, free: row.freePlaces },
+      );
+      if (plan.status !== 'PLANNED') return bare(row);
+      const sends = plan.members.length - plan.holdoutCount;
+      const expected = (Object.entries(plan.tiers) as Array<[FillTier, number]>).reduce(
+        (sum, [tier, count]) => sum + TIER_PROBABILITY[tier] * count,
+        0,
+      );
+      return {
+        ...bare(row),
+        sends,
+        tiers: plan.tiers,
+        costEstimate:
+          sends > 0
+            ? await estimateFillCost({
+                restaurantName: restaurant?.name ?? null,
+                channel: 'EMAIL',
+                sends,
+                now,
+              })
+            : null,
+        canPrepare: sendsEnabled && !plan.budgetExhausted && sends > 0,
+        score: sends > 0 ? (expected * plan.groupSize * (1 - HOLDOUT_RATE)) / sends : 0,
+      };
+    }),
+  );
+}
 
 const cacheKey = (restaurantId: string) => `marketing:fill-suggestions:${restaurantId}`;
 const dismissKey = (restaurantId: string, date: string, service: TonightService) =>
@@ -97,12 +184,18 @@ export async function listFillSuggestions(args: {
         // Premier créneau, pas début de fenêtre : un midi commence à minuit.
         if (!availability.bookable || !availability.firstSlotAt) return null;
         if (availability.firstSlotAt.getTime() - now.getTime() < MIN_LEAD_MS) return null;
-        return { date, service, capacity: capacity.capacity, freePlaces: capacity.free };
+        return {
+          date,
+          service,
+          capacity: capacity.capacity,
+          freePlaces: capacity.free,
+          booked: capacity.booked,
+        };
       }),
     )
   ).filter((row) => row !== null);
 
-  let suggestions: FillSuggestion[] = [];
+  let suggestions: OpenRow[] = [];
   if (open.length > 0) {
     const rows = await loadForecastHistory(args.restaurantId, now);
     suggestions = open.flatMap((row) => {
@@ -128,18 +221,40 @@ export async function listFillSuggestions(args: {
       warn(err, 'fill suggestions dismissed read failed, ignoring');
     }
   }
-  const result = suggestions
-    .filter((_, i) => !dismissed[i])
-    .sort((a, b) => b.emptyPlaces - a.emptyPlaces || a.date.localeCompare(b.date))
+  const kept = suggestions.filter((_, i) => !dismissed[i]);
+  const enriched = await enrich(args.restaurantId, kept, now);
+  const result = enriched
+    .sort(
+      (a, b) =>
+        Number(b.canPrepare) - Number(a.canPrepare) ||
+        (a.canPrepare ? b.score - a.score : b.emptyPlaces - a.emptyPlaces) ||
+        a.date.localeCompare(b.date),
+    )
     .slice(0, SUGGESTION_LIMIT)
+    // Payload explicite : ni score ni identifiant client ne sortent ni n'entrent dans le cache.
     .map(
-      ({ date, service, capacity, freePlaces, emptyPlaces, forecastSource }): FillSuggestion => ({
+      ({
         date,
         service,
         capacity,
         freePlaces,
         emptyPlaces,
         forecastSource,
+        sends,
+        tiers,
+        costEstimate,
+        canPrepare,
+      }): FillSuggestion => ({
+        date,
+        service,
+        capacity,
+        freePlaces,
+        emptyPlaces,
+        forecastSource,
+        sends,
+        tiers,
+        costEstimate,
+        canPrepare,
       }),
     );
 

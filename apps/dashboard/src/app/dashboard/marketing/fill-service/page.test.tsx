@@ -9,6 +9,7 @@ const apiMocks = vi.hoisted(() => ({
   post: vi.fn(),
   orgId: 'org_test_123' as string | undefined,
   push: vi.fn(),
+  search: 'date=2026-11-04&service=midi',
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -17,7 +18,7 @@ vi.mock('@/lib/api', () => ({
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: apiMocks.push }),
-  useSearchParams: () => new URLSearchParams('date=2026-11-04&service=midi'),
+  useSearchParams: () => new URLSearchParams(apiMocks.search),
 }));
 
 const plannedPreview = {
@@ -60,6 +61,7 @@ describe('FillServicePage', () => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
     apiMocks.orgId = 'org_test_123';
+    apiMocks.search = 'date=2026-11-04&service=midi';
     apiMocks.post.mockImplementation((path: string) => {
       if (path === 'marketing/fill-service/preview') {
         return Promise.resolve({ data: plannedPreview });
@@ -86,6 +88,28 @@ describe('FillServicePage', () => {
       service: 'midi',
       channel: 'SMS',
     });
+  });
+
+  it('?channel=EMAIL ouvre l’aperçu en e-mail ; sans paramètre, il reste en SMS', async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(apiMocks.post).toHaveBeenCalledWith('marketing/fill-service/preview', {
+        date: '2026-11-04',
+        service: 'midi',
+        channel: 'SMS',
+      }),
+    );
+
+    apiMocks.post.mockClear();
+    apiMocks.search = 'date=2026-11-04&service=midi&channel=EMAIL';
+    renderPage();
+    await waitFor(() =>
+      expect(apiMocks.post).toHaveBeenCalledWith('marketing/fill-service/preview', {
+        date: '2026-11-04',
+        service: 'midi',
+        channel: 'EMAIL',
+      }),
+    );
   });
 
   it('places vides probables et mention d’estimation affichées', async () => {

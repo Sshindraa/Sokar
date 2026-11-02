@@ -4,7 +4,13 @@ import { redisCache } from '../../../shared/redis/client';
 import { parisParts } from '../../companion/query-data';
 import type { TonightService } from '../../companion/tonight';
 import { forecastEmptyPlaces, loadForecastHistory, serviceWindow } from '../fill-forecast';
-import { serviceAvailability, serviceCapacity } from '../fill-service.service';
+import {
+  estimateFillCost,
+  loadServiceFillContext,
+  planOpenService,
+  serviceAvailability,
+  serviceCapacity,
+} from '../fill-service.service';
 import {
   dismissFillSuggestion,
   invalidateFillSuggestions,
@@ -12,7 +18,7 @@ import {
 } from '../fill-suggestions.service';
 
 vi.mock('../../../shared/db/client', () => ({
-  db: { marketingCampaign: { findMany: vi.fn() } },
+  db: { marketingCampaign: { findMany: vi.fn() }, restaurant: { findUnique: vi.fn() } },
 }));
 vi.mock('../../../shared/redis/client', () => ({
   redisCache: { get: vi.fn(), set: vi.fn(), del: vi.fn(), mget: vi.fn() },
@@ -23,8 +29,12 @@ vi.mock('../fill-forecast', async (importOriginal) => ({
   forecastEmptyPlaces: vi.fn(),
 }));
 vi.mock('../fill-service.service', () => ({
+  HOLDOUT_RATE: 0.1,
   serviceCapacity: vi.fn(),
   serviceAvailability: vi.fn(),
+  loadServiceFillContext: vi.fn(),
+  planOpenService: vi.fn(),
+  estimateFillCost: vi.fn(),
 }));
 
 // Lundi 2 novembre 2026, 11 h à Paris (UTC+1).
@@ -46,6 +56,32 @@ function keyOf(start: Date): string {
   const service: TonightService =
     start.getTime() === serviceWindow(date, 'midi').start.getTime() ? 'midi' : 'soir';
   return `${date}:${service}`;
+}
+
+type PlanOverrides = {
+  members?: number;
+  holdoutCount?: number;
+  tiers?: Record<string, number>;
+  budgetExhausted?: boolean;
+  groupSize?: number;
+};
+
+/** Plan par service (clé date:service) ; par défaut, aucun envoi. */
+function mockPlans(plans: Record<string, PlanOverrides> = {}) {
+  vi.mocked(planOpenService).mockImplementation(((
+    _context: unknown,
+    args: { date: string; service: string },
+  ) => {
+    const plan = plans[`${args.date}:${args.service}`] ?? {};
+    return {
+      status: 'PLANNED',
+      members: Array.from({ length: plan.members ?? 0 }, (_, i) => ({ customerId: `c${i}` })),
+      holdoutCount: plan.holdoutCount ?? 0,
+      tiers: plan.tiers ?? {},
+      budgetExhausted: plan.budgetExhausted ?? false,
+      groupSize: plan.groupSize ?? 2,
+    };
+  }) as never);
 }
 
 function mockFloor(floors: Record<string, Floor>, fallback?: Floor) {
@@ -81,6 +117,11 @@ describe('suggestions de services creux', () => {
       (args) =>
         ({ emptyPlaces: args.freePlaces, lateArrivals: 0, forecastSource: 'simple' }) as never,
     );
+    vi.mocked(loadServiceFillContext).mockResolvedValue({ members: [] } as never);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({ name: 'Chez Sokar' } as never);
+    vi.mocked(estimateFillCost).mockResolvedValue({ amount: '1.50', status: 'PRICED' } as never);
+    mockPlans();
+    vi.stubEnv('MARKETING_SENDS_ENABLED', 'true');
     vi.mocked(redisCache.get).mockResolvedValue(null);
     vi.mocked(redisCache.set).mockResolvedValue('OK' as never);
     vi.mocked(redisCache.del).mockResolvedValue(1 as never);
@@ -197,6 +238,10 @@ describe('suggestions de services creux', () => {
       freePlaces: 25,
       emptyPlaces: 25,
       forecastSource: 'simple',
+      sends: 0,
+      tiers: {},
+      costEstimate: null,
+      canPrepare: false,
     });
   });
 
@@ -224,12 +269,16 @@ describe('suggestions de services creux', () => {
     expect(mode).toBe('EX');
     expect(ttl).toBe(1800);
     expect(Object.keys(JSON.parse(value)[0]).sort()).toEqual([
+      'canPrepare',
       'capacity',
+      'costEstimate',
       'date',
       'emptyPlaces',
       'forecastSource',
       'freePlaces',
+      'sends',
       'service',
+      'tiers',
     ]);
 
     vi.clearAllMocks();
@@ -268,5 +317,129 @@ describe('suggestions de services creux', () => {
   it('invalidate n’échoue jamais', async () => {
     vi.mocked(redisCache.del).mockRejectedValue(new Error('down'));
     await expect(invalidateFillSuggestions('r1')).resolves.toBeUndefined();
+  });
+
+  describe('envois, composition et coût', () => {
+    const floors = {
+      [`2026-11-03:soir`]: { capacity: 30, free: 12 },
+      [`2026-11-04:soir`]: { capacity: 30, free: 20 },
+      [`2026-11-05:soir`]: { capacity: 30, free: 25 },
+    };
+
+    it('charge le contexte une seule fois pour tous les services, sur le canal EMAIL', async () => {
+      mockFloor(floors);
+      await listFillSuggestions({ restaurantId: 'r1', now: NOW });
+      expect(loadServiceFillContext).toHaveBeenCalledTimes(1);
+      expect(loadServiceFillContext).toHaveBeenCalledWith({
+        restaurantId: 'r1',
+        channel: 'EMAIL',
+        through: '2026-11-05',
+        now: NOW,
+      });
+      expect(db.restaurant.findUnique).toHaveBeenCalledTimes(1);
+      expect(planOpenService).toHaveBeenCalledTimes(3);
+    });
+
+    it('aucun service retenu : le contexte n’est pas chargé', async () => {
+      mockFloor({}, { capacity: 20, free: 0 });
+      await listFillSuggestions({ restaurantId: 'r1', now: NOW });
+      expect(loadServiceFillContext).not.toHaveBeenCalled();
+    });
+
+    it('envois = audience − témoin, composition et coût estimé sur ces envois', async () => {
+      mockFloor({ [`2026-11-03:soir`]: { capacity: 30, free: 12 } });
+      mockPlans({
+        '2026-11-03:soir': { members: 20, holdoutCount: 2, tiers: { CRENEAU: 8, CONNU: 12 } },
+      });
+      const [item] = await listFillSuggestions({ restaurantId: 'r1', now: NOW });
+      expect(item).toMatchObject({
+        sends: 18,
+        tiers: { CRENEAU: 8, CONNU: 12 },
+        costEstimate: { amount: '1.50', status: 'PRICED' },
+        canPrepare: true,
+      });
+      expect(estimateFillCost).toHaveBeenCalledWith({
+        restaurantName: 'Chez Sokar',
+        channel: 'EMAIL',
+        sends: 18,
+        now: NOW,
+      });
+    });
+
+    it('canPrepare faux sans MARKETING_SENDS_ENABLED, budget épuisé ou zéro envoi : le service reste listé', async () => {
+      mockFloor({ [`2026-11-03:soir`]: { capacity: 30, free: 12 } });
+      const plan = { members: 10, holdoutCount: 1, tiers: { CRENEAU: 10 } };
+
+      mockPlans({ '2026-11-03:soir': plan });
+      vi.stubEnv('MARKETING_SENDS_ENABLED', 'false');
+      expect((await listFillSuggestions({ restaurantId: 'r1', now: NOW }))[0]).toMatchObject({
+        canPrepare: false,
+        sends: 9,
+      });
+
+      vi.stubEnv('MARKETING_SENDS_ENABLED', 'true');
+      mockPlans({ '2026-11-03:soir': { ...plan, budgetExhausted: true } });
+      expect((await listFillSuggestions({ restaurantId: 'r1', now: NOW }))[0].canPrepare).toBe(
+        false,
+      );
+
+      mockPlans({ '2026-11-03:soir': { members: 0 } });
+      const none = await listFillSuggestions({ restaurantId: 'r1', now: NOW });
+      expect(none).toHaveLength(1);
+      expect(none[0]).toMatchObject({ canPrepare: false, sends: 0, costEstimate: null });
+    });
+
+    it('AUDIENCE_TOO_LARGE : services listés, canPrepare faux, sends 0, aucune erreur', async () => {
+      mockFloor(floors);
+      vi.mocked(loadServiceFillContext).mockRejectedValue(new Error('AUDIENCE_TOO_LARGE:5000'));
+      const list = await listFillSuggestions({ restaurantId: 'r1', now: NOW });
+      expect(list).toHaveLength(3);
+      for (const item of list) {
+        expect(item).toMatchObject({ sends: 0, tiers: {}, costEstimate: null, canPrepare: false });
+      }
+      expect(planOpenService).not.toHaveBeenCalled();
+    });
+
+    it('une autre erreur de chargement remonte', async () => {
+      mockFloor(floors);
+      vi.mocked(loadServiceFillContext).mockRejectedValue(new Error('db down'));
+      await expect(listFillSuggestions({ restaurantId: 'r1', now: NOW })).rejects.toThrow(
+        'db down',
+      );
+    });
+
+    it('classement : canPrepare d’abord, puis couverts attendus par envoi, puis date', async () => {
+      mockFloor({
+        [`2026-11-03:soir`]: { capacity: 30, free: 25 }, // non préparable, le plus de places vides
+        [`2026-11-04:soir`]: { capacity: 30, free: 12 }, // préparable, score 0,3 × 2 × 0,9
+        [`2026-11-05:soir`]: { capacity: 30, free: 11 }, // préparable, score 0,03 × 2 × 0,9
+        [`2026-11-06:soir`]: { capacity: 30, free: 10 }, // préparable, même score que le 4
+      });
+      mockPlans({
+        '2026-11-04:soir': { members: 10, tiers: { CRENEAU: 10 } },
+        '2026-11-05:soir': { members: 10, tiers: { SANS_VISITE: 10 } },
+        '2026-11-06:soir': { members: 5, tiers: { CRENEAU: 5 } },
+      });
+      const list = await listFillSuggestions({ restaurantId: 'r1', now: NOW });
+      expect(list.map((s) => s.date)).toEqual(['2026-11-04', '2026-11-06', '2026-11-05']);
+      // Le non préparable est classé après, même avec plus de places vides, puis coupé à 3.
+      expect(list.map((s) => s.canPrepare)).toEqual([true, true, true]);
+    });
+
+    it('sans service préparable, le classement reste par places vides puis date', async () => {
+      mockFloor(floors);
+      const list = await listFillSuggestions({ restaurantId: 'r1', now: NOW });
+      expect(list.map((s) => s.date)).toEqual(['2026-11-05', '2026-11-04', '2026-11-03']);
+    });
+
+    it('la réponse et le cache ne contiennent ni score, ni customerId, ni membres', async () => {
+      mockFloor({ [`2026-11-03:soir`]: { capacity: 30, free: 12 } });
+      mockPlans({ '2026-11-03:soir': { members: 10, tiers: { CRENEAU: 10 } } });
+      const list = await listFillSuggestions({ restaurantId: 'r1', now: NOW });
+      const cached = vi.mocked(redisCache.set).mock.calls[0][1] as string;
+      for (const text of [JSON.stringify(list), cached]) {
+        expect(text).not.toMatch(/score|customerId|members|"c0"|booked/);
+      }
+    });
   });
 });

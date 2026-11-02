@@ -211,6 +211,7 @@
       "emptyPlaces": "{count, plural, one {# posto libero probabile} other {# posti liberi probabili}}",
       "sourceSimple": "Stima senza storico sufficiente",
       "prepare": "Preparare",
+      "sends": "{count, plural, one {# messaggio da inviare} other {# messaggi da inviare}}",
       "dismiss": "Ignorare",
       "dismissError": "Impossibile ignorare questo servizio per ora. Riprovate.",
       "midi": "Pranzo",

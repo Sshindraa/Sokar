@@ -69,6 +69,10 @@ function makeSuggestion(overrides: Record<string, unknown> = {}) {
     freePlaces: 30,
     emptyPlaces: 18,
     forecastSource: 'historique',
+    sends: 14,
+    tiers: { CRENEAU: 1, REGULIER: 9, CONNU: 5 },
+    costEstimate: { amount: 0.56, status: 'PRICED' },
+    canPrepare: true,
     ...overrides,
   };
 }
@@ -222,9 +226,62 @@ describe('EmptySlotsWidget', () => {
       expect(screen.getByText(/18 places vides/)).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Préparer' })).toHaveAttribute(
         'href',
-        '/dashboard/marketing/fill-service?date=2026-11-04&service=midi',
+        '/dashboard/marketing/fill-service?date=2026-11-04&service=midi&channel=EMAIL',
       );
       expect(screen.queryByText(/Estimation sans historique suffisant/)).not.toBeInTheDocument();
+    });
+
+    it('affiche les envois, la composition par palier et le coût', async () => {
+      routeGet({ suggestions: { data: [makeSuggestion()] }, emptySlots: makeResponse([]) });
+      renderWidget();
+
+      expect(await screen.findByText(/14 messages à envoyer/)).toBeInTheDocument();
+      expect(screen.getByText(/1 habitué de ce créneau/)).toBeInTheDocument();
+      expect(screen.getByText(/9 clients réguliers/)).toBeInTheDocument();
+      expect(screen.getByText(/5 clients déjà venus/)).toBeInTheDocument();
+      expect(screen.getByText(/Coût estimé : 0,56/)).toBeInTheDocument();
+    });
+
+    it('sans canPrepare : service affiché, pas de bouton Préparer', async () => {
+      routeGet({
+        suggestions: {
+          data: [makeSuggestion({ canPrepare: false, sends: 0, tiers: {}, costEstimate: null })],
+        },
+        emptySlots: makeResponse([]),
+      });
+      renderWidget();
+
+      expect(await screen.findByText('Midi')).toBeInTheDocument();
+      expect(screen.getByText(/18 places vides/)).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Préparer' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/messages? à envoyer/)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Ignorer/ })).toBeInTheDocument();
+    });
+
+    it('tarif non rapproché : le dit sans montant', async () => {
+      routeGet({
+        suggestions: {
+          data: [makeSuggestion({ costEstimate: { amount: null, status: 'UNPRICED' } })],
+        },
+        emptySlots: makeResponse([]),
+      });
+      renderWidget();
+
+      expect(await screen.findByText(/Tarif non rapproché/)).toBeInTheDocument();
+    });
+
+    it('n’additionne aucun gain et n’affiche aucun chiffre de couverts gagnés', async () => {
+      routeGet({
+        suggestions: {
+          data: [makeSuggestion(), makeSuggestion({ date: '2026-11-05', service: 'soir' })],
+        },
+        emptySlots: makeResponse([]),
+      });
+      const { container } = renderWidget();
+
+      await screen.findByText('Midi');
+      expect(container.textContent).not.toMatch(/gagn|couverts|total|€ de|attendu/i);
+      expect(container.textContent).not.toMatch(/28 messages/);
     });
 
     it('liste vide : annonce qu’il n’y a rien à remplir', async () => {

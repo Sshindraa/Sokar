@@ -293,7 +293,7 @@ export async function planFromContext(
   return planOpenService(context, args, window, state.capacity);
 }
 
-function planOpenService(
+export function planOpenService(
   context: ServiceFillContext,
   args: { date: string; service: TonightService; seed?: number; now: Date },
   window: ServiceWindow,

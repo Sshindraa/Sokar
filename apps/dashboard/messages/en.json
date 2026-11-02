@@ -212,6 +212,7 @@
       "emptyPlaces": "{count, plural, one {# likely empty place} other {# likely empty places}}",
       "sourceSimple": "Estimate without enough history",
       "prepare": "Prepare",
+      "sends": "{count, plural, one {# message to send} other {# messages to send}}",
       "dismiss": "Dismiss",
       "dismissError": "Unable to dismiss this service right now. Please try again.",
       "midi": "Lunch",

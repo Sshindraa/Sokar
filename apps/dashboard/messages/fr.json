@@ -212,6 +212,7 @@
       "emptyPlaces": "{count, plural, one {# place vide probable} other {# places vides probables}}",
       "sourceSimple": "Estimation sans historique suffisant",
       "prepare": "Préparer",
+      "sends": "{count, plural, one {# message à envoyer} other {# messages à envoyer}}",
       "dismiss": "Ignorer",
       "dismissError": "Impossible d’ignorer ce service pour le moment. Réessayez.",
       "midi": "Midi",

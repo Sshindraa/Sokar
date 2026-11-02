@@ -211,6 +211,7 @@
       "emptyPlaces": "{count, plural, one {# plaza libre probable} other {# plazas libres probables}}",
       "sourceSimple": "Estimación sin historial suficiente",
       "prepare": "Preparar",
+      "sends": "{count, plural, one {# mensaje por enviar} other {# mensajes por enviar}}",
       "dismiss": "Ignorar",
       "dismissError": "No se puede ignorar este servicio por ahora. Inténtelo de nuevo.",
       "midi": "Mediodía",

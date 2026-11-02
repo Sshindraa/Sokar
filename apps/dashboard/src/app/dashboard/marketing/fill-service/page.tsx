@@ -63,7 +63,9 @@ function FillServiceView() {
   const [service, setService] = useState<Service>(
     params?.get('service') === 'midi' ? 'midi' : 'soir',
   );
-  const [channel, setChannel] = useState<Channel>('SMS');
+  const [channel, setChannel] = useState<Channel>(
+    params?.get('channel') === 'EMAIL' ? 'EMAIL' : 'SMS',
+  );
   // Texte modifié par le gérant ; `null` tant qu'il n'a rien touché : on affiche le modèle par défaut.
   const [subject, setSubject] = useState<string | null>(null);
   const [body, setBody] = useState<string | null>(null);

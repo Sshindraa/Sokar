@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -30,6 +30,10 @@ interface FillSuggestion {
   freePlaces: number;
   emptyPlaces: number;
   forecastSource: 'historique' | 'simple';
+  sends: number;
+  tiers: Partial<Record<'CRENEAU' | 'REGULIER' | 'CONNU', number>>;
+  costEstimate: { amount: number | string | null; status: string } | null;
+  canPrepare: boolean;
 }
 
 interface EmptySlotsResponse {
@@ -54,6 +58,7 @@ const DAY_LABELS: Record<string, string> = {
 };
 
 const MAX_VISIBLE_DAYS = 3;
+const TIERS = ['CRENEAU', 'REGULIER', 'CONNU'] as const;
 
 function getLocalDateKey(date: Date) {
   return [
@@ -83,6 +88,7 @@ function formatDayName(date: string, fallback: string) {
 
 export default function EmptySlotsWidget() {
   const t = useTranslations('fillService');
+  const locale = useLocale();
   const { get, post, orgId } = useApi();
   const [data, setData] = useState<EmptySlotsResponse | null>(null);
   // null = route des suggestions indisponible (403, panne) : on garde la vue des journées.
@@ -165,6 +171,8 @@ export default function EmptySlotsWidget() {
       }
     }
 
+    const money = new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' });
+
     return (
       <section
         aria-labelledby="fill-suggestions-title"
@@ -200,15 +208,38 @@ export default function EmptySlotsWidget() {
                       <span> · {t('suggestions.sourceSimple')}</span>
                     )}
                   </p>
+                  {item.sends > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('suggestions.sends', { count: item.sends })}
+                      {/* Les anciennes entrées du cache n'ont pas de composition. */}
+                      {TIERS.filter((tier) => (item.tiers?.[tier] ?? 0) > 0).map((tier) => (
+                        <span key={tier}>
+                          {' · '}
+                          {t(`composition.${tier}`, { count: item.tiers[tier] ?? 0 })}
+                        </span>
+                      ))}
+                      {item.costEstimate && (
+                        <span>
+                          {' · '}
+                          {t('cost')} :{' '}
+                          {item.costEstimate.amount == null
+                            ? t('costUnknown')
+                            : money.format(Number(item.costEstimate.amount))}
+                        </span>
+                      )}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      href={`/dashboard/marketing/fill-service?date=${encodeURIComponent(item.date)}&service=${item.service}`}
-                    >
-                      {t('suggestions.prepare')}
-                    </Link>
-                  </Button>
+                  {item.canPrepare && (
+                    <Button asChild variant="outline" size="sm">
+                      <Link
+                        href={`/dashboard/marketing/fill-service?date=${encodeURIComponent(item.date)}&service=${item.service}&channel=EMAIL`}
+                      >
+                        {t('suggestions.prepare')}
+                      </Link>
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
