@@ -3631,3 +3631,7 @@ Le cadrage initial tient compte des empreintes visuelles des tables et de leurs 
 ### 2026-11-02 — Service : correction du cadrage initial
 
 Pour les salles de dimensions comparables à la zone occupée, le cadrage initial montre la salle entière avec une marge réduite. Les salles très étendues restent cadrées sur les tables ; la géométrie enregistrée ne change pas.
+
+### 2026-11-02 — Navigation latérale du tableau de bord
+
+La navigation bureau affiche les rubriques et leurs sous-menus directement dans une barre latérale élargie ; la section active est ouverte à la navigation et un clic extérieur ou Échap la referme. La navigation tactile existante et les restrictions de rôle sont conservées.

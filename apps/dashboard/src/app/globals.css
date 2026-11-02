@@ -1643,7 +1643,7 @@ body {
    * interactifs capturent les clics.
    */
   .dashboard-mode-switcher {
-    left: 6rem;
+    left: 16rem;
     right: 2rem;
     width: auto;
     max-width: none;
@@ -1677,7 +1677,7 @@ body {
   .dashboard-shell-content {
     padding-right: 2rem;
     padding-bottom: 2rem;
-    padding-left: 6rem;
+    padding-left: 16rem;
     padding-top: 0;
   }
 }

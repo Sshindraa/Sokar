@@ -69,6 +69,43 @@ it('ferme le menu latéral au clic extérieur ou avec Échap, sans intercepter l
   expect(trigger).toHaveAttribute('aria-expanded', 'false');
 });
 
+it('déplie la section de la page active sans afficher les sections interdites au personnel', () => {
+  mocks.role = 'OWNER';
+  const { unmount } = render(
+    <NextIntlClientProvider locale="fr" messages={messages}>
+      <TooltipProvider>
+        <DashboardSidebar
+          pathname="/dashboard/reservations"
+          salleView="service-live"
+          isSokarOperator={false}
+          onCreateOffer={vi.fn()}
+        />
+      </TooltipProvider>
+    </NextIntlClientProvider>,
+  );
+  expect(screen.getByRole('button', { name: 'Service' })).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: 'Réservations' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  unmount();
+  mocks.role = 'STAFF';
+  render(
+    <NextIntlClientProvider locale="fr" messages={messages}>
+      <TooltipProvider>
+        <DashboardSidebar
+          pathname="/dashboard/reservations"
+          salleView="service-live"
+          isSokarOperator={false}
+          onCreateOffer={vi.fn()}
+        />
+      </TooltipProvider>
+    </NextIntlClientProvider>,
+  );
+  expect(screen.getByRole('link', { name: 'Réservations' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Marketing' })).not.toBeInTheDocument();
+});
+
 describe('DashboardModeSwitcher : Companion', () => {
   it('garde trois rubriques de même largeur et le menu des salles accessible', () => {
     mocks.role = 'OWNER';

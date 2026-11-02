@@ -14,7 +14,6 @@ import {
   Radio,
   PencilRuler,
   ShieldCheck,
-  X,
   ChevronDown,
   Check,
   type LucideIcon,
@@ -82,36 +81,6 @@ function SidebarNavItem({
   );
 }
 
-function OffersPanelNavItem({
-  href,
-  label,
-  active,
-  onClick,
-}: {
-  href: string;
-  label: string;
-  active: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <Link
-      href={href}
-      aria-label={label}
-      aria-current={active ? 'page' : undefined}
-      title={label}
-      onClick={onClick}
-      className={cn(
-        'flex h-9 w-full items-center rounded-lg px-3 text-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        active
-          ? 'bg-primary font-semibold text-primary-foreground hover:bg-primary'
-          : 'font-medium text-muted-foreground hover:bg-accent hover:text-foreground',
-      )}
-    >
-      <span className="truncate">{label}</span>
-    </Link>
-  );
-}
-
 function SidebarGroupButton({
   id,
   label,
@@ -133,16 +102,19 @@ function SidebarGroupButton({
       aria-label={label}
       aria-expanded={open}
       aria-controls={`nav-group-${id}`}
-      title={label}
       onClick={onClick}
       className={cn(
-        'flex h-10 flex-none items-center rounded-xl text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        'w-10 justify-center',
-        active && 'bg-accent text-foreground',
+        'flex h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        (active || open) && 'text-foreground',
       )}
     >
-      <Icon size={17} strokeWidth={active ? 2.25 : 1.75} />
-      <span className="sr-only">{label}</span>
+      <Icon size={19} aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <ChevronDown
+        size={16}
+        aria-hidden="true"
+        className={cn('transition-transform duration-200', open && 'rotate-180')}
+      />
     </button>
   );
 }
@@ -432,7 +404,15 @@ export function DashboardSidebar({
   const serviceStaff = isServiceStaff(activeSite?.role);
   const [openGroup, setOpenGroup] = useState<NavSectionId | null>(null);
   const groupPanelRef = useRef<HTMLDivElement>(null);
-  const openGroupDefinition = navSections.find((section) => section.id === openGroup) ?? null;
+
+  useEffect(() => {
+    const active = navSections.find(
+      (section) =>
+        section.entries.length > 1 &&
+        section.entries.some((entry) => !entry.spaceSwitch && isNavEntryActive(pathname, entry)),
+    );
+    setOpenGroup(active?.id ?? null);
+  }, [pathname]);
 
   useEffect(() => {
     if (!openGroup) return;
@@ -458,21 +438,18 @@ export function DashboardSidebar({
   }, [openGroup]);
 
   return (
-    <aside className="dashboard-desktop-sidebar fixed bottom-4 left-4 top-4 z-40 w-16 flex-col items-center rounded-[1.4rem] border border-border bg-card/85 p-2 pt-[9px] shadow-2xl shadow-background/40 backdrop-blur-xl">
+    <aside className="dashboard-desktop-sidebar fixed bottom-4 left-4 top-4 z-40 w-56 flex-col rounded-2xl border border-border bg-card/95 p-3 shadow-xl shadow-background/30 backdrop-blur-xl">
       <Link
         href="/dashboard"
         aria-label="Sokar"
         title="Sokar"
-        className="mb-2 flex h-11 w-11 flex-none items-center justify-center rounded-2xl border border-border bg-background/60 transition-all duration-200 hover:border-foreground/20 hover:bg-accent"
+        className="mb-4 flex h-11 items-center gap-3 rounded-xl px-2 text-sm font-semibold text-foreground transition-all duration-200 hover:bg-accent"
       >
-        <SokarLogo className="h-8 w-8 text-foreground" />
+        <SokarLogo className="h-8 w-8 text-foreground" /> Sokar
       </Link>
-
-      <div className="mb-2 h-px w-7 flex-none bg-border" />
-
       <nav
         aria-label={salleMode ? 'Navigation Salle' : 'Navigation Copilot'}
-        className="dashboard-nav-scroll flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto py-1"
+        className="dashboard-nav-scroll min-h-0 flex-1 space-y-1 overflow-y-auto"
       >
         {salleMode ? (
           <>
@@ -481,6 +458,7 @@ export function DashboardSidebar({
               label={tNav('live')}
               icon={Radio}
               active={salleView !== 'edit-plan'}
+              expanded
             />
             {!serviceStaff && (
               <SidebarNavItem
@@ -488,6 +466,7 @@ export function DashboardSidebar({
                 label={tNav('edition')}
                 icon={PencilRuler}
                 active={salleView === 'edit-plan'}
+                expanded
               />
             )}
           </>
@@ -498,92 +477,23 @@ export function DashboardSidebar({
               label={tNav('reservations')}
               icon={CalendarCheck}
               active={pathname.startsWith('/dashboard/reservations')}
+              expanded
             />
             <SidebarNavItem
               href="/dashboard/floor-plan?view=service-live"
               label={tNav('floorPlan')}
               icon={Radio}
               active={false}
+              expanded
             />
           </>
         ) : (
-          <>
-            {navSections.map((section) => {
-              // Une section d'une seule entrée (Pilotage) est un lien direct.
-              if (section.entries.length === 1) {
-                const [entry] = section.entries;
-                return (
-                  <SidebarNavItem
-                    key={section.id}
-                    href={entry.href}
-                    label={tNav(entry.key)}
-                    icon={entry.icon}
-                    active={isNavEntryActive(pathname, entry)}
-                    onClick={() => setOpenGroup(null)}
-                  />
-                );
-              }
-
-              const active = section.entries.some((entry) => isNavEntryActive(pathname, entry));
-              const open = openGroup === section.id;
-
+          navSections.map((section) => {
+            if (section.entries.length === 1) {
+              const [entry] = section.entries;
               return (
-                <div key={section.id} className="flex flex-none flex-col">
-                  <SidebarGroupButton
-                    id={section.id}
-                    label={tNav(section.labelKey)}
-                    icon={section.icon}
-                    active={active}
-                    open={open}
-                    onClick={() => setOpenGroup(open ? null : section.id)}
-                  />
-                </div>
-              );
-            })}
-          </>
-        )}
-      </nav>
-
-      {openGroupDefinition && !salleMode && (
-        <div
-          ref={groupPanelRef}
-          id={`nav-group-${openGroupDefinition.id}`}
-          className="absolute left-20 top-16 z-50 w-56 rounded-2xl border border-border bg-background p-2 shadow-2xl shadow-background/50"
-        >
-          <div className="flex items-center justify-between gap-2 border-b border-border px-2 pb-2">
-            <span className="text-sm font-semibold text-foreground">
-              {tNav(openGroupDefinition.labelKey)}
-            </span>
-            {openGroupDefinition.id !== 'offers' && (
-              <button
-                type="button"
-                aria-label={tNav('collapse')}
-                title={tNav('collapse')}
-                onClick={() => setOpenGroup(null)}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <X size={15} />
-              </button>
-            )}
-          </div>
-          <div
-            className={cn(
-              'mt-2',
-              openGroupDefinition.id === 'offers' ? 'space-y-1.5' : 'space-y-1',
-            )}
-          >
-            {openGroupDefinition.entries.map((entry) =>
-              openGroupDefinition.id === 'offers' ? (
-                <OffersPanelNavItem
-                  key={entry.href}
-                  href={entry.href}
-                  label={tNav(entry.key)}
-                  active={isNavEntryActive(pathname, entry)}
-                  onClick={() => setOpenGroup(null)}
-                />
-              ) : (
                 <SidebarNavItem
-                  key={entry.href}
+                  key={section.id}
                   href={entry.href}
                   label={tNav(entry.key)}
                   icon={entry.icon}
@@ -591,42 +501,73 @@ export function DashboardSidebar({
                   expanded
                   onClick={() => setOpenGroup(null)}
                 />
-              ),
-            )}
-          </div>
-          {openGroupDefinition.id === 'offers' && (
-            <div className="mt-3 border-t border-border pt-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setOpenGroup(null);
-                  onCreateOffer();
-                }}
-                className="h-9 w-full rounded-lg"
-              >
-                {tOfferChooser('openButton')}
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-
+              );
+            }
+            const open = openGroup === section.id;
+            const active = section.entries.some((entry) => isNavEntryActive(pathname, entry));
+            return (
+              <div key={section.id}>
+                <SidebarGroupButton
+                  id={section.id}
+                  label={tNav(section.labelKey)}
+                  icon={section.icon}
+                  active={active}
+                  open={open}
+                  onClick={() => setOpenGroup(open ? null : section.id)}
+                />
+                {open && (
+                  <div
+                    ref={groupPanelRef}
+                    id={`nav-group-${section.id}`}
+                    className="ml-5 space-y-1 border-l border-border py-1 pl-3"
+                  >
+                    {section.entries.map((entry) => (
+                      <Link
+                        key={entry.href}
+                        href={entry.href}
+                        aria-current={isNavEntryActive(pathname, entry) ? 'page' : undefined}
+                        onClick={() => setOpenGroup(null)}
+                        className={cn(
+                          'flex min-h-10 items-center rounded-xl px-3 text-sm text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          isNavEntryActive(pathname, entry) &&
+                            'bg-background font-semibold text-foreground shadow-sm',
+                        )}
+                      >
+                        {tNav(entry.key)}
+                      </Link>
+                    ))}
+                    {section.id === 'offers' && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-9 w-full rounded-lg"
+                        onClick={() => {
+                          setOpenGroup(null);
+                          onCreateOffer();
+                        }}
+                      >
+                        {tOfferChooser('openButton')}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </nav>
       {isSokarOperator && !salleMode && (
-        <div className="mt-2 flex flex-none flex-col items-center border-t border-border pt-2">
-          <SidebarNavItem
-            href="/admin"
-            label={tNav('admin')}
-            icon={ShieldCheck}
-            active={pathname.startsWith('/admin')}
-            onClick={() => setOpenGroup(null)}
-          />
-        </div>
+        <SidebarNavItem
+          href="/admin"
+          label={tNav('admin')}
+          icon={ShieldCheck}
+          active={pathname.startsWith('/admin')}
+          expanded
+          onClick={() => setOpenGroup(null)}
+        />
       )}
-
-      <div className="my-2 h-px w-7 flex-none bg-border" />
-      <div className="flex flex-none flex-col items-center gap-1.5">
+      <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
         <ThemeToggle />
         <SettingsButton active={pathname.startsWith('/dashboard/settings')} />
       </div>
@@ -811,7 +752,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
         onCreateOffer={() => setCreateOfferOpen(true)}
       />
       <CreateOfferDialog open={createOfferOpen} onOpenChange={setCreateOfferOpen} />
-      <div className="dashboard-desktop-only fixed left-24 top-6 z-50 h-12 max-w-[calc(50vw-18rem)] items-center gap-3">
+      <div className="dashboard-desktop-only fixed left-64 top-6 z-50 h-12 max-w-[calc(50vw-22rem)] items-center gap-3">
         <SiteSwitcher />
       </div>
       <div className="dashboard-desktop-only fixed right-8 top-6 z-50 h-12 items-center gap-2">
