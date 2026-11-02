@@ -283,6 +283,20 @@ describe('FloorPlanCanvas — guides et duplication de table', () => {
 });
 
 describe('FloorPlanCanvas — taille des tables', () => {
+  it.each(['rect', 'round'] as const)(
+    'affiche une seule fois la capacité complète en édition pour une table %s',
+    async (shape) => {
+      apiMocks.get.mockResolvedValue({
+        ...floorPlan,
+        tables: [{ ...floorPlan.tables![0], shape, capacity: 4 }],
+      });
+      render(<FloorPlanCanvas orgId="org_test" />);
+      const table = await screen.findByRole('button', { name: 'T4 · 4 places' });
+      expect(within(table).getAllByText('4 places')).toHaveLength(1);
+      expect(within(table).queryByText('4 pl.')).not.toBeInTheDocument();
+    },
+  );
+
   it.each([
     ['rect', 2, 2],
     ['rect', 6, 6],

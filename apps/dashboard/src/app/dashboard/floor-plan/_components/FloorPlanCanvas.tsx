@@ -1636,9 +1636,11 @@ function TableCard({
             <p className="max-w-full truncate pr-2 text-[13px] font-bold leading-none text-floor-table-text">
               {displayName}
             </p>
-            <p className="max-w-full truncate text-[11px] font-medium leading-none text-floor-table-text/90">
-              {table.capacity} {status ? 'places' : 'pl.'}
-            </p>
+            {status ? (
+              <p className="max-w-full truncate text-[11px] font-medium leading-none text-floor-table-text/90">
+                {table.capacity} places
+              </p>
+            ) : null}
             <div className="min-w-0 max-w-full leading-tight">
               <p
                 className={cn(
