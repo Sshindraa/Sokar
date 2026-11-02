@@ -175,7 +175,8 @@ async function syncOptOutRegister(
         },
         writer,
       );
-      if (outcome !== 'REGISTERED') {
+      // No address on this channel: nothing to register, the profile is already blocked.
+      if (outcome === 'SKIPPED_NO_KEY') {
         throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
       }
     } else {
@@ -246,6 +247,18 @@ export async function upsertMarketingPermission(
     },
   };
 
+  const eventData = {
+    customerId: input.customerId,
+    channel,
+    status: input.status,
+    source,
+    proofVersion,
+    proofHash,
+    proofText,
+    actorUserId,
+    occurredAt,
+  };
+
   let registerFailed = false;
   let permission: MarketingPermission;
   try {
@@ -257,19 +270,7 @@ export async function upsertMarketingPermission(
         where: { ...permissionArgs.where, restaurantId: input.restaurantId },
       });
       await tx.marketingPermissionEvent.create({
-        data: {
-          restaurantId: input.restaurantId,
-          customerId: input.customerId,
-          permissionId: permission.id,
-          channel,
-          status: input.status,
-          source,
-          proofVersion,
-          proofHash,
-          proofText,
-          actorUserId,
-          occurredAt,
-        },
+        data: { ...eventData, restaurantId: input.restaurantId, permissionId: permission.id },
       });
 
       try {
@@ -293,10 +294,13 @@ export async function upsertMarketingPermission(
     });
   } catch (error) {
     if (registerFailed && input.status === MarketingPermissionStatus.OPTED_OUT) {
-      // Keep the current profile blocked even if the durable register failed.
-      await db.marketingPermission.upsert({
+      // Keep the current profile blocked and its proof event even if the durable register failed.
+      const kept = await db.marketingPermission.upsert({
         ...permissionArgs,
         where: { ...permissionArgs.where, restaurantId: input.restaurantId },
+      });
+      await db.marketingPermissionEvent.create({
+        data: { ...eventData, restaurantId: input.restaurantId, permissionId: kept.id },
       });
     }
     throw error;
