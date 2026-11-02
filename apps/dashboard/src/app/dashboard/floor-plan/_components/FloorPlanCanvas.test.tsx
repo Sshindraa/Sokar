@@ -1310,7 +1310,7 @@ describe('FloorPlanCanvas — actions Live service', () => {
       fireEvent.click(filter);
 
       expect(await screen.findAllByText('Toutes les tables (2)')).not.toHaveLength(0);
-      expect(screen.getAllByText('Non affectées (1)')).not.toHaveLength(0);
+      expect(screen.getAllByText('Sans serveur affecté (1)')).not.toHaveLength(0);
       expect(screen.getAllByText('Léa (1 table)')).not.toHaveLength(0);
     } finally {
       if (previousScrollIntoView) {
@@ -1433,16 +1433,17 @@ describe('FloorPlanCanvas — actions Live service', () => {
         name: 'Choisir une table pour un client',
       });
       fireEvent.click(action);
-      const help = screen.getByText(/Sélectionnez une table disponible, puis/);
+      const help = screen.getByText('Sélectionnez une table disponible.');
       expect(help).toHaveAttribute('role', 'status');
       expect(screen.getByTestId('floor-plan-live-stage')).not.toContainElement(help);
       expect(action.parentElement).toContainElement(help);
+      expect(help).not.toHaveClass('absolute');
       expect(apiMocks.post).not.toHaveBeenCalled();
       fireEvent.click(await screen.findByRole('button', { name: 'T4 · 4 places' }));
       expect(
         screen.getAllByRole('button', { name: 'Placer un client sans réservation' }).length,
       ).toBeGreaterThan(0);
-      expect(screen.queryByText(/Sélectionnez une table disponible, puis/)).not.toBeInTheDocument();
+      expect(screen.queryByText('Sélectionnez une table disponible.')).not.toBeInTheDocument();
       expect(apiMocks.post).not.toHaveBeenCalled();
     });
 
@@ -1865,6 +1866,26 @@ describe('StatsPanel — alertes', () => {
       />,
     );
   }
+
+  it('précise le nombre de réservations qui arrivent au début du créneau', () => {
+    const reservation: PlanningReservation = {
+      id: 'res-1',
+      tableId: 'table-t4-minimum-round',
+      tableName: 'T4',
+      sectionName: null,
+      startsAt: '2025-06-10T19:00:00',
+      endsAt: '2025-06-10T20:00:00',
+      partySize: 4,
+      customerName: null,
+      state: 'CONFIRMED',
+      seatedAt: null,
+    };
+    renderStats([reservation, { ...reservation, id: 'res-2', partySize: 3 }]);
+
+    expect(screen.getByText('2 arrivées à 19:00')).toBeInTheDocument();
+    expect(screen.getAllByText('7 couverts')[0]).toHaveClass('whitespace-nowrap');
+    expect(screen.queryByText('+2')).not.toBeInTheDocument();
+  });
 
   it('affiche une alerte pour une réservation legacy sans tableId', () => {
     const reservations: PlanningReservation[] = [

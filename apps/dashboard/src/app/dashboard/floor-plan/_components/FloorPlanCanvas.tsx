@@ -2138,24 +2138,24 @@ export function StatsPanel({ reservations, allTables, tableStatuses, liveDate }:
         ) : (
           <div className="space-y-3">
             {forecast.slice(0, 20).map((slot) => (
-              <div key={slot.time} className="flex items-center gap-3">
-                <div className="w-12 text-xs font-medium tabular-nums">{slot.time}</div>
-                <div className="flex-1">
-                  <div className="flex h-5 items-center gap-2">
-                    <div
-                      className="h-2 rounded-full bg-primary transition-all"
-                      style={{ width: `${(slot.covers / maxSlotCovers) * 100}%` }}
-                    />
-                    <span className="text-xs font-medium tabular-nums">{slot.covers} couverts</span>
+              <div key={slot.time} className="flex items-start gap-3">
+                <div className="w-12 shrink-0 text-xs font-medium tabular-nums">{slot.time}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                    <span className="whitespace-nowrap text-xs font-medium tabular-nums">
+                      {slot.covers} couverts
+                    </span>
+                    {slot.newArrivals > 0 ? (
+                      <Badge variant="outline" className="whitespace-nowrap text-[10px]">
+                        {slot.newArrivals} arrivée{slot.newArrivals > 1 ? 's' : ''} à {slot.time}
+                      </Badge>
+                    ) : null}
                   </div>
+                  <div
+                    className="h-2 rounded-full bg-primary transition-all"
+                    style={{ width: `${(slot.covers / maxSlotCovers) * 100}%` }}
+                  />
                 </div>
-                {slot.newArrivals > 0 ? (
-                  <Badge variant="outline" className="text-[10px]">
-                    +{slot.newArrivals}
-                  </Badge>
-                ) : (
-                  <span className="w-8" />
-                )}
               </div>
             ))}
           </div>
@@ -8511,7 +8511,7 @@ export function FloorPlanCanvas({
                           <SelectItem value="_unassigned_">
                             <span className="flex items-center gap-1.5">
                               <UserX size={13} className="shrink-0 text-muted-foreground" />
-                              Non affectées ({unassignedCount})
+                              Sans serveur affecté ({unassignedCount})
                             </span>
                           </SelectItem>
                         ) : null}
@@ -8642,7 +8642,7 @@ export function FloorPlanCanvas({
                     </div>
                   ) : null}
                   {serviceIsToday && serviceTab === 'plan' && placedTables.length > 0 ? (
-                    <div className="relative">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Button
                         type="button"
                         size="sm"
@@ -8655,13 +8655,8 @@ export function FloorPlanCanvas({
                         Choisir une table pour un client
                       </Button>
                       {showWalkInHelp ? (
-                        <div
-                          id="walk-in-help"
-                          role="status"
-                          className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-full rounded-lg border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg"
-                        >
-                          Sélectionnez une table disponible, puis choisissez « Placer un client sans
-                          réservation ».
+                        <div id="walk-in-help" role="status" className="text-sm text-foreground">
+                          Sélectionnez une table disponible.
                         </div>
                       ) : null}
                     </div>
