@@ -254,7 +254,7 @@ export function computeCenterScroll({
 /** Marge (coordonnées plan) ajoutée autour des tables au cadrage d'ouverture. */
 export const CONTENT_FIT_PADDING = 48;
 // Les cartes et leurs chaises peuvent dépasser les dimensions métier des tables.
-export const LIVE_CONTENT_FIT_PADDING = 80;
+export const LIVE_CONTENT_FIT_PADDING = 48;
 
 export type ContentBounds = { x: number; y: number; width: number; height: number };
 
@@ -308,15 +308,7 @@ export function computeContentBounds(
   };
 }
 
-/**
- * Tables réellement visibles en Live. Le mode opérationnel ne doit pas
- * conserver la hauteur complète d'une zone d'édition : la surface défilable
- * commence autour du groupe de tables et s'arrête peu après son contenu.
- *
- * Les zones restent dessinées comme repère visuel, mais elles sont volontairement
- * écrêtées par la scène Live. Ainsi, une grande zone vide sous les tables ne
- * force plus un long défilement ni une carte disproportionnée.
- */
+/** Cadre les tables et les zones visibles avec une marge autour de leur dessin. */
 export function computeLiveContentBounds(
   zones: Array<Pick<FloorPlanZone, 'x' | 'y' | 'width' | 'height' | 'rotation'>>,
   tables: Array<{
@@ -358,24 +350,19 @@ export function computeLiveContentBounds(
   const positionedTables = tables.filter(
     (table) => table.positionX !== null && table.positionY !== null,
   );
-  if (positionedTables.length > 0) {
-    for (const table of positionedTables) {
-      if (table.positionX === null || table.positionY === null) continue;
-      const size = getTableSize(table);
-      includeRotatedRectangle(
-        table.positionX,
-        table.positionY,
-        size.width,
-        size.height,
-        table.rotation ?? 0,
-      );
-    }
-  } else {
-    // Si un plan Live n'a pas encore de table mais possède une zone, garder
-    // cette zone comme surface de secours plutôt que de produire un cadre nul.
-    for (const zone of zones) {
-      includeRotatedRectangle(zone.x, zone.y, zone.width, zone.height, zone.rotation ?? 0);
-    }
+  for (const table of positionedTables) {
+    if (table.positionX === null || table.positionY === null) continue;
+    const size = getTableSize(table);
+    includeRotatedRectangle(
+      table.positionX,
+      table.positionY,
+      size.width,
+      size.height,
+      table.rotation ?? 0,
+    );
+  }
+  for (const zone of zones) {
+    includeRotatedRectangle(zone.x, zone.y, zone.width, zone.height, zone.rotation ?? 0);
   }
 
   if (minX === Number.POSITIVE_INFINITY || canvasWidth <= 0 || canvasHeight <= 0) return null;
@@ -1409,6 +1396,7 @@ type TableCardProps = {
   zoom?: number;
   draggableReservation?: boolean;
   isCombinable?: boolean;
+  hideChairs?: boolean;
   editable?: boolean;
   /** Rendu tactile : nom et point d'état seuls, sans libellé ni client. */
   compact?: boolean;
@@ -1430,6 +1418,7 @@ function TableCard({
   zoom = 1,
   draggableReservation,
   isCombinable = false,
+  hideChairs = false,
   editable = true,
   compact = false,
 }: TableCardProps) {
@@ -1497,14 +1486,15 @@ function TableCard({
   const liveBodyTop = isRound
     ? Math.round((height - liveBodyHeight) / 2)
     : Math.max(8, Math.round((height - (liveBodyHeight + TABLE_CARD_SEAT_HEIGHT)) / 2));
-  const roundChairSize = compact ? 20 : 24;
+  const roundChairSize = editable ? (compact ? 20 : 24) : 14;
   // shortcut: au-delà de huit places, masquer les chaises pour éviter leur chevauchement ; agrandir le plan pour les représenter toutes.
-  const chairCount = table.capacity <= 8 ? Math.max(0, table.capacity) : 0;
+  const chairCount = !hideChairs && table.capacity <= 8 ? Math.max(0, table.capacity) : 0;
   const roundChairPositions = isRound
     ? Array.from({ length: chairCount }, (_, index) => {
         const angle = (index / chairCount) * Math.PI * 2 - Math.PI / 2;
-        const radiusX = liveBodyWidth / 2 + roundChairSize / 2 + 6;
-        const radiusY = liveBodyHeight / 2 + roundChairSize / 2 + 6;
+        const chairOffset = roundChairSize / 2 + (editable ? 6 : 2);
+        const radiusX = liveBodyWidth / 2 + chairOffset;
+        const radiusY = liveBodyHeight / 2 + chairOffset;
         return {
           left: liveBodyLeft + liveBodyWidth / 2 + Math.cos(angle) * radiusX - roundChairSize / 2,
           top: liveBodyTop + liveBodyHeight / 2 + Math.sin(angle) * radiusY - roundChairSize / 2,
@@ -1551,7 +1541,7 @@ function TableCard({
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       aria-label={title}
-      aria-description={`${displayName} · ${table.capacity} places${status ? ` · ${statusMeta[status.status].label}` : ''}`}
+      aria-description={`${displayName} · ${table.capacity} places${status ? ` · ${statusMeta[status.status].label}` : ''}${isCombinable ? ' · Peut être combinée avec d’autres tables' : ''}`}
       aria-pressed={onClick ? isSelected : undefined}
       onClick={(e) => {
         e.stopPropagation();
@@ -1575,7 +1565,7 @@ function TableCard({
           ? roundChairPositions.map((chair, index) => (
               <span
                 key={`round-chair-${index}`}
-                className="absolute z-0 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
+                className="absolute z-0 rounded-full border-2 border-floor-table-muted/50 bg-floor-table-chair shadow-sm"
                 style={{
                   left: chair.left,
                   top: chair.top,
@@ -1591,7 +1581,10 @@ function TableCard({
               return (
                 <span
                   key={`chair-${index}`}
-                  className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
+                  className={cn(
+                    'absolute -translate-y-1/2 rounded-full border-2 border-floor-table-muted/50 bg-floor-table-chair shadow-sm',
+                    editable ? 'z-0 h-8' : 'z-0 h-4',
+                  )}
                   style={{
                     left:
                       liveBodyLeft +
@@ -1625,6 +1618,18 @@ function TableCard({
             aria-label={referenceStatusLabel}
             title={referenceStatusLabel}
           />
+          {isCombinable ? (
+            <span
+              className={cn(
+                'absolute z-30 text-floor-table-text',
+                isRound ? 'right-5 top-4' : 'right-4 top-1',
+              )}
+              title="Peut être combinée avec d’autres tables"
+              aria-hidden="true"
+            >
+              <Link2 size={12} />
+            </span>
+          ) : null}
           <div
             className={cn(
               'absolute inset-0 flex flex-col',
@@ -1669,15 +1674,6 @@ function TableCard({
           ) : null}
         </div>
       </>
-      {isCombinable ? (
-        <span
-          className="absolute bottom-1.5 right-1.5 z-20 inline-flex size-5 items-center justify-center rounded-full border border-primary/40 bg-background/90 text-primary shadow-sm"
-          title="Tables combinables"
-          aria-label="Tables combinables"
-        >
-          <Link2 size={11} />
-        </span>
-      ) : null}
       {isSelected && editable && !isOverlay && onResizeStart ? (
         <div
           className="absolute -bottom-1.5 -right-1.5 z-30 size-3 cursor-nwse-resize rounded-full border-2 border-floor-table-surface bg-floor-table-accent shadow-md"
@@ -1831,6 +1827,7 @@ type DraggableTableProps = {
   draggableReservation?: boolean;
   zoom?: number;
   isCombinable?: boolean;
+  hideChairs?: boolean;
   editable?: boolean;
   /** Carte tactile compacte (téléphone) : nom + point d'état seulement. */
   compact?: boolean;
@@ -1850,6 +1847,7 @@ function DraggableTable({
   draggableReservation,
   zoom = 1,
   isCombinable = false,
+  hideChairs = false,
   editable = true,
   compact = false,
 }: DraggableTableProps) {
@@ -1891,6 +1889,7 @@ function DraggableTable({
       dragProps={draggable ? { ...attributes, ...listeners } : undefined}
       draggableReservation={draggableReservation}
       isCombinable={isCombinable}
+      hideChairs={hideChairs}
       editable={editable}
       compact={compact}
       className={cn(
@@ -2928,6 +2927,19 @@ export function FloorPlanCanvas({
     };
   }, [touchCanvasLayout, live, loading, error, serviceTab, floorPlan?.id, fitCanvasToViewport]);
 
+  const previousServiceTableIdRef = useRef<string | null>(null);
+  useIsomorphicLayoutEffect(() => {
+    if (previousServiceTableIdRef.current === selectedServiceTableId) return;
+    previousServiceTableIdRef.current = selectedServiceTableId;
+    if (!live || serviceTab !== 'plan' || userAdjustedZoomRef.current) return;
+    const viewport = canvasViewportRef.current;
+    const fit = fitCanvasToViewport();
+    if (viewport && fit) {
+      viewport.scrollLeft = fit.scroll.left;
+      viewport.scrollTop = fit.scroll.top;
+    }
+  }, [fitCanvasToViewport, live, selectedServiceTableId, serviceTab]);
+
   // Gestes du plan : pincer pour zoomer, double-tap pour recadrer. Le
   // défilement à un doigt reste natif (voir `touch-action` sur la fenêtre).
   useEffect(() => {
@@ -3656,6 +3668,59 @@ export function FloorPlanCanvas({
     () => allTables.filter((table) => table.positionX !== null && table.positionY !== null),
     [allTables],
   );
+  const crowdedTableIds = useMemo(() => {
+    if (!live) return new Set<string>();
+    const bounds = placedTables.map((table) => {
+      const { width, height, rotation } = getTableSize(table);
+      const round = table.shape === 'round';
+      const bodyWidth = round
+        ? Math.max(Math.min(width, height), compactTableCards ? 104 : 112)
+        : Math.max(width, compactTableCards ? COMPACT_TABLE_CARD_MIN_WIDTH : TABLE_CARD_MIN_WIDTH);
+      const bodyHeight = round
+        ? bodyWidth
+        : Math.max(
+            compactTableCards ? COMPACT_TABLE_CARD_MIN_HEIGHT : TABLE_CARD_MIN_HEIGHT,
+            Math.round(bodyWidth / 2),
+          );
+      const top = round
+        ? Math.round((height - bodyHeight) / 2)
+        : Math.max(8, Math.round((height - (bodyHeight + TABLE_CARD_SEAT_HEIGHT)) / 2));
+      const offsetY = top + bodyHeight / 2 - height / 2;
+      const angle = (rotation * Math.PI) / 180;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const centerX = table.positionX! + width / 2 - offsetY * sin;
+      const centerY = table.positionY! + height / 2 + offsetY * cos;
+      const outerWidth = bodyWidth + (round ? 32 : 0);
+      const outerHeight = bodyHeight + (round ? 32 : 16);
+      const halfWidth = (outerWidth * Math.abs(cos) + outerHeight * Math.abs(sin)) / 2;
+      const halfHeight = (outerWidth * Math.abs(sin) + outerHeight * Math.abs(cos)) / 2;
+      return {
+        id: table.id,
+        left: centerX - halfWidth,
+        right: centerX + halfWidth,
+        top: centerY - halfHeight,
+        bottom: centerY + halfHeight,
+      };
+    });
+    const crowded = new Set<string>();
+    // shortcut: les rectangles englobants peuvent masquer des chaises proches sans collision ; calculer les formes exactes si nécessaire.
+    for (let i = 0; i < bounds.length; i++) {
+      for (const other of bounds.slice(i + 1)) {
+        const current = bounds[i];
+        if (
+          current.left < other.right &&
+          current.right > other.left &&
+          current.top < other.bottom &&
+          current.bottom > other.top
+        ) {
+          crowded.add(current.id);
+          crowded.add(other.id);
+        }
+      }
+    }
+    return crowded;
+  }, [compactTableCards, live, placedTables]);
   const tablesToPlace = useMemo(
     () => allTables.filter((table) => table.positionX === null || table.positionY === null),
     [allTables],
@@ -6714,10 +6779,12 @@ export function FloorPlanCanvas({
   );
   const serviceOverview = (
     <div className="space-y-3">
-      {serviceCounts}
       <details className="group">
-        <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
-          Légende des statuts
+        <summary
+          aria-label="Légende des statuts"
+          className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
+        >
+          Légende
           <ChevronDown
             size={14}
             aria-hidden="true"
@@ -6757,7 +6824,6 @@ export function FloorPlanCanvas({
           className="mx-auto mb-2 h-1 w-10 rounded-full bg-muted-foreground/25"
           aria-hidden="true"
         />
-        <div className="mb-3 border-b border-border pb-3">{serviceOverview}</div>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-foreground">
@@ -6776,6 +6842,11 @@ export function FloorPlanCanvas({
                 ? statusMeta[selectedServiceStatus.status].label
                 : 'Disponible'}
             </p>
+            {combinableTableIds.has(selectedServiceTable.id) ? (
+              <p className="mt-1 text-xs text-foreground">
+                Peut être combinée avec d’autres tables
+              </p>
+            ) : null}
           </div>
           <Button
             type="button"
@@ -7143,10 +7214,9 @@ export function FloorPlanCanvas({
     <aside
       className={cn(
         'order-3 h-auto max-h-72 w-full min-w-0 flex-col overflow-hidden border-t border-border bg-card lg:h-full lg:max-h-none lg:w-72 lg:min-w-72 lg:border-l lg:border-t-0',
-        selectedServiceTable ? 'hidden lg:flex' : 'flex',
+        selectedServiceTable ? 'hidden lg:flex' : 'hidden',
       )}
     >
-      <div className="border-b border-border p-4">{serviceOverview}</div>
       {selectedServiceTable ? (
         <div className="flex-1 space-y-5 overflow-y-auto p-4">
           <div>
@@ -7159,6 +7229,11 @@ export function FloorPlanCanvas({
                   {selectedServiceTable.capacity} places
                   {selectedServiceTable.sectionName ? ` · ${selectedServiceTable.sectionName}` : ''}
                 </p>
+                {combinableTableIds.has(selectedServiceTable.id) ? (
+                  <p className="mt-1 text-xs text-foreground">
+                    Peut être combinée avec d’autres tables
+                  </p>
+                ) : null}
               </div>
               <div className="flex items-center gap-1">
                 <Badge variant="outline">
@@ -8016,17 +8091,13 @@ export function FloorPlanCanvas({
   // de jour, ce qui ferait diverger le badge du champ date.
   const serviceIsToday = liveDate === serviceToday;
   const serviceDateLabel = format(parseISO(liveDate), 'd MMM yyyy', { locale: fr });
-  const serviceActiveTables = allTables.filter((table) => table.isActive);
-  const serviceOccupiedTables = [...tableStatuses.values()].filter(
-    (item) => item.status === 'occupied',
-  ).length;
-  const serviceOccupancyRate =
-    serviceActiveTables.length > 0
-      ? Math.round((serviceOccupiedTables / serviceActiveTables.length) * 100)
-      : 0;
-  const serviceCovers = reservations
-    .filter((reservation) => !['CANCELLED', 'NO_SHOW'].includes(reservation.state))
-    .reduce((total, reservation) => total + (reservation.partySize ?? 0), 0);
+  const serviceReservations = reservations.filter(
+    (reservation) => !['CANCELLED', 'NO_SHOW'].includes(reservation.state),
+  );
+  const serviceCovers = serviceReservations.reduce(
+    (total, reservation) => total + (reservation.partySize ?? 0),
+    0,
+  );
   // Service vide : sans réservation ni action en attente, le cockpit complet
   // affichait deux bandes de zéros (statut + volumétrie) et un message d'état
   // vide, soit près de la moitié de l'écran d'un téléphone pour ne rien dire.
@@ -8303,217 +8374,178 @@ export function FloorPlanCanvas({
           )}
           {live ? (
             <>
-              {/* Volumétrie du service. Chaque information n'apparaît qu'une fois :
-                  les compteurs d'action (retards, à installer, en service, en attente)
-                  restent portés par le bandeau d'état ci-dessus. Sur téléphone, une
-                  seule ligne porte valeurs et jauge : deux étages de chiffres
-                  consommaient la hauteur utile du plan. */}
-              {compactServiceCockpit || loadedLiveDate !== liveDate ? null : (
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border px-4 py-2 lg:flex-nowrap lg:gap-8">
-                  <div className="flex min-w-0 items-center gap-x-3 text-[11px] text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <Users size={12} className="hidden sm:block" aria-hidden="true" />
-                      <span className="text-sm font-semibold tabular-nums text-foreground">
-                        {serviceCovers}
-                      </span>
-                      couverts
-                    </span>
-                    <span className="h-3 w-px shrink-0 bg-border" aria-hidden="true" />
-                    <span className="inline-flex items-center gap-1">
-                      <Armchair size={12} className="hidden sm:block" aria-hidden="true" />
-                      <span className="text-sm font-semibold tabular-nums text-foreground">
-                        {serviceOccupiedTables}
-                        <span className="text-muted-foreground">/{serviceActiveTables.length}</span>
-                      </span>
-                      <span className="sm:hidden">tables</span>
-                      <span className="hidden sm:inline">tables occupées</span>
-                    </span>
-                    <span className="h-3 w-px shrink-0 bg-border" aria-hidden="true" />
-                    <span className="inline-flex items-center gap-1">
-                      <CalendarDays size={12} className="hidden sm:block" aria-hidden="true" />
-                      <span className="text-sm font-semibold tabular-nums text-foreground">
-                        {reservations.length}
-                      </span>
-                      réservations
-                    </span>
-                  </div>
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <div
-                      role="progressbar"
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={serviceOccupancyRate}
-                      aria-label={`Taux d’occupation de la salle : ${serviceOccupancyRate} %`}
-                      className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-secondary"
-                    >
-                      <div
-                        className="h-full rounded-full bg-foreground/70 transition-all duration-200"
-                        style={{ width: `${serviceOccupancyRate}%` }}
-                      />
-                    </div>
-                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                      {serviceOccupancyRate}&nbsp;%
-                    </span>
-                  </div>
-                </div>
-              )}
-
               {/* Navigation du service : jour et filtre serveur. Les onglets sont
                   placés en tête du cockpit pour remplacer l'ancien bandeau de pouls. */}
               <div
                 role="region"
                 aria-label="État du service"
-                className="flex flex-wrap items-center gap-x-2 gap-y-2 border-t border-border px-3 py-2 sm:px-4"
+                className="space-y-2 border-t border-border px-3 py-2 sm:px-4"
               >
-                {serviceIsToday ? <span className="text-sm font-semibold">Aujourd’hui</span> : null}
-                <div
-                  title={serviceDateLabel}
-                  className="flex min-w-0 items-center gap-0.5 rounded-md border border-border bg-background p-0.5"
-                >
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="hidden h-8 px-1.5 transition-all duration-200 sm:inline-flex"
-                    title="Jour précédent"
-                    aria-label="Jour précédent"
-                    onClick={() => shiftServiceDate(-1)}
-                  >
-                    <ChevronLeft size={16} />
-                  </Button>
-                  <div className="relative h-8 w-32 min-w-0">
-                    <Input
-                      type="date"
-                      value={liveDate}
-                      aria-label="Date du service"
-                      onChange={(e) => setLiveDate(e.target.value)}
-                      className="floor-plan-service-date-input peer relative z-10 h-8 w-32 border-0 bg-transparent px-1 text-center text-sm text-transparent focus:text-foreground sm:text-foreground"
-                    />
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center truncate px-1 text-sm text-foreground peer-focus:opacity-0 sm:hidden"
-                    >
-                      {serviceDateLabel}
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="hidden h-8 px-1.5 transition-all duration-200 sm:inline-flex"
-                    title="Jour suivant"
-                    aria-label="Jour suivant"
-                    onClick={() => shiftServiceDate(1)}
-                  >
-                    <ChevronRight size={16} />
-                  </Button>
-                </div>
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    'h-7 gap-1.5 whitespace-nowrap px-2 text-xs sm:h-8 sm:px-2.5',
-                    serviceIsToday
-                      ? 'border-brand/40 text-brand'
-                      : 'border-border text-muted-foreground',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'h-1.5 w-1.5 rounded-full',
-                      serviceIsToday ? 'bg-brand' : 'bg-muted-foreground',
+                <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="text-[13px] text-foreground/80">
+                    {lastUpdatedAt && loadedLiveDate === liveDate ? (
+                      <ElapsedSince date={lastUpdatedAt} prefix="Actualisé " />
+                    ) : reservationsError ? (
+                      'Données indisponibles'
+                    ) : (
+                      'Actualisation…'
                     )}
-                    aria-hidden="true"
-                  />
-                  {serviceIsToday ? 'En direct' : 'Archive'}
-                </Badge>
-                {!serviceIsToday ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 transition-all duration-200"
-                    onClick={() => setLiveDate(serviceToday)}
-                  >
-                    Aujourd’hui
-                  </Button>
-                ) : null}
-                <span className="text-[13px] text-foreground/80">
-                  {lastUpdatedAt && loadedLiveDate === liveDate ? (
-                    <ElapsedSince date={lastUpdatedAt} prefix="Actualisé " />
-                  ) : reservationsError ? (
-                    'Données indisponibles'
-                  ) : (
-                    'Actualisation…'
-                  )}
-                </span>
-                {loadedLiveDate === liveDate ? serviceCounts : null}
-                {serviceTab === 'plan' && placedTables.length > 0 ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1.5 transition-all duration-200"
-                    onClick={resetView}
-                  >
-                    <LocateFixed size={14} aria-hidden="true" />
-                    Ajuster le plan
-                  </Button>
-                ) : null}
-                {serviceIsToday && serviceTab === 'plan' && placedTables.length > 0 ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-8 gap-1.5 transition-all duration-200"
-                    aria-expanded={showWalkInHelp}
-                    aria-controls={showWalkInHelp ? 'walk-in-help' : undefined}
-                    onClick={() => setShowWalkInHelp((open) => !open)}
-                  >
-                    <Users size={14} aria-hidden="true" />
-                    Client sans réservation
-                  </Button>
-                ) : null}
-                {hasServerFilter ? (
-                  <Select
-                    value={selectedServerFilter ?? '_all_'}
-                    onValueChange={(val) => setSelectedServerFilter(val === '_all_' ? null : val)}
-                  >
-                    <SelectTrigger
-                      aria-label="Filtrer par serveur"
-                      title="Filtrer par serveur"
-                      className="ml-auto h-8 w-9 justify-center gap-1 border-border bg-background px-0 text-xs font-medium sm:w-auto sm:justify-start sm:px-2.5"
-                    >
-                      {selectedServerFilter === '_unassigned_' ? (
-                        <UserX size={13} className="shrink-0 text-muted-foreground" />
-                      ) : (
-                        <UserRound size={13} className="shrink-0 text-primary" />
-                      )}
-                      {/* Sur téléphone le filtre reste une icône : la ligne du jour
-                          doit tenir sans repousser les onglets sur une 3e ligne. */}
-                      <span className="!hidden min-w-0 truncate sm:!inline-flex">
-                        <SelectValue placeholder="Tous les serveurs" />
+                  </span>
+                  {loadedLiveDate === liveDate ? (
+                    <>
+                      {serviceCounts}
+                      <span className="text-[13px] text-foreground">
+                        {serviceCovers} couverts prévus · {serviceReservations.length} réservations
                       </span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_all_">Toutes les tables ({allTables.length})</SelectItem>
-                      {unassignedCount > 0 ? (
-                        <SelectItem value="_unassigned_">
-                          <span className="flex items-center gap-1.5">
-                            <UserX size={13} className="shrink-0 text-muted-foreground" />
-                            Non affectées ({unassignedCount})
-                          </span>
+                    </>
+                  ) : null}
+                  {serviceOverview}
+                </div>
+                <div className="flex w-full flex-wrap items-center gap-2">
+                  {serviceIsToday ? (
+                    <span className="text-sm font-semibold">Aujourd’hui</span>
+                  ) : null}
+                  <div
+                    title={serviceDateLabel}
+                    className="flex min-w-0 items-center gap-0.5 rounded-md border border-border bg-background p-0.5"
+                  >
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="hidden h-8 px-1.5 transition-all duration-200 sm:inline-flex"
+                      title="Jour précédent"
+                      aria-label="Jour précédent"
+                      onClick={() => shiftServiceDate(-1)}
+                    >
+                      <ChevronLeft size={16} />
+                    </Button>
+                    <div className="relative h-8 w-32 min-w-0">
+                      <Input
+                        type="date"
+                        value={liveDate}
+                        aria-label="Date du service"
+                        onChange={(e) => setLiveDate(e.target.value)}
+                        className="floor-plan-service-date-input peer relative z-10 h-8 w-32 border-0 bg-transparent px-1 text-center text-sm text-transparent focus:text-foreground sm:text-foreground"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center truncate px-1 text-sm text-foreground peer-focus:opacity-0 sm:hidden"
+                      >
+                        {serviceDateLabel}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="hidden h-8 px-1.5 transition-all duration-200 sm:inline-flex"
+                      title="Jour suivant"
+                      aria-label="Jour suivant"
+                      onClick={() => shiftServiceDate(1)}
+                    >
+                      <ChevronRight size={16} />
+                    </Button>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'h-7 gap-1.5 whitespace-nowrap px-2 text-xs sm:h-8 sm:px-2.5',
+                      serviceIsToday
+                        ? 'border-brand/40 text-brand'
+                        : 'border-border text-muted-foreground',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'h-1.5 w-1.5 rounded-full',
+                        serviceIsToday ? 'bg-brand' : 'bg-muted-foreground',
+                      )}
+                      aria-hidden="true"
+                    />
+                    {serviceIsToday ? 'En direct' : 'Archive'}
+                  </Badge>
+                  {!serviceIsToday ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 transition-all duration-200"
+                      onClick={() => setLiveDate(serviceToday)}
+                    >
+                      Aujourd’hui
+                    </Button>
+                  ) : null}
+                  {serviceTab === 'plan' && placedTables.length > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5 transition-all duration-200"
+                      onClick={resetView}
+                    >
+                      <LocateFixed size={14} aria-hidden="true" />
+                      Ajuster le plan
+                    </Button>
+                  ) : null}
+                  {serviceIsToday && serviceTab === 'plan' && placedTables.length > 0 ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 gap-1.5 transition-all duration-200"
+                      aria-expanded={showWalkInHelp}
+                      aria-controls={showWalkInHelp ? 'walk-in-help' : undefined}
+                      onClick={() => setShowWalkInHelp((open) => !open)}
+                    >
+                      <Users size={14} aria-hidden="true" />
+                      Client sans réservation
+                    </Button>
+                  ) : null}
+                  {hasServerFilter ? (
+                    <Select
+                      value={selectedServerFilter ?? '_all_'}
+                      onValueChange={(val) => setSelectedServerFilter(val === '_all_' ? null : val)}
+                    >
+                      <SelectTrigger
+                        aria-label="Filtrer par serveur"
+                        title="Filtrer par serveur"
+                        className="ml-auto h-8 w-9 justify-center gap-1 border-border bg-background px-0 text-xs font-medium xl:w-auto xl:justify-start xl:px-2.5"
+                      >
+                        {selectedServerFilter === '_unassigned_' ? (
+                          <UserX size={13} className="shrink-0 text-muted-foreground" />
+                        ) : (
+                          <UserRound size={13} className="shrink-0 text-primary" />
+                        )}
+                        {/* Sur téléphone le filtre reste une icône : la ligne du jour
+                          doit tenir sans repousser les onglets sur une 3e ligne. */}
+                        <span className="!hidden min-w-0 truncate xl:!inline-flex">
+                          <SelectValue placeholder="Tous les serveurs" />
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_all_">
+                          Toutes les tables ({allTables.length})
                         </SelectItem>
-                      ) : null}
-                      {allServers.map((server) => {
-                        const count = serverTableCounts.get(server) ?? 0;
-                        return (
-                          <SelectItem key={server} value={server}>
-                            {server} ({count} {count > 1 ? 'tables' : 'table'})
+                        {unassignedCount > 0 ? (
+                          <SelectItem value="_unassigned_">
+                            <span className="flex items-center gap-1.5">
+                              <UserX size={13} className="shrink-0 text-muted-foreground" />
+                              Non affectées ({unassignedCount})
+                            </span>
                           </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                ) : null}
+                        ) : null}
+                        {allServers.map((server) => {
+                          const count = serverTableCounts.get(server) ?? 0;
+                          return (
+                            <SelectItem key={server} value={server}>
+                              {server} ({count} {count > 1 ? 'tables' : 'table'})
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
+                </div>
               </div>
             </>
           ) : null}
@@ -9287,6 +9319,7 @@ export function FloorPlanCanvas({
                               onResizeStart={(e) => startTableResize(e, table)}
                               onRotateStart={(e) => startTableRotate(e, table)}
                               isCombinable={combinableTableIds.has(table.id)}
+                              hideChairs={live && crowdedTableIds.has(table.id)}
                               style={{
                                 left: table.positionX ?? 0,
                                 top: table.positionY ?? 0,

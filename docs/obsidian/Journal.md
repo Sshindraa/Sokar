@@ -3615,3 +3615,7 @@ L’action « Client sans réservation » guide vers une table libre avant le pl
 ### 2026-11-02 — Démo locale : limitation des requêtes du plan
 
 La démo non authentifiée partageait le budget anonyme de 100 requêtes/minute/IP ; plusieurs vues locales et leurs actualisations pouvaient provoquer des 429. En développement, les lectures de la démo provenant de la boucle locale utilisent un compteur séparé plafonné à 600/minute ; écritures, trafic réseau, staging et production gardent leurs limites. Un onglet de service initialement masqué attend son affichage pour charger et lancer le polling.
+
+### 2026-11-02 — Service : cadrage et lisibilité du plan
+
+Le cadrage Live inclut les zones occupées en entier ; l’inspecteur s’ouvre à la sélection et la barre garde un résumé unique avec les couverts prévus. Les tables combinables sont expliquées sur la carte et dans la fiche. Les assises sont réduites et masquées quand leurs enveloppes se chevaucheraient, sans modifier la capacité ni les coordonnées enregistrées.

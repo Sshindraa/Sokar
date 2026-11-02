@@ -326,6 +326,46 @@ describe('FloorPlanCanvas — taille des tables', () => {
     expect(table.querySelector('.bg-floor-table-accent')).not.toBeNull();
   });
 
+  it('évite les assises superposées et garde la capacité des tables rapprochées', async () => {
+    const first = { ...floorPlan.tables![0], shape: 'rect' as const };
+    const second = { ...first, id: 'table-t5', name: 'T5', positionX: 90 };
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return { ...floorPlan, tables: [first, second] };
+    });
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    for (const name of ['T4', 'T5']) {
+      const table = await screen.findByRole('button', { name: `${name} · 4 places` });
+      expect(table.querySelectorAll('.bg-floor-table-chair')).toHaveLength(0);
+      expect(within(table).getByText('4 places')).toBeInTheDocument();
+    }
+  });
+
+  it('explique la combinaison sur la table et dans sa fiche', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return {
+        ...floorPlan,
+        tableCombinations: [
+          {
+            id: 'combo',
+            floorPlanId: floorPlan.id,
+            name: null,
+            members: [{ tableId: floorPlan.tables![0].id }],
+          },
+        ],
+      };
+    });
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    const table = await screen.findByRole('button', { name: 'T4 · 4 places' });
+    expect(table).toHaveAccessibleDescription(/Peut être combinée avec d’autres tables/);
+    expect(within(table).getByTitle('Peut être combinée avec d’autres tables')).toBeInTheDocument();
+    fireEvent.click(table);
+    expect(screen.getAllByText('Peut être combinée avec d’autres tables').length).toBeGreaterThan(
+      0,
+    );
+  });
+
   it('récupère le plan spécifique quand floorPlanId est fourni', async () => {
     render(<FloorPlanCanvas orgId="org_test" floorPlanId="fp-2" />);
 
@@ -901,11 +941,9 @@ describe('FloorPlanCanvas — actions Live service', () => {
 
     render(<FloorPlanCanvas orgId="org_test" mode="service" />);
 
-    const occupancy = await screen.findByRole('progressbar', { name: /Taux d’occupation/ });
-    expect(occupancy).toHaveAttribute('aria-valuenow', '100');
-    expect(screen.getByText('couverts')).toBeInTheDocument();
-    expect(screen.getByText('tables occupées')).toBeInTheDocument();
-    expect(screen.getByText('réservations')).toBeInTheDocument();
+    const summary = await screen.findByRole('status', { name: 'Vue d’ensemble de la salle' });
+    expect(summary).toHaveTextContent('1 occupée');
+    expect(screen.getByText(/couverts prévus/)).toBeInTheDocument();
     const occupiedTable = screen.getByRole('button', { name: /Martin Dupont/ });
     fireEvent.click(occupiedTable.querySelector('[role="presentation"]')!);
     expect(screen.getByText('Martin Dupont')).toBeInTheDocument();
@@ -1015,7 +1053,7 @@ describe('FloorPlanCanvas — actions Live service', () => {
       return floorPlan;
     });
     render(<FloorPlanCanvas orgId="org_test" mode="service" />);
-    expect(await screen.findByText('couverts')).toBeInTheDocument();
+    expect(await screen.findByText(/couverts prévus/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Date du service'), {
       target: { value: '2026-01-05' },
     });
@@ -1024,7 +1062,7 @@ describe('FloorPlanCanvas — actions Live service', () => {
     expect(
       within(bar).queryByRole('status', { name: 'Vue d’ensemble de la salle' }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText('couverts')).not.toBeInTheDocument();
+    expect(screen.queryByText(/couverts prévus/)).not.toBeInTheDocument();
     await act(async () => resolveReservations([]));
   });
 
@@ -1148,16 +1186,12 @@ describe('FloorPlanCanvas — actions Live service', () => {
     const table = await screen.findByRole('button', { name: 'T4 · 4 places' });
     fireEvent.click(table);
     const close = screen.getByRole('button', { name: 'Fermer la fiche de la table' });
-    const inspector = close.closest('aside')!;
+    const bar = screen.getByRole('region', { name: 'État du service' });
     expect(
-      within(inspector).getByRole('status', { name: 'Vue d’ensemble de la salle' }),
+      within(bar).getByRole('status', { name: 'Vue d’ensemble de la salle' }),
     ).toHaveTextContent('1 disponible');
-    expect(within(inspector).getByText('Légende des statuts')).toBeInTheDocument();
-    const mobile = screen.getByRole('dialog', { name: 'Actions pour T4' });
-    expect(
-      within(mobile).getByRole('status', { name: 'Vue d’ensemble de la salle' }),
-    ).toBeInTheDocument();
-    expect(within(mobile).getByText('Légende des statuts')).toBeInTheDocument();
+    expect(within(bar).getByText('Légende')).toHaveAttribute('aria-label', 'Légende des statuts');
+    expect(screen.getAllByRole('status', { name: 'Vue d’ensemble de la salle' })).toHaveLength(1);
     fireEvent.click(close);
     expect(table).toHaveAttribute('aria-pressed', 'false');
     expect(
@@ -1853,7 +1887,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
     });
   });
 
-  it('cadre en Live les tables sans reprendre la hauteur vide de la zone', () => {
+  it('cadre les zones et les tables entières en Live', () => {
     expect(
       computeLiveContentBounds(
         [{ x: 100, y: 120, width: 500, height: 300, rotation: 0 }],
@@ -1861,7 +1895,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
         1400,
         900,
       ),
-    ).toEqual({ x: 100, y: 100, width: 224, height: 224 });
+    ).toEqual({ x: 52, y: 72, width: 596, height: 396 });
     expect(
       computeLiveContentBounds(
         [],
@@ -1869,7 +1903,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
         700,
         420,
       ),
-    ).toEqual({ x: -80, y: -80, width: 224, height: 224 });
+    ).toEqual({ x: -48, y: -48, width: 160, height: 160 });
   });
 
   it('centre la zone des tables dans la fenêtre', () => {
@@ -1953,7 +1987,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
         expect(await screen.findByRole('tablist', { name: 'Vue du service' })).toBeInTheDocument();
         expect(screen.queryByRole('status', { name: 'Pouls du service' })).not.toBeInTheDocument();
         // Ni volumétrie à zéro ni jauge ne mangent la hauteur utile du plan.
-        expect(screen.queryByText('couverts')).not.toBeInTheDocument();
+        expect(await screen.findByText(/couverts prévus/)).toBeInTheDocument();
         expect(
           screen.queryByRole('progressbar', { name: /Taux d’occupation/ }),
         ).not.toBeInTheDocument();
@@ -1964,7 +1998,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
         expect(screen.queryByRole('button', { name: 'Zoom arrière' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Zoom avant' })).not.toBeInTheDocument();
         await waitFor(() =>
-          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '358px' }),
+          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '320px' }),
         );
 
         // Le canvas recouvre l'espaceur qui fournit l'aire de défilement. S'il
@@ -1985,8 +2019,10 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
 
       render(<FloorPlanCanvas orgId="org_test" mode="service" />);
 
-      expect(await screen.findByText('couverts')).toBeInTheDocument();
-      expect(screen.getByRole('progressbar', { name: /Taux d’occupation/ })).toBeInTheDocument();
+      expect(await screen.findByText(/couverts prévus/)).toBeInTheDocument();
+      expect(
+        screen.getByRole('status', { name: 'Vue d’ensemble de la salle' }),
+      ).toBeInTheDocument();
       expect(
         screen.queryByText('Service en direct · Aucune réservation aujourd’hui'),
       ).not.toBeInTheDocument();
@@ -2018,7 +2054,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
 
         expect(await screen.findByRole('button', { name: 'T4 · 4 places' })).toBeInTheDocument();
         await waitFor(() =>
-          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '358px' }),
+          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '320px' }),
         );
       } finally {
         widthSpy.mockRestore();
