@@ -1513,7 +1513,7 @@ function TableCard({
       : status?.status === 'reserved'
         ? 'Réservée'
         : status?.status === 'upcoming'
-          ? 'Arrivée'
+          ? 'Imminente'
           : status?.status === 'late'
             ? 'Retard'
             : status?.status === 'occupied'
@@ -1568,7 +1568,7 @@ function TableCard({
           aria-hidden="true"
           className="pointer-events-none absolute -top-9 left-0 z-40 hidden whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md group-hover/table:block group-focus-visible/table:block"
         >
-          Peut être combinée avec d’autres tables
+          Tables combinables
         </span>
       ) : null}
       <>
@@ -1635,7 +1635,7 @@ function TableCard({
                 'absolute z-30 text-floor-table-text',
                 isRound ? 'right-5 top-4' : 'right-4 top-1',
               )}
-              title="Peut être combinée avec d’autres tables"
+              title="Tables combinables"
               aria-hidden="true"
             >
               <Link2 size={12} />
@@ -1671,7 +1671,9 @@ function TableCard({
                   />
                 ) : null}
                 <span className="truncate">
-                  {compact ? compactStatusLabel : referenceStatusLabel}
+                  {compact || status?.status === 'upcoming'
+                    ? compactStatusLabel
+                    : referenceStatusLabel}
                 </span>
               </p>
             </div>
@@ -2811,17 +2813,16 @@ export function FloorPlanCanvas({
       const viewport = canvasViewportRef.current;
       if (!viewport) return null;
       const viewportWidth = viewport.clientWidth;
-      const viewportHeight = viewport.clientHeight;
+      const availableHeight =
+        window.innerHeight - viewport.getBoundingClientRect().top - (touchCanvasLayout ? 104 : 16);
+      // shortcut: sous 80 px visibles, laisser défiler la page avant de cadrer le plan.
+      const viewportHeight =
+        live && availableHeight >= 80
+          ? Math.min(viewport.clientHeight, availableHeight)
+          : viewport.clientHeight;
       if (viewportWidth < 40 || viewportHeight < 40) return null;
-      const fitMinimum = live && !focusTables ? 0.01 : minZoom;
-      const fitFloor =
-        live && !focusTables
-          ? fitMinimum
-          : live && serviceTab === 'plan'
-            ? TOUCH_FIT_FLOOR
-            : touchCanvasLayout
-              ? TOUCH_FIT_FLOOR
-              : 1;
+      const fitMinimum = live ? 0.01 : minZoom;
+      const fitFloor = live ? fitMinimum : touchCanvasLayout ? TOUCH_FIT_FLOOR : 1;
       // Plancher du dézoom manuel : cadrer le plan entier.
       const fullCanvasZoom = computeFitZoom({
         viewportWidth,
@@ -2950,9 +2951,11 @@ export function FloorPlanCanvas({
         });
         return;
       }
-      viewport.scrollLeft = fit.scroll.left;
-      viewport.scrollTop = fit.scroll.top;
       autoFittedPlanIdRef.current = planId;
+      retryFrame = window.requestAnimationFrame(() => {
+        viewport.scrollLeft = fit.scroll.left;
+        viewport.scrollTop = fit.scroll.top;
+      });
     };
     applyInitialFit();
     return () => {
@@ -3699,9 +3702,9 @@ export function FloorPlanCanvas({
     () => allTables.filter((table) => table.positionX !== null && table.positionY !== null),
     [allTables],
   );
-  const crowdedTableIds = useMemo(() => {
-    if (!live) return new Set<string>();
-    const bounds = placedTables.map((table) => {
+  const liveTableVisualBounds = useMemo(() => {
+    if (!live) return [];
+    return placedTables.map((table) => {
       const { width, height, rotation } = getTableSize(table);
       const round = table.shape === 'round';
       const bodyWidth = round
@@ -3734,6 +3737,9 @@ export function FloorPlanCanvas({
         bottom: centerY + halfHeight,
       };
     });
+  }, [compactTableCards, live, placedTables]);
+  const crowdedTableIds = useMemo(() => {
+    const bounds = liveTableVisualBounds;
     const crowded = new Set<string>();
     // shortcut: les rectangles englobants peuvent masquer des chaises proches sans collision ; calculer les formes exactes si nécessaire.
     for (let i = 0; i < bounds.length; i++) {
@@ -3751,7 +3757,15 @@ export function FloorPlanCanvas({
       }
     }
     return crowded;
-  }, [compactTableCards, live, placedTables]);
+  }, [liveTableVisualBounds]);
+  const tableFocusBounds = useMemo<ContentBounds | null>(() => {
+    if (liveTableVisualBounds.length === 0) return null;
+    const left = Math.min(...liveTableVisualBounds.map((item) => item.left)) - 16;
+    const top = Math.min(...liveTableVisualBounds.map((item) => item.top)) - 16;
+    const right = Math.max(...liveTableVisualBounds.map((item) => item.right)) + 16;
+    const bottom = Math.max(...liveTableVisualBounds.map((item) => item.bottom)) + 16;
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  }, [liveTableVisualBounds]);
   const tablesToPlace = useMemo(
     () => allTables.filter((table) => table.positionX === null || table.positionY === null),
     [allTables],
@@ -3774,20 +3788,25 @@ export function FloorPlanCanvas({
         : zones,
     [live, placedTables, zones],
   );
-  const contentBounds = useMemo(
-    () =>
-      live
-        ? computeLiveContentBounds(liveZones, placedTables, canvasWidth, canvasHeight)
-        : computeContentBounds(placedTables, canvasWidth, canvasHeight),
-    [canvasHeight, canvasWidth, live, liveZones, placedTables],
-  );
+  const contentBounds = useMemo(() => {
+    const bounds = live
+      ? computeLiveContentBounds(liveZones, placedTables, canvasWidth, canvasHeight)
+      : computeContentBounds(placedTables, canvasWidth, canvasHeight);
+    if (!live || !bounds || !tableFocusBounds) return bounds;
+    const x = Math.min(bounds.x, tableFocusBounds.x);
+    const y = Math.min(bounds.y, tableFocusBounds.y);
+    return {
+      x,
+      y,
+      width: Math.max(bounds.x + bounds.width, tableFocusBounds.x + tableFocusBounds.width) - x,
+      height: Math.max(bounds.y + bounds.height, tableFocusBounds.y + tableFocusBounds.height) - y,
+    };
+  }, [canvasHeight, canvasWidth, live, liveZones, placedTables, tableFocusBounds]);
   // Mise à jour pendant le rendu (convention du fichier, cf. zoomRef) : la
   // lecture par ref dans le cadrage évite tout recadrage automatique quand le
   // restaurateur déplace ou redimensionne une table.
   contentBoundsRef.current = contentBounds;
-  tableBoundsRef.current = live
-    ? computeLiveContentBounds([], placedTables, canvasWidth, canvasHeight)
-    : null;
+  tableBoundsRef.current = tableFocusBounds;
   const tableCombinations = useMemo<FloorPlanTableCombination[]>(
     () => floorPlan?.tableCombinations ?? [],
     [floorPlan?.tableCombinations],
@@ -8595,6 +8614,12 @@ export function FloorPlanCanvas({
                       >
                         <LocateFixed size={14} aria-hidden="true" /> Ajuster le plan
                       </Button>
+                      <output
+                        aria-label="Niveau de zoom"
+                        className="min-w-10 text-center text-xs tabular-nums text-foreground/80"
+                      >
+                        {Math.round(zoom * 100)} %
+                      </output>
                       <Button
                         type="button"
                         variant="outline"
@@ -8608,17 +8633,29 @@ export function FloorPlanCanvas({
                     </div>
                   ) : null}
                   {serviceIsToday && serviceTab === 'plan' && placedTables.length > 0 ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-8 gap-1.5 transition-all duration-200"
-                      aria-expanded={showWalkInHelp}
-                      aria-controls={showWalkInHelp ? 'walk-in-help' : undefined}
-                      onClick={() => setShowWalkInHelp((open) => !open)}
-                    >
-                      <Users size={14} aria-hidden="true" />
-                      Choisir une table pour un client
-                    </Button>
+                    <div className="relative">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 gap-1.5 transition-all duration-200"
+                        aria-expanded={showWalkInHelp}
+                        aria-controls={showWalkInHelp ? 'walk-in-help' : undefined}
+                        onClick={() => setShowWalkInHelp((open) => !open)}
+                      >
+                        <Users size={14} aria-hidden="true" />
+                        Choisir une table pour un client
+                      </Button>
+                      {showWalkInHelp ? (
+                        <div
+                          id="walk-in-help"
+                          role="status"
+                          className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-full rounded-lg border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg"
+                        >
+                          Sélectionnez une table disponible, puis choisissez « Placer un client sans
+                          réservation ».
+                        </div>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               </div>
@@ -8846,16 +8883,6 @@ export function FloorPlanCanvas({
                           : undefined,
                     )}
                   >
-                    {live && serviceIsToday && showWalkInHelp ? (
-                      <div
-                        id="walk-in-help"
-                        role="status"
-                        className="pointer-events-none absolute left-3 top-3 z-30 w-fit max-w-[calc(100%-1.5rem)] rounded-lg border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg"
-                      >
-                        Sélectionnez une table disponible, puis choisissez « Placer un client sans
-                        réservation ».
-                      </div>
-                    ) : null}
                     {displayedInitialDelayImpact && !reportedDelayBannerDismissed ? (
                       <div
                         role="region"

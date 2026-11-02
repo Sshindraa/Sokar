@@ -3623,3 +3623,7 @@ Le cadrage Live inclut les zones occupées en entier ; l’inspecteur s’ouvre 
 ### 2026-11-02 — Service : zoom, fiche stable et légende flottante
 
 La vue s’ouvre cadrée sur les tables tout en conservant la géométrie complète des zones ; « Ajuster le plan » cadre la salle et des commandes règlent le zoom. La fiche reste en surimpression quand elle ne masque aucune table et prend sinon une colonne. La légende flottante reprend les points des statuts et explique les tables attendues ; l’accueil guide vers le choix d’une table sans déplacer le plan.
+
+### 2026-11-02 — Service : cadrage intermédiaire et lisibilité des états
+
+Le cadrage initial tient compte des empreintes visuelles des tables et de leurs assises, de la rotation et de la hauteur disponible ; le zoom est indiqué en pourcentage. L’aide au placement est ancrée au bouton et ne recouvre pas le plan. Une salle de cinq tables et les états simultanés ont été vérifiés avec des données de test ; la fiche conserve une colonne si une table à droite serait masquée.
