@@ -14,13 +14,15 @@ import { bookingSlotsOf, normalizeOpeningHours } from '@sokar/shared';
 import type { AvailabilityDto, AvailabilitySlot } from './floor-plan.types';
 import { resolveServiceDurationMinutes } from './floor-plan.types';
 import { TableAllocationService } from './table-allocation.service';
+import {
+  hasSeatFor,
+  isWindowBlocked,
+  loadSeatingItems,
+  loadSeatingTables,
+  planUnassignedSeating,
+} from './unassigned-seating';
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';
-import {
-  ACTIVE_RESERVATION_STATES,
-  intervalsOverlap,
-  reservationOverlapWhere,
-} from '../../shared/reservations/capacity.js';
 import {
   DEFAULT_RESTAURANT_TIMEZONE,
   zonedTimeToUtc,
@@ -240,82 +242,20 @@ export class CapacityAwareAvailabilityService {
       return emptyAvailability(args);
     }
 
-    // Récupérer toutes les réservations bloquantes et holds actifs du jour
-    // pour les tester localement (optimisation P1).
-    const dayStart = zonedTimeToUtc(args.date, '00:00', timeZone);
-    const dayEnd = new Date(zonedTimeToUtc(args.date, '23:59:59.999', timeZone).getTime() + 1);
-
-    const [reservations, holds, tables] = await Promise.all([
-      queryDb.reservation.findMany({
-        where: {
-          restaurantId: args.restaurantId,
-          isTest: false,
-          state: { in: [...ACTIVE_RESERVATION_STATES] },
-          ...(args.excludeReservationId ? { id: { not: args.excludeReservationId } } : {}),
-          OR: reservationOverlapWhere(dayStart, dayEnd, serviceDurationMinutes),
-        },
-        select: { tableId: true, startsAt: true, endsAt: true, reservedAt: true },
+    // Les réservations et holds sans table sont placés virtuellement, comme à la création : la même
+    // fonction donne le même verdict ici et au moment de réserver.
+    const [tables, items] = await Promise.all([
+      loadSeatingTables(queryDb, args.restaurantId, args.defaultFloorOnly),
+      loadSeatingItems(queryDb, {
+        restaurantId: args.restaurantId,
+        date: args.date,
+        timeZone,
+        serviceDurationMinutes,
+        now: new Date(),
+        excludeReservationId: args.excludeReservationId,
       }),
-      queryDb.agenticHold.findMany({
-        where: {
-          restaurantId: args.restaurantId,
-          status: 'ACTIVE',
-          expiresAt: { gt: new Date() },
-          slotStart: { lt: dayEnd },
-          slotEnd: { gt: dayStart },
-        },
-        select: { tableId: true, slotStart: true, slotEnd: true },
-      }),
-      args.preferredSectionId
-        ? queryDb.table.findMany({
-            where: {
-              sectionId: args.preferredSectionId,
-              isActive: true,
-              floorPlan: {
-                restaurantId: args.restaurantId,
-                isActive: true,
-                ...(args.defaultFloorOnly ? { isDefault: true } : {}),
-              },
-              capacity: { gte: args.partySize },
-            },
-            select: { id: true, capacity: true, minCapacity: true, sectionId: true },
-          })
-        : queryDb.table.findMany({
-            where: {
-              isActive: true,
-              floorPlan: {
-                restaurantId: args.restaurantId,
-                isActive: true,
-                ...(args.defaultFloorOnly ? { isDefault: true } : {}),
-              },
-              capacity: { gte: args.partySize },
-            },
-            select: { id: true, capacity: true, minCapacity: true, sectionId: true },
-          }),
     ]);
-
-    const busyByTable = new Map<string, Array<{ start: Date; end: Date }>>();
-    const globallyBlockedIntervals: Array<{ start: Date; end: Date }> = [];
-    for (const r of reservations) {
-      const start = r.startsAt ?? r.reservedAt;
-      const end = r.endsAt ?? new Date(start.getTime() + serviceDurationMinutes * 60_000);
-      if (!r.tableId) {
-        globallyBlockedIntervals.push({ start, end });
-        continue;
-      }
-      const list = busyByTable.get(r.tableId) ?? [];
-      list.push({ start, end });
-      busyByTable.set(r.tableId, list);
-    }
-    for (const h of holds) {
-      if (!h.tableId) {
-        globallyBlockedIntervals.push({ start: h.slotStart, end: h.slotEnd });
-        continue;
-      }
-      const list = busyByTable.get(h.tableId) ?? [];
-      list.push({ start: h.slotStart, end: h.slotEnd });
-      busyByTable.set(h.tableId, list);
-    }
+    const plan = planUnassignedSeating(tables, items);
 
     const noActiveTables =
       args.allowWithoutTables &&
@@ -327,17 +267,15 @@ export class CapacityAwareAvailabilityService {
       const slotStart = zonedTimeToUtc(args.date, time, timeZone);
       const slotEnd = new Date(slotStart.getTime() + serviceDurationMinutes * 60_000);
 
-      const hasAvailableTable = (candidateTables: typeof tables) =>
-        candidateTables.some((table) => {
-          if (table.minCapacity > args.partySize) return false;
-          const busy = busyByTable.get(table.id) ?? [];
-          return !busy.some((b) => intervalsOverlap(b.start, b.end, slotStart, slotEnd));
-        });
-
-      const hasGlobalConflict = globallyBlockedIntervals.some((interval) =>
-        intervalsOverlap(interval.start, interval.end, slotStart, slotEnd),
-      );
-      const available = !hasGlobalConflict && (hasAvailableTable(tables) || !!noActiveTables);
+      const candidate = {
+        partySize: args.partySize,
+        start: slotStart,
+        end: slotEnd,
+        sectionId: args.preferredSectionId ?? null,
+      };
+      const available =
+        !isWindowBlocked(plan, slotStart, slotEnd) &&
+        (hasSeatFor(plan, tables, candidate) || !!noActiveTables);
 
       return { time, available };
     });
