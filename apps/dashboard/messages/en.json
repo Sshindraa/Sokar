@@ -46,9 +46,6 @@
     "expand": "Show navigation groups",
     "collapse": "Collapse navigation groups",
     "close": "Close",
-    "comingSoon": "Soon",
-    "companionSoon": "Companion is coming soon",
-    "companionSoonDescription": "A shared space to prepare service, track priorities, and act with your team from one place.",
     "admin": "Sokar Admin",
     "provisioning": "Pilot Provisioning",
     "settings": "Settings",
@@ -80,6 +77,49 @@
     "notFound": "Page not found",
     "notFoundDescription": "The page you're looking for doesn't exist or has been moved.",
     "goHome": "Back to home"
+  },
+  "companion": {
+    "title": "Companion",
+    "greeting": "I am Sokar's AI assistant. I read your restaurant's figures, with no customer data.",
+    "suggestions": {
+      "week": "How do the next 7 days look?",
+      "noShows": "Where do my no-shows stand?",
+      "bookings": "How many bookings this week?"
+    },
+    "placeholder": "Ask a question about your figures",
+    "send": "Send",
+    "thinking": "Analysing…",
+    "retry": "Try again",
+    "newConversation": "New conversation",
+    "disclaimer": "AI-generated answers, to be checked. Do not enter customer contact details.",
+    "openSource": "View in the dashboard",
+    "openCampaign": "Open in the campaign editor",
+    "helpful": "Helpful answer",
+    "unhelpful": "Unhelpful answer",
+    "genericError": "The assistant cannot answer right now. Please try again shortly.",
+    "tonight": {
+      "title": "This service",
+      "midi": "Today’s lunch",
+      "soir": "Tonight",
+      "loading": "Loading the service…",
+      "briefLoading": "Summary being prepared…",
+      "error": "The service cannot be loaded right now.",
+      "retry": "Try again",
+      "empty": "No reservations for this service",
+      "nothingToWatch": "Nothing to flag for this service.",
+      "covers": "{count, plural, one {# cover} other {# covers}}",
+      "usual": "usually {usual} covers",
+      "specialRequests": "{count, plural, one {# special request} other {# special requests}}",
+      "waitlist": "{count, plural, one {# person on the waiting list} other {# people on the waiting list}}",
+      "reasons": {
+        "unconfirmed": "Unconfirmed",
+        "noTable": "No table",
+        "largeParty": "Large party",
+        "pastNoShow": "Previous no-show",
+        "vip": "VIP",
+        "regular": "Regular guest"
+      }
+    }
   },
   "languageSwitcher": {
     "label": "Language",
@@ -114,5 +154,46 @@
       "description": "An amount or package to give as a gift and redeem at your restaurant.",
       "action": "Create a gift card"
     }
+  },
+  "fillService": {
+    "title": "Fill this service",
+    "intro": "A message to guests who opted in, with no promotion. Nothing is sent: the campaign stays a draft that you schedule or send afterwards.",
+    "date": "Day",
+    "service": "Service",
+    "midi": "Lunch",
+    "soir": "Dinner",
+    "channel": "Channel",
+    "sms": "SMS",
+    "email": "E-mail",
+    "loading": "Computing the preview…",
+    "errorTitle": "The preview could not be computed",
+    "retry": "Retry",
+    "freePlaces": "Free seats",
+    "candidates": "Candidate guests",
+    "audience": "Recipients",
+    "holdout": "Control group (no message)",
+    "sends": "Messages to send",
+    "cost": "Estimated cost",
+    "costUnknown": "Tariff not reconciled",
+    "capacityUnknown": "No floor plan is set up: this service’s capacity is unknown, so nothing is proposed.",
+    "full": "This service is full: no slot is left for 2 guests.",
+    "noCandidate": "No reachable guest for this service.",
+    "noCandidateReasons": "No consent: {noConsent} · Opted out: {optedOut} · Already booked that day: {sameDay} · Frequency cap: {frequency}",
+    "subject": "Subject",
+    "body": "Message",
+    "bodyHelp": "Keep '{reservationLink}' and '{unsubscribeUrl}': they are required to send.",
+    "create": "Create the campaign",
+    "creating": "Creating…",
+    "openFromQuietDay": "Fill this service",
+    "report": {
+      "title": "Targeted service",
+      "treated": "Recipients",
+      "holdout": "Control",
+      "perCustomer": "covers per guest",
+      "difference": "Difference",
+      "inconclusive": "Inconclusive: fewer than 20 guests in the control group."
+    },
+    "back": "Dashboard",
+    "closed": "The restaurant does not open this service that day: nothing to fill."
   }
 }

@@ -15,6 +15,7 @@ vi.mock('../../../shared/db/client', () => ({
     marketingAttributionLink: { findMany: vi.fn() },
     marketingConversion: { findMany: vi.fn() },
     marketingPermissionEvent: { findMany: vi.fn() },
+    reservation: { findMany: vi.fn() },
   },
 }));
 
@@ -146,5 +147,54 @@ describe('marketing campaign report', () => {
     });
 
     expect(report.cost).toEqual({ amount: 0.12, currency: 'EUR', status: 'PARTIAL' });
+  });
+
+  it('compare les couverts du service visé entre destinataires et témoin, par client', async () => {
+    vi.mocked(db.marketingCampaign.findFirst).mockResolvedValueOnce({
+      id: 'campaign-1',
+      name: 'Midi calme',
+      channel: 'SMS',
+      status: 'SENT',
+      audienceCount: 1,
+      createdAt: new Date('2026-10-30T10:00:00.000Z'),
+      completedAt: new Date('2026-10-30T10:05:00.000Z'),
+      startedAt: new Date('2026-10-30T10:01:00.000Z'),
+      targetServiceStart: new Date('2026-11-04T11:00:00.000Z'),
+      targetServiceEnd: new Date('2026-11-04T15:00:00.000Z'),
+    } as never);
+    vi.mocked(db.campaignAudienceMember.findMany).mockResolvedValueOnce([
+      { customerId: 'customer-1', inclusionReason: 'CHANNEL_OPT_IN' },
+      { customerId: 'customer-2', inclusionReason: 'HOLDOUT' },
+    ] as never);
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      { customerId: 'customer-1', partySize: 4 },
+      { customerId: 'customer-2', partySize: 2 },
+    ] as never);
+
+    const report = await getMarketingCampaignReport({
+      restaurantId: 'restaurant-1',
+      campaignId: 'campaign-1',
+    });
+
+    expect(report.serviceFill).toEqual({
+      service: {
+        start: new Date('2026-11-04T11:00:00.000Z'),
+        end: new Date('2026-11-04T15:00:00.000Z'),
+      },
+      treated: { customers: 1, covers: 4, coversPerCustomer: 4 },
+      holdout: { customers: 1, covers: 2, coversPerCustomer: 2 },
+      difference: 2,
+      conclusive: false,
+    });
+  });
+
+  it('n’ajoute pas de mesure de service à une campagne sans service visé', async () => {
+    const report = await getMarketingCampaignReport({
+      restaurantId: 'restaurant-1',
+      campaignId: 'campaign-1',
+    });
+
+    expect(report).not.toHaveProperty('serviceFill');
+    expect(db.reservation.findMany).not.toHaveBeenCalled();
   });
 });
