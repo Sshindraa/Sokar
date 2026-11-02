@@ -9042,13 +9042,6 @@ export function FloorPlanCanvas({
                           }px, ${GRID_SIZE}px ${GRID_SIZE}px, ${GRID_SIZE}px ${GRID_SIZE}px`,
                         }}
                       >
-                        {!live ? (
-                          <div
-                            className="absolute left-0 top-0 z-20 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background"
-                            title="Origine du plan"
-                            aria-hidden="true"
-                          />
-                        ) : null}
                         {(live ? liveZones : zones).map((zone) => (
                           <ZoneCard
                             key={zone.id}
