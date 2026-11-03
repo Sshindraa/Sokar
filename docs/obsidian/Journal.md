@@ -3728,3 +3728,7 @@ Fait : zone Cloudflare `suppernote.com` en Full (strict), certificat d'origine s
 Reste : webhooks, app iOS, DNS de production, créneau de bascule, Clerk (`Change domain` coupe la connexion), `.env`, fusion de la PR 640, Search Console, CNAME clients. `news.suppernote.com` refusé par la limite Resend. `www`, `api` et `*` absents de la zone ; `https://suppernote.com` échoue encore au TLS.
 Fichiers : `docs/runbooks/migration-suppernote.md`, `infra/nginx/sokar.conf`, `apps/api/src/env.ts`, `apps/ios/Sokar/SokarApp.swift`.
 Questions : clé Clerk `sk_test` affichée dans une session, à renouveler ; compte Clerk au nom d'Ismail Harrak et offre Student ; domaine principal Workspace ; crédit OpenRouter bas.
+
+### 2026-11-03 — Suppernote : branche à jour, contrôles en lecture seule
+
+PR #640 mise à jour avec `main` (merge `0d2b5186`, sans conflit, poussé). Production lue sans écriture : 3 campagnes marketing, toutes `Chez Sokar`, envoyées le 22/10 (avant `news.sokar.tech`) ; aucun envoi réel, donc remplacer `news.sokar.tech` par `news.suppernote.com` ne casse rien. Clé Stripe de production en `sk_live` ; `reservation_payments` et `stripe_webhook_events` vides : les 3 paiements de test ne sont pas dans notre base, la cause se lit dans le tableau de bord Stripe. Restent à Hamza : renouvellement de la clé Clerk `sk_test`, propriétaire du compte Clerk, retrait de `news.sokar.tech` chez Resend, recharge OpenRouter.
