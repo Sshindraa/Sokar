@@ -53,8 +53,8 @@ ne pas solliciter de nouveau la personne. Donnée personnelle pseudonymisée, pa
 - **Conservation** : trois ans à compter de la dernière opposition, durée minimale recommandée par la CNIL
   (pas une obligation légale), puis purge automatique. Suppression plus tôt si l'opposition est levée ou si
   le restaurant est supprimé du service.
-- **Levée** : un nouvel accord de la personne, ou un nouvel accord enregistré par l'équipe du restaurant, lève
-  l'opposition. Ce second cas reste à arbitrer.
+- **Levée** : seul un nouvel accord donné en ligne par la personne lève l'opposition ; un accord enregistré
+  par l'équipe du restaurant ne la lève pas.
 - **Limite** : une plainte reçue après l'effacement de la fiche n'est pas inscrite ; une fiche recréée n'est
   pas contactée sans nouvel accord.
 

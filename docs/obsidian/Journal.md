@@ -3684,3 +3684,7 @@ Constat de l'essai staging (trois refus ont amené un client à 3/3 sans aucun e
 ### 2026-11-03 — E-mail marketing : liens lisibles et pied de page
 
 Après l'essai staging classé en indésirable par Outlook (SPF, DKIM et DMARC réussis, `SCL` 5) : les liens de réservation et de désinscription s'affichent « Réserver une table » et « Se désinscrire », et un pied de page donne le restaurant, son adresse et la raison du message. Effet sur le classement non mesuré : nouvel essai à faire après déploiement sur staging.
+
+### 2026-11-03 — Texte du registre aligné sur la PR 637
+
+La PR #637 est fusionnée : clé dérivée par restaurant et opposition levée par un accord donné en ligne, pas par une saisie de l’équipe. Politique et annexe corrigées dans le brouillon #634 ; note juridique conservée avec avertissement sur ses constats techniques antérieurs. Validation par un avocat toujours attendue. Une case en ligne ne vérifie pas la possession de l’adresse.

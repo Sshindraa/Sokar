@@ -2,6 +2,9 @@
 
 > **Analyse préparatoire produite par une IA, le 3 novembre 2026. Ce n'est pas un avis d'avocat.**
 > À faire valider par un professionnel du droit avant toute publication ou signature.
+> Mise à jour technique du 3 novembre : la PR #637 prévoit une clé dérivée par restaurant et empêche
+> l'équipe de lever une opposition. Les constats techniques contraires ci-dessous décrivent l'état antérieur ;
+> le déploiement reste à vérifier. Un accord en ligne ne vérifie pas la possession de l'adresse.
 
 Les renvois [S1], [S2]… pointent vers les sources en fin de note. Les faits sur le code renvoient aux
 fichiers du dépôt.
