@@ -3,11 +3,16 @@ import { MarketingCampaignStatus, MarketingMessageStatus } from '@prisma/client'
 import type { Job } from 'bullmq';
 import type { PrismaClient } from '@prisma/client';
 import { marketingOptOutHash } from '../marketing-opt-out.service';
+import { isTargetServiceFull } from '../fill-service.service';
 import {
   marketingRecipientAllowlist,
   processMarketingCampaignJob,
   type MarketingCampaignWorkerDependencies,
 } from '../marketing-campaign.worker';
+
+vi.mock('../fill-service.service', () => ({
+  isTargetServiceFull: vi.fn().mockResolvedValue(false),
+}));
 
 function makeJob(): Job<{ campaignId: string; restaurantId: string }> {
   return {
@@ -196,10 +201,31 @@ describe('marketing campaign worker', () => {
     );
   });
 
+  it('annule si le numéro a changé avant le dernier contrôle', async () => {
+    const { db, deps, sendSms } = makeDependencies();
+    vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);
+    vi.mocked(db.customer.findFirst)
+      .mockResolvedValueOnce({ id: 'customer-1' } as never)
+      .mockResolvedValueOnce(null);
+
+    await processMarketingCampaignJob(makeJob(), deps);
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(db.customer.findFirst).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ phone: '+33601020304' }),
+      }),
+    );
+    expect(db.campaignMessage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: MarketingMessageStatus.CANCELLED, errorCode: 'CUSTOMER_INACTIVE' },
+      }),
+    );
+  });
+
   it('n’envoie pas à une adresse inscrite au registre d’opposition, même avec un accord en base', async () => {
     const { db, deps, sendSms } = makeDependencies();
     vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);
-    const hash = marketingOptOutHash('SMS', '+33601020304');
+    const hash = marketingOptOutHash('restaurant-1', 'SMS', '+33601020304');
     vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([{ addressHash: hash }] as never);
 
     await expect(processMarketingCampaignJob(makeJob(), deps)).resolves.toMatchObject({
@@ -280,6 +306,7 @@ describe('marketing campaign worker', () => {
         name: 'Chez Sokar',
         slug: 'chez-sokar',
         managerEmail: 'manager@chez-sokar.test',
+        formattedAddress: '1 rue de Test, 75001 Paris',
       },
     } as never);
     vi.mocked(db.campaignMessage.findMany)
@@ -314,7 +341,10 @@ describe('marketing campaign worker', () => {
       expect.objectContaining({
         to: 'alice@example.com',
         subject: 'Une table vous attend',
-        html: `Bonjour Alice<br>Se désinscrire : <a href="${unsubscribeUrl}">${unsubscribeUrl}</a>`,
+        html:
+          `Bonjour Alice<br>Se désinscrire : <a href="${unsubscribeUrl}">Se désinscrire</a>` +
+          '<br><br>Chez Sokar, 1 rue de Test, 75001 Paris<br>' +
+          'Vous recevez ce message car vous avez accepté de recevoir les actualités de ce restaurant par e-mail.',
         headers: {
           'List-Unsubscribe': `<${unsubscribeUrl}>`,
           'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
@@ -322,6 +352,36 @@ describe('marketing campaign worker', () => {
       }),
     );
   });
+  it('se met en pause sans rien envoyer quand le service visé est complet', async () => {
+    const { db, deps, sendSms } = makeDependencies();
+    vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);
+    vi.mocked(db.marketingCampaign.findFirst).mockResolvedValueOnce({
+      id: 'campaign-1',
+      restaurantId: 'restaurant-1',
+      channel: 'SMS',
+      status: MarketingCampaignStatus.READY,
+      subject: null,
+      bodyTemplate: 'Bonjour {{customer.firstName}} {{unsubscribeUrl}}',
+      restaurant: { name: 'Chez Sokar', slug: 'chez-sokar' },
+      targetServiceStart: new Date('2026-11-04T11:00:00.000Z'),
+      targetServiceEnd: new Date('2026-11-04T15:00:00.000Z'),
+    } as never);
+    vi.mocked(db.campaignMessage.count).mockResolvedValueOnce(1);
+    vi.mocked(isTargetServiceFull).mockResolvedValueOnce(true);
+
+    await expect(processMarketingCampaignJob(makeJob(), deps)).resolves.toEqual({
+      processed: 0,
+      accepted: 0,
+      failed: 0,
+    });
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(db.marketingCampaign.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: MarketingCampaignStatus.PAUSED, lastErrorCode: 'TARGET_SERVICE_FULL' },
+      }),
+    );
+  });
+
   it('lit la liste blanche sans tenir compte de la casse ni des espaces', () => {
     expect(marketingRecipientAllowlist({})).toBeNull();
     expect(marketingRecipientAllowlist({ MARKETING_RECIPIENT_ALLOWLIST: ' , ' })).toBeNull();
@@ -451,6 +511,75 @@ describe('marketing campaign worker', () => {
       }),
     );
     expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  const decrement = { data: { sendCount: { decrement: 1 } } };
+
+  it('rend le créneau de fréquence et garde le motif quand la liste blanche refuse l’envoi', async () => {
+    const { db, deps } = makeDependencies();
+    mockEmailCampaign(db, 'manager@chez-sokar.test');
+    deps.sendEmail = vi.fn().mockResolvedValue({
+      outcome: 'failure_certain',
+      provider: 'resend',
+      channel: 'email',
+      reason: 'RECIPIENT_NOT_ALLOWLISTED',
+    }) as never;
+
+    await processMarketingCampaignJob(makeJob(), deps);
+
+    expect(db.campaignMessage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: MarketingMessageStatus.FAILED,
+          errorCode: 'RECIPIENT_NOT_ALLOWLISTED',
+        }),
+      }),
+    );
+    expect(db.marketingFrequencyWindow.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...decrement,
+        where: expect.objectContaining({
+          restaurantId: 'restaurant-1',
+          customerId: 'customer-1',
+          channel: 'EMAIL',
+        }),
+      }),
+    );
+  });
+
+  it('rend le créneau quand Resend refuse et masque l’adresse dans le code d’erreur', async () => {
+    const { db, deps } = makeDependencies();
+    mockEmailCampaign(db, 'manager@chez-sokar.test');
+    deps.sendEmail = vi
+      .fn()
+      .mockRejectedValue(new Error('Resend API error: invalid to alice@example.com')) as never;
+
+    await processMarketingCampaignJob(makeJob(), deps);
+
+    expect(db.campaignMessage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ errorCode: 'RESEND_API_ERROR:_INVALID_TO_EMAIL' }),
+      }),
+    );
+    expect(db.marketingFrequencyWindow.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining(decrement),
+    );
+  });
+
+  it('garde le créneau quand on ne sait pas si le message est parti', async () => {
+    const { db, deps } = makeDependencies();
+    mockEmailCampaign(db, 'manager@chez-sokar.test');
+    deps.sendEmail = vi.fn().mockResolvedValue({
+      outcome: 'unknown',
+      provider: 'resend',
+      channel: 'email',
+    }) as never;
+
+    await processMarketingCampaignJob(makeJob(), deps);
+
+    expect(db.marketingFrequencyWindow.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining(decrement),
+    );
   });
 
   it('refuse l’envoi e-mail sans MARKETING_EMAIL_FROM, sans jamais se rabattre sur EMAIL_FROM', async () => {

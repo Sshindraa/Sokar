@@ -89,6 +89,7 @@ describe('recordBookingMarketingConsent', () => {
       channel: 'EMAIL',
       status: MarketingPermissionStatus.OPTED_IN,
       source: 'CONNECT',
+      liftsOpposition: true,
       proofVersion: MARKETING_CONSENT_VERSION,
       proof: buildMarketingConsentProof('EMAIL', 'Chez Sokar'),
       occurredAt: OCCURRED_AT,
@@ -324,7 +325,7 @@ describe('ligne « recevoir les offres » de l’e-mail de confirmation', () => 
     expect(await marketingEmailConsentStatus({ ...ids, address })).toBe('UNAVAILABLE');
 
     vi.mocked(db.marketingOptOut.findMany).mockResolvedValueOnce([
-      { addressHash: marketingOptOutHash('EMAIL', address) },
+      { addressHash: marketingOptOutHash('restaurant-1', 'EMAIL', address) },
     ] as never);
     expect(await marketingEmailConsentStatus({ ...ids, address })).toBe('UNAVAILABLE');
 

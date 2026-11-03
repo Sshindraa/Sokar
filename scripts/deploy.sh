@@ -199,6 +199,8 @@ if [ "$DRY_RUN" = false ]; then
     log info ""
     log info "📦 Snapshot pré-build (rollback safety net)..."
     snapshot_artifacts "$PREV_RELEASE" "pre-build"
+    # Le pré-build décrit le dernier déploiement réussi, pas le checkout déjà synchronisé.
+    snapshot_dependencies "$PREV_RELEASE" "$(cat "$RELEASES_DIR/.latest-hash" 2>/dev/null || true)"
     backup_db "$PREV_RELEASE"
 
     # Variable globale pour le trap ERR
@@ -462,6 +464,7 @@ if [ "$EXTENDED_HEALTH_CHECKS" = true ]; then
             log info ""
             log info "📦 Snapshot post-build (release $NEW_TIMESTAMP)..."
             snapshot_artifacts "$NEW_RELEASE" "deploy-ok"
+            snapshot_dependencies "$NEW_RELEASE" "$(git rev-parse HEAD)"
             echo "$NEW_TIMESTAMP" > "$RELEASES_DIR/.latest"
             cleanup_releases "$KEEP_RELEASES"
         fi
@@ -493,6 +496,7 @@ else
         log info ""
         log info "📦 Snapshot post-build (release $NEW_TIMESTAMP)..."
         snapshot_artifacts "$NEW_RELEASE" "deploy-ok"
+        snapshot_dependencies "$NEW_RELEASE" "$(git rev-parse HEAD)"
         echo "$NEW_TIMESTAMP" > "$RELEASES_DIR/.latest"
 
         # Cleanup old releases (garde KEEP_RELEASES)

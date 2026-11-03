@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useLocale, useTranslations } from 'next-intl';
 import { Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -20,6 +21,21 @@ interface EmptySlotDay {
   covers: number;
   isUnderbooked: boolean;
   revenueAtRisk: number;
+}
+
+interface FillSuggestion {
+  date: string;
+  service: 'midi' | 'soir';
+  capacity: number;
+  freePlaces: number;
+  emptyPlaces: number;
+  forecastSource: 'historique' | 'simple';
+  sends: number;
+  tiers: Partial<Record<'CRENEAU' | 'REGULIER' | 'CONNU', number>>;
+  costEstimate: { amount: number | string | null; status: string } | null;
+  canPrepare: boolean;
+  // Absent des anciennes entrées du cache : traité comme null.
+  prepareBlockedReason?: 'SENDS_DISABLED' | 'BUDGET_EXHAUSTED' | 'NO_AUDIENCE' | null;
 }
 
 interface EmptySlotsResponse {
@@ -44,6 +60,8 @@ const DAY_LABELS: Record<string, string> = {
 };
 
 const MAX_VISIBLE_DAYS = 3;
+const rowKey = (item: FillSuggestion) => `${item.date}-${item.service}`;
+const TIERS = ['CRENEAU', 'REGULIER', 'CONNU'] as const;
 
 function getLocalDateKey(date: Date) {
   return [
@@ -72,8 +90,15 @@ function formatDayName(date: string, fallback: string) {
 }
 
 export default function EmptySlotsWidget() {
-  const { get, orgId } = useApi();
+  const t = useTranslations('fillService');
+  const locale = useLocale();
+  const { get, post, orgId } = useApi();
   const [data, setData] = useState<EmptySlotsResponse | null>(null);
+  // null = route des suggestions indisponible (403, panne) : on garde la vue des journées.
+  const [suggestions, setSuggestions] = useState<FillSuggestion[] | null>(null);
+  const [dismissError, setDismissError] = useState(false);
+  // Lignes dont l'appel « Ignorer » est en cours : le bouton est désactivé pour éviter le double envoi.
+  const [dismissing, setDismissing] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
@@ -87,14 +112,18 @@ export default function EmptySlotsWidget() {
     async function fetchEmptySlots() {
       setError('');
       setLoading(true);
-      try {
-        const res = await get<EmptySlotsResponse>('dashboard/empty-slots');
-        if (mounted) setData(res);
-      } catch (err: unknown) {
-        if (mounted) setError(getErrorMessage(err, "Impossible de charger l'analyse des créneaux"));
-      } finally {
-        if (mounted) setLoading(false);
+      setDismissError(false);
+      const [suggestionsRes, slotsRes] = await Promise.allSettled([
+        get<{ data: FillSuggestion[] }>('marketing/fill-suggestions'),
+        get<EmptySlotsResponse>('dashboard/empty-slots'),
+      ]);
+      if (!mounted) return;
+      setSuggestions(suggestionsRes.status === 'fulfilled' ? suggestionsRes.value.data : null);
+      setData(slotsRes.status === 'fulfilled' ? slotsRes.value : null);
+      if (suggestionsRes.status === 'rejected' && slotsRes.status === 'rejected') {
+        setError(getErrorMessage(slotsRes.reason, "Impossible de charger l'analyse des créneaux"));
       }
+      setLoading(false);
     }
     fetchEmptySlots();
     return () => {
@@ -128,6 +157,130 @@ export default function EmptySlotsWidget() {
       </section>
     );
   }
+
+  if (suggestions) {
+    async function dismiss(suggestion: FillSuggestion) {
+      const key = rowKey(suggestion);
+      setDismissError(false);
+      setDismissing((keys) => [...keys, key]);
+      try {
+        await post('marketing/fill-suggestions/dismiss', {
+          date: suggestion.date,
+          service: suggestion.service,
+        });
+        setSuggestions((list) =>
+          (list ?? []).filter(
+            (item) => item.date !== suggestion.date || item.service !== suggestion.service,
+          ),
+        );
+      } catch {
+        setDismissError(true);
+      } finally {
+        setDismissing((keys) => keys.filter((k) => k !== key));
+      }
+    }
+
+    const money = new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' });
+
+    return (
+      <section
+        aria-labelledby="fill-suggestions-title"
+        className="rounded-2xl border border-border bg-card p-4 md:p-5"
+      >
+        <h2 id="fill-suggestions-title" className="text-base font-semibold text-foreground">
+          {t('suggestions.title')}
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">{t('suggestions.subtitle')}</p>
+        {dismissError && (
+          <p role="alert" className="mt-3 text-sm text-destructive">
+            {t('suggestions.dismissError')}
+          </p>
+        )}
+        {suggestions.length === 0 ? (
+          <p className="mt-3 text-sm text-foreground">{t('suggestions.empty')}</p>
+        ) : (
+          <ul className="mt-3 divide-y divide-border">
+            {suggestions.map((item) => {
+              const rowLabel = {
+                day: `${formatDayName(item.date, '').toLocaleLowerCase('fr-FR')} ${formatShortDate(item.date)}`,
+                service: t(`suggestions.${item.service}`).toLocaleLowerCase('fr-FR'),
+              };
+              return (
+                <li
+                  key={rowKey(item)}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"
+                >
+                  <div>
+                    <p className="font-medium text-foreground">
+                      {formatDayName(item.date, '')} {formatShortDate(item.date)}
+                      {' · '}
+                      <span>{t(`suggestions.${item.service}`)}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('suggestions.emptyPlaces', { count: item.emptyPlaces })}
+                      {item.forecastSource === 'simple' && (
+                        <span> · {t('suggestions.sourceSimple')}</span>
+                      )}
+                    </p>
+                    {item.sends > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {t('suggestions.sends', { count: item.sends })}
+                        {/* Les anciennes entrées du cache n'ont pas de composition. */}
+                        {TIERS.filter((tier) => (item.tiers?.[tier] ?? 0) > 0).map((tier) => (
+                          <span key={tier}>
+                            {' · '}
+                            {t(`composition.${tier}`, { count: item.tiers[tier] ?? 0 })}
+                          </span>
+                        ))}
+                        {item.costEstimate && (
+                          <span>
+                            {' · '}
+                            {t('cost')} :{' '}
+                            {item.costEstimate.amount == null
+                              ? t('costUnknown')
+                              : money.format(Number(item.costEstimate.amount))}
+                          </span>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {item.canPrepare && (
+                      <Button asChild variant="outline" size="sm">
+                        <Link
+                          aria-label={t('suggestions.prepareLabel', rowLabel)}
+                          href={`/dashboard/marketing/fill-service?date=${encodeURIComponent(item.date)}&service=${item.service}&channel=EMAIL`}
+                        >
+                          {t('suggestions.prepare')}
+                        </Link>
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="transition-all duration-200"
+                      aria-label={t('suggestions.dismissLabel', rowLabel)}
+                      disabled={dismissing.includes(rowKey(item))}
+                      onClick={() => dismiss(item)}
+                    >
+                      {t('suggestions.dismiss')}
+                    </Button>
+                  </div>
+                  {!item.canPrepare && item.prepareBlockedReason && (
+                    <p className="w-full text-xs text-muted-foreground">
+                      {t(`suggestions.blocked.${item.prepareBlockedReason}`)}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    );
+  }
+
   if (!data) return null;
   if (data.days.length === 0) return null;
 
@@ -186,7 +339,7 @@ export default function EmptySlotsWidget() {
           {days.map((day) => (
             <li
               key={day.date}
-              className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-3 text-sm"
+              className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-3 py-3 text-sm"
             >
               <div>
                 <p className="font-medium text-foreground">
@@ -201,6 +354,13 @@ export default function EmptySlotsWidget() {
                 {day.reservationCount} réservation{day.reservationCount > 1 ? 's' : ''}
               </span>
               <span className="tabular-nums text-muted-foreground">{day.covers} couverts</span>
+              <Button asChild variant="outline" size="sm">
+                <Link
+                  href={`/dashboard/marketing/fill-service?date=${encodeURIComponent(day.date)}&service=soir`}
+                >
+                  {t('openFromQuietDay')}
+                </Link>
+              </Button>
             </li>
           ))}
         </ul>

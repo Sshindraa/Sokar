@@ -131,6 +131,8 @@ type ProviderDb = Pick<
   | 'marketingSuppression'
   | 'customer'
   | 'marketingOptOut'
+  | '$executeRaw'
+  | '$queryRaw'
 > & {
   $transaction: <T>(callback: (tx: ProviderDb) => Promise<T>) => Promise<T>;
 };
@@ -361,7 +363,8 @@ export async function applyMarketingProviderEvent(
     input.occurredAt && !Number.isNaN(input.occurredAt.getTime()) ? input.occurredAt : new Date();
   const providerDb = asProviderDb(database);
 
-  return providerDb.$transaction(async (tx) => {
+  let registerFailed = false;
+  const result = await providerDb.$transaction(async (tx) => {
     // Resend envoie `email.sent` puis `email.delivered` à quelques millisecondes d'intervalle : deux
     // callbacks peuvent lire le même statut et se disputer la ligne. Celui qui perd la mise à jour
     // conditionnelle relit le message et réévalue sa transition au lieu de jeter l'événement ; sinon un
@@ -411,6 +414,43 @@ export async function applyMarketingProviderEvent(
         };
       }
 
+      if (
+        transition.status === MarketingMessageStatus.COMPLAINED &&
+        message.campaign?.restaurantId
+      ) {
+        const locked = await tx.$queryRaw<
+          { id: string }[]
+        >`SELECT id FROM customers WHERE id = ${message.customerId} AND restaurant_id = ${message.campaign.restaurantId} AND archived_at IS NULL FOR UPDATE`;
+        if (locked.length === 0) {
+          const reconciliationId = await recordUnknownProviderEvent(
+            tx,
+            input,
+            transition,
+            occurredAt,
+          );
+          return { matched: false, changed: false, reconciliationId };
+        }
+        await tx.marketingSuppression.upsert({
+          where: {
+            customerId_channel_reason: {
+              customerId: message.customerId,
+              channel: message.channel,
+              reason: 'COMPLAINED',
+            },
+          },
+          create: {
+            restaurantId: message.campaign.restaurantId,
+            customerId: message.customerId,
+            channel: message.channel,
+            reason: 'COMPLAINED',
+            source: `${input.provider.toUpperCase()}_WEBHOOK`,
+          },
+          update: {},
+        });
+        // A failed register write must not discard the suppression or consume the callback.
+        await tx.$executeRaw`SAVEPOINT marketing_complaint`;
+      }
+
       const data: Record<string, unknown> = { status: transition.status };
       if (transition.errorCode) data.errorCode = transition.errorCode;
       if (transition.status === MarketingMessageStatus.SENT && !message.sentAt) {
@@ -427,6 +467,12 @@ export async function applyMarketingProviderEvent(
         data,
       });
       if (updated.count === 1) break;
+      if (
+        transition.status === MarketingMessageStatus.COMPLAINED &&
+        message.campaign?.restaurantId
+      ) {
+        await tx.$executeRaw`RELEASE SAVEPOINT marketing_complaint`;
+      }
       if (attempt >= MAX_PROVIDER_EVENT_ATTEMPTS) {
         await resolveProviderReconciliations(tx, {
           provider: input.provider,
@@ -476,40 +522,49 @@ export async function applyMarketingProviderEvent(
 
     const suppressionReason = suppressionReasonFor(transition);
     if (suppressionReason && message.channel && message.campaign?.restaurantId) {
-      await tx.marketingSuppression.upsert({
-        where: {
-          customerId_channel_reason: {
+      if (suppressionReason !== 'COMPLAINED') {
+        await tx.marketingSuppression.upsert({
+          where: {
+            customerId_channel_reason: {
+              customerId: message.customerId,
+              channel: message.channel,
+              reason: suppressionReason,
+            },
+          },
+          create: {
+            restaurantId: message.campaign.restaurantId,
             customerId: message.customerId,
             channel: message.channel,
             reason: suppressionReason,
+            source: `${input.provider.toUpperCase()}_WEBHOOK`,
           },
-        },
-        create: {
-          restaurantId: message.campaign.restaurantId,
-          customerId: message.customerId,
-          channel: message.channel,
-          reason: suppressionReason,
-          source: `${input.provider.toUpperCase()}_WEBHOOK`,
-        },
-        update: {},
-      });
+          update: {},
+        });
+      }
       // A complaint is an opposition: it must survive the erasure of the customer record.
       if (suppressionReason === 'COMPLAINED') {
         const contact = await tx.customer.findFirst({
           where: { id: message.customerId, restaurantId: message.campaign.restaurantId },
           select: { phone: true, emailNormalized: true },
         });
-        await registerMarketingOptOut(
-          {
-            restaurantId: message.campaign.restaurantId,
-            channel: message.channel,
-            address: message.channel === 'EMAIL' ? contact?.emailNormalized : contact?.phone,
-            reason: 'COMPLAINT',
-            source: `${input.provider.toUpperCase()}_WEBHOOK`,
-            occurredAt,
-          },
-          tx,
-        );
+        try {
+          const outcome = await registerMarketingOptOut(
+            {
+              restaurantId: message.campaign.restaurantId,
+              channel: message.channel,
+              address: message.channel === 'EMAIL' ? contact?.emailNormalized : contact?.phone,
+              reason: 'COMPLAINT',
+              source: `${input.provider.toUpperCase()}_WEBHOOK`,
+              occurredAt,
+            },
+            tx,
+          );
+          if (outcome !== 'REGISTERED') throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+        } catch {
+          await tx.$executeRaw`ROLLBACK TO SAVEPOINT marketing_complaint`;
+          registerFailed = true;
+        }
+        await tx.$executeRaw`RELEASE SAVEPOINT marketing_complaint`;
       }
     }
 
@@ -521,6 +576,8 @@ export async function applyMarketingProviderEvent(
       customerId: message.customerId,
     };
   });
+  if (registerFailed) throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+  return result;
 }
 
 /**

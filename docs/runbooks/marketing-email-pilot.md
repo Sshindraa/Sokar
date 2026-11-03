@@ -168,10 +168,32 @@ Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jo
   l'effacement. Il gagne sur un accord en base (exclusion `OPTED_OUT_REGISTER` dans l'aperçu et au dernier
   contrôle avant envoi, y compris pour les automatisations). Une nouvelle case cochée par la personne le lève
   (le journal garde les deux actes). Sans `MARKETING_OPTOUT_HASH_SECRET`, aucun message n'est envoyé. Les
+  **STOP par SMS** (`sms/sms-marketing-stop.ts`) : un message entier « STOP », « STOP SMS » ou « ARRÊT »
+  (sans casse, accents ni espaces) retire l'accord SMS marketing dans le restaurant du **dernier SMS marketing
+  accepté à ce numéro** (`source` `SMS_STOP`, motif `UNSUBSCRIBE`), puis inscrit le registre. Il ne touche ni
+  aux réservations ni aux consentements transactionnels, et n'envoie aucun SMS. Sans SMS marketing à ce numéro,
+  le message suit le flux de réponse habituel. Un échec du registre répond 503 (Telnyx doit rejouer).
+  Limite : un expéditeur alphanumérique « SOKAR » ne reçoit aucune réponse ; le STOP n'arrive que si
+  l'expéditeur est un numéro. Les filtres STOP propres à Telnyx ne sont pas vérifiés dans ce dépôt.
   retraits antérieurs à la migration se reprennent avec
   `pnpm --filter @sokar/api exec tsx scripts/backfill-marketing-opt-out-register.ts --dry-run` puis `--apply`
   (comptes seulement, jamais d'adresse). Le registre est une donnée personnelle pseudonymisée : il doit
   figurer dans la politique et l'annexe client (**non fait**).
+
+- **Protections du registre (03/11/2026)** : la clé d'empreinte est dérivée par restaurant, et seul le geste de
+  la personne (case de réservation, lien de confirmation) lève une opposition. Un accord saisi par l'équipe
+  sur une adresse opposée est refusé (`MARKETING_OPPOSITION_REGISTERED`). Si l'accord passe par une autre adresse,
+  ou une case cochée pour autrui, cette limite ne le détecte pas.
+- **Limites acceptées (Hamza, 03/11/2026)** :
+  - **Fiches partageant une adresse** : une nouvelle case cochée sur l'une lève l'opposition pour cette
+    adresse dans le restaurant, donc aussi pour une autre fiche déjà inscrite avant le retrait. Il s'agit de la
+    même personne, qui vient de redonner son accord.
+  - **Plainte reçue après l'effacement** : la fiche n'existe plus, l'événement part en rapprochement et rien
+    n'est inscrit au registre. Une fiche recréée à cette adresse n'est pas contactée sans nouvel accord
+    explicite ; si la personne le redonne, la plainte n'est pas opposée.
+
+  L'effacement retire aussi `marketingOptIn` des consentements conservés. La ligne reste, sans la trace de
+  l'accord marketing initial.
 
 - **Preuve : ce qui est conservé** : l'empreinte de `version|canal|phrase` seule ne prouve pas que le
   titulaire de l'adresse a accepté. Chaque ligne du journal `MarketingPermissionEvent` conserve donc

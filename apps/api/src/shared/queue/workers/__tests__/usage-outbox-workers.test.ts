@@ -21,6 +21,8 @@ function makeJob<T extends Record<string, unknown>>(data: T): Job<T> {
 describe('usage and outbox workers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    queues.outboxDelivery.getJobs = vi.fn().mockResolvedValue([]);
+    queues.smsClient.getJobs = vi.fn().mockResolvedValue([]);
     vi.mocked(db.outboxEvent.updateMany).mockResolvedValue({ count: 0 });
     vi.mocked(db.outboxEvent.findMany).mockResolvedValue([]);
     vi.mocked(db.outboxEvent.findUnique).mockResolvedValue(null);
@@ -30,6 +32,27 @@ describe('usage and outbox workers', () => {
     vi.mocked(db.usageEvent.groupBy).mockResolvedValue([]);
     vi.mocked(db.usageMonthlyRollup.deleteMany).mockResolvedValue({ count: 0 });
     vi.mocked(db.usageMonthlyRollup.create).mockResolvedValue({} as never);
+  });
+
+  it('relance les deux étapes après une panne sans rejouer les autres sujets', async () => {
+    const retryDelivery = vi.fn().mockResolvedValue(undefined);
+    const retrySms = vi.fn().mockResolvedValue(undefined);
+    const retryOther = vi.fn().mockResolvedValue(undefined);
+    const finishedOn = Date.now() - 61 * 60 * 1000;
+    vi.mocked(queues.outboxDelivery.getJobs).mockResolvedValue([
+      { id: 'delivery', data: { outboxEventId: 'event-1' }, finishedOn, retry: retryDelivery },
+      { id: 'other', data: { outboxEventId: 'event-2' }, finishedOn, retry: retryOther },
+    ] as never);
+    vi.mocked(queues.smsClient.getJobs).mockResolvedValue([
+      { name: 'client-confirm', finishedOn, retry: retrySms },
+    ] as never);
+    vi.mocked(db.outboxEvent.findUnique)
+      .mockResolvedValueOnce({ topic: 'reservation-confirmation-email' } as never)
+      .mockResolvedValueOnce({ topic: 'unrelated' } as never);
+    await processOutboxDispatchJob(makeJob({ limit: 10 }));
+    expect(retryDelivery).toHaveBeenCalledWith('failed');
+    expect(retrySms).toHaveBeenCalledWith('failed');
+    expect(retryOther).not.toHaveBeenCalled();
   });
 
   it('publishes claimed IDs and acknowledges them only after BullMQ accepts the job', async () => {

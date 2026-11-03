@@ -120,6 +120,7 @@ export function requireOrg() {
         organizationId: orgId,
         userId,
         requestedSiteId,
+        allowUnassigned: req.routeOptions?.url === '/api/auth/sync' && req.method === 'POST',
       });
       req.restaurantId = context.siteId;
       req.siteId = context.siteId;
@@ -173,6 +174,7 @@ async function resolveContextForMember(input: {
   organizationId: string;
   userId?: string | null;
   requestedSiteId?: string;
+  allowUnassigned?: boolean;
 }): Promise<RestaurantContext> {
   try {
     return await resolveRestaurantContext(db, input);

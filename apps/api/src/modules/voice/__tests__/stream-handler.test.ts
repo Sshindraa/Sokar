@@ -22,6 +22,8 @@ import fastifyWebsocket from '@fastify/websocket';
 import { WebSocket } from 'ws';
 import type { CallSession } from '../stream/types';
 
+const STREAM_FIXTURE = 'test-stream-token';
+
 // ── Mocks (doivent précéder les imports under test) ────────────────────────
 
 const { mockMgr } = vi.hoisted(() => ({
@@ -113,6 +115,7 @@ describe('buildInitialGreeting', () => {
 function makeMockSession(): CallSession {
   return {
     callControlId: 'cc-ws-1',
+    streamToken: STREAM_FIXTURE,
     callSessionId: 'cs-ws-1',
     callLegId: 'leg-ws-1',
     from: '+33****0001',
@@ -167,7 +170,9 @@ async function startApp() {
 
 function connectWs(port: number, callId: string): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/voice/stream/${callId}`);
+    const ws = new WebSocket(
+      `ws://127.0.0.1:${port}/voice/stream/${callId}?token=${STREAM_FIXTURE}`,
+    );
     ws.on('open', () => resolve(ws));
     ws.on('error', reject);
   });
@@ -194,7 +199,7 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mockFinalizeVoiceCall.mockResolvedValue(undefined);
-    mockMgr.get.mockReturnValue(undefined);
+    mockMgr.get.mockReturnValue(makeMockSession());
     mockMgr.transition.mockReturnValue(true);
     originalFetch = globalThis.fetch;
     // speakTelnyxNative (fallback TTS) appelle fetch — on mock pour éviter un crash
@@ -219,12 +224,60 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     ws.close();
   });
 
+  it('rejette un client sans jeton valide', async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/voice/stream/cc-ws-1?token=incorrect`);
+    await new Promise<void>((resolve) => ws.on('close', () => resolve()));
+    expect(mockMgr.transition).not.toHaveBeenCalled();
+    expect(sendAudioToStt).not.toHaveBeenCalled();
+  });
+
+  it('rejette le flux audio avant start et un start pour un autre appel', async () => {
+    const ws = await connectWs(port, 'cc-ws-1');
+    await sendAndWait(ws, { event: 'media', media: { payload: 'YQ==' } });
+    await delay(50);
+    expect(ws.readyState).toBe(WebSocket.CLOSED);
+    expect(sendAudioToStt).not.toHaveBeenCalled();
+    const second = await connectWs(port, 'cc-ws-1');
+    await sendAndWait(second, {
+      event: 'start',
+      start: {
+        call_control_id: 'other',
+        media_format: { encoding: 'PCMA', sample_rate: 8000, channels: 1 },
+      },
+    });
+    await delay(50);
+    expect(second.readyState).toBe(WebSocket.CLOSED);
+    expect(mockMgr.transition).not.toHaveBeenCalled();
+  });
+
+  it('ne supprime pas une session plus récente quand une ancienne connexion se ferme', async () => {
+    const first = makeMockSession();
+    mockMgr.get.mockReturnValue(first);
+    const ws = await connectWs(port, 'cc-ws-1');
+    await sendAndWait(ws, {
+      event: 'start',
+      start: {
+        call_control_id: 'cc-ws-1',
+        call_session_id: 'cs-1',
+        media_format: { encoding: 'PCMA', sample_rate: 8000, channels: 1 },
+      },
+    });
+    await delay(30);
+    const replacement = makeMockSession();
+    mockMgr.get.mockReturnValue(replacement);
+    mockMgr.delete.mockClear();
+    ws.close();
+    await delay(50);
+    expect(mockMgr.delete).not.toHaveBeenCalled();
+    expect(replacement.ended).toBe(false);
+  });
+
   it("traite l'événement `connected` sans erreur", async () => {
     const ws = await connectWs(port, 'cc-ws-1');
     await sendAndWait(ws, { event: 'connected' });
     await delay(50);
     // Pas de crash, pas d'appel à mgr.get pour connected
-    expect(mockMgr.get).not.toHaveBeenCalled();
+    expect(mockMgr.get).toHaveBeenCalledWith('cc-ws-1');
     ws.close();
   });
 
@@ -311,16 +364,6 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     mockMgr.get.mockReturnValue(undefined);
 
     const ws = await connectWs(port, 'cc-unknown');
-    await sendAndWait(ws, {
-      event: 'start',
-      start: {
-        call_control_id: 'cc-unknown',
-        call_session_id: 'cs-1',
-        from: '+33****0001',
-        to: '+33****0000',
-        media_format: { encoding: 'PCMA', sample_rate: 8000, channels: 1 },
-      },
-    });
     await delay(50);
 
     expect(mockMgr.get).toHaveBeenCalledWith('cc-unknown');
@@ -374,6 +417,15 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
 
     const ws = await connectWs(port, 'cc-ws-1');
     await sendAndWait(ws, {
+      event: 'start',
+      start: {
+        call_control_id: 'cc-ws-1',
+        call_session_id: 'cs-1',
+        media_format: { encoding: 'PCMA', sample_rate: 8000, channels: 1 },
+      },
+    });
+    await delay(20);
+    await sendAndWait(ws, {
       event: 'media',
       media: {
         track: 'outbound',
@@ -393,6 +445,15 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     mockMgr.get.mockReturnValue(session);
 
     const ws = await connectWs(port, 'cc-ws-1');
+    await sendAndWait(ws, {
+      event: 'start',
+      start: {
+        call_control_id: 'cc-ws-1',
+        call_session_id: 'cs-1',
+        media_format: { encoding: 'PCMA', sample_rate: 8000, channels: 1 },
+      },
+    });
+    await delay(20);
     await sendAndWait(ws, { event: 'media', media: {} });
     await delay(50);
 
@@ -428,6 +489,15 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
 
   it('événement `dtmf` : no-op (pas de crash)', async () => {
     const ws = await connectWs(port, 'cc-ws-1');
+    await sendAndWait(ws, {
+      event: 'start',
+      start: {
+        call_control_id: 'cc-ws-1',
+        call_session_id: 'cs-1',
+        media_format: { encoding: 'PCMA', sample_rate: 8000, channels: 1 },
+      },
+    });
+    await delay(20);
     await sendAndWait(ws, { event: 'dtmf', dtmf: { digit: '1' } });
     await delay(50);
     // Pas d'erreur = succès
@@ -437,6 +507,15 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
 
   it("événement `error` : capture l'erreur via Sentry sans crash", async () => {
     const ws = await connectWs(port, 'cc-ws-1');
+    await sendAndWait(ws, {
+      event: 'start',
+      start: {
+        call_control_id: 'cc-ws-1',
+        call_session_id: 'cs-1',
+        media_format: { encoding: 'PCMA', sample_rate: 8000, channels: 1 },
+      },
+    });
+    await delay(20);
     await sendAndWait(ws, { event: 'error', error: { code: 'test' } });
     await delay(50);
     // La connexion reste ouverte
@@ -479,7 +558,9 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
         loadRestaurantContext: expect.any(Function),
       }),
     );
-    const finalizationDependencies = mockFinalizeVoiceCall.mock.calls[0][2];
+    const finalizationDependencies = mockFinalizeVoiceCall.mock.calls.find(
+      (call) => call[1]?.llmProvider === 'cerebras',
+    )![2];
     await finalizationDependencies.enqueueRecovery(
       {
         callId: 'call-1',

@@ -6,6 +6,7 @@ import {
   cancelMarketingCampaign,
   createMarketingCampaign,
   assertDailyEmailBudget,
+  readRemainingDailyEmailBudget,
   prepareMarketingCampaign,
   scheduleMarketingCampaign,
   startMarketingCampaign,
@@ -198,7 +199,7 @@ describe('marketing campaign control plane', () => {
   it('excludes an address found in the opt-out register even with a stored opt-in', async () => {
     vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
     vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([
-      { addressHash: marketingOptOutHash('SMS', '+33601020304') },
+      { addressHash: marketingOptOutHash('restaurant-1', 'SMS', '+33601020304') },
     ] as never);
 
     const preview = await previewMarketingAudience({
@@ -372,6 +373,30 @@ describe('marketing campaign control plane', () => {
     await expect(assertDailyEmailBudget(tx, 21, BUDGET_NOW)).rejects.toThrow(
       'MARKETING_DAILY_BUDGET_EXCEEDED',
     );
+  });
+
+  it('lecture du budget : même calcul que le lancement, mais sans verrou global', async () => {
+    mockMessages(
+      emailRows(20, {
+        status: 'PENDING',
+        acceptedAt: null,
+        campaign: { status: 'SENDING', scheduledAt: null },
+      }),
+    );
+    vi.mocked(db.$executeRaw).mockClear();
+    const locked = await assertDailyEmailBudget(
+      db as unknown as Prisma.TransactionClient,
+      20,
+      BUDGET_NOW,
+    );
+    expect(db.$executeRaw).toHaveBeenCalledTimes(1);
+    vi.mocked(db.$executeRaw).mockClear();
+
+    const remaining = await readRemainingDailyEmailBudget(BUDGET_NOW);
+
+    expect(locked).toBeUndefined();
+    expect(remaining).toBe(20);
+    expect(db.$executeRaw).not.toHaveBeenCalled();
   });
 
   it('programme selon le jour d’envoi : une campagne d’un autre jour ne prend pas le budget', async () => {
@@ -620,6 +645,15 @@ describe('marketing campaign control plane', () => {
       ),
     ).toBe(
       'Réservez : <a href="https://sokar.tech/book/chez-sokar?a=1&amp;b=2">https://sokar.tech/book/chez-sokar?a=1&amp;b=2</a>.<br>&lt;script&gt;x&lt;/script&gt; (<a href="https://exemple.test/u?token=abc">https://exemple.test/u?token=abc</a>)',
+    );
+
+    expect(
+      toMarketingHtml('Réservez : https://sokar.tech/book?a=1&b=2. Autre : https://ex.test', {
+        'https://sokar.tech/book?a=1&b=2': 'Réserver une table',
+      }),
+    ).toBe(
+      'Réservez : <a href="https://sokar.tech/book?a=1&amp;b=2">Réserver une table</a>. ' +
+        'Autre : <a href="https://ex.test">https://ex.test</a>',
     );
   });
 });

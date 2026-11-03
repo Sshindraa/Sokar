@@ -21,7 +21,7 @@ const debitSchema = z
       .refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 0.000001, 'Deux décimales maximum.'),
     ticketReference: z.string().trim().min(1).max(64),
     reservationId: z.string().min(1).max(128).optional(),
-    idempotencyKey: z.string().uuid(),
+    idempotencyKey: z.string().guid(),
   })
   .strict();
 
@@ -108,7 +108,7 @@ export async function giftCardOperationsRoutes(app: FastifyInstance) {
         .code(403)
         .send({ message: 'La reprise des envois est réservée au propriétaire et au responsable.' });
     const parsed = z
-      .object({ channel: z.enum(['email', 'whatsapp']), idempotencyKey: z.string().uuid() })
+      .object({ channel: z.enum(['email', 'whatsapp']), idempotencyKey: z.string().guid() })
       .strict()
       .safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: 'Demande de renvoi invalide.' });

@@ -6,6 +6,7 @@ import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
 import { handleReply } from './reply-handler';
 import { telnyxMessagingEventsTotal } from '../../shared/observability/metrics';
 import { applyMarketingProviderEvent } from '../marketing/marketing-provider.service';
+import { applyMarketingSmsStop, isMarketingStopKeyword } from './sms-marketing-stop';
 
 const TelnyxFromSchema = z.union([z.string(), z.object({ phone_number: z.string() })]);
 
@@ -73,7 +74,7 @@ export async function smsInboundRoutes(app: FastifyInstance) {
   app.post('/sms/telnyx/inbound', inboundRouteOptions, async (req, reply) => {
     const parseResult = TelnyxWebhookBodySchema.safeParse(req.body);
     if (!parseResult.success) {
-      req.log.warn({ errors: parseResult.error.errors }, 'sms inbound: invalid payload');
+      req.log.warn({ errors: parseResult.error.issues }, 'sms inbound: invalid payload');
       return reply.status(400).send({ result: 'ignored' });
     }
 
@@ -123,17 +124,30 @@ export async function smsInboundRoutes(app: FastifyInstance) {
     const from = typeof fromObj === 'string' ? fromObj : fromObj?.phone_number;
     const text = data.payload.text;
 
-    if (!from || !text) {
+    if (!from || !text || !data.payload.id) {
       req.log.warn(
-        { hasFrom: Boolean(from), hasText: !!text },
-        'sms inbound: missing from or text',
+        { hasFrom: Boolean(from), hasText: !!text, hasId: Boolean(data.payload.id) },
+        'sms inbound: missing from, text or message ID',
       );
       return reply.send({ result: 'ok' });
     }
 
     req.log.info({ hasFrom: true, textLength: text.length }, 'sms inbound received');
 
-    await handleReply(from, text, 'sms');
+    // STOP d'un SMS marketing : désinscription seulement, jamais de réponse de réservation.
+    if (isMarketingStopKeyword(text)) {
+      try {
+        if (await applyMarketingSmsStop(from)) return reply.send({ result: 'ok' });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE') {
+          req.log.warn('sms stop: opt-out register unavailable, Telnyx should retry');
+          return reply.status(503).send({ error: 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE' });
+        }
+        throw error;
+      }
+    }
+
+    await handleReply(from, text, 'sms', data.payload.id);
 
     return reply.send({ result: 'ok' });
   });

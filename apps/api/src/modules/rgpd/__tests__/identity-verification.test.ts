@@ -6,6 +6,8 @@ import {
   IdentityVerificationError,
 } from '../identity-verification.service';
 
+const OLD_LINK = 'old-link';
+
 // Mocks Telnyx et Brevo
 vi.mock('../../../shared/telnyx/client', () => ({
   sendSms: vi.fn().mockResolvedValue(undefined),
@@ -53,6 +55,23 @@ function makeMockPrisma() {
       findUnique: vi.fn(async ({ where }) => {
         const key = `${where.subject_intent.subject}|${where.subject_intent.intent}`;
         return otpStore.get(key) || null;
+      }),
+      updateMany: vi.fn(async ({ where, data }) => {
+        for (const record of otpStore.values()) {
+          if (
+            record.id !== where.id ||
+            record.otpHash !== where.otpHash ||
+            record.consumedAt ||
+            (record.attempts as number) >= 5 ||
+            (record.expiresAt as Date) <= new Date() ||
+            (where.channel && record.channel !== where.channel)
+          )
+            continue;
+          if (data.attempts) record.attempts = (record.attempts as number) + 1;
+          if (data.consumedAt) record.consumedAt = data.consumedAt;
+          return { count: 1 };
+        }
+        return { count: 0 };
       }),
       update: vi.fn(async ({ where, data }) => {
         const entry = otpStore.get(`${where.id}`);
@@ -111,17 +130,42 @@ describe('IdentityVerificationService', () => {
       expect(result.expiresAt).toBeDefined();
     });
 
-    it('canal email si email fourni', async () => {
+    it('utilise le SMS même si une adresse email est fournie', async () => {
       const result = await service.requestVerification({
         subject: '+33****0000',
         intent: 'export',
         email: 'user@example.com',
       });
-      expect(result.channel).toBe('email');
+      expect(result.channel).toBe('sms');
     });
   });
 
   describe('confirmVerification (OTP)', () => {
+    it('ne délivre qu’un jeton lorsque deux confirmations arrivent simultanément', async () => {
+      const { sendSms } = await import('../../../shared/telnyx/client');
+      await service.requestVerification({ subject: '+33****0081', intent: 'export' });
+      const code = vi.mocked(sendSms).mock.calls[0][1].match(/\d{6}/)![0];
+      const results = await Promise.allSettled([
+        service.confirmVerification({ subject: '+33****0081', intent: 'export', code }),
+        service.confirmVerification({ subject: '+33****0081', intent: 'export', code }),
+      ]);
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    });
+
+    it('refuse de générer un jeton sans secret configuré', async () => {
+      const oldClerk = process.env.CLERK_SECRET_KEY;
+      const oldSecret = process.env.VERIFICATION_TOKEN_SECRET;
+      delete process.env.CLERK_SECRET_KEY;
+      delete process.env.VERIFICATION_TOKEN_SECRET;
+      try {
+        await expect(service.generateVerificationToken('subject-1', 'export')).rejects.toThrow(
+          'secret is not configured',
+        );
+      } finally {
+        if (oldClerk !== undefined) process.env.CLERK_SECRET_KEY = oldClerk;
+        if (oldSecret !== undefined) process.env.VERIFICATION_TOKEN_SECRET = oldSecret;
+      }
+    });
     it('valide un OTP correct et génère un verificationToken', async () => {
       // Request d'abord
       const { sendSms } = await import('../../../shared/telnyx/client');
@@ -339,78 +383,12 @@ describe('IdentityVerificationService', () => {
     });
   });
 
-  describe('email link flow (canal email)', () => {
-    it('envoie un email avec un lien contenant le token signé', async () => {
-      const { sendEmail } = await import('../../../shared/email');
-      await service.requestVerification({
-        subject: '+33****0070',
-        intent: 'export',
-        email: 'user@example.com',
-      });
-      expect(sendEmail).toHaveBeenCalledTimes(1);
-      const [opts] = vi.mocked(sendEmail).mock.calls[0];
-      expect(opts.to).toBe('user@example.com');
-      expect(opts.html).toContain('/api/rgpd/confirm-link?token=');
-      // Le token est dans le body
-      const tokenMatch = opts.html.match(/token=([^"<&]+)/);
-      expect(tokenMatch).toBeDefined();
+  it('refuse les anciens liens email', async () => {
+    await expect(service.confirmSignedLinkToken(OLD_LINK)).rejects.toMatchObject({
+      code: 'INVALID_CODE',
     });
-
-    it('confirm-link valide le token, vérifie le subject, et renvoie un verificationToken', async () => {
-      const { sendEmail } = await import('../../../shared/email');
-      await service.requestVerification({
-        subject: '+33****0071',
-        intent: 'export',
-        email: 'user@example.com',
-      });
-      const [opts] = vi.mocked(sendEmail).mock.calls[0];
-      const tokenMatch = opts.html.match(/token=([^"<&]+)/);
-      const signedToken = decodeURIComponent(tokenMatch![1]);
-
-      // Le subject est dans le token, pas dans l'URL
-      const payload = await (
-        service as unknown as {
-          verifySignedToken: (token: string) => Promise<{ sub: string; intent: string }>;
-        }
-      ).verifySignedToken(signedToken);
-      expect(payload.sub).toBe('+33****0071');
-      expect(payload.intent).toBe('export');
-
-      // Génère un verificationToken one-shot
-      const verificationToken = await service.generateVerificationToken(
-        payload.sub,
-        payload.intent,
-      );
-      expect(verificationToken).toBeDefined();
-    });
-
-    it('confirm-link refuse un token déjà consommé (replay)', async () => {
-      const { sendEmail } = await import('../../../shared/email');
-      await service.requestVerification({
-        subject: '+33****0072',
-        intent: 'export',
-        email: 'user@example.com',
-      });
-      const [opts] = vi.mocked(sendEmail).mock.calls[0];
-      const tokenMatch = opts.html.match(/token=([^"<&]+)/);
-      const signedToken = decodeURIComponent(tokenMatch![1]);
-
-      // 1ère confirmation : OK
-      const result1 = await service.confirmVerification({
-        subject: '+33****0072',
-        intent: 'export',
-        token: signedToken,
-      });
-      expect(result1.verificationToken).toBeDefined();
-
-      // 2ème confirmation du MÊME token signé : doit throw EXPIRED
-      await expect(
-        service.confirmVerification({
-          subject: '+33****0072',
-          intent: 'export',
-          token: signedToken,
-        }),
-      ).rejects.toMatchObject({ code: 'EXPIRED' });
-    });
+    await expect(
+      service.confirmVerification({ subject: 'subject-1', intent: 'export', token: OLD_LINK }),
+    ).rejects.toMatchObject({ code: 'INVALID_CODE' });
   });
 });

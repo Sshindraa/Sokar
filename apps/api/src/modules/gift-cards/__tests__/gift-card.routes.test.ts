@@ -992,6 +992,42 @@ describe('gift-card routes', () => {
   });
 
   describe('stripe webhook', () => {
+    it('transmet les confirmations Checkout de souscription à la facturation', async () => {
+      vi.mocked(constructWebhookEvent).mockResolvedValue({
+        id: 'evt_billing_checkout',
+        created: 100,
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_billing',
+            mode: 'subscription',
+            customer: 'cus_billing',
+            subscription: 'sub_billing',
+            metadata: { restaurantId: RESTAURANT_ID, plan: 'pro', billing: 'monthly' },
+          },
+        },
+      } as never);
+      vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+      vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue(null);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/webhooks/stripe',
+        headers: { 'stripe-signature': 't=123,v1=fake', 'content-type': 'application/json' },
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { restaurantId: RESTAURANT_ID },
+          create: expect.objectContaining({ stripeSubscriptionId: 'sub_billing' }),
+        }),
+      );
+    });
+
     const WEBHOOK_METADATA = {
       restaurantId: RESTAURANT_ID,
       amount: '120',

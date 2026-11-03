@@ -7,17 +7,23 @@
 > profil de production courant et les portes ouvertes sont récapitulés dans la
 > [réconciliation des audits](./audits/2026-09-15-current-state.md).
 
+> Actualisation du cadrage produit le 29 octobre 2026 : Sokar est une plateforme de réservation,
+> d'organisation du service et de relation client, dont l'IA vocale est une fonction. La matrice
+> concurrentielle ci-dessous reste un instantané daté, pas une validation actuelle des offres ni
+> des capacités Zenchef. Pour les capacités Sokar développées et leurs limites d'activation, voir
+> la [carte produit](./PROJECT_MAP.md#ce-quest-sokar) et les portes de release.
+
 ## Lecture commerciale honnête
 
-Sokar est aujourd'hui solide sur la réservation multicanale, l'agent vocal, le plan de salle, la
-liste d'attente, Connect, MCP, les cartes cadeaux et l'exploitation pendant le service. Zenchef
-reste plus complet comme suite restaurant généraliste sur les paiements de réservation, les
-intégrations POS, la distribution, la réputation et le CRM/marketing mature.
+Sokar a développé des parcours de réservation, de gestion de salle et de relation client, ainsi
+qu'un assistant vocal et des modules complémentaires. Leur disponibilité commerciale et leurs
+preuves terrain varient selon la fonction. La comparaison concurrentielle ci-dessous doit être
+revérifiée avant d'affirmer un écart avec Zenchef.
 
 Le positionnement défendable est :
 
-> Sokar centralise les réservations web, téléphone et assistants IA, puis aide l'équipe pendant le
-> service. Le produit est conçu en France autour d'une IA vocale et de parcours agentiques natifs.
+> Sokar aide les restaurants à gérer leurs réservations, préparer leur service et mieux connaître
+> leurs clients. L'assistant vocal et les parcours en ligne font partie de cette plateforme.
 
 Il ne faut pas vendre Sokar comme un remplacement fonctionnel total de Zenchef tant que les epics
 POS, activation fournisseur des campagnes, paiements de réservation, CRM groupe et réputation ne sont pas

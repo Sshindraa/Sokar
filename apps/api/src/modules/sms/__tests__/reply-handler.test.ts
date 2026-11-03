@@ -1,288 +1,148 @@
-/**
- * Tests for reply-handler.ts — parseReply + handleReply.
- *
- * parseReply est une fonction pure (déjà couverte partiellement par
- * sms-reply-parser.test.ts, on la re-teste ici via l'API exportée).
- * handleReply orchestre : DB lookup → confirmation / annulation → SMS gérant.
- *
- * Toutes les deps externes (db, sendSms, ReservationService, logger) sont mockées.
- */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// ── Mocks ──────────────────────────────────────────────────────────────────
-
+const state = vi.hoisted(() => ({
+  store: new Map<string, string>(),
+  findMany: vi.fn(),
+  update: vi.fn(),
+  updateMany: vi.fn(),
+  cancel: vi.fn(),
+  add: vi.fn(),
+}));
 vi.mock('../../../shared/db/client', () => ({
   db: {
-    reservation: {
-      findFirst: vi.fn(),
-      update: vi.fn(),
-    },
+    reservation: { findMany: state.findMany, update: state.update, updateMany: state.updateMany },
   },
 }));
-
-vi.mock('../../../shared/telnyx/client', () => ({
-  sendSms: vi.fn().mockResolvedValue(undefined),
+vi.mock('../../../shared/redis/client', () => ({
+  redisCache: {
+    get: vi.fn(async (key: string) => state.store.get(key) ?? null),
+    set: vi.fn(async (key: string, value: string, _ex: string, _ttl: number, nx?: string) => {
+      if (nx === 'NX' && state.store.has(key)) return null;
+      state.store.set(key, value);
+      return 'OK';
+    }),
+    eval: vi.fn(async (_script: string, _count: number, key: string, token: string) => {
+      if (state.store.get(key) !== token) return 0;
+      state.store.delete(key);
+      return 1;
+    }),
+  },
 }));
-
+vi.mock('../../../shared/queue/queues', () => ({ queues: { smsManager: { add: state.add } } }));
 vi.mock('../../reservations/reservation.service', () => ({
-  ReservationService: {
-    update: vi.fn().mockResolvedValue(undefined),
-  },
+  ReservationService: { update: state.cancel },
 }));
-
 vi.mock('../../../shared/logger/pino', () => ({
-  logger: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    child: vi.fn().mockReturnThis(),
-  },
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-// ── Imports under test ─────────────────────────────────────────────────────
+import { handleReply, parseReply } from '../reply-handler';
 
-import { parseReply, handleReply } from '../reply-handler';
-import { db } from '../../../shared/db/client';
-import { sendSms } from '../../../shared/telnyx/client';
-import { ReservationService } from '../../reservations/reservation.service';
+const reservation = {
+  id: 'res-1',
+  restaurantId: 'rest-1',
+  customerName: 'Client',
+  partySize: 2,
+  reservedAt: new Date('2026-07-15T19:30:00Z'),
+  status: 'CONFIRMED',
+  state: 'CONFIRMED',
+  confirmationStatus: 'PENDING',
+  restaurant: { id: 'rest-1', name: 'Restaurant', managerPhone: 'manager' },
+};
 
-const mockFindFirst = vi.mocked(db.reservation.findFirst);
-const mockUpdate = vi.mocked(db.reservation.update);
-const mockSendSms = vi.mocked(sendSms);
-const mockReservationUpdate = vi.mocked(ReservationService.update);
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function makeReservation(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 'res-1',
-    customerPhone: '+336****0001',
-    customerName: 'Jean Dupont',
-    partySize: 4,
-    reservedAt: new Date('2026-07-15T19:30:00+02:00'),
-    status: 'CONFIRMED',
-    state: 'CONFIRMED',
-    confirmationStatus: 'PENDING',
-    restaurantId: 'rest-1',
-    restaurant: {
-      id: 'rest-1',
-      name: 'Chez Sokar',
-      managerPhone: '+336****9999',
-    },
-    ...overrides,
-  };
-}
-
-// ── Tests ──────────────────────────────────────────────────────────────────
-
-describe('parseReply', () => {
-  it('parse une réponse positive (OUI)', () => {
-    expect(parseReply('OUI')).toBe('CONFIRMED');
-  });
-
-  it('parse une réponse positive (ok)', () => {
-    expect(parseReply('ok')).toBe('CONFIRMED');
-  });
-
-  it('parse une réponse négative (NON)', () => {
-    expect(parseReply('NON')).toBe('CANCELLED');
-  });
-
-  it('parse une réponse négative (annulation)', () => {
-    expect(parseReply('annulation')).toBe('CANCELLED');
-  });
-
-  it('retourne UNKNOWN pour un texte non reconnu', () => {
-    expect(parseReply('bonjour')).toBe('UNKNOWN');
-  });
-
-  it('retourne UNKNOWN pour une chaîne vide', () => {
-    expect(parseReply('')).toBe('UNKNOWN');
-  });
-
-  it('trim les espaces avant de parser', () => {
-    expect(parseReply('  OUI  ')).toBe('CONFIRMED');
-  });
-});
-
-describe('handleReply', () => {
+describe('inbound replies', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    state.store.clear();
+    state.findMany.mockResolvedValue([reservation]);
+    state.update.mockResolvedValue(reservation);
+    state.updateMany.mockResolvedValue({ count: 1 });
+    state.cancel.mockResolvedValue(reservation);
+    state.add.mockResolvedValue({});
   });
 
-  it('retourne UNKNOWN sans chercher en DB si le texte est non reconnu', async () => {
-    const result = await handleReply('+336****0001', 'bonjour', 'sms');
-    expect(result.intent).toBe('UNKNOWN');
-    expect(result.action).toBeUndefined();
-    expect(mockFindFirst).not.toHaveBeenCalled();
+  it('refuses contradictory text', () => {
+    expect(parseReply('oui je veux annuler')).toBe('UNKNOWN');
+    expect(parseReply('oui')).toBe('CONFIRMED');
+    expect(parseReply('non')).toBe('CANCELLED');
   });
 
-  it('retourne no_reservation si aucune résa PENDING trouvée', async () => {
-    mockFindFirst.mockResolvedValue(null);
-
-    const result = await handleReply('+336****0001', 'OUI', 'sms');
-
-    expect(result.intent).toBe('CONFIRMED');
-    expect(result.action).toBe('no_reservation');
-    expect(mockFindFirst).toHaveBeenCalledTimes(1);
-    expect(mockUpdate).not.toHaveBeenCalled();
+  it('never selects a reservation when more than one is eligible', async () => {
+    state.findMany.mockResolvedValue([
+      reservation,
+      { ...reservation, id: 'res-2', restaurantId: 'rest-2' },
+    ]);
+    expect(await handleReply('customer', 'NON', 'sms', 'message-1')).toMatchObject({
+      action: 'no_reservation',
+    });
+    expect(state.cancel).not.toHaveBeenCalled();
   });
 
-  it('exige state=CONFIRMED pour ne pas toucher une résa non ferme (R1-4)', async () => {
-    mockFindFirst.mockResolvedValue(null);
-
-    await handleReply('+336****0001', 'NON', 'sms');
-
-    // `status` est une projection lossy de `state` : une validation manuelle
-    // (state=PENDING) et un client déjà installé (state=HONORED) portent tous
-    // deux status=CONFIRMED. Filtrer sur `status` seul laissait un « NON »
-    // annuler une réservation qui n'était pas ferme.
-    expect(mockFindFirst).toHaveBeenCalledWith(
+  it('does not confirm a reservation that changed state during processing', async () => {
+    state.updateMany.mockResolvedValueOnce({ count: 0 });
+    expect(await handleReply('customer', 'OUI', 'sms', 'message-1')).toMatchObject({
+      action: 'no_reservation',
+    });
+    expect(state.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ status: 'CONFIRMED', state: 'CONFIRMED' }),
+        where: expect.objectContaining({
+          status: 'CONFIRMED',
+          state: 'CONFIRMED',
+          confirmationStatus: 'PENDING',
+        }),
       }),
     );
   });
 
-  it('confirme la résa et met à jour confirmationStatus=CONFIRMED', async () => {
-    mockFindFirst.mockResolvedValue(
-      makeReservation() as unknown as Awaited<ReturnType<typeof db.reservation.findFirst>>,
-    );
-
-    const result = await handleReply('+336****0001', 'OUI', 'sms');
-
-    expect(result.intent).toBe('CONFIRMED');
-    expect(result.action).toBe('confirmed');
-    expect(result.reservationId).toBe('res-1');
-    expect(mockUpdate).toHaveBeenCalledWith({
-      where: { id: 'res-1' },
-      data: {
-        confirmationStatus: 'CONFIRMED',
-        confirmedAt: expect.any(Date),
-      },
-    });
-    // Pas d'envoi de SMS au gérant sur confirmation
-    expect(mockSendSms).not.toHaveBeenCalled();
+  it('deduplicates a successful reply even when a second reservation becomes eligible', async () => {
+    await handleReply('customer', 'NON', 'sms', 'message-1');
+    state.findMany.mockResolvedValue([{ ...reservation, id: 'res-2' }]);
+    await handleReply('customer', 'NON', 'sms', 'message-1');
+    expect(state.cancel).toHaveBeenCalledTimes(1);
+    expect(state.cancel).toHaveBeenCalledWith('res-1', 'rest-1', { status: 'CANCELLED' });
+    expect(state.add).toHaveBeenCalledTimes(1);
   });
 
-  it('annule la résa via ReservationService.update et envoie un SMS au gérant', async () => {
-    mockFindFirst.mockResolvedValue(
-      makeReservation() as unknown as Awaited<ReturnType<typeof db.reservation.findFirst>>,
+  it('rejects simultaneous deliveries of the same message while one is processing', async () => {
+    let release!: () => void;
+    state.findMany.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve([reservation]);
+        }),
     );
-
-    const result = await handleReply('+336****0001', 'NON', 'sms');
-
-    expect(result.intent).toBe('CANCELLED');
-    expect(result.action).toBe('cancelled');
-    expect(result.reservationId).toBe('res-1');
-
-    expect(mockReservationUpdate).toHaveBeenCalledWith('res-1', 'rest-1', {
-      status: 'CANCELLED',
-    });
-    expect(mockUpdate).toHaveBeenCalledWith({
-      where: { id: 'res-1' },
-      data: {
-        confirmationStatus: 'CANCELLED',
-        confirmedAt: expect.any(Date),
-      },
-    });
-    expect(mockSendSms).toHaveBeenCalledTimes(1);
-    expect(mockSendSms).toHaveBeenCalledWith(
-      '+336****9999',
-      expect.stringContaining('Table libérée'),
-      expect.objectContaining({
-        restaurantId: 'rest-1',
-        sourceId: 'res-1',
-        sourceType: 'reservation_cancelled_reply',
-      }),
+    const first = handleReply('customer', 'NON', 'sms', 'message-1');
+    await vi.waitFor(() => expect(state.findMany).toHaveBeenCalledTimes(1));
+    await expect(handleReply('customer', 'NON', 'sms', 'message-1')).rejects.toThrow(
+      'already being processed',
     );
+    release();
+    await first;
+    expect(state.cancel).toHaveBeenCalledTimes(1);
   });
 
-  it('mentionne WhatsApp dans le SMS au gérant si channel=whatsapp', async () => {
-    mockFindFirst.mockResolvedValue(
-      makeReservation() as unknown as Awaited<ReturnType<typeof db.reservation.findFirst>>,
+  it('propagates cancellation failures and keeps the original reservation for the retry', async () => {
+    state.cancel.mockRejectedValueOnce(new Error('database unavailable'));
+    await expect(handleReply('customer', 'NON', 'sms', 'message-1')).rejects.toThrow(
+      'database unavailable',
     );
-
-    await handleReply('+336****0001', 'NON', 'whatsapp');
-
-    expect(mockSendSms).toHaveBeenCalledWith(
-      '+336****9999',
-      expect.stringContaining('WhatsApp'),
-      expect.objectContaining({
-        restaurantId: 'rest-1',
-        sourceId: 'res-1',
-        sourceType: 'reservation_cancelled_reply',
-      }),
-    );
+    await handleReply('customer', 'NON', 'sms', 'message-1');
+    expect(state.findMany.mock.calls[1][0].where).toMatchObject({ id: 'res-1' });
   });
 
-  it("n'envoie pas de SMS au gérant si managerPhone est null", async () => {
-    mockFindFirst.mockResolvedValue(
-      makeReservation({
-        restaurant: { id: 'rest-1', name: 'Chez Sokar', managerPhone: null },
-      }) as unknown as Awaited<ReturnType<typeof db.reservation.findFirst>>,
+  it('recovers a notification queue failure after cancellation without cancelling twice', async () => {
+    state.add.mockRejectedValueOnce(new Error('queue unavailable'));
+    await expect(handleReply('customer', 'NON', 'sms', 'message-1')).rejects.toThrow(
+      'queue unavailable',
     );
-
-    const result = await handleReply('+336****0001', 'NON', 'sms');
-
-    expect(result.action).toBe('cancelled');
-    expect(mockSendSms).not.toHaveBeenCalled();
+    state.findMany.mockResolvedValue([{ ...reservation, state: 'CANCELLED', status: 'CANCELLED' }]);
+    await handleReply('customer', 'NON', 'sms', 'message-1');
+    expect(state.cancel).toHaveBeenCalledTimes(1);
+    expect(state.add).toHaveBeenCalledTimes(2);
   });
 
-  it("retourne l'intent sans action si ReservationService.update lève une erreur", async () => {
-    mockFindFirst.mockResolvedValue(
-      makeReservation() as unknown as Awaited<ReturnType<typeof db.reservation.findFirst>>,
-    );
-    mockReservationUpdate.mockRejectedValue(new Error('DB down'));
-
-    const result = await handleReply('+336****0001', 'NON', 'sms');
-
-    expect(result.intent).toBe('CANCELLED');
-    expect(result.action).toBeUndefined();
-    expect(result.reservationId).toBe('res-1');
-  });
-
-  it('filtre par customerPhone, status=CONFIRMED et confirmationStatus=PENDING', async () => {
-    mockFindFirst.mockResolvedValue(null);
-
-    await handleReply('+336****0001', 'OUI', 'sms');
-
-    const callArg = mockFindFirst.mock.calls[0][0]!;
-    const reservedAt = callArg.where!.reservedAt as { gte: Date; lte: Date };
-    expect(callArg.where!.customerPhone).toBe('+336****0001');
-    expect(callArg.where!.status).toBe('CONFIRMED');
-    expect(callArg.where!.confirmationStatus).toBe('PENDING');
-    expect(reservedAt).toBeDefined();
-    expect(reservedAt.gte).toBeInstanceOf(Date);
-    expect(reservedAt.lte).toBeInstanceOf(Date);
-    expect(callArg.include!.restaurant).toEqual({
-      select: { id: true, name: true, managerPhone: true },
-    });
-  });
-
-  it('la fenêtre de recherche couvre [hier 00:00, J+1 23:59]', async () => {
-    mockFindFirst.mockResolvedValue(null);
-
-    const now = new Date();
-    await handleReply('+336****0001', 'OUI', 'sms');
-
-    const callArg = mockFindFirst.mock.calls[0][0]!;
-    const reservedAt = callArg.where!.reservedAt as { gte: Date; lte: Date };
-    const gte = reservedAt.gte;
-    const lte = reservedAt.lte;
-
-    // gte = hier 00:00
-    expect(gte.getHours()).toBe(0);
-    expect(gte.getMinutes()).toBe(0);
-    const expectedGteDate = new Date(now);
-    expectedGteDate.setDate(expectedGteDate.getDate() - 1);
-    expect(gte.getDate()).toBe(expectedGteDate.getDate());
-
-    // lte = demain 23:59
-    expect(lte.getHours()).toBe(23);
-    expect(lte.getMinutes()).toBe(59);
-    const expectedLteDate = new Date(now);
-    expectedLteDate.setDate(expectedLteDate.getDate() + 1);
-    expect(lte.getDate()).toBe(expectedLteDate.getDate());
+  it('requires a provider message identifier', async () => {
+    await expect(handleReply('customer', 'NON', 'sms')).rejects.toThrow('ID required');
+    expect(state.findMany).not.toHaveBeenCalled();
   });
 });

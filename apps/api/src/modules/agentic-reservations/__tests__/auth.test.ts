@@ -12,6 +12,7 @@ import {
   validateOrigin,
 } from '../mcp/auth.js';
 import { env } from '../../../env';
+import { hashApiKey, verifyApiKeyHashAsync } from '../../../shared/crypto/api-key-hash';
 
 describe('mcp auth', () => {
   const PREFIX = ['sk', '_sokar', '_agent_'].join('');
@@ -54,6 +55,11 @@ describe('mcp auth', () => {
   });
 
   describe('validateApiKey', () => {
+    it('verifies current scrypt hashes asynchronously and rejects incorrect keys', async () => {
+      const hash = hashApiKey(VALID_KEY);
+      await expect(verifyApiKeyHashAsync(VALID_KEY, hash)).resolves.toBe(true);
+      await expect(verifyApiKeyHashAsync(`${VALID_KEY}x`, hash)).resolves.toBe(false);
+    });
     it('valide un client DB actif', async () => {
       const prisma = {
         agentClient: {

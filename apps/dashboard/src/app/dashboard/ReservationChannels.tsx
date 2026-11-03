@@ -135,7 +135,7 @@ export default function ReservationChannels({ stats }: { stats: ReservationChann
                 <li
                   key={row.channel}
                   className={cn(
-                    'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2 transition-all duration-200 sm:py-3 sm:grid-cols-[minmax(0,1fr)_6rem_5rem_3rem]',
+                    'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2 transition-all duration-200 sm:grid-cols-[minmax(0,1fr)_6rem_5rem_3rem]',
                     empty && 'text-muted-foreground',
                   )}
                 >

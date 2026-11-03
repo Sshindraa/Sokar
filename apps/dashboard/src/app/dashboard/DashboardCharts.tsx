@@ -122,7 +122,7 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
           </div>
         }
       >
-        <div className="h-[15.5rem] min-h-0 sm:h-[20rem]">
+        <div className="h-[15.5rem] min-h-0 sm:h-[18rem]">
           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
             <AreaChart data={analytics} margin={{ left: 0, right: 8, top: 42, bottom: 0 }}>
               <defs>

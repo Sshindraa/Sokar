@@ -13,8 +13,9 @@ versionné avec le code, donc toute modif passe par `write_file` /
 
 ## Architecture
 
-Sokar est un monorepo (pnpm workspace + Turborepo) de gestion de
-réservations de restaurants avec assistant vocal IA.
+Sokar est un monorepo (pnpm workspace + Turborepo) de la plateforme
+restaurant Sokar : réservations multicanal, organisation du service et relation client
+(l’assistant vocal IA en est une fonction).
 
 - **Backend API** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx
 - **Dashboard** : Next.js 15 (App Router) + React 19 + Tailwind 3 — privé, Clerk auth

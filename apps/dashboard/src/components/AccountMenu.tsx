@@ -2,11 +2,18 @@
 
 import { useTranslations } from 'next-intl';
 import { useClerk, useUser } from '@clerk/nextjs';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { CreditCard, LogOut, Settings as SettingsIcon, User } from 'lucide-react';
+import { CreditCard, LogOut, Settings as SettingsIcon } from 'lucide-react';
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 const isDemoMode = Boolean(
@@ -14,24 +21,72 @@ const isDemoMode = Boolean(
 );
 
 /**
- * AccountMenu — avatar du profil + menu déroulant (Réglages, Déconnexion).
+ * AccountMenu — icône restaurant de l'en-tête. Connecté, elle ouvre le menu du
+ * compte (Mon abonnement, Réglages, Déconnexion) ; sinon elle renvoie au tableau
+ * de bord, sans menu.
  *
- * Nécessite Clerk : sans clé `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (dev preview
- * locale), le composant ne rend rien. Le menu utilise `useClerk().signOut` pour
- * la déconnexion puis redirige vers `/login`.
- *
- * Styling cohérent avec `LanguageSwitcher` et `ThemeToggle` (pill rounded-full,
- * border-border, bg-card/80, hover bg-accent).
+ * Le menu utilise `useClerk().signOut` pour la déconnexion puis redirige vers `/login`.
  */
-export function AccountMenu() {
-  // Sans clé Clerk, on ne rend rien (dev preview / CI sans auth).
-  // On ne peut pas appeler useUser()/useClerk() sans ClerkProvider
-  // monté — donc on court-circuite avant tout hook Clerk.
-  if (!hasClerkKey || isDemoMode) return null;
-  return <AccountMenuInner />;
+
+const brandClassName =
+  'dashboard-brand-link flex shrink-0 items-center justify-center rounded-xl border border-border bg-card/70 transition-all duration-200 hover:border-foreground/20 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+
+function RestaurantLink() {
+  return (
+    <Link href="/dashboard" aria-label="Sokar" title="Sokar" className={brandClassName}>
+      <Image
+        src="/sokar-restaurant-mark.png"
+        alt=""
+        width={44}
+        height={44}
+        className="dashboard-brand-logo h-9 w-9 object-contain"
+      />
+    </Link>
+  );
+}
+export function AccountMenu({ showSettings = true }: { showSettings?: boolean } = {}) {
+  // Sans ClerkProvider, seul le menu des réglages autorisés reste disponible.
+  if (!hasClerkKey || isDemoMode) {
+    return showSettings ? <RestaurantSettingsMenu /> : <RestaurantLink />;
+  }
+  return <AccountMenuInner showSettings={showSettings} />;
 }
 
-function AccountMenuInner() {
+function RestaurantSettingsMenu() {
+  const t = useTranslations('account');
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-label={t('label')}
+          title={t('label')}
+          className={brandClassName}
+        >
+          <Image
+            src="/sokar-restaurant-mark.png"
+            alt=""
+            width={44}
+            height={44}
+            className="dashboard-brand-logo h-9 w-9 object-contain"
+          />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={8}>
+        <DropdownMenuItem asChild>
+          <Link href="/dashboard/settings" className="flex items-center gap-2">
+            <SettingsIcon size={14} aria-hidden="true" />
+            {t('settings')}
+          </Link>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function AccountMenuInner({ showSettings }: { showSettings: boolean }) {
   const t = useTranslations('account');
   const { isSignedIn, user } = useUser();
   const { signOut } = useClerk();
@@ -60,7 +115,7 @@ function AccountMenuInner() {
     return () => document.removeEventListener('keydown', handleEscape);
   }, []);
 
-  if (!isSignedIn || !user) return null;
+  if (!isSignedIn || !user) return <RestaurantLink />;
 
   const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
   const email = user.primaryEmailAddress?.emailAddress;
@@ -85,20 +140,15 @@ function AccountMenuInner() {
         aria-expanded={open}
         aria-label={t('label')}
         title={t('label')}
-        className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-card/80 text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground"
+        className={brandClassName}
       >
-        {user.imageUrl ? (
-          <Image
-            src={user.imageUrl}
-            alt={displayName}
-            width={36}
-            height={36}
-            className="h-full w-full object-cover"
-            unoptimized
-          />
-        ) : (
-          <User size={16} aria-hidden />
-        )}
+        <Image
+          src="/sokar-restaurant-mark.png"
+          alt=""
+          width={44}
+          height={44}
+          className="dashboard-brand-logo h-9 w-9 object-contain"
+        />
       </button>
 
       {open && (
@@ -125,18 +175,20 @@ function AccountMenuInner() {
             <CreditCard size={15} aria-hidden />
             Mon abonnement
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              router.push('/dashboard/settings');
-            }}
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors duration-150 hover:bg-accent/50 hover:text-foreground"
-          >
-            <SettingsIcon size={14} aria-hidden />
-            {t('settings')}
-          </button>
+          {showSettings && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                router.push('/dashboard/settings');
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors duration-150 hover:bg-accent/50 hover:text-foreground"
+            >
+              <SettingsIcon size={14} aria-hidden />
+              {t('settings')}
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"

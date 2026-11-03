@@ -310,11 +310,7 @@ export default function DashboardPage() {
       </header>
       {!isDemo && <ServiceCopilotWidget key={orgId} density="overview" accessFallback={null} />}
 
-      <section
-        aria-label="Synthèse de la période"
-        aria-busy={isLoading}
-        className="space-y-6 md:space-y-8"
-      >
+      <section aria-label="Synthèse de la période" aria-busy={isLoading} className="space-y-6">
         {isLoading && <DashboardSkeleton />}
         {!isLoading && error && (
           <ErrorState message={error} onRetry={() => setRefreshNonce((nonce) => nonce + 1)} />
@@ -374,6 +370,8 @@ export default function DashboardPage() {
         )}
       </section>
 
+      {!isDemo && <EmptySlotsWidget />}
+
       {!isDemo && (
         <details className="group border-t border-border pt-4">
           <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-muted-foreground transition-all duration-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
@@ -381,10 +379,9 @@ export default function DashboardPage() {
               aria-hidden="true"
               className="h-4 w-4 shrink-0 transition-all duration-200 group-open:rotate-180"
             />
-            Prévisions sur 7 jours et absences sur 90 jours
+            Absences sur 90 jours
           </summary>
           <div className="mt-4 space-y-4">
-            <EmptySlotsWidget />
             <NoShowWidget />
           </div>
         </details>

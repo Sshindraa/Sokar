@@ -27,9 +27,12 @@ import {
   countCustomersByLifecycle,
   filterCustomerIdsByVisits,
   withCustomerLifecycles,
+  loadCustomerVisitStats,
 } from './customer-lifecycle';
 import { requireCapability } from '../entitlements/entitlement.guard';
+import { evaluateCapability } from '../entitlements/entitlement.service';
 import {
+  buildServiceCard,
   loadReservationServiceCards,
   SERVICE_CARD_MAX_RESERVATIONS,
 } from './customer-service-card';
@@ -84,6 +87,79 @@ const COMPUTED_FILTER_SCAN_LIMIT = 5_000;
 const EXPORT_LIMIT = 10_000;
 
 export async function customerRoutes(app: FastifyInstance) {
+  app.get(
+    '/customers/suggestions',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const query = z
+        .object({
+          search: z.string().trim().min(1).max(100),
+          limit: z.coerce.number().int().min(1).max(5).default(5),
+        })
+        .parse(req.query);
+      const restaurantId = req.restaurantId!;
+      const customers = await db.customer.findMany({
+        where: {
+          restaurantId,
+          archivedAt: null,
+          mergedIntoId: null,
+          OR: buildCustomerSearchFilter(query.search),
+        },
+        select: { id: true, name: true, phone: true, emailNormalized: true },
+        orderBy: [{ lastSeenAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
+        take: query.limit,
+      });
+      const ids = customers.map((customer) => customer.id);
+      if (!ids.length) return reply.send({ data: [] });
+      const { allowed: isPro } = await evaluateCapability(restaurantId, 'customers.advanced');
+      const now = new Date();
+      const [stats, preferences] = await Promise.all([
+        isPro ? loadCustomerVisitStats(restaurantId, ids, now) : Promise.resolve(new Map()),
+        db.customerPreference.findMany({
+          where: {
+            restaurantId,
+            customerId: { in: ids },
+            key: { in: ['dietary_restrictions', 'accessibility_needs'] },
+          },
+          select: {
+            customerId: true,
+            key: true,
+            value: true,
+            source: true,
+            confirmedAt: true,
+            expiresAt: true,
+          },
+        }),
+      ]);
+      return reply.send({
+        data: customers.map((customer) => {
+          const visits = stats.get(customer.id);
+          const card = buildServiceCard({
+            reservationId: '',
+            reservationDate: now,
+            specialRequests: null,
+            customer: { id: customer.id, birthMonth: null, birthDay: null, specialOccasion: null },
+            visitDates: visits?.visitDates ?? [],
+            noShows365d: visits?.noShows365d ?? 0,
+            preferences: preferences
+              .filter((preference) => preference.customerId === customer.id)
+              .map((preference) => ({ ...preference, source: String(preference.source) })),
+            timezone: 'Europe/Paris',
+            now,
+          });
+          return {
+            id: customer.id,
+            name: customer.name,
+            phone: customer.phone,
+            email: customer.emailNormalized,
+            visitCount: isPro ? (visits?.visitDates.length ?? 0) : null,
+            lastVisitAt: isPro ? (visits?.visitDates.at(-1) ?? null) : null,
+            badges: card.badges,
+          };
+        }),
+      });
+    },
+  );
   app.get(
     '/customers',
     { preHandler: requireOrg(), config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },

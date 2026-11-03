@@ -193,7 +193,31 @@ async function sweepNotificationClaims(
     }
 
     const record = recovery.record ?? (await getNotificationClaim(deps.claimStore, claimKey));
-    if (!record || record.status === 'success') continue;
+    if (!record) continue;
+    if (record.status === 'success') {
+      // Give the original worker time to write its audit before repairing it.
+      if (
+        /^notification:reservation-confirmation-(sms|email):/.test(claimKey) &&
+        Date.now() - Date.parse(record.updatedAt) >= 15 * 60 * 1000
+      ) {
+        try {
+          const acquired = await deps.claimStore.set(
+            `audit-repair:${claimKey}`,
+            '1',
+            'EX',
+            60,
+            'NX',
+          );
+          if (!acquired) continue;
+          const repair =
+            deps.repairNotification ?? repairNotificationAfterProviderSuccess.bind(null, deps.db);
+          await repair(claimKey, new Date());
+        } catch (err) {
+          log.error({ err }, 'successful notification audit repair failed');
+        }
+      }
+      continue;
+    }
     if (recovery.status === 'active') {
       recordNotificationClaimEvent('active');
       continue;
@@ -505,43 +529,47 @@ export async function processReconciliationJob(
 
   if (data.kind === 'voice-finalization') {
     const now = Date.now();
-    // tenant-scoping: global — balayage de maintenance : tous les
-    // établissements sont concernés par le rattrapage de fin d'appel et des
-    // récupérations commerciales dont l'enqueue aurait échoué.
-    const calls = await deps.db.call.findMany({
-      where: {
-        carrier: 'telnyx',
-        OR: [
-          { outcome: null },
-          {
-            outcome: { in: ['NO_ACTION', 'ERROR'] },
-            intent: 'RESERVATION',
-            callerPhone: { not: null },
-            reservation: { is: null },
-            messages: { none: {} },
+    let cursor: string | undefined;
+    let candidates = 0;
+    let repaired = 0;
+    for (;;) {
+      // tenant-scoping: global — balayage de maintenance : tous les
+      // établissements sont concernés par le rattrapage de fin d'appel et des
+      // récupérations commerciales dont l'enqueue aurait échoué.
+      const calls = await deps.db.call.findMany({
+        where: {
+          carrier: 'telnyx',
+          OR: [
+            { outcome: null },
+            {
+              outcome: { in: ['NO_ACTION', 'ERROR'] },
+              intent: 'RESERVATION',
+              callerPhone: { not: null },
+              reservation: { is: null },
+              messages: { none: {} },
+            },
+          ],
+          createdAt: {
+            gte: new Date(now - VOICE_FINALIZATION_MAX_AGE_MS),
+            lte: new Date(now - VOICE_FINALIZATION_MIN_AGE_MS),
           },
-        ],
-        createdAt: {
-          gte: new Date(now - VOICE_FINALIZATION_MAX_AGE_MS),
-          lte: new Date(now - VOICE_FINALIZATION_MIN_AGE_MS),
         },
-      },
-      select: { callSid: true },
-      orderBy: { createdAt: 'desc' },
-      take: VOICE_FINALIZATION_BATCH_SIZE,
-    });
-
-    if (calls.length === 0) {
-      log.info({ dayKey }, 'voice finalization sweep: nothing to repair');
-      return;
+        select: { callSid: true },
+        orderBy: [{ createdAt: 'asc' }, { callSid: 'asc' }],
+        take: VOICE_FINALIZATION_BATCH_SIZE,
+        ...(cursor ? { cursor: { callSid: cursor }, skip: 1 } : {}),
+      });
+      if (calls.length === 0) break;
+      candidates += calls.length;
+      repaired += await finalizeIncompleteCalls(
+        deps,
+        log,
+        calls.map((call) => call.callSid),
+      );
+      if (calls.length < VOICE_FINALIZATION_BATCH_SIZE) break;
+      cursor = calls[calls.length - 1].callSid;
     }
-
-    const repaired = await finalizeIncompleteCalls(
-      deps,
-      log,
-      calls.map((call) => call.callSid),
-    );
-    log.info({ dayKey, candidates: calls.length, repaired }, 'voice finalization sweep completed');
+    log.info({ dayKey, candidates, repaired }, 'voice finalization sweep completed');
     return;
   }
 

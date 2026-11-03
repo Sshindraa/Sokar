@@ -444,6 +444,8 @@ export interface ChatMessage {
 /** Session d'un appel avec flux audio */
 export interface CallSession {
   callControlId: string;
+  streamToken?: string;
+  streamStartTimer?: ReturnType<typeof setTimeout> | null;
   callSessionId: string;
   /** call_leg_id Telnyx — utilisé comme callSid en DB */
   callLegId: string;

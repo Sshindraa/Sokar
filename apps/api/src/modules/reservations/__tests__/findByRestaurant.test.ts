@@ -23,8 +23,15 @@ describe('ReservationService.findByRestaurant', () => {
         reservedAt: new Date('2099-06-05T19:00:00'),
         partySize: 2,
         table: { name: 'T1' },
+        auditLog: [{ id: 'audit-1' }],
       },
-      { id: 'r2', reservedAt: new Date('2099-06-05T20:00:00'), partySize: 4, table: null },
+      {
+        id: 'r2',
+        reservedAt: new Date('2099-06-05T20:00:00'),
+        partySize: 4,
+        table: null,
+        auditLog: [],
+      },
     ];
 
     vi.mocked(db.reservation.findMany).mockResolvedValue(
@@ -39,9 +46,21 @@ describe('ReservationService.findByRestaurant', () => {
         auditLog: { none: { event: 'reservation_deleted' } },
       },
       orderBy: { reservedAt: 'asc' },
-      include: { table: { select: { name: true } } },
+      include: {
+        table: { select: { name: true } },
+        auditLog: {
+          where: { event: 'reservation_created', metadata: { path: ['overbooked'], equals: true } },
+          select: { id: true },
+          take: 1,
+        },
+      },
     });
-    expect(result).toEqual(mockReservations);
+    expect(result).toEqual(
+      mockReservations.map(({ auditLog, ...reservation }) => ({
+        ...reservation,
+        overbooked: auditLog.length > 0,
+      })),
+    );
   });
 
   it("filtre par date quand un 'date' est fourni (fenêtre 00:00 → 23:59:59.999)", async () => {

@@ -112,6 +112,12 @@ describe('confirmation e-mail after a web booking', () => {
     );
   });
 
+  it('sends a staff reservation confirmation', async () => {
+    const { deps, sendEmail } = makeDeps(reservation({ channel: 'ADMIN' }));
+    await expect(processReservationConfirmationEmail(ARGS, deps)).resolves.toBe('sent');
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+
   it('sends to the normalised address, without the consent line when it is not offered', async () => {
     const { deps, sendEmail, dbMock } = makeDeps();
 

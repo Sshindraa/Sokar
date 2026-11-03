@@ -171,7 +171,7 @@ export async function processReservationConfirmationEmail(
       restaurant: { select: { name: true, timezone: true } },
     },
   });
-  if (!reservation || reservation.channel !== 'WEB' || reservation.isTest) {
+  if (!reservation || !['WEB', 'ADMIN'].includes(reservation.channel) || reservation.isTest) {
     return skipped(args.reservationId, 'not-eligible');
   }
   if (reservation.status !== 'CONFIRMED' || reservation.state !== 'CONFIRMED') {
