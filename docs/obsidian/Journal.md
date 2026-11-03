@@ -3683,3 +3683,36 @@ Après l'essai staging classé en indésirable par Outlook (SPF, DKIM et DMARC r
 ### 2026-11-03 — Registre d'opposition : clé par restaurant et levée par la personne seule
 
 Décision de Hamza à la suite de l'analyse de la PR #634. L'empreinte utilise une clé dérivée par restaurant : les anciennes entrées ne sont plus reconnues, aucune n'existe en production au 3 novembre (à revérifier juste avant la fusion, car une entrée écrite entre-temps ne serait plus reconnue). Seul le geste de la personne (case de réservation, lien de confirmation) lève une opposition ; un accord saisi par l'équipe est refusé (`MARKETING_OPPOSITION_REGISTERED`, 409). Le texte public de la PR #634 devra retirer la levée par le restaurant une fois ce changement fusionné. Rien d'activé, envois toujours coupés.
+
+### 2026-11-03 — Pilote e-mail : configuration staging
+
+- Dans le compte Resend Sokar, `sokar.tech` et `news.sokar.tech` sont Verified. Création du webhook staging avec seulement `email.sent`, `email.delivered`, `email.bounced`, `email.complained`, `email.failed` et `email.suppressed`; aucune livraison reçue. Le webhook de production n'a pas été modifié.
+- L'UI et l'API de création ne proposent pas de filtre par domaine ou clé. Le webhook staging reste donc Disabled en attente de décision sur les événements de production dans l'espace Resend partagé.
+- `.env` staging configuré avec le secret de webhook, une attribution distincte, l'URL de désinscription staging, la liste de deux adresses de test, `MARKETING_SENDS_ENABLED=false` et `MARKETING_WHATSAPP_ENABLED=false`. Secrets d'opposition et de désinscription préexistants conservés; sauvegarde créée.
+- `sokar-staging-api` et `sokar-staging-workers` rechargés et online; `/health` répond HTTP 200. Le déploiement staging courant reste le run vert de #620; la PR #634 est encore ouverte.
+
+- Décision du 2026-11-03 : garder le webhook Resend staging désactivé tant que la production et le staging partagent le même espace Resend; l’endpoint risquerait de recevoir des événements de production. Aucun événement reçu.
+
+### 2026-11-03 — Pilote e-mail staging : premier envoi réel accepté
+
+Campagne `ff4ee715` : un seul e-mail accepté par Resend vers l'adresse de test de Hamza, témoin sans accord exclu, envois refermés aussitôt (`MARKETING_SENDS_ENABLED=false`, non figé dans pm2). Lancé directement sur le serveur : le contrôle de formule de la route d'envoi n'a pas été exercé (restaurant en Starter). Trois essais d'abord refusés par `EMAIL_TEST_ALLOWLIST` : la valeur conservée par pm2 prime sur le `.env` ; adresse ajoutée via `--update-env` depuis un shell propre, seulement sur `sokar-staging-workers`. Constat à corriger : un envoi refusé consomme quand même la limite de fréquence (3/3 sur le client de test, remise à zéro à la main) et les journaux ne donnent pas le motif de Resend. Ancienne clé Resend de staging non révoquée. Réception et désinscription restent à constater.
+
+### 2026-11-03 — Pilote e-mail staging : désinscription validée, classement en indésirable
+
+Reçu par Hamza dans le courrier indésirable d'Outlook. Lien de désinscription cliqué : permission `OPTED_OUT` (`UNSUBSCRIBE_LINK`), preuve et registre écrits, audience à 0 (exclu par le registre, témoin en `NO_CONSENT`). POST avec un jeton falsifié : 400 et page « Ce lien n'est plus valide ». Non établis : la cause du classement en indésirable (DKIM et SPF publiés, résultat d'authentification non lu), le statut « livré » (webhook en pause), le contrôle de formule et le droit de la clé de production sur `news.sokar.tech`. La liste `EMAIL_TEST_ALLOWLIST` du worker staging contient encore l'adresse de test.
+
+### 2026-11-03 — Staging : chaque déploiement réécrit la clé Resend
+
+Deuxième essai refusé par Resend (`THIS_API_KEY_IS_NOT_AUTHORIZED…`, motif lisible et créneau rendu grâce à #636) : le déploiement de 15 h 20 a remis dans le `.env` la clé du secret `RESEND_API_KEY_STAGING`, limitée à `sokar.tech` (`scripts/ops/sync-env.sh provider`). La clé `staging-marketing` posée à la main a disparu, et les sauvegardes `.env.bak-*` aussi. `EMAIL_TEST_ALLOWLIST` vient de la variable `EMAIL_TEST_ALLOWLIST_STAGING`. Un réglage staging de ces valeurs doit passer par le secret ou la variable GitHub, pas seulement par le serveur. Aucune action en production.
+
+### 2026-11-03 — Pilote e-mail staging : encore en indésirable avec le nouveau contenu
+
+Campagne `929ac62f` : e-mail avec liens lisibles et pied de page, accepté par Resend, classé en indésirable par Outlook sur la seconde adresse de test, selon Hamza. Le contenu seul ne suffit donc pas ; la cause reste non établie. Limites de l'essai : liens vers `staging.sokar.tech`, adresse de réponse `demo@sokar.com`, une seule messagerie. Nouvelle clé `RESEND_API_KEY_STAGING` tous domaines posée sur GitHub et sur le serveur.
+
+### 2026-11-03 — Pilote e-mail staging : Gmail classe en Promotions
+
+Campagne `f94466d2`, même contenu que l'essai Outlook : acceptée par Resend et rangée dans l'onglet Promotions de Gmail, selon Hamza. Un seul e-mail : le classement en indésirable semble propre à Outlook, sans que ce soit établi. Résultat d'authentification Gmail non lu. Envois refermés sur staging, production non touchée.
+
+### 2026-11-03 — Registre marketing : PR 637 livrée
+
+PR #637 fusionnée après CI verte et comptage de 0 entrée du registre en production, commit 93019bba. CI main, staging et smoke tests staging/production verts ; livraison production 41663952307, release 20261103T152924Z, snapshot pre présent. Configuration fichier API : MARKETING_SENDS_ENABLED non activé. PR #634 actualisée avec le texte de levée en ligne, reste en brouillon pour validation juridique ; contrôle avant envoi vert. Limite : la case en ligne ne vérifie pas la possession de l’adresse.
