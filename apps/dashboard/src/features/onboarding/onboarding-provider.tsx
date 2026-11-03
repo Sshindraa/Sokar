@@ -395,7 +395,9 @@ function PreviewOnboardingProvider({ children }: { children: ReactNode }) {
 
 function ApiOnboardingProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const { get, patch, orgId } = useApi();
+  // Monté au-dessus du fournisseur de sites : l'ID de site y reste « en chargement », seul l'ID
+  // d'organisation Clerk est disponible.
+  const { get, patch, organizationId: orgId } = useApi();
   const [state, setState] = useState<OnboardingState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
