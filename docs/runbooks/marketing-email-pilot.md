@@ -174,6 +174,17 @@ Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jo
   dans la politique (`PRIVACY_DOCUMENT.optOutRegister`) et dans l'annexe client (`privacy-client-annex.md`).
   Base légale, rôles et durée restent à valider par Hamza.
 
+- **Limites acceptées (Hamza, 03/11/2026)** :
+  - **Fiches partageant une adresse** : une nouvelle case cochée sur l'une lève l'opposition pour cette
+    adresse dans le restaurant, donc aussi pour une autre fiche déjà inscrite avant le retrait. Il s'agit de la
+    même personne, qui vient de redonner son accord.
+  - **Plainte reçue après l'effacement** : la fiche n'existe plus, l'événement part en rapprochement et rien
+    n'est inscrit au registre. Une fiche recréée à cette adresse n'est pas contactée sans nouvel accord
+    explicite ; si la personne le redonne, la plainte n'est pas opposée.
+
+  L'effacement retire aussi `marketingOptIn` des consentements conservés. La ligne reste, sans la trace de
+  l'accord marketing initial.
+
 - **Preuve : ce qui est conservé** : l'empreinte de `version|canal|phrase` seule ne prouve pas que le
   titulaire de l'adresse a accepté. Chaque ligne du journal `MarketingPermissionEvent` conserve donc
   désormais aussi **la chaîne exacte hachée** (`proof_text` : version, canal, phrase avec le nom du

@@ -55,6 +55,7 @@ import {
   renderUnsubscribeConfirmPage,
   renderUnsubscribeDonePage,
   renderUnsubscribeInvalidPage,
+  renderUnsubscribeRetryPage,
 } from './marketing-unsubscribe.page';
 import {
   getMarketingCampaignReport,
@@ -961,6 +962,11 @@ export async function marketingRoutes(app: FastifyInstance) {
       if (error instanceof Error && error.message === 'CUSTOMER_NOT_FOUND') {
         if (fromBrowserForm) return sendUnsubscribePage(reply, 404, renderUnsubscribeInvalidPage());
         return reply.status(404).send({ error: 'CUSTOMER_NOT_FOUND' });
+      }
+      // Le jeton est signé et sans état : le même lien permet de réessayer.
+      if (error instanceof Error && error.message === 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE') {
+        if (fromBrowserForm) return sendUnsubscribePage(reply, 503, renderUnsubscribeRetryPage());
+        return reply.status(503).send({ error: 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE' });
       }
       throw error;
     }

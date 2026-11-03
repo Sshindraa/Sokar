@@ -11,6 +11,9 @@ import {
 
 vi.mock('../../../shared/db/client', () => ({
   db: {
+    $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(db)),
     customer: { findFirst: vi.fn(), findUnique: vi.fn() },
     customerConsent: { findMany: vi.fn() },
     marketingPermission: { upsert: vi.fn(), findMany: vi.fn() },
@@ -176,16 +179,87 @@ describe('marketing permission projection', () => {
       expect(optOut().upsert).not.toHaveBeenCalled();
     });
 
-    it('never fails the permission change when the register cannot be updated', async () => {
+    it('reports failure while keeping the existing profile and its proof event when the register fails', async () => {
       optOut().upsert.mockRejectedValue(new Error('db down for alice@example.com'));
       await expect(
         withdrawMarketingPermission({
           restaurantId: 'restaurant-1',
           customerId: 'customer-1',
           channel: 'EMAIL',
+          source: 'DASHBOARD_WITHDRAWAL',
+          actorUserId: 'user_123',
+          occurredAt: new Date('2026-10-23T10:00:00.000Z'),
         }),
-      ).resolves.toMatchObject({ id: 'permission-1' });
-      expect(db.marketingPermissionEvent.create).toHaveBeenCalled();
+      ).rejects.toThrow('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+      expect(db.marketingPermission.upsert).toHaveBeenCalledTimes(1);
+      expect(db.marketingPermission.upsert).toHaveBeenLastCalledWith(
+        expect.objectContaining({ update: expect.objectContaining({ status: 'OPTED_OUT' }) }),
+      );
+      expect(db.marketingPermissionEvent.create).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(db.marketingPermissionEvent.create).mock.calls[0][0].data).toMatchObject({
+        permissionId: 'permission-1',
+        channel: 'EMAIL',
+        status: 'OPTED_OUT',
+        source: 'DASHBOARD_WITHDRAWAL',
+        actorUserId: 'user_123',
+        occurredAt: new Date('2026-10-23T10:00:00.000Z'),
+      });
+    });
+
+    it('does not run the fallback when an opt-in fails to lift the opposition', async () => {
+      optOut().deleteMany.mockRejectedValue(new Error('db down'));
+      await expect(
+        upsertMarketingPermission({
+          restaurantId: 'restaurant-1',
+          customerId: 'customer-1',
+          channel: 'EMAIL',
+          status: MarketingPermissionStatus.OPTED_IN,
+          source: 'CONNECT',
+          proofVersion: 'marketing-consent-2026-10-22',
+          proof: 'texte',
+        }),
+      ).rejects.toThrow('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+      expect(db.marketingPermission.upsert).toHaveBeenCalledTimes(1);
+      expect(db.marketingPermissionEvent.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets a failing proof write propagate without attempting the register', async () => {
+      vi.mocked(db.marketingPermissionEvent.create).mockRejectedValueOnce(new Error('proof down'));
+      await expect(
+        withdrawMarketingPermission({
+          restaurantId: 'restaurant-1',
+          customerId: 'customer-1',
+          channel: 'EMAIL',
+        }),
+      ).rejects.toThrow('proof down');
+      expect(optOut().upsert).not.toHaveBeenCalled();
+    });
+
+    it('fails when the register key is missing', async () => {
+      vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', '');
+      await expect(
+        withdrawMarketingPermission({
+          restaurantId: 'restaurant-1',
+          customerId: 'customer-1',
+          channel: 'EMAIL',
+        }),
+      ).rejects.toThrow('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+    });
+
+    it('succeeds without a register write when the customer has no address on that channel', async () => {
+      vi.mocked(db.customer.findFirst).mockResolvedValue({
+        ...contact,
+        emailNormalized: null,
+      } as never);
+      await expect(
+        withdrawMarketingPermission({
+          restaurantId: 'restaurant-1',
+          customerId: 'customer-1',
+          channel: 'EMAIL',
+        }),
+      ).resolves.toBeDefined();
+      expect(db.marketingPermission.upsert).toHaveBeenCalledTimes(1);
+      expect(optOut().upsert).not.toHaveBeenCalled();
     });
 
     it('keeps the exact proof text and the author in the event ledger, not in the permission row', async () => {
