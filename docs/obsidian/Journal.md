@@ -3667,3 +3667,7 @@ La navigation bureau démarre en barre d’icônes ; le bouton de menu ou une ca
 ### 2026-11-03 — Effacement : l'ancien accord SMS n'autorise plus le marketing
 
 Décision de Hamza : après un effacement, une fiche recréée au même numéro doit redonner son accord. L'effacement passe `marketingOptIn` à false sur les consentements du sujet ; les lignes restent comme preuve (date, version de politique, contexte), mais la trace de l'accord marketing initial n'y figure plus. Test PostgreSQL : éligible avant, exclu après effacement et recréation, de nouveau éligible après un nouvel accord ; il échoue sans le correctif. PR #620 en brouillon, envois et routes toujours fermés.
+
+### 2026-11-03 — Marketing : un envoi refusé ne consomme plus la limite de fréquence
+
+Constat de l'essai staging (trois refus ont amené un client à 3/3 sans aucun e-mail reçu). Le worker rend le créneau quand le message n'est certainement pas parti : refus de la liste blanche, refus de Resend, pas de contact. Un résultat incertain garde son créneau. Le motif `RECIPIENT_NOT_ALLOWLISTED` remplace `PROVIDER_REFUSED` pour la liste blanche, et une adresse dans une erreur fournisseur est masquée. Aucun schéma ni réglage changé.

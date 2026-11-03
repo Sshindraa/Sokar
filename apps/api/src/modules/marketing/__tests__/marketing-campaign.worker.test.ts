@@ -509,6 +509,75 @@ describe('marketing campaign worker', () => {
     expect(sendEmail).toHaveBeenCalledTimes(1);
   });
 
+  const decrement = { data: { sendCount: { decrement: 1 } } };
+
+  it('rend le créneau de fréquence et garde le motif quand la liste blanche refuse l’envoi', async () => {
+    const { db, deps } = makeDependencies();
+    mockEmailCampaign(db, 'manager@chez-sokar.test');
+    deps.sendEmail = vi.fn().mockResolvedValue({
+      outcome: 'failure_certain',
+      provider: 'resend',
+      channel: 'email',
+      reason: 'RECIPIENT_NOT_ALLOWLISTED',
+    }) as never;
+
+    await processMarketingCampaignJob(makeJob(), deps);
+
+    expect(db.campaignMessage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: MarketingMessageStatus.FAILED,
+          errorCode: 'RECIPIENT_NOT_ALLOWLISTED',
+        }),
+      }),
+    );
+    expect(db.marketingFrequencyWindow.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...decrement,
+        where: expect.objectContaining({
+          restaurantId: 'restaurant-1',
+          customerId: 'customer-1',
+          channel: 'EMAIL',
+        }),
+      }),
+    );
+  });
+
+  it('rend le créneau quand Resend refuse et masque l’adresse dans le code d’erreur', async () => {
+    const { db, deps } = makeDependencies();
+    mockEmailCampaign(db, 'manager@chez-sokar.test');
+    deps.sendEmail = vi
+      .fn()
+      .mockRejectedValue(new Error('Resend API error: invalid to alice@example.com')) as never;
+
+    await processMarketingCampaignJob(makeJob(), deps);
+
+    expect(db.campaignMessage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ errorCode: 'RESEND_API_ERROR:_INVALID_TO_EMAIL' }),
+      }),
+    );
+    expect(db.marketingFrequencyWindow.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining(decrement),
+    );
+  });
+
+  it('garde le créneau quand on ne sait pas si le message est parti', async () => {
+    const { db, deps } = makeDependencies();
+    mockEmailCampaign(db, 'manager@chez-sokar.test');
+    deps.sendEmail = vi.fn().mockResolvedValue({
+      outcome: 'unknown',
+      provider: 'resend',
+      channel: 'email',
+    }) as never;
+
+    await processMarketingCampaignJob(makeJob(), deps);
+
+    expect(db.marketingFrequencyWindow.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining(decrement),
+    );
+  });
+
   it('refuse l’envoi e-mail sans MARKETING_EMAIL_FROM, sans jamais se rabattre sur EMAIL_FROM', async () => {
     vi.stubEnv('EMAIL_FROM', 'noreply@sokar.tech');
     const { db, deps } = makeDependencies();
