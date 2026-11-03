@@ -35,6 +35,14 @@ const outfit = localFont({
   weight: '300 900',
 });
 
+// Police de marque : réservée au mot-symbole et au titre principal.
+const fraunces = localFont({
+  src: './fonts/fraunces-latin.woff2',
+  display: 'swap',
+  variable: '--font-brand',
+  weight: '400 700',
+});
+
 const jakarta = localFont({
   src: './fonts/plus-jakarta-sans-latin.woff2',
   display: 'swap',
@@ -45,7 +53,7 @@ const jakarta = localFont({
 export default function HomePage() {
   return (
     <div
-      className={`brand-palette relative min-h-screen w-full bg-background text-foreground flex flex-col justify-between items-center font-sans antialiased ${outfit.variable} ${jakarta.variable}`}
+      className={`brand-palette relative min-h-screen w-full bg-background text-foreground flex flex-col justify-between items-center font-sans antialiased ${outfit.variable} ${fraunces.variable} ${jakarta.variable}`}
     >
       {/* Liquid Field Background */}
       <div className="liquid-field absolute inset-0 pointer-events-none z-0 overflow-hidden select-none" />
@@ -59,17 +67,17 @@ export default function HomePage() {
       {/* Logo — top-left fixed */}
       <Link
         href="/"
-        className="fixed left-4 top-5 z-50 hidden md:flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-80 sm:left-6"
+        className="fixed left-4 top-5 z-50 hidden h-[52px] md:flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-80 sm:left-6"
       >
         <Image
           src="/logo-nav.png"
           alt="Suppernote"
           width={36}
           height={36}
-          className="h-9 w-9 sm:h-11 sm:w-11"
+          className="h-9 w-9 sm:h-10 sm:w-10"
           priority
         />
-        <span className="hidden text-xl font-bold tracking-tight text-white font-display sm:inline">
+        <span className="hidden text-2xl font-medium tracking-tight text-white font-brand sm:inline">
           Suppernote
         </span>
       </Link>
@@ -136,7 +144,7 @@ export default function HomePage() {
                   <ArrowRight size={12} aria-hidden="true" />
                 </Link>
 
-                <h1 className="mt-7 max-w-4xl text-[2.5rem] font-semibold leading-[0.98] tracking-tight text-white sm:text-6xl md:text-7xl lg:text-[5.5rem] font-display">
+                <h1 className="mt-7 max-w-5xl text-balance text-[2.5rem] font-medium leading-[1.06] tracking-[-0.01em] text-white sm:text-6xl md:text-7xl lg:text-[4.5rem] font-brand">
                   {BRAND_TITLE}
                 </h1>
 

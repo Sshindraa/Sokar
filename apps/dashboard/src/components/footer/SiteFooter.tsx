@@ -31,7 +31,7 @@ export default function SiteFooter() {
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white">
               <Image src="/logo-nav.png" alt="" width={24} height={24} className="h-6 w-6 invert" />
             </span>
-            <span className="text-3xl font-medium text-white font-display">Suppernote</span>
+            <span className="text-3xl font-medium text-white font-brand">Suppernote</span>
           </Link>
           <span aria-hidden="true" className="hidden h-8 w-px bg-white/15 sm:block" />
           <p className="max-w-xs text-sm leading-relaxed text-white/60 font-sans">
