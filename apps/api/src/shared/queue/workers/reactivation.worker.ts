@@ -1,6 +1,7 @@
 import { Worker } from 'bullmq';
 import { redisQueue } from '../../redis/client';
 import { db } from '../../db/client';
+import { loadCustomerVisitStats } from '../../../modules/customers/customer-lifecycle';
 import { setupWorkerListeners, jobLogger } from './helper';
 
 /**
@@ -10,7 +11,7 @@ import { setupWorkerListeners, jobLogger } from './helper';
  *
  * Jobs :
  * 1. { kind: 'scan' } — Cron hebdo (lundi 10h). Pour chaque restaurant, scanne
- *    les VIPs avec lastSeenAt entre 90 et 180 jours, crée une campaign PENDING.
+ *    les VIPs dont la dernière visite honorée date de 90 à 180 jours, crée une campaign PENDING.
  * 2. { kind: 'send', campaignId } — legacy payload conservé pour drainer les
  *    jobs déjà présents. Il ne contacte plus le provider : la route dashboard
  *    migre d'abord vers MarketingCampaign, puis la file marketing gouvernée
@@ -51,23 +52,35 @@ export const reactivationWorker = new Worker(
         ).map((automation) => automation.restaurantId),
       );
 
-      // Une seule query pour tous les VIPs dormants (évite un N+1 : un findMany par restaurant).
-      const allDormantVips = await db.customer.findMany({
+      // Une seule query pour tous les VIPs actifs (évite un N+1 : un findMany par restaurant).
+      const allVips = await db.customer.findMany({
         where: {
           isVip: true,
-          lastSeenAt: { gte: minDate, lte: maxDate },
+          archivedAt: null,
+          mergedIntoId: null,
           restaurant: { onboardingDone: true },
         },
         select: { id: true, restaurantId: true },
       });
-      const vipsByRestaurant = new Map<string, string[]>();
-      for (const v of allDormantVips) {
-        const list = vipsByRestaurant.get(v.restaurantId);
+      const vipIdsByRestaurant = new Map<string, string[]>();
+      for (const v of allVips) {
+        const list = vipIdsByRestaurant.get(v.restaurantId);
         if (list) {
           list.push(v.id);
         } else {
-          vipsByRestaurant.set(v.restaurantId, [v.id]);
+          vipIdsByRestaurant.set(v.restaurantId, [v.id]);
         }
+      }
+      // Dormant = dernière visite honorée entre 90 et 180 jours, lue dans les réservations :
+      // `lastSeenAt` bouge à chaque appel et ne dit pas si le client est venu.
+      const vipsByRestaurant = new Map<string, string[]>();
+      for (const [restaurantId, ids] of vipIdsByRestaurant) {
+        const stats = await loadCustomerVisitStats(restaurantId, ids, now);
+        const dormant = ids.filter((id) => {
+          const lastVisit = stats.get(id)?.visitDates.at(-1);
+          return Boolean(lastVisit && lastVisit >= minDate && lastVisit <= maxDate);
+        });
+        if (dormant.length > 0) vipsByRestaurant.set(restaurantId, dormant);
       }
 
       let campaignsCreated = 0;

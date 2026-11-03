@@ -8,6 +8,7 @@ import {
   CUSTOMER_PREFERENCE_KEYS,
   deleteCustomerPreference,
   normalizeCustomerEmail,
+  customerPhoneLookupValues,
   normalizeCustomerPhone,
   normalizeCustomerPreferenceValue,
   previewCustomerMetricSnapshotRepair,
@@ -45,6 +46,10 @@ describe('customer CRM core', () => {
     expect(normalizeCustomerPhone(' 00 33 6 12 34 56 78 ')).toBe('+33612345678');
     expect(normalizeCustomerPhone('+33 (6) 12-34-56-78')).toBe('+33612345678');
     expect(normalizeCustomerPhone('+336****5678')).toBeNull();
+    // A French national number becomes E.164, so a dashboard « 06… » and a caller share a profile.
+    expect(normalizeCustomerPhone('06 12 34 56 78')).toBe('+33612345678');
+    expect(normalizeCustomerPhone('erased:6f1c2d')).toBeNull();
+    expect(customerPhoneLookupValues('+33612345678')).toEqual(['+33612345678', '0612345678']);
     expect(normalizeCustomerEmail('  Alice@Example.COM ')).toBe('alice@example.com');
     expect(normalizeCustomerEmail('not-an-email')).toBeNull();
   });

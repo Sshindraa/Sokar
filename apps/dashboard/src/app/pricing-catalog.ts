@@ -66,12 +66,6 @@ export const CATALOG_FEATURES: readonly CatalogFeature[] = [
     introducedIn: 'Essential',
   },
   {
-    id: 'google-agenda',
-    label: 'Synchronisation Google Agenda',
-    status: 'disponible',
-    introducedIn: 'Essential',
-  },
-  {
     id: 'daily-report',
     label: 'Rapport quotidien des appels',
     status: 'disponible',

@@ -102,7 +102,7 @@ export const FAQS = [
   {
     question: "Avec quels outils Sokar s'intègre-t-il ?",
     answer:
-      'Les réservations prises par Sokar sont enregistrées dans son carnet, avec les réservations en ligne et celles saisies par votre équipe. Google Agenda peut être connecté selon votre configuration. Une synchronisation avec Zenchef, TheFork ou votre caisse n’est pas annoncée comme disponible : vérifiez avec nous votre organisation avant activation.',
+      'Les réservations prises par Sokar sont enregistrées dans son carnet, avec les réservations en ligne et celles saisies par votre équipe. Une synchronisation avec Zenchef, TheFork ou votre caisse n’est pas annoncée comme disponible : vérifiez avec nous votre organisation avant activation.',
   },
   {
     question: 'Quel type de restaurant peut utiliser Sokar ?',

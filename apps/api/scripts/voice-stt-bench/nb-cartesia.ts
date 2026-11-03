@@ -7,7 +7,7 @@
  * envoyée en pcm_alaw comme Telnyx la fournit). 1 répétition propre + le 1er
  * seed de bruit, envoi temps réel par chunks de 100 ms, sessions en parallèle.
  *
- * Clé : `CARTESIA_BENCH_API_KEY` dédiée ; `BENCH_MAX_CREDITS` plafonne le coût avant envoi.
+ * Clé : `CARTESIA_BENCH_API_KEY` ou `CARTESIA_API_KEY` ; `BENCH_MAX_CREDITS` plafonne le coût avant envoi.
  * Sortie : JSON au format `BenchRecord`, scorable par `nb-score.ts`.
  */
 import { existsSync, readFileSync } from 'node:fs';

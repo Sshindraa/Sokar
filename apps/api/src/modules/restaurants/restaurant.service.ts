@@ -55,7 +55,6 @@ interface CachedRestaurantContext {
   readonly openingHours: unknown;
   readonly carrier: string;
   readonly smsConfirmEnabled: boolean;
-  readonly googleCalendarId: string | null;
   readonly giftCardMinimumAmount: number | null;
   /**
    * Taille de groupe réservable automatiquement (incluse), partagée avec le
@@ -131,7 +130,6 @@ function toCachedRestaurantContext(restaurant: {
   openingHours: unknown;
   carrier: string;
   smsConfirmEnabled: boolean;
-  googleCalendarId: string | null;
   giftCardMinimumAmount: number | null;
   exposureSettings: { maxPartySize: number; connectPublished: boolean } | null;
   personality: CachedRestaurantContext['personality'];
@@ -161,7 +159,6 @@ function toCachedRestaurantContext(restaurant: {
     openingHours: restaurant.openingHours,
     carrier: restaurant.carrier,
     smsConfirmEnabled: restaurant.smsConfirmEnabled,
-    googleCalendarId: restaurant.googleCalendarId,
     giftCardMinimumAmount: restaurant.giftCardMinimumAmount,
     maxPartySize: restaurant.exposureSettings?.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE,
     personality: restaurant.personality,
@@ -189,7 +186,6 @@ const RESTAURANT_CONTEXT_SELECT = {
   openingHours: true,
   carrier: true,
   smsConfirmEnabled: true,
-  googleCalendarId: true,
   giftCardMinimumAmount: true,
   exposureSettings: {
     select: {

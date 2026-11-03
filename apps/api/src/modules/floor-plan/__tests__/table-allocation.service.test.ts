@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import type { Table, Reservation, AgenticHold, PrismaClient } from '@prisma/client';
 import { TableAllocationService, TableAllocationError } from '../table-allocation.service.js';
+import { matchesWhere } from '../../../test/prisma-where';
 
 type MockTable = Table & {
   section: { id: string; name: string; position: number } | null;
@@ -41,6 +42,8 @@ function makeMockPrisma(
   }
 
   const prisma = {
+    restaurantExposureSettings: { findUnique: async () => null },
+    restaurant: { findUnique: async () => ({ timezone: 'Europe/Paris' }) },
     floorPlan: {
       findFirst: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
@@ -160,6 +163,10 @@ function makeMockPrisma(
       },
     },
     reservation: {
+      findMany: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        return Array.from(reservations.values()).filter((r) => matchesWhere(r, where));
+      },
       findFirst: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
         const restaurantId = where.restaurantId as string | undefined;
@@ -177,6 +184,8 @@ function makeMockPrisma(
         };
         for (const reservation of reservations.values()) {
           if (restaurantId && reservation.restaurantId !== restaurantId) continue;
+          if (where.isTest === false && reservation.isTest) continue;
+          if ((where.id as { not?: string } | undefined)?.not === reservation.id) continue;
           if (tableId === null && reservation.tableId !== null) continue;
           if (state?.in && !state.in.includes(reservation.state)) continue;
           if (
@@ -233,6 +242,10 @@ function makeMockPrisma(
       create: async (args: unknown) => args,
     },
     agenticHold: {
+      findMany: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        return Array.from(holds.values()).filter((h) => matchesWhere(h, where));
+      },
       findFirst: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
         const restaurantId = where.restaurantId as string | undefined;
@@ -366,7 +379,6 @@ function makeReservation(
     status: overrides.status ?? 'CONFIRMED',
     estimatedRevenue: overrides.estimatedRevenue ?? null,
     confirmedRevenue: overrides.confirmedRevenue ?? null,
-    googleEventId: overrides.googleEventId ?? null,
     createdAt: overrides.createdAt ?? new Date(),
     channel: overrides.channel ?? 'PHONE',
     state: overrides.state ?? 'CONFIRMED',
@@ -531,6 +543,34 @@ describe('TableAllocationService', () => {
       });
 
       expect(table!.id).toBe('t-terrasse');
+    });
+
+    it('ne choisit jamais une section appartenant à un autre restaurant', async () => {
+      const { prisma } = makeMockPrisma({
+        tables: [
+          makeTable({ id: 'local', floorPlanId, capacity: 4 }),
+          makeTable({
+            id: 'foreign',
+            floorPlanId: 'foreign-plan',
+            capacity: 4,
+            sectionId,
+            floorPlan: {
+              id: 'foreign-plan',
+              restaurantId: 'other-restaurant',
+              isActive: true,
+              isDefault: true,
+            },
+          }),
+        ],
+      });
+      const table = await new TableAllocationService(prisma).allocate({
+        restaurantId,
+        partySize: 4,
+        startsAt: new Date('2026-07-02T19:00:00Z'),
+        endsAt: new Date('2026-07-02T21:00:00Z'),
+        preferredSectionId: sectionId,
+      });
+      expect(table?.id).toBe('local');
     });
 
     it('retombe sur le plan par défaut si la section préférée ne peut pas accueillir le groupe', async () => {

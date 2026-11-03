@@ -39,7 +39,7 @@ n'a été identifié dans les chemins décrits ; ils sont retirés des mentions.
 | Clerk                        | `apps/api/src/plugins/clerk.ts`                                                                                         |
 | Resend                       | `apps/api/src/shared/email/index.ts`, notifications de démonstration                                                    |
 | Google Workspace             | Messagerie de réception confirmée dans l'audit §10.39 et le runbook des demandes de démo                                |
-| Google Agenda / Places       | `apps/api/src/shared/google-calendar/client.ts`, `apps/api/src/modules/connect/google-places.service.ts`                |
+| Google Places                | `apps/api/src/modules/connect/google-places.service.ts`                                                                 |
 | Cerebras                     | `apps/api/src/modules/voice/llm-provider.ts`                                                                            |
 | OpenRouter et modèles routés | `apps/api/src/modules/voice/stream/manager.ts`, analyses sémantiques                                                    |
 | ElevenLabs / Cartesia        | `apps/api/src/modules/voice/stream/tts-handler.ts`, `stt-bridge.ts`                                                     |

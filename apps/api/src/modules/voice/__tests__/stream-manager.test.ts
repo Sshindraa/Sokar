@@ -191,6 +191,35 @@ function restoreVoiceConfig(snapshot: VoiceConfigSnapshot): void {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe('CallSessionManager — singleton & CRUD', () => {
+  it('expire une session sans flux sans interrompre une session connectée', () => {
+    vi.useFakeTimers();
+    try {
+      const mgr = new CallSessionManager();
+      const create = (id: string, ws: WebSocket | null) =>
+        mgr.create({
+          callControlId: id,
+          callSessionId: id,
+          from: '',
+          to: '',
+          restaurantId: 'rest-1',
+          restaurantName: 'Test',
+          systemPrompt: '',
+          isVip: false,
+          telnyxWs: ws as WebSocket,
+          callLegId: id,
+          codec: 'PCMA',
+        });
+      const abandoned = create('abandoned', null);
+      const active = create('active', makeTelnyxWs());
+      vi.advanceTimersByTime(10 * 60_000);
+      expect(mgr.get('abandoned')).toBeUndefined();
+      expect(abandoned.ended).toBe(true);
+      expect(mgr.get('active')).toBe(active);
+      mgr.delete('active');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   beforeEach(() => {
     (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
       new CallSessionManager();

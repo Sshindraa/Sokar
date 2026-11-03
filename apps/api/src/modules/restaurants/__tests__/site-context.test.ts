@@ -69,6 +69,47 @@ describe('resolveRestaurantContext', () => {
     });
   });
 
+  it('réserve le compte sans attribution au seul démarrage du propriétaire', async () => {
+    database.restaurantAccount.findUnique.mockResolvedValue({
+      id: 'account_1',
+      status: 'ACTIVE',
+      restaurants: [
+        { id: 'site_one', siteStatus: 'ACTIVE', isPrimary: true, createdAt: new Date(1) },
+      ],
+      memberships: [],
+    });
+    await expect(
+      resolveRestaurantContext(database, { organizationId: 'org_1', userId: 'user_1' }),
+    ).rejects.toMatchObject({ code: 'SITE_ACCESS_DENIED' });
+    expect(
+      (
+        await resolveRestaurantContext(database, {
+          organizationId: 'org_1',
+          userId: 'user_1',
+          allowUnassigned: true,
+        })
+      ).siteId,
+    ).toBe('site_one');
+  });
+
+  it('plafonne les anciens rôles locaux quand le compte est en lecture seule', async () => {
+    database.restaurantAccount.findUnique.mockResolvedValue({
+      id: 'account_1',
+      status: 'ACTIVE',
+      restaurants: [
+        { id: 'site_one', siteStatus: 'ACTIVE', isPrimary: true, createdAt: new Date(1) },
+      ],
+      memberships: [
+        { restaurantId: null, clerkUserId: 'user_1', role: 'READ_ONLY' },
+        { restaurantId: 'site_one', clerkUserId: 'user_1', role: 'MANAGER' },
+      ],
+    });
+    expect(
+      (await resolveRestaurantContext(database, { organizationId: 'org_1', userId: 'user_1' }))
+        .role,
+    ).toBe('READ_ONLY');
+  });
+
   it('limite un membre à son site et choisit le site principal autorisé', async () => {
     database.restaurantAccount.findUnique.mockResolvedValue({
       id: 'account_1',

@@ -123,7 +123,9 @@ describe('requireOrg : rôles', () => {
 describe('requireOrg : rattachement d’un invité', () => {
   beforeEach(() => {
     vi.mocked(getAuth).mockReturnValue({ orgId: 'org_1', userId: 'user_invited' } as never);
-    vi.mocked(db.restaurantAccountMembership.findFirst).mockResolvedValue(null);
+    vi.mocked(db.restaurantAccountMembership.findFirst).mockImplementation((async (args: {
+      where?: { role?: string };
+    }) => (args.where?.role === 'OWNER' ? { id: 'owner' } : null)) as never);
   });
 
   it('rattache l’invité avec le rôle de son invitation, puis le laisse entrer', async () => {

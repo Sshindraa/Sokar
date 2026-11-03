@@ -117,6 +117,7 @@ async function anonymizeOne(prisma: PrismaClient, reservationId: string): Promis
     data: {
       customerName: 'ANON',
       customerPhone: null,
+      customerEmail: null,
       customerId: null,
       specialRequests: null,
     },

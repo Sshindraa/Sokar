@@ -199,7 +199,9 @@ if [ "$DRY_RUN" = false ]; then
     log info ""
     log info "📦 Snapshot pré-build (rollback safety net)..."
     snapshot_artifacts "$PREV_RELEASE" "pre-build"
-    backup_db "$PREV_RELEASE" || true
+    # Le pré-build décrit le dernier déploiement réussi, pas le checkout déjà synchronisé.
+    snapshot_dependencies "$PREV_RELEASE" "$(cat "$RELEASES_DIR/.latest-hash" 2>/dev/null || true)"
+    backup_db "$PREV_RELEASE"
 
     # Variable globale pour le trap ERR
     RESTORE_ON_FAIL="$PREV_RELEASE"
@@ -462,6 +464,7 @@ if [ "$EXTENDED_HEALTH_CHECKS" = true ]; then
             log info ""
             log info "📦 Snapshot post-build (release $NEW_TIMESTAMP)..."
             snapshot_artifacts "$NEW_RELEASE" "deploy-ok"
+            snapshot_dependencies "$NEW_RELEASE" "$(git rev-parse HEAD)"
             echo "$NEW_TIMESTAMP" > "$RELEASES_DIR/.latest"
             cleanup_releases "$KEEP_RELEASES"
         fi
@@ -469,9 +472,6 @@ if [ "$EXTENDED_HEALTH_CHECKS" = true ]; then
         prune_stale_next_builds
         # Sauvegarder le hash pour le prochain déploiement incrémental
         git rev-parse HEAD > "$RELEASES_DIR/.latest-hash"
-
-        # Le snapshot pré-build a servi de safety net et n'est plus needed
-        rm -rf "$PREV_RELEASE" 2>/dev/null || true
 
         log info ""
         log info "📦 Releases disponibles pour rollback :"
@@ -496,13 +496,12 @@ else
         log info ""
         log info "📦 Snapshot post-build (release $NEW_TIMESTAMP)..."
         snapshot_artifacts "$NEW_RELEASE" "deploy-ok"
+        snapshot_dependencies "$NEW_RELEASE" "$(git rev-parse HEAD)"
         echo "$NEW_TIMESTAMP" > "$RELEASES_DIR/.latest"
 
         # Cleanup old releases (garde KEEP_RELEASES)
         cleanup_releases "$KEEP_RELEASES"
 
-        # Nettoyer le snapshot pré-build
-        rm -rf "${PREV_RELEASE}" 2>/dev/null || true
         cleanup_previous_next_builds
         prune_stale_next_builds
 

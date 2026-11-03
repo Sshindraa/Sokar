@@ -58,10 +58,8 @@ async function seed() {
         restaurantId: restaurant.id,
         phone: '+33612345678',
         name: 'Jean Dupont',
-        visitCount: 12,
         isVip: true,
         notes: 'Client fidèle, préfère la table près de la fenêtre',
-        loyaltyScore: 85,
       },
     }),
     db.customer.create({
@@ -69,10 +67,8 @@ async function seed() {
         restaurantId: restaurant.id,
         phone: '+33623456789',
         name: 'Marie Martin',
-        visitCount: 5,
         isVip: false,
         notes: 'Allergique aux fruits de mer',
-        loyaltyScore: 35,
       },
     }),
     db.customer.create({
@@ -80,10 +76,8 @@ async function seed() {
         restaurantId: restaurant.id,
         phone: '+33634567890',
         name: 'Pierre Durand',
-        visitCount: 1,
         isVip: false,
         notes: '',
-        loyaltyScore: 5,
       },
     }),
   ]);
@@ -160,7 +154,7 @@ async function seed() {
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(20, 0, 0, 0);
 
-  await Promise.all([
+  const seededReservations = await Promise.all([
     db.reservation.create({
       data: {
         restaurantId: restaurant.id,
@@ -211,6 +205,31 @@ async function seed() {
     }),
   ]);
   console.log(`  4 réservations créées`);
+
+  // Avec un plan de salle, chaque réservation générée prend la plus petite table libre compatible,
+  // comme à la création. Sans plan de salle, rien ne change.
+  const tables = await db.table.findMany({
+    where: { isActive: true, floorPlan: { restaurantId: restaurant.id, isActive: true } },
+    select: { id: true, capacity: true, minCapacity: true },
+    orderBy: { capacity: 'asc' },
+  });
+  const SEED_SERVICE_MS = 120 * 60_000;
+  const taken: Array<{ tableId: string; start: number; end: number }> = [];
+  for (const reservation of [...seededReservations].sort(
+    (a, b) => a.reservedAt.getTime() - b.reservedAt.getTime(),
+  )) {
+    const start = reservation.reservedAt.getTime();
+    const end = start + SEED_SERVICE_MS;
+    const table = tables.find(
+      (t) =>
+        t.capacity >= reservation.partySize &&
+        t.minCapacity <= reservation.partySize &&
+        !taken.some((b) => b.tableId === t.id && b.start < end && start < b.end),
+    );
+    if (!table) continue;
+    taken.push({ tableId: table.id, start, end });
+    await db.reservation.update({ where: { id: reservation.id }, data: { tableId: table.id } });
+  }
 
   console.log('\n✅ Seed terminé !');
   console.log(`   Dashboard: http://localhost:3001/dashboard`);

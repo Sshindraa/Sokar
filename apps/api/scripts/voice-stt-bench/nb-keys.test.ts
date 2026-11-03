@@ -4,19 +4,26 @@ import { requireBenchCreditBudget, requireBenchKey } from './nb-keys';
 afterEach(() => vi.unstubAllEnvs());
 
 describe('voice STT benchmark guards', () => {
-  it('rejects a provider key that is the runtime key without revealing it', () => {
+  it('accepts the runtime key as an explicit bench key', () => {
     vi.stubEnv('DEEPGRAM_API_KEY', 'runtime-secret');
     vi.stubEnv('DEEPGRAM_BENCH_API_KEY', 'runtime-secret');
+    expect(requireBenchKey('DEEPGRAM_BENCH_API_KEY', 'DEEPGRAM_API_KEY')).toBe('runtime-secret');
+  });
 
-    let error: unknown;
-    try {
-      requireBenchKey('DEEPGRAM_BENCH_API_KEY', 'DEEPGRAM_API_KEY');
-    } catch (caught) {
-      error = caught;
+  it('falls back to the runtime key when the bench key is absent or blank', () => {
+    vi.stubEnv('CARTESIA_API_KEY', 'runtime-secret');
+    for (const value of [undefined, '   ']) {
+      vi.stubEnv('CARTESIA_BENCH_API_KEY', value);
+      expect(requireBenchKey('CARTESIA_BENCH_API_KEY', 'CARTESIA_API_KEY')).toBe('runtime-secret');
     }
+  });
 
-    expect(String(error)).toContain('identique à DEEPGRAM_API_KEY');
-    expect(String(error)).not.toContain('runtime-secret');
+  it('rejects missing keys without exposing credentials', () => {
+    vi.stubEnv('DEEPGRAM_API_KEY', '');
+    vi.stubEnv('DEEPGRAM_BENCH_API_KEY', '');
+    expect(() => requireBenchKey('DEEPGRAM_BENCH_API_KEY', 'DEEPGRAM_API_KEY')).toThrow(
+      'DEEPGRAM_BENCH_API_KEY ou DEEPGRAM_API_KEY est requis',
+    );
   });
 
   it('accepts a dedicated Cartesia bench key', () => {

@@ -5,6 +5,12 @@ const isDev = process.env.NODE_ENV !== 'production';
 
 export const REDACT_CENSOR = '[REDACTED]';
 
+export function safeRequestUrl(url: string | undefined): string | undefined {
+  return url?.startsWith('/voice/stream/') || url?.startsWith('/api/rgpd/confirm-link')
+    ? url.split('?')[0]
+    : url;
+}
+
 /**
  * Centralised redaction paths for every Pino logger instance (worker logger
  * and Fastify request logger). Keep this list in sync with the env vars that
@@ -69,7 +75,6 @@ export const REDACT_PATHS = [
   'env.TELNYX_PUBLIC_KEY',
   'env.TELNYX_WEBHOOK_SECRET',
   'env.GOOGLE_PLACES_API_KEY',
-  'env.GOOGLE_CLIENT_SECRET',
   'env.STRIPE_SECRET_KEY',
   'env.STRIPE_WEBHOOK_SECRET',
   'env.RESEND_API_KEY',

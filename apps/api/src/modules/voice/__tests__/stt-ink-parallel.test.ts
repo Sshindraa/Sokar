@@ -6,6 +6,7 @@ vi.unmock('../stream/stt-ink-parallel');
 import {
   closeInkParallel,
   inkAudioFormat,
+  peekReadyInkTranscript,
   openInkParallel,
   resolveInkTranscript,
   sendInkAudio,
@@ -31,6 +32,13 @@ class FakeSocket implements InkSocket {
   }
   final(text: string) {
     this.emit('message', Buffer.from(JSON.stringify({ type: 'transcript', is_final: true, text })));
+  }
+  flush() {
+    this.emit('message', Buffer.from(JSON.stringify({ type: 'flush_done' })));
+  }
+  complete(text: string) {
+    this.final(text);
+    this.flush();
   }
   send(data: Buffer | string) {
     this.sent.push(data);
@@ -185,7 +193,7 @@ describe('fin de phrase', () => {
     const pending = resolveInkTranscript(session, 'je voudrais réserver demain', {
       env: { ...env, VOICE_STT_INK_REPLACE_RESTAURANT_IDS: '' },
     });
-    socket!.final('je suis en vacances');
+    socket!.complete('je suis en vacances');
     await expect(pending).resolves.toMatchObject({
       transcript: 'je voudrais réserver demain',
       source: 'deepgram',
@@ -198,14 +206,14 @@ describe('fin de phrase', () => {
     const pending = resolveInkTranscript(session, 'je voudrais réserver demain', {
       env: { ...env, VOICE_STT_INK_REPLACE_RESTAURANT_IDS: 'r2' },
     });
-    socket!.final('je suis en vacances');
+    socket!.complete('je suis en vacances');
     expect((await pending).source).toBe('deepgram');
   });
   it("remplace le texte Deepgram par celui d'Ink-2 arrivé après finalize", async () => {
     const { session, socket } = await openSession();
     const pending = resolveInkTranscript(session, 'je vous permets de toute façon', { env });
     expect(socket!.sent.at(-1)).toBe('finalize');
-    socket!.final('je voudrais faire une réservation');
+    socket!.complete('je voudrais faire une réservation');
     await expect(pending).resolves.toEqual(
       expect.objectContaining({ transcript: 'je voudrais faire une réservation', source: 'ink' }),
     );
@@ -225,12 +233,154 @@ describe('fin de phrase', () => {
     const isolated = await resolveInkTranscript(session, 'Vingt', { env });
     expect(isolated).toEqual({ transcript: 'Vingt', source: 'deepgram', waitedMs: 0 });
     expect(socket!.sent.at(-1)).toBe('finalize');
-    socket!.final('vin');
+    socket!.complete('vin');
     const next = resolveInkTranscript(session, 'au nom de Akif', { env });
-    socket!.final('au nom de Akif A D K I F');
+    socket!.complete('au nom de Akif A D K I F');
     await expect(next).resolves.toEqual(
       expect.objectContaining({ transcript: 'au nom de Akif A D K I F' }),
     );
+  });
+
+  it('attend flush_done et concatène les deltas sans couper 16h30', async () => {
+    const { session, socket } = await openSession();
+    const pending = resolveInkTranscript(session, '16 heures 30', { env });
+    const settled = vi.fn();
+    const completion = pending.then(settled);
+    socket!.final(' 1');
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+    expect(session.sttInk!.pendingFinalize).toBe(true);
+    socket!.final('6h30.');
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+    socket!.flush();
+    await expect(pending).resolves.toMatchObject({ transcript: '16h30.', source: 'ink' });
+    await completion;
+    expect(session.sttInk!.finals).toEqual([]);
+    expect(session.sttInk!.fragments).toEqual([]);
+  });
+
+  it('conserve aussi les fragments constitués uniquement de blancs', async () => {
+    const { session, socket } = await openSession();
+    const pending = resolveInkTranscript(session, 'demain soir', { env });
+    socket!.final(' demain');
+    socket!.final(' ');
+    socket!.final('soir');
+    socket!.flush();
+    await expect(pending).resolves.toMatchObject({ transcript: 'demain soir' });
+  });
+
+  it('ne prend pas un fragment reçu avant finalize pour une phrase complète', async () => {
+    const { session, socket } = await openSession();
+    socket!.final(' 1');
+    const pending = resolveInkTranscript(session, '16 heures 30', { env });
+    expect(socket!.sent).toEqual(['finalize']);
+    socket!.final('6h30.');
+    socket!.flush();
+    await expect(pending).resolves.toMatchObject({ transcript: '16h30.' });
+  });
+
+  it('réutilise un cycle anticipé complet sans renvoyer finalize', async () => {
+    const { session, socket } = await openSession();
+    const t0 = Date.now();
+    session.callerVoice!.lastVoiceAt = t0;
+    sendInkAudio(session, Buffer.alloc(160), t0);
+    sendInkAudio(session, Buffer.alloc(160), t0 + 160);
+    socket!.complete(' 16h30.');
+    const result = await resolveInkTranscript(session, '16 heures 30', { env });
+    expect(result).toMatchObject({ transcript: '16h30.', waitedMs: 0 });
+    expect(socket!.sent.filter((item) => item === 'finalize')).toHaveLength(1);
+  });
+
+  it('sérialise une reprise avant la fin Deepgram et attend les deux flush_done', async () => {
+    const { session, socket } = await openSession();
+    const t0 = Date.now();
+    session.callerVoice!.lastVoiceAt = t0;
+    sendInkAudio(session, Buffer.alloc(160), t0);
+    sendInkAudio(session, Buffer.alloc(160), t0 + 160);
+    session.callerVoice!.lastVoiceAt = t0 + 200;
+    sendInkAudio(session, Buffer.alloc(160), t0 + 200);
+    const pending = resolveInkTranscript(session, 'demain soir', { env });
+    const settled = vi.fn();
+    const completion = pending.then(settled);
+    expect(socket!.sent.filter((item) => item === 'finalize')).toHaveLength(1);
+    socket!.complete(' demain');
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+    expect(socket!.sent.filter((item) => item === 'finalize')).toHaveLength(2);
+    socket!.complete(' soir');
+    await expect(pending).resolves.toMatchObject({ transcript: 'demain soir' });
+    await completion;
+  });
+
+  it('une réponse vide terminée conserve Deepgram et laisse Ink disponible au tour suivant', async () => {
+    const { session, socket } = await openSession();
+    const pending = resolveInkTranscript(session, 'demain soir', { env });
+    socket!.flush();
+    await expect(pending).resolves.toMatchObject({ source: 'deepgram' });
+    expect(socket!.closed).toBe(false);
+    const next = resolveInkTranscript(session, 'mardi soir', { env });
+    socket!.complete(' mardi soir');
+    await expect(next).resolves.toMatchObject({ transcript: 'mardi soir', source: 'ink' });
+  });
+
+  it('après timeout, ferme Ink et ignore tous ses fragments tardifs', async () => {
+    vi.useFakeTimers();
+    try {
+      const { session, socket } = await openSession();
+      const pending = resolveInkTranscript(session, '16 heures 30', {
+        env: { ...env, VOICE_STT_INK_WAIT_MS: '50' },
+      });
+      socket!.final(' 1');
+      await vi.advanceTimersByTimeAsync(50);
+      await expect(pending).resolves.toMatchObject({
+        source: 'deepgram',
+        transcript: '16 heures 30',
+      });
+      expect(socket!.closed).toBe(true);
+      socket!.final('6h30.');
+      socket!.flush();
+      await expect(resolveInkTranscript(session, 'demain soir', { env })).resolves.toMatchObject({
+        source: 'deepgram',
+        transcript: 'demain soir',
+      });
+      expect(session.sttInk!.fragments).toEqual([]);
+      expect(session.sttInk!.finals).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ignore tous les fragments du mot isolé jusqu’à flush_done', async () => {
+    const { session, socket } = await openSession();
+    await resolveInkTranscript(session, 'Vingt', { env });
+    socket!.final(' v');
+    socket!.final('in');
+    socket!.flush();
+    const next = resolveInkTranscript(session, 'demain soir', { env });
+    socket!.complete(' demain soir');
+    await expect(next).resolves.toMatchObject({ transcript: 'demain soir' });
+  });
+
+  it('revient à Deepgram si le tour suivant arrive avant la fin d’une réponse ignorée', async () => {
+    const { session, socket } = await openSession();
+    await resolveInkTranscript(session, 'Vingt', { env });
+    socket!.final(' v');
+    await expect(resolveInkTranscript(session, 'demain soir', { env })).resolves.toMatchObject({
+      source: 'deepgram',
+      transcript: 'demain soir',
+    });
+    expect(socket!.closed).toBe(true);
+    socket!.complete('in');
+    expect(session.sttInk!.finals).toEqual([]);
+  });
+
+  it('une fermeture pendant l’attente rend immédiatement Deepgram', async () => {
+    const { session, socket } = await openSession();
+    const pending = resolveInkTranscript(session, 'demain soir', { env });
+    socket!.final(' dem');
+    socket!.emit('close');
+    await expect(pending).resolves.toMatchObject({ source: 'deepgram' });
   });
 
   it('socket fermée ou en erreur : Deepgram seul', async () => {
@@ -239,6 +389,67 @@ describe('fin de phrase', () => {
     await expect(
       resolveInkTranscript(session, 'pour six personnes demain', { env }),
     ).resolves.toEqual(expect.objectContaining({ source: 'deepgram' }));
+  });
+});
+
+describe('anticipation sur le texte Ink complet', () => {
+  it('ne prépare rien sur un delta et fournit la phrase complète sans consommer son tampon', async () => {
+    const onCompleteTranscript = vi.fn();
+    const { session, socket } = await openSession({}, { onCompleteTranscript });
+    const t0 = Date.now();
+    session.callerVoice!.lastVoiceAt = t0;
+    sendInkAudio(session, Buffer.alloc(160), t0);
+    sendInkAudio(session, Buffer.alloc(160), t0 + 160);
+    socket!.final(' 1');
+    expect(onCompleteTranscript).not.toHaveBeenCalled();
+    expect(peekReadyInkTranscript(session, env)).toBeNull();
+    socket!.final('6h30.');
+    socket!.flush();
+    expect(onCompleteTranscript).toHaveBeenCalledExactlyOnceWith('16h30.');
+    expect(peekReadyInkTranscript(session, env)).toBe('16h30.');
+    await expect(resolveInkTranscript(session, '16 heures 30', { env })).resolves.toMatchObject({
+      transcript: '16h30.',
+    });
+    expect(peekReadyInkTranscript(session, env)).toBeNull();
+  });
+
+  it('ne prépare rien si Ink est seulement en comparaison, ni pendant une reprise de parole', async () => {
+    const onCompleteTranscript = vi.fn();
+    const { session, socket } = await openSession(
+      {},
+      { onCompleteTranscript, env: { ...env, VOICE_STT_INK_REPLACE_RESTAURANT_IDS: '' } },
+    );
+    const t0 = Date.now();
+    session.callerVoice!.lastVoiceAt = t0;
+    sendInkAudio(session, Buffer.alloc(160), t0);
+    sendInkAudio(session, Buffer.alloc(160), t0 + 160);
+    socket!.complete(' demain soir');
+    expect(onCompleteTranscript).not.toHaveBeenCalled();
+    expect(
+      peekReadyInkTranscript(session, { ...env, VOICE_STT_INK_REPLACE_RESTAURANT_IDS: '' }),
+    ).toBeNull();
+    session.sttInk!.speechSinceFinalize = true;
+    expect(peekReadyInkTranscript(session, env)).toBeNull();
+  });
+
+  it('un échec de préparation ne perd pas la transcription prête', async () => {
+    const { session, socket } = await openSession(
+      {},
+      {
+        onCompleteTranscript: () => {
+          throw new Error('unavailable');
+        },
+      },
+    );
+    const t0 = Date.now();
+    session.callerVoice!.lastVoiceAt = t0;
+    sendInkAudio(session, Buffer.alloc(160), t0);
+    sendInkAudio(session, Buffer.alloc(160), t0 + 160);
+    socket!.complete(' demain soir');
+    await expect(resolveInkTranscript(session, 'demain soir', { env })).resolves.toMatchObject({
+      transcript: 'demain soir',
+      source: 'ink',
+    });
   });
 });
 

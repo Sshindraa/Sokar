@@ -8,7 +8,8 @@
  */
 
 const EL_KEY = process.env.ELEVENLABS_BENCH_API_KEY || '';
-const CA_KEY = process.env.CARTESIA_BENCH_API_KEY || '';
+const CA_KEY =
+  process.env.CARTESIA_BENCH_API_KEY?.trim() || process.env.CARTESIA_API_KEY?.trim() || '';
 const LLM_KEY = process.env.CEREBRAS_BENCH_API_KEY || '';
 const CEREBRAS_BASE_URL = process.env.CEREBRAS_BASE_URL || 'https://api.cerebras.ai/v1';
 const CA_VOICE = process.env.CARTESIA_VOICE_ID || '90358bc7-3328-4b93-a942-d0447d7d4b5c';
@@ -37,10 +38,7 @@ if (!keyOk(EL_KEY)) throw new Error('ELEVENLABS_BENCH_API_KEY is required');
 if (EL_KEY === process.env.ELEVENLABS_API_KEY) {
   throw new Error('ELEVENLABS_BENCH_API_KEY must differ from ELEVENLABS_API_KEY');
 }
-if (!keyOk(CA_KEY)) throw new Error('CARTESIA_BENCH_API_KEY is required');
-if (CA_KEY === process.env.CARTESIA_API_KEY?.replace(/"/g, '')) {
-  throw new Error('CARTESIA_BENCH_API_KEY must differ from CARTESIA_API_KEY');
-}
+if (!keyOk(CA_KEY)) throw new Error('CARTESIA_BENCH_API_KEY or CARTESIA_API_KEY is required');
 if (!keyOk(LLM_KEY)) throw new Error('CEREBRAS_BENCH_API_KEY is required');
 if (LLM_KEY === process.env.CEREBRAS_API_KEY) {
   throw new Error('CEREBRAS_BENCH_API_KEY must differ from CEREBRAS_API_KEY');

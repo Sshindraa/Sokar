@@ -7,6 +7,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { Building2, Check, Loader2 } from 'lucide-react';
@@ -99,6 +100,8 @@ export function SiteProvider({
   const [activeSiteId, setActiveSiteId] = useState<string>();
   const [status, setStatus] = useState<SiteContextValue['status']>('idle');
   const [refreshToken, setRefreshToken] = useState(0);
+  // Organisation à laquelle appartiennent les sites affichés.
+  const loadedOrganizationRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     const handleOrganizationSynced = () => setRefreshToken((token) => token + 1);
@@ -108,6 +111,7 @@ export function SiteProvider({
 
   useEffect(() => {
     if (!organizationId) {
+      loadedOrganizationRef.current = undefined;
       setSites([]);
       setAccountId(undefined);
       setActiveSiteId(undefined);
@@ -116,13 +120,21 @@ export function SiteProvider({
     }
 
     let cancelled = false;
-    setSites([]);
-    setAccountId(undefined);
-    setActiveSiteId(undefined);
-    setStatus('loading');
+    const controller = new AbortController();
+    // Une actualisation de la même organisation garde la sélection : l'effacer changerait le
+    // client API et relancerait toutes les lectures du dashboard.
+    const isRefresh = loadedOrganizationRef.current === organizationId;
+    loadedOrganizationRef.current = organizationId;
+    if (!isRefresh) {
+      setSites([]);
+      setAccountId(undefined);
+      setActiveSiteId(undefined);
+      setStatus('loading');
+    }
 
     void fetch('/api/proxy/restaurants/sites', {
       method: 'GET',
+      signal: controller.signal,
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     })
@@ -156,6 +168,11 @@ export function SiteProvider({
       })
       .catch(() => {
         if (cancelled) return;
+        if (isRefresh) {
+          // Une actualisation qui échoue garde les sites déjà chargés.
+          setStatus((current) => (current === 'loading' ? 'error' : current));
+          return;
+        }
         setSites([]);
         setAccountId(undefined);
         setActiveSiteId(undefined);
@@ -164,6 +181,7 @@ export function SiteProvider({
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [organizationId, refreshToken]);
 

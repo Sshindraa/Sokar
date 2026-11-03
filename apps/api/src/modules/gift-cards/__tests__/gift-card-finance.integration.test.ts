@@ -703,6 +703,49 @@ describe.skipIf(!url)('gift card finance — real PostgreSQL transactions', () =
       true,
     );
   });
+  it('keeps a card blocked until all its payments are clear of disputes', async () => {
+    const input = await purchaseOrder();
+    const gift = await new GiftCardPaymentService(prisma).purchaseWithPayment(input);
+    const otherId = `pi_${randomUUID()}`;
+    await prisma.giftCardPaymentEntry.create({
+      data: {
+        paymentIntentId: otherId,
+        giftCardId: gift.id,
+        restaurantId,
+        kind: 'CONTRIBUTION',
+        amountCents: 1000,
+        stripeAccountId: 'acct_test',
+      },
+    });
+    await prisma.giftCard.update({
+      where: { id: gift.id },
+      data: { status: 'PAYMENT_REVIEW', stripePaymentStatus: 'disputed' },
+    });
+    const base = {
+      status: 'succeeded',
+      amount: 10000,
+      amountReceived: 10000,
+      currency: 'eur',
+      refundedAmount: 0,
+      metadata: { restaurantId },
+    };
+    let otherDisputed = true;
+    vi.mocked(retrievePaymentIntent).mockImplementation(async (id) => ({
+      ...base,
+      id,
+      disputed: id === otherId && otherDisputed,
+    }));
+    const refunds = new GiftCardRefundService(prisma);
+    await refunds.reconcilePayment(input.paymentIntentId, 'acct_test');
+    expect((await prisma.giftCard.findUniqueOrThrow({ where: { id: gift.id } })).status).toBe(
+      'PAYMENT_REVIEW',
+    );
+    otherDisputed = false;
+    await refunds.reconcilePayment(input.paymentIntentId, 'acct_test');
+    const card = await prisma.giftCard.findUniqueOrThrow({ where: { id: gift.id } });
+    expect(card.status).toBe('ACTIVE');
+    expect(card.stripePaymentStatus).toBe('succeeded');
+  });
   it('fulfills the frozen pack and commission even after the catalogue changes', async () => {
     const pack = await prisma.giftCardPack.create({
       data: {

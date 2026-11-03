@@ -70,8 +70,6 @@ function createState(): OnboardingState {
       phoneNumber: '',
       phoneAssigned: false,
       openingHours: {},
-      googleCalendarId: null,
-      googleConnected: false,
       personality: null,
     },
   };

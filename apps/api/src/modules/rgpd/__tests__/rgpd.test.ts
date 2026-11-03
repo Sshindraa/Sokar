@@ -36,6 +36,10 @@ function makeMockPrisma() {
     message: {
       updateMany: vi.fn(),
     },
+    call: {
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     reservationAuditLog: {
       create: vi.fn(),
     },
@@ -136,6 +140,7 @@ describe('RGPD', () => {
       vi.mocked(prisma.$transaction).mockImplementationOnce(
         async (callback: Parameters<PrismaClient['$transaction']>[0]) =>
           callback({
+            ...prisma,
             reservation: { updateMany: vi.fn().mockResolvedValueOnce({ count: 5 }) },
           } as unknown as TransactionClient),
       );
@@ -166,6 +171,7 @@ describe('RGPD', () => {
       vi.mocked(prisma.$transaction).mockImplementationOnce(
         async (callback: Parameters<PrismaClient['$transaction']>[0]) =>
           callback({
+            ...prisma,
             reservation: { updateMany: vi.fn().mockResolvedValueOnce({ count: 3 }) },
           } as unknown as TransactionClient),
       );

@@ -713,7 +713,7 @@ describe('réservation publique sur le widget réellement servi par /book', () =
 
   it('confirme une réservation publique sans identifiant de service et conserve l’attribution', async () => {
     const { widget, fetchSpy } = await submitTest(undefined);
-    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    expect(await widget.findByText('Confirmée')).toBeTruthy();
     const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST');
     expect(posts.map(([url]) => url)).toEqual([
       '/api/proxy/marketing/attribution/click',
@@ -732,7 +732,7 @@ describe('réservation publique sur le widget réellement servi par /book', () =
 
   it('résout le slug public pour une ancienne URL de widget par identifiant', async () => {
     const { widget, fetchSpy } = await submitTest(undefined, false, true);
-    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    expect(await widget.findByText('Confirmée')).toBeTruthy();
     expect(widget.getByRole('link', { name: 'Retour' }).getAttribute('href')).toBe(
       '/restaurant/chez-sokar',
     );
@@ -747,7 +747,7 @@ describe('réservation publique sur le widget réellement servi par /book', () =
 
   it('associe le code cadeau fourni au parcours normal, sans montant de débit', async () => {
     const { widget, fetchSpy } = await submitTest(undefined, false, false, 'SKR-TEST-01');
-    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    expect(await widget.findByText('Confirmée')).toBeTruthy();
     const call = fetchSpy.mock.calls.find(([url]) => url.endsWith('/confirm'));
     const body = JSON.parse(call![1]!.body as string);
     expect(body.giftCardCode).toBe('SKR-TEST-01');
@@ -756,7 +756,7 @@ describe('réservation publique sur le widget réellement servi par /book', () =
 
   it('ne transmet pas de carte cadeau depuis un lien de test', async () => {
     const { widget, fetchSpy } = await submitTest(crypto.randomUUID(), false, false, 'SKR-TEST-01');
-    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    expect(await widget.findByText('Confirmée')).toBeTruthy();
     const call = fetchSpy.mock.calls.find(([url]) => url.endsWith('/confirm'));
     expect(JSON.parse(call![1]!.body as string).giftCardCode).toBeUndefined();
   });
@@ -805,7 +805,7 @@ describe('réservation publique sur le widget réellement servi par /book', () =
   it('transmet le jeton au hold puis à la confirmation, sans création réelle ni attribution', async () => {
     const token = crypto.randomUUID();
     const { widget, fetchSpy } = await submitTest(token);
-    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    expect(await widget.findByText('Confirmée')).toBeTruthy();
     const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST');
     expect(posts.map(([url]) => url)).toEqual([
       '/api/proxy/public/r/chez-sokar/hold',
@@ -818,9 +818,9 @@ describe('réservation publique sur le widget réellement servi par /book', () =
       expect(body).not.toHaveProperty('whatsappReminderConsent');
     }
     expect(widget.getByText(/supprimée automatiquement sous 24 h/)).toBeTruthy();
-    expect(widget.getByRole('link', { name: 'Gérer ma réservation' }).getAttribute('href')).toBe(
-      '/r?test',
-    );
+    expect(widget.queryByRole('link', { name: 'Gérer ma réservation' })).toBeNull();
+    expect(widget.container.querySelector('dl')?.textContent).toContain('20:30');
+    expect(widget.getByRole('button', { name: 'Ajouter au calendrier' })).toBeTruthy();
     expect(widget.getByRole('link', { name: 'Retour' }).getAttribute('href')).toContain(
       'testBooking=',
     );
@@ -832,10 +832,97 @@ describe('réservation publique sur le widget réellement servi par /book', () =
     async (token) => {
       const { widget, fetchSpy } = await submitTest(token, true);
       expect(await widget.findByText('Ce lien de test a expiré.')).toBeTruthy();
-      expect(widget.queryByText('Table réservée !')).toBeNull();
+      expect(widget.queryByText('Confirmée')).toBeNull();
       const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST');
       expect(posts.map(([url]) => url)).toEqual(['/api/proxy/public/r/chez-sokar/hold']);
       expect(JSON.parse(posts[0][1]!.body as string).testBookingToken).toBe(token);
     },
   );
+});
+
+describe('consentement marketing et liste d’attente', () => {
+  function bookingFetch(holdResponse?: Response) {
+    const date = new Date();
+    date.setDate(date.getDate() + 2);
+    const dateValue = dateParam(date);
+    navMocks.setParams({ restaurantId: 'chez-sokar' });
+    navMocks.setSearch(`date=${dateValue}&time=20%3A30&partySize=2`);
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/availability')) {
+        return jsonResponse({
+          restaurantId: 'r1',
+          date: dateValue,
+          partySize: 2,
+          slots: ['20:30'],
+        });
+      }
+      if (init?.method === 'POST' && url.endsWith('/hold')) {
+        return holdResponse ?? jsonResponse({ holdToken: 'hold-1' });
+      }
+      if (init?.method === 'POST' && url.endsWith('/confirm')) {
+        return jsonResponse({ reservationId: 'res-1', status: 'CONFIRMED' });
+      }
+      if (init?.method === 'POST' && url.endsWith('/waiting-list')) {
+        return jsonResponse({ entryId: 'wl-1', position: 2, actionToken: 'tok', expiresAt: '' });
+      }
+      return bookingRestaurantResponse();
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    return { fetchSpy, dateValue };
+  }
+
+  async function fillContact(widget: ReturnType<typeof render>, email = '') {
+    fireEvent.click(await widget.findByRole('button', { name: /Continuer · 20h30/ }));
+    fireEvent.change(await widget.findByLabelText('Nom complet *'), {
+      target: { value: 'Alice Martin' },
+    });
+    fireEvent.change(widget.getByLabelText('Téléphone *'), { target: { value: '0600000000' } });
+    if (email)
+      fireEvent.change(widget.getByLabelText(/Adresse Email/), { target: { value: email } });
+  }
+
+  function bodyOf(fetchSpy: ReturnType<typeof vi.fn>, suffix: string) {
+    const call = fetchSpy.mock.calls.find(([url]) => String(url).endsWith(suffix));
+    return JSON.parse(String((call?.[1] as RequestInit).body)) as Record<string, unknown>;
+  }
+
+  it('n’envoie que les accords cochés, jamais pré-cochés', async () => {
+    const { fetchSpy } = bookingFetch();
+    const widget = render(<ReservationWidget />);
+    await fillContact(widget, 'alice@example.com');
+
+    const email = widget.getByRole('checkbox', { name: /e-mail/i }) as HTMLInputElement;
+    const sms = widget.getByRole('checkbox', { name: /SMS/i }) as HTMLInputElement;
+    expect(email.checked).toBe(false);
+    expect(sms.checked).toBe(false);
+    fireEvent.click(email);
+    fireEvent.click(widget.getByRole('button', { name: 'Valider la réservation' }));
+
+    await waitFor(() => expect(bodyOf(fetchSpy, '/confirm').marketingConsent).toBeDefined());
+    expect(bodyOf(fetchSpy, '/confirm').marketingConsent).toEqual({
+      email: true,
+      version: expect.any(String),
+    });
+  });
+
+  it('propose la liste d’attente quand le créneau vient d’être pris', async () => {
+    const { fetchSpy, dateValue } = bookingFetch({
+      ok: false,
+      status: 409,
+      text: async () => JSON.stringify({ error: 'no_table_available', waitingListEnabled: true }),
+    } as unknown as Response);
+    const widget = render(<ReservationWidget />);
+    await fillContact(widget);
+    fireEvent.click(widget.getByRole('button', { name: 'Valider la réservation' }));
+
+    fireEvent.click(await widget.findByRole('button', { name: "Rejoindre la liste d'attente" }));
+    expect(await widget.findByText(/position indicative/)).toBeTruthy();
+    expect(bodyOf(fetchSpy, '/waiting-list')).toMatchObject({
+      date: dateValue,
+      time: '20:30',
+      partySize: 2,
+      customer: { firstName: 'Alice Martin', phone: '+33600000000' },
+    });
+    expect(widget.queryByText(/no_table_available/)).toBeNull();
+  });
 });

@@ -55,6 +55,19 @@ describe('startSpeculation', () => {
     cancelSpeculation(session);
   });
 
+  it('garde une anticipation compatible quand Ink ajoute la ponctuation, mais remplace un nombre différent', async () => {
+    const session = {} as CallSession;
+    const manager = fakeManager(['{"turnComplete":true,"say":"Bien sûr."}']);
+    const messages = (text: string) => [{ role: 'user' as const, content: text }];
+    startSpeculation(session, manager as never, messages('trois personnes'), {} as never);
+    startSpeculation(session, manager as never, messages('Trois personnes.'), {} as never);
+    expect(manager.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+    startSpeculation(session, manager as never, messages('Quatre personnes.'), {} as never);
+    expect(manager.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+    cancelSpeculation(session);
+    await Promise.resolve();
+  });
+
   it('transmet un tour inachevé sans le confondre avec un tour fini', async () => {
     const session = {} as CallSession;
     const onVerdict = vi.fn();

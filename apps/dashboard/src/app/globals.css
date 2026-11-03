@@ -44,6 +44,11 @@
 
     /* Carte opérationnelle compacte du plan Live : les tables restent lisibles
        même quand le canvas utilise une surface sombre ou une vue réduite. */
+    --floor-status-free: 145 64% 50%;
+    --floor-status-reserved: 211 90% 65%;
+    --floor-status-upcoming: 35 95% 58%;
+    --floor-status-late: 0 83% 65%;
+    --floor-status-occupied: 270 75% 72%;
     --floor-table-surface: 225 17% 24%;
     --floor-table-chair: 225 17% 28%;
     --floor-table-accent: 174 63% 72%;
@@ -152,6 +157,11 @@
     /* Les cartes de table suivent le thème : surface blanche et rail métal gris
        en clair, surface ardoise et rail cyan en sombre. Les assises restent
        volontairement contrastées pour conserver la lecture de la disposition. */
+    --floor-status-free: 145 70% 32%;
+    --floor-status-reserved: 211 85% 45%;
+    --floor-status-upcoming: 30 95% 42%;
+    --floor-status-late: 0 72% 48%;
+    --floor-status-occupied: 270 65% 50%;
     --floor-table-surface: 0 0% 100%;
     --floor-table-chair: 0 0% 100%;
     --floor-table-accent: 38 8% 45%;
@@ -1261,8 +1271,7 @@ body {
     inset -3px -3px 0.5px -3.5px hsl(var(--foreground) / 0.85),
     inset 1px 1px 1px -0.5px hsl(var(--foreground) / 0.6),
     inset -1px -1px 1px -0.5px hsl(var(--foreground) / 0.5),
-    inset 0 0 6px 6px hsl(var(--foreground) / 0.08),
-    inset 0 0 2px 2px hsl(var(--foreground) / 0.06);
+    inset 0 0 6px 6px hsl(var(--foreground) / 0.08), inset 0 0 2px 2px hsl(var(--foreground) / 0.06);
 
   position: absolute;
   top: 50%;
@@ -1634,7 +1643,7 @@ body {
    * interactifs capturent les clics.
    */
   .dashboard-mode-switcher {
-    left: 6rem;
+    left: 16rem;
     right: 2rem;
     width: auto;
     max-width: none;
@@ -1668,8 +1677,16 @@ body {
   .dashboard-shell-content {
     padding-right: 2rem;
     padding-bottom: 2rem;
-    padding-left: 6rem;
+    padding-left: 16rem;
     padding-top: 0;
+  }
+
+  .dashboard-shell--sidebar-compact .dashboard-shell-content {
+    padding-left: 6rem;
+  }
+
+  .dashboard-shell--sidebar-compact .dashboard-mode-switcher {
+    left: 6rem;
   }
 }
 

@@ -2,7 +2,7 @@
 
 import { SignIn, useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useSyncExternalStore, type ReactNode } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowLeft, ArrowUpRight, Loader2 } from 'lucide-react';
@@ -15,8 +15,14 @@ import '../../brand-palette.css';
 
 // Composition inspired by Efferd's Auth Page, adapted to Sokar's identity.
 function LoginShell({ children }: { children: ReactNode }) {
+  // Dans l'appli iOS, les liens de découverte ne servent pas : la coque se signale par son user-agent.
+  const inShell = useSyncExternalStore(
+    () => () => {},
+    () => navigator.userAgent.includes('SokarIOS'),
+    () => false,
+  );
   return (
-    <main className="sokar-login dark brand-palette">
+    <main className="sokar-login dark brand-palette" data-shell={inShell ? 'ios' : undefined}>
       <div className="sokar-login__frame">
         <aside className="sokar-login__story" aria-label="Votre restaurant avec Sokar">
           <Link href="/" className="sokar-login__brand" aria-label="Sokar, accueil">

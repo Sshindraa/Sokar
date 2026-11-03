@@ -33,6 +33,7 @@ set -Eeuo pipefail
 #   restore_artifacts(source)
 #   cleanup_releases(keep)
 #   list_releases()
+#   clean_stale_next_types(app)
 #   clean_next_artifacts(app)
 #   recover_services()
 #   detect_changed_apps(last_hash, new_hash)
@@ -172,6 +173,33 @@ snapshot_artifacts() {
     } > "$target/META"
 }
 
+# Le rollback restaure les artefacts, pas node_modules. Sans le lockfile et les
+# package.json de la release restaurée, pnpm réinstalle les dépendances de la
+# version courante et l'ancien code ne démarre pas (module manquant).
+snapshot_dependencies() {
+    local target="$1"
+    local commit="$2"
+    if [ -z "$commit" ]; then
+        log_warn "   Pas de commit connu : dépendances non sauvegardées pour $target"
+        return 0
+    fi
+    local manifests
+    manifests="$(cd "$SOKAR_ROOT" && git ls-tree -r --name-only "$commit" \
+        | grep -E '^(pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json|(apps|packages)/[^/]+/package\.json)$' || true)"
+    if [ -z "$manifests" ]; then
+        log_warn "   Aucun lockfile dans $commit : dépendances non sauvegardées pour $target"
+        return 0
+    fi
+    install -d -m 0755 "$target/deps"
+    # shellcheck disable=SC2086 # liste de chemins, un par ligne, sans espaces
+    (cd "$SOKAR_ROOT" && git archive --format=tar "$commit" $manifests) | tar -x -C "$target/deps"
+}
+
+restore_release_manifests() {
+    local source="$1"
+    (cd "$source/deps" && tar -cf - .) | (cd "$SOKAR_ROOT" && tar -xf -)
+}
+
 restore_artifacts() {
     local source="$1"
     shift
@@ -225,6 +253,18 @@ list_releases() {
             fi
             printf "   %s  %s  %s\n" "$ts" "${hash:-????????}" "${branch:-?}"
         done
+}
+
+# Supprime les types générés par le build précédent. `tsconfig.json` inclut
+# `.next/types/**` et `.next/dev/types/**` : une page supprimée depuis laisse un fichier de
+# types qui l'importe, et le type-check du build suivant échoue sur ce fichier fantôme
+# (staging 26/10/2026, après la suppression de /widget/[slug] dans Connect). Next les
+# régénère à chaque build ; le serveur en production ne les lit jamais.
+clean_stale_next_types() {
+    local app="$1"
+    local app_dir="$SOKAR_ROOT/apps/$app"
+    rm -rf "$app_dir/.next/types" "$app_dir/.next/dev/types" \
+        || log warn "   Types générés de $app non supprimés (droits ?) : le type-check peut échouer."
 }
 
 clean_next_artifacts() {
@@ -645,10 +685,12 @@ build_dashboard_connect() {
         if [ "$need_dash" = true ]; then
             NEXT_DIST_DIR_DASHBOARD=".next-deploy-${build_stamp}-dashboard"
             rm -rf "$SOKAR_ROOT/apps/dashboard/$NEXT_DIST_DIR_DASHBOARD"
+            clean_stale_next_types dashboard
         fi
         if [ "$need_connect" = true ]; then
             NEXT_DIST_DIR_CONNECT=".next-deploy-${build_stamp}-connect"
             rm -rf "$SOKAR_ROOT/apps/connect/$NEXT_DIST_DIR_CONNECT"
+            clean_stale_next_types connect
         fi
     fi
 
@@ -1226,12 +1268,25 @@ handle_rollback() {
         list_releases
         return 1
     fi
+    # Vérifié avant d'arrêter les services : une release sans lockfile ne peut
+    # pas être restaurée proprement (voir snapshot_dependencies).
+    if [ ! -f "$RELEASE_PATH/deps/pnpm-lock.yaml" ]; then
+        log_error "Release $TARGET_RELEASE sans lockfile : rollback impossible, utiliser git revert + redéploiement"
+        return 1
+    fi
 
     log info "→ Stop services..."
     pm2 stop "$PM2_DASH" "$PM2_CONNECT" 2>/dev/null || true
 
     log info "→ Restore artefacts..."
     restore_artifacts "$RELEASE_PATH"
+
+    log info "→ Restore dépendances (lockfile de la release)..."
+    restore_release_manifests "$RELEASE_PATH"
+    if ! (cd "$SOKAR_ROOT" && pnpm install --frozen-lockfile); then
+        log_error "pnpm install a échoué pendant le rollback — services à l'arrêt, intervention manuelle"
+        return 1
+    fi
 
     if [ "$WITH_DB_ROLLBACK" = true ]; then
         log info "→ Restore DB..."

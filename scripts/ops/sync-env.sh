@@ -12,6 +12,7 @@
 #   reservation     (sync-reservation-token)   obligatoire
 #   provider        (sync-staging-provider-config) optionnel, staging seulement
 #   stripe-prices   (sync-stripe-prices)       obligatoire, contrôle du catalogue Stripe
+#   voice-stt                                  optionnel, qualification STT et continuité voix
 #
 # Groupes optionnels : une variable vide est ignorée (configuration existante
 # conservée). Groupes obligatoires : une variable vide ou invalide arrête le
@@ -77,6 +78,11 @@ case "$GROUP" in
     FILES="api"
     KEYS="RESEND_API_KEY EMAIL_FROM EMAIL_TEST_ALLOWLIST PUBLIC_API_URL TELNYX_API_KEY TELNYX_PUBLIC_KEY TELNYX_CONNECTION_ID TELNYX_FROM_NUMBER"
     ;;
+  voice-stt)
+    MODE=optional
+    FILES="api"
+    KEYS="VOICE_STT_INK_RESTAURANT_IDS VOICE_STT_INK_REPLACE_RESTAURANT_IDS VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS"
+    ;;
   stripe-prices)
     MODE=required
     FILES="api"
@@ -121,6 +127,8 @@ is_valid() {
       [[ "$value" =~ ^\+[0-9]{7,15}(,[[:space:]]*\+[0-9]{7,15})*$ ]] ;;
     DEMO_REQUEST_NOTIFY_TO)
       [[ "$value" =~ ^[^[:space:],@]+@[^[:space:],@]+(,[^[:space:],@]+@[^[:space:],@]+)*$ ]] ;;
+    VOICE_STT_INK_RESTAURANT_IDS|VOICE_STT_INK_REPLACE_RESTAURANT_IDS|VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS)
+      [[ "$value" =~ ^[0-9a-f-]{36}(,[0-9a-f-]{36})*$ ]] ;;
     SOKAR_OPERATOR_USER_IDS)
       [[ "$value" =~ ^user_[A-Za-z0-9_-]+(,user_[A-Za-z0-9_-]+)*$ ]] ;;
     RESERVATION_SERVICE_TOKEN)

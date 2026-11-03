@@ -94,6 +94,20 @@ export type SitemapRestaurantEntry = {
 };
 
 /**
+ * Une limitation (429) ou une panne de l'API n'est pas une absence : on lève une erreur au lieu de
+ * renvoyer null ou une liste vide, sinon la page publierait un faux « introuvable » ou un catalogue
+ * vide. Next garde alors la dernière donnée en cache, ou affiche sa page d'erreur.
+ */
+// 400 = slug invalide : la page n'existe pas plus qu'en 404.
+function isNotFound(res: Response): boolean {
+  return res.status === 404 || res.status === 400;
+}
+
+function apiUnavailable(path: string, res: Response): Error {
+  return new Error(`public API unavailable (${path} ${res.status})`);
+}
+
+/**
  * Récupère un restaurant publié par slug.
  * Renvoie null si introuvable ou non publié (404 géré).
  */
@@ -101,22 +115,16 @@ export async function fetchPublicRestaurant(
   slug: string,
   options: { revalidate?: number; tags?: string[]; preview?: boolean } = {},
 ): Promise<PublicRestaurantDto | null> {
-  try {
-    const query = options.preview ? '?preview=1' : '';
-    const res = await fetch(`${await getApiUrl()}/public/r/${slug}${query}`, {
-      next: {
-        revalidate: options.preview ? 0 : (options.revalidate ?? 60),
-        tags: options.tags ?? [`restaurant:${slug}`],
-      },
-    });
-    if (res.status === 404) return null;
-    if (!res.ok) {
-      return null;
-    }
-    return (await res.json()) as PublicRestaurantDto;
-  } catch {
-    return null;
-  }
+  const query = options.preview ? '?preview=1' : '';
+  const res = await fetch(`${await getApiUrl()}/public/r/${slug}${query}`, {
+    next: {
+      revalidate: options.preview ? 0 : (options.revalidate ?? 60),
+      tags: options.tags ?? [`restaurant:${slug}`],
+    },
+  });
+  if (isNotFound(res)) return null;
+  if (!res.ok) throw apiUnavailable('/public/r/:slug', res);
+  return (await res.json()) as PublicRestaurantDto;
 }
 
 /**
@@ -129,21 +137,15 @@ export async function fetchWidgetRestaurant(
   slug: string,
   options: { revalidate?: number; tags?: string[] } = {},
 ): Promise<WidgetRestaurantDto | null> {
-  try {
-    const res = await fetch(`${await getApiUrl()}/public/widget/${slug}`, {
-      next: {
-        revalidate: options.revalidate ?? 60,
-        tags: options.tags ?? [`widget:restaurant:${slug}`],
-      },
-    });
-    if (res.status === 404) return null;
-    if (!res.ok) {
-      return null;
-    }
-    return (await res.json()) as WidgetRestaurantDto;
-  } catch {
-    return null;
-  }
+  const res = await fetch(`${await getApiUrl()}/public/widget/${slug}`, {
+    next: {
+      revalidate: options.revalidate ?? 60,
+      tags: options.tags ?? [`widget:restaurant:${slug}`],
+    },
+  });
+  if (isNotFound(res)) return null;
+  if (!res.ok) throw apiUnavailable('/public/widget/:slug', res);
+  return (await res.json()) as WidgetRestaurantDto;
 }
 
 /**
@@ -189,17 +191,20 @@ export async function fetchPublicRestaurants(
   limit = 12,
   options: { revalidate?: number } = {},
 ): Promise<PaginatedRestaurantsDto> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
   try {
-    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
     const res = await fetch(`${await getApiUrl()}/public/restaurants?${params}`, {
       next: { revalidate: options.revalidate ?? 300 },
     });
-    if (!res.ok) {
+    if (!res.ok) throw apiUnavailable('/public/restaurants', res);
+    return (await res.json()) as PaginatedRestaurantsDto;
+  } catch (error) {
+    // Au build (CI sans API), il n'y a encore aucun cache à préserver : la page part vide et l'ISR
+    // la régénère avec les vraies données. Au runtime, l'erreur garde la dernière page en cache.
+    if (process.env.NEXT_PHASE === 'phase-production-build') {
       return { restaurants: [], total: 0, page, limit };
     }
-    return (await res.json()) as PaginatedRestaurantsDto;
-  } catch {
-    return { restaurants: [], total: 0, page, limit };
+    throw error;
   }
 }
 
@@ -302,111 +307,11 @@ export async function fetchCityPage(
   citySlug: string,
   cuisine?: string,
 ): Promise<import('./cities').CityCuisinePageData | null> {
-  try {
-    const params = new URLSearchParams();
-    if (cuisine) params.set('cuisine', cuisine);
-    const url = `${await getApiUrl()}/public/cities/${citySlug}${params.toString() ? `?${params}` : ''}`;
-    const res = await fetch(url, { next: { revalidate: 300 } });
-    if (res.status === 404) return null;
-    if (!res.ok) return null;
-    return (await res.json()) as import('./cities').CityCuisinePageData;
-  } catch {
-    return null;
-  }
-}
-
-export interface JoinWaitingListArgs {
-  slug: string;
-  date: string;
-  time: string;
-  partySize: number;
-  customer: {
-    firstName: string;
-    lastName?: string;
-    phone: string;
-    email?: string;
-  };
-  preferredSectionId?: string;
-  source?: string;
-}
-
-export interface JoinWaitingListResponse {
-  entryId: string;
-  position: number;
-  actionToken: string;
-  expiresAt: string;
-}
-
-export class PublicApiError extends Error {
-  status?: number;
-  code?: string;
-  constructor(message: string, status?: number, code?: string) {
-    super(message);
-    this.status = status;
-    this.code = code;
-  }
-}
-
-/**
- * Rejoint la file d'attente d'un créneau complet.
- * Endpoint : POST /public/r/:slug/waiting-list
- */
-export async function joinWaitingList(args: JoinWaitingListArgs): Promise<JoinWaitingListResponse> {
-  const customer: Record<string, string> = {
-    firstName: args.customer.firstName,
-    phone: args.customer.phone,
-  };
-  if (args.customer.lastName?.trim()) {
-    customer.lastName = args.customer.lastName.trim();
-  }
-  if (args.customer.email?.trim()) {
-    customer.email = args.customer.email.trim();
-  }
-
-  const body: Record<string, unknown> = {
-    date: args.date,
-    time: args.time,
-    partySize: args.partySize,
-    customer,
-    source: args.source ?? 'web',
-  };
-  if (args.preferredSectionId) {
-    body.preferredSectionId = args.preferredSectionId;
-  }
-
-  const res = await fetchWithTimeout(`${await getApiUrl()}/public/r/${args.slug}/waiting-list`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new PublicApiError(data.error ?? 'Unknown error', res.status, data.error);
-  }
-
-  return (await res.json()) as JoinWaitingListResponse;
-}
-
-/**
- * Annule une inscription en liste d'attente via son token d'action.
- * Endpoint : DELETE /public/r/:slug/waiting-list/:entryId?token=...
- */
-export async function cancelWaitingListEntry(args: {
-  slug: string;
-  entryId: string;
-  token: string;
-}): Promise<void> {
-  const params = new URLSearchParams({ token: args.token });
-  const res = await fetchWithTimeout(
-    `${await getApiUrl()}/public/r/${args.slug}/waiting-list/${args.entryId}?${params}`,
-    {
-      method: 'DELETE',
-    },
-  );
-
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new PublicApiError(data.error ?? 'Unknown error', res.status, data.error);
-  }
+  const params = new URLSearchParams();
+  if (cuisine) params.set('cuisine', cuisine);
+  const url = `${await getApiUrl()}/public/cities/${citySlug}${params.toString() ? `?${params}` : ''}`;
+  const res = await fetch(url, { next: { revalidate: 300 } });
+  if (isNotFound(res)) return null;
+  if (!res.ok) throw apiUnavailable('/public/cities/:slug', res);
+  return (await res.json()) as import('./cities').CityCuisinePageData;
 }

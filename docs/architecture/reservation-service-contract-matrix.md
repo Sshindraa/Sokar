@@ -133,7 +133,7 @@ cette phase :
 - `state=PENDING` peut coexister avec `status=CONFIRMED`, ce qui change les
   listes, rappels SMS et rapports historiques ;
 - l'agentic garantit audit + idempotence + holds, tandis que le voice legacy
-  garantit `callId` + Google Calendar + SMS ;
+  garantit `callId` + SMS ;
 - l'annulation agentic et l'annulation legacy n'ont pas le même contrat de
   hold, d'audit et de notification ;
 - au moins trois chemins créent encore directement des réservations

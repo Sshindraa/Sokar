@@ -23,6 +23,22 @@ Pas d'e-mail de reservation ajoute, ni de changement du template WhatsApp a
 quatre variables : le lien n'est pas encore distribue par ces canaux. Les routes
 de retrait historiques restent compatibles lorsque le nouveau parcours est off.
 
+## Confirmation Web Unifiee (24 Octobre 2026, Local)
+
+Le widget Dashboard servi par `/book` et `/widget/:restaurantId` affiche
+`ReservationView` directement apres le POST de confirmation, a la place de
+l'ancien ecran « Table reservee ». La vue noire presente les donnees de la
+reservation confirmee meme si le lien de gestion est desactive ou si sa lecture
+echoue. Quand un lien signe est fourni, ses actions sont chargees dans cette
+meme vue, sans redirection ni seconde confirmation. Le lien personnel reste
+utilisable pour retrouver la reservation ulterieurement.
+
+Sans lien de gestion, le retrait WhatsApp conserve son endpoint historique ;
+la modification/annulation renvoie au contact restaurant. Agenda, itineraire,
+nouvelle reservation, retour et carte cadeau restent disponibles selon les
+informations et options du restaurant. Aucun drapeau de production active par
+ce changement local.
+
 ## Presentation Et Actions Pratiques
 
 La page reprend la composition d'un carton de reservation : eventail de trois
@@ -185,8 +201,7 @@ reste intacte. L’audit `reservation_fields_changed` conserve un digest de la
 proposition pour reconnaitre un replay ; jamais le lien, le token ou l’identite.
 
 L’identifiant et le lien initial restent valables. Le statut et les conditions
-figees sont conserves ; le cache de disponibilite est invalide. La synchronisation
-Google Calendar du writer existant est conservee. Le carton est actualise apres
+figees sont conserves ; le cache de disponibilite est invalide. Le carton est actualise apres
 reponse serveur ; une reponse perdue declenche une relecture, jamais un second
 envoi aveugle. Un evenement deja importe manuellement dans un calendrier
 personnel n’est pas modifie a distance.

@@ -288,6 +288,10 @@ export function startSpeculation(
   const key = requestKey(messages, format);
   const current = speculations.get(session);
   if (current?.key === key) return;
+  // Ink peut simplement ajouter la ponctuation au texte déjà anticipé. Garder ce flux plus avancé,
+  // avec exactement les mêmes tolérances que lors de sa validation finale. Les callbacks de clôture
+  // Deepgram restent attachés à leur texte exact et conservent leur remplacement habituel.
+  if (current && !onVerdict && harmlessGapOf(current, messages, format)) return;
   const launched = launches.get(session) ?? 0;
   if (launched >= structuredSpeculationMaxLaunches()) {
     voiceStructuredSpeculationLaunchTotal.inc({ result: 'capped' });

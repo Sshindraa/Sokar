@@ -201,6 +201,37 @@ curl -s -o /dev/null -w '%{http_code}' -H 'Host: chez-sokar-demo.sokar.tech' htt
 # Doit retourner 200
 ```
 
+### Widget de réservation sur un sous-domaine ou un domaine personnalisé
+
+La fiche (`/`) vient de Connect, mais le bouton « Réserver » ouvre `/book/<slug>` : nginx
+l'envoie au **dashboard**, comme sur `sokar.tech`, pour servir le même widget partout
+(consentement marketing, liste d'attente). Seules ces routes vont au dashboard
+(bloc `server_name _` de `infra/nginx/sokar.conf`) :
+
+- `/book/<slug>`, `/widget/<slug>` ;
+- `/api/proxy/public/…`, `/api/proxy/marketing/attribution/click`,
+  `/api/proxy/restaurants/<id>/public` et `/api/proxy/restaurants/<id>/availability` ;
+- `/_next/static/` (Connect sert ses fichiers sous `/connect-assets/`).
+
+Tout le reste (`/dashboard`, les autres `/api/proxy/…`) reste chez Connect, qui le renvoie
+vers la fiche. Sur ces routes publiques, le middleware du dashboard n'appelle pas Clerk
+(`apps/dashboard/src/proxy.ts`) : un restaurateur connecté n'est jamais redirigé.
+
+Vérification après déploiement :
+
+```zsh
+curl -s -o /dev/null -w '%{http_code}\n' https://chez-sokar-demo.sokar.tech/book/chez-sokar-demo
+curl -s https://chez-sokar-demo.sokar.tech/api/proxy/public/widget/chez-sokar-demo | head -c 80
+# 200, puis un JSON qui commence par {"id":
+```
+
+Limite connue : la carte cadeau (`/widget/<slug>/gift-card`) reste chez Connect, qui la
+renvoie vers la fiche sur un sous-domaine. C'était déjà le cas avant ce routage.
+
+Retour arrière : le formulaire de Connect n'existe plus (supprimé le 26/10/2026). Pour revenir
+à l'ancien routage, il faudrait restaurer ce code depuis l'historique git ; le simple retrait du
+bloc nginx ci-dessus renverrait `/book/<slug>` vers une page introuvable.
+
 ### Flux restaurateur (zero clic)
 
 1. Le restaurateur active Sokar Connect dans le dashboard

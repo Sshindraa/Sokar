@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Worker, type Job } from 'bullmq';
 import { MarketingCampaignStatus, MarketingMessageStatus, type PrismaClient } from '@prisma/client';
+import { env } from '../../env';
 import { db } from '../../shared/db/client';
 import { sendEmail } from '../../shared/email';
 import { sendSms } from '../../shared/telnyx/client';
@@ -11,13 +12,19 @@ import {
 } from '../../shared/queue/notification-idempotency';
 import { redisQueue } from '../../shared/redis/client';
 import { setupWorkerListeners, jobLogger } from '../../shared/queue/workers/helper';
+import { normalizeCustomerEmail } from '../customers/customer-crm.service';
 import type { MessagingUsageContext } from '../usage/messaging-usage.service';
 import {
+  dayWindow,
   ensureCampaignMessages,
   MAX_SENDS_PER_FREQUENCY_WINDOW,
+  remainingDailyEmailBudget,
+  TARGET_SERVICE_FULL,
   renderMarketingTemplate,
+  marketingEmailFooter,
   toMarketingHtml,
 } from './marketing-campaign.service';
+import { isTargetServiceFull } from './fill-service.service';
 import { loadOptedOutCustomerIds } from './marketing-opt-out.service';
 import {
   resolveMarketingPermission,
@@ -44,6 +51,7 @@ type CampaignWorkerDb = Pick<
   | 'marketingFrequencyWindow'
   | 'customerConsent'
   | 'customer'
+  | '$transaction'
 > & {
   campaignAudienceMember: PrismaClient['campaignAudienceMember'];
 };
@@ -57,6 +65,8 @@ export type MarketingCampaignWorkerDependencies = {
   /** Injected in tests; production persists a signed campaign link per recipient. */
   createAttributionLink?: typeof createMarketingAttributionLink;
   sendsEnabled: boolean;
+  /** Expéditeur dédié aux e-mails marketing ; `null` refuse tout envoi e-mail. */
+  marketingEmailFrom: string | null;
   now: () => Date;
 };
 
@@ -72,6 +82,7 @@ function defaultDependencies(): MarketingCampaignWorkerDependencies {
     createUnsubscribeToken: createMarketingUnsubscribeToken,
     createAttributionLink: createMarketingAttributionLink,
     sendsEnabled: process.env.MARKETING_SENDS_ENABLED === 'true',
+    marketingEmailFrom: env.MARKETING_EMAIL_FROM ?? null,
     now: () => new Date(),
   };
 }
@@ -79,14 +90,6 @@ function defaultDependencies(): MarketingCampaignWorkerDependencies {
 function validNow(now: Date): Date {
   if (Number.isNaN(now.getTime())) throw new Error('now must be valid');
   return now;
-}
-
-function dayWindow(now: Date): { start: Date; end: Date } {
-  const start = new Date(now);
-  start.setUTCHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 1);
-  return { start, end };
 }
 
 /**
@@ -137,6 +140,31 @@ export async function reserveMarketingFrequencySlot(
   }
 }
 
+/**
+ * Rend le créneau réservé pour un message dont on est certain qu'il n'est pas parti. Un résultat
+ * incertain (délai dépassé) garde son créneau : mieux vaut un envoi de moins qu'un de trop.
+ */
+export async function releaseMarketingFrequencySlot(
+  input: {
+    restaurantId: string;
+    customerId: string;
+    channel: MarketingChannelCode;
+    now: Date;
+  },
+  writer: Pick<PrismaClient, 'marketingFrequencyWindow'>,
+): Promise<void> {
+  await writer.marketingFrequencyWindow.updateMany({
+    where: {
+      restaurantId: input.restaurantId,
+      customerId: input.customerId,
+      channel: input.channel,
+      windowStart: dayWindow(input.now).start,
+      sendCount: { gt: 0 },
+    },
+    data: { sendCount: { decrement: 1 } },
+  });
+}
+
 function hashPhone(phone: string): string {
   return createHash('sha256').update(phone.trim().toLowerCase()).digest('hex');
 }
@@ -156,10 +184,20 @@ async function legacyOptedIn(
 function safeErrorCode(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   const normalized = raw
+    .replace(/[^\s@]+@[^\s@]+/g, 'EMAIL')
     .toUpperCase()
     .replace(/[^A-Z0-9_:-]+/g, '_')
     .slice(0, 80);
   return normalized || 'PROVIDER_ERROR';
+}
+
+function messageWasNotSent(errorCode: string): boolean {
+  return (
+    errorCode === 'PROVIDER_REFUSED' ||
+    errorCode === 'RECIPIENT_NOT_ALLOWLISTED' ||
+    errorCode === 'NO_CONTACT' ||
+    errorCode.startsWith('RESEND_API_ERROR:')
+  );
 }
 
 async function markMessage(
@@ -262,6 +300,11 @@ export function marketingRecipientAllowlist(
   return entries.length > 0 ? new Set(entries) : null;
 }
 
+/** Nom affiché = restaurant, entre guillemets : une virgule dans le nom ne casse pas l'en-tête. */
+function marketingFromHeader(restaurantName: string, address: string): string {
+  return `"${restaurantName.replaceAll(/["\\\r\n]/g, '')}" <${address}>`;
+}
+
 async function eligibility(
   deps: MarketingCampaignWorkerDependencies,
   args: {
@@ -291,6 +334,9 @@ async function eligibility(
         restaurantId: args.restaurantId,
         archivedAt: null,
         mergedIntoId: null,
+        ...(args.channel === 'EMAIL'
+          ? { emailNormalized: args.customer.emailNormalized }
+          : { phone: args.customer.phone }),
       },
       select: { id: true },
     }),
@@ -351,7 +397,12 @@ async function sendOne(
     channel: MarketingChannelCode;
     subject: string | null;
     bodyTemplate: string;
-    restaurant: { name: string; slug: string | null };
+    restaurant: {
+      name: string;
+      slug: string | null;
+      managerEmail: string;
+      formattedAddress?: string | null;
+    };
   },
   message: {
     id: string;
@@ -404,12 +455,19 @@ async function sendOne(
   }
   if (campaign.channel === 'EMAIL') {
     if (!message.customer.emailNormalized) throw new Error('NO_CONTACT');
+    // Garde-fou : sans expéditeur dédié, sendEmail retomberait sur EMAIL_FROM.
+    if (!deps.marketingEmailFrom) throw new Error('MARKETING_EMAIL_FROM_MISSING');
     return {
       result: normalizeNotificationSendResult(
         await deps.sendEmail({
           to: message.customer.emailNormalized,
           subject: campaign.subject ?? campaign.restaurant.name,
-          html: toMarketingHtml(rendered),
+          html: toMarketingHtml(`${rendered}\n\n${marketingEmailFooter(campaign.restaurant)}`, {
+            [context.reservationLink]: 'Réserver une table',
+            [context.unsubscribeUrl]: 'Se désinscrire',
+          }),
+          from: marketingFromHeader(campaign.restaurant.name, deps.marketingEmailFrom),
+          replyTo: normalizeCustomerEmail(campaign.restaurant.managerEmail),
           // Désinscription en un clic (RFC 8058) : Gmail et Outlook affichent un bouton natif.
           headers: {
             'List-Unsubscribe': `<${context.unsubscribeUrl}>`,
@@ -457,7 +515,11 @@ export async function processMarketingCampaignJob(
   const now = validNow(dependencies.now());
   const campaign = await dependencies.db.marketingCampaign.findFirst({
     where: { id: job.data.campaignId, restaurantId: job.data.restaurantId },
-    include: { restaurant: { select: { name: true, slug: true } } },
+    include: {
+      restaurant: {
+        select: { name: true, slug: true, managerEmail: true, formattedAddress: true },
+      },
+    },
   });
   if (!campaign) return { processed: 0, accepted: 0, failed: 0 };
   if (
@@ -474,16 +536,66 @@ export async function processMarketingCampaignJob(
     throw new Error('CAMPAIGN_NOT_READY');
   }
 
+  if (campaign.channel === 'EMAIL' && !dependencies.marketingEmailFrom) {
+    // Refus avant tout appel fournisseur : la campagne redevient prête, sans destinataire consommé.
+    await dependencies.db.marketingCampaign.updateMany({
+      where: {
+        id: campaign.id,
+        restaurantId: campaign.restaurantId,
+        status: { in: [MarketingCampaignStatus.SENDING, MarketingCampaignStatus.SCHEDULED] },
+      },
+      data: {
+        status: MarketingCampaignStatus.READY,
+        lastErrorCode: 'MARKETING_EMAIL_FROM_MISSING',
+      },
+    });
+    throw new Error('MARKETING_EMAIL_FROM_MISSING');
+  }
+
   if (campaign.status !== MarketingCampaignStatus.SENDING) {
-    const claimed = await dependencies.db.marketingCampaign.updateMany({
+    const claim = {
       where: {
         id: campaign.id,
         restaurantId: job.data.restaurantId,
         status: { in: [MarketingCampaignStatus.READY, MarketingCampaignStatus.SCHEDULED] },
       },
       data: { status: MarketingCampaignStatus.SENDING, startedAt: now, lastErrorCode: null },
-    });
-    if (claimed.count !== 1) return { processed: 0, accepted: 0, failed: 0 };
+    };
+    if (campaign.status === MarketingCampaignStatus.SCHEDULED && campaign.channel === 'EMAIL') {
+      // Une programmation repasse le contrôle pour le jour réel d'envoi : elle peut partir avant ou
+      // après sa date. Refusée, elle redevient prête, sans destinataire consommé.
+      const verdict = await dependencies.db.$transaction(async (tx) => {
+        if (campaign.audienceCount > (await remainingDailyEmailBudget(tx, now, campaign.id))) {
+          return 'BUDGET_EXCEEDED';
+        }
+        const claimed = await tx.marketingCampaign.updateMany({
+          ...claim,
+          where: { ...claim.where, restaurantId: job.data.restaurantId },
+        });
+        return claimed.count === 1 ? 'CLAIMED' : 'LOST';
+      });
+      if (verdict === 'BUDGET_EXCEEDED') {
+        await dependencies.db.marketingCampaign.updateMany({
+          where: {
+            id: campaign.id,
+            restaurantId: job.data.restaurantId,
+            status: MarketingCampaignStatus.SCHEDULED,
+          },
+          data: {
+            status: MarketingCampaignStatus.READY,
+            lastErrorCode: 'MARKETING_DAILY_BUDGET_EXCEEDED',
+          },
+        });
+        throw new Error('MARKETING_DAILY_BUDGET_EXCEEDED');
+      }
+      if (verdict === 'LOST') return { processed: 0, accepted: 0, failed: 0 };
+    } else {
+      const claimed = await dependencies.db.marketingCampaign.updateMany({
+        ...claim,
+        where: { ...claim.where, restaurantId: job.data.restaurantId },
+      });
+      if (claimed.count !== 1) return { processed: 0, accepted: 0, failed: 0 };
+    }
   }
 
   await ensureCampaignMessages(campaign.id, campaign.channel, dependencies.db);
@@ -513,6 +625,27 @@ export async function processMarketingCampaignJob(
       },
     });
     if (messages.length === 0) break;
+    // Avant chaque lot : service visé complet = la campagne se met en pause, sans envoi.
+    if (
+      campaign.targetServiceStart &&
+      campaign.targetServiceEnd &&
+      (await isTargetServiceFull({
+        restaurantId: campaign.restaurantId,
+        start: campaign.targetServiceStart,
+        end: campaign.targetServiceEnd,
+      }))
+    ) {
+      await dependencies.db.marketingCampaign.updateMany({
+        where: {
+          id: campaign.id,
+          restaurantId: campaign.restaurantId,
+          status: MarketingCampaignStatus.SENDING,
+        },
+        data: { status: MarketingCampaignStatus.PAUSED, lastErrorCode: TARGET_SERVICE_FULL },
+      });
+      log.warn({ campaignId: campaign.id }, 'marketing campaign paused: target service is full');
+      break;
+    }
     for (const message of messages) {
       const current = await dependencies.db.marketingCampaign.findFirst({
         where: { id: campaign.id, restaurantId: campaign.restaurantId },
@@ -589,7 +722,9 @@ export async function processMarketingCampaignJob(
         const result = sent.result;
         if (result.outcome !== 'success') {
           throw new Error(
-            result.outcome === 'unknown' ? 'PROVIDER_RESULT_UNKNOWN' : 'PROVIDER_REFUSED',
+            result.outcome === 'unknown'
+              ? 'PROVIDER_RESULT_UNKNOWN'
+              : (result.reason ?? 'PROVIDER_REFUSED'),
           );
         }
         const transitioned = await markMessage(
@@ -625,6 +760,26 @@ export async function processMarketingCampaignJob(
           });
           await markCampaignCounter(dependencies, campaign.id, 'failedCount');
           failed++;
+          if (messageWasNotSent(errorCode)) {
+            await releaseMarketingFrequencySlot(
+              {
+                restaurantId: campaign.restaurantId,
+                customerId: currentCustomer.id,
+                channel: campaign.channel,
+                now,
+              },
+              dependencies.db,
+            ).catch((releaseError) => {
+              log.warn(
+                {
+                  campaignId: campaign.id,
+                  messageId: message.id,
+                  err: safeErrorCode(releaseError),
+                },
+                'marketing frequency slot not released',
+              );
+            });
+          }
         }
         log.warn(
           { campaignId: campaign.id, messageId: message.id, errorCode },

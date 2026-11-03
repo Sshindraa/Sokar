@@ -1,0 +1,15 @@
+/** Le jeton reste dans le fragment URL et ne traverse pas les journaux d'accès. */
+export function reputationPublicPage(kind: 'feedback' | 'unsubscribe'): string {
+  const feedback = kind === 'feedback';
+  const title = feedback ? 'Votre retour privé' : 'Ne plus recevoir ces demandes';
+  const form = feedback
+    ? `<p>Comment s’est passée votre visite ? Votre retour est privé et sera transmis à l’équipe du restaurant.</p><label>Votre note <select name="score" required><option value="">Choisissez une note</option><option value="1">1 / 5</option><option value="2">2 / 5</option><option value="3">3 / 5</option><option value="4">4 / 5</option><option value="5">5 / 5</option></select></label><label>Votre commentaire (facultatif)<textarea name="comment" maxlength="2000"></textarea></label><button type="submit">Envoyer mon retour</button>`
+    : `<p>Confirmez votre choix. Vous ne recevrez plus les demandes de retour de ce restaurant ; vos confirmations de réservation ne sont pas concernées.</p><button type="submit">Ne plus recevoir ces demandes</button>`;
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title><style>body{font-family:system-ui,sans-serif;background:#f5f7fa;color:#1c2733;margin:0;padding:48px 16px}main{max-width:480px;margin:auto;padding:32px;background:white;border-radius:12px}p,label{line-height:1.5}label{display:block;margin:20px 0}select,textarea{display:block;width:100%;margin-top:8px;font:inherit}textarea{min-height:110px}button{font:inherit;background:#1c2733;color:white;border:0;border-radius:8px;padding:12px 20px;cursor:pointer}</style></head><body><main><h1>${title}</h1><form id="form">${form}</form><p id="message" role="status" aria-live="polite"></p><noscript>Activez JavaScript pour utiliser ce lien.</noscript></main><script>
+const form=document.getElementById('form');
+const message=document.getElementById('message');
+const token=location.hash.slice(1);
+if(!/^[A-Za-z0-9_-]{32,200}$/.test(token)){form.hidden=true;message.textContent='Ce lien est invalide ou incomplet.';}
+form.addEventListener('submit',async(event)=>{event.preventDefault();const button=form.querySelector('button');button.disabled=true;message.textContent='Envoi en cours…';try{const data=new FormData(form);const body=${feedback ? "{token,score:Number(data.get('score')),comment:String(data.get('comment')||'')}" : '{token}'};const response=await fetch('${feedback ? '/reputation/feedback/submit' : '/reputation/unsubscribe'}',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});if(!response.ok)throw new Error('request_failed');form.hidden=true;message.textContent=${feedback ? "'Merci, votre retour a bien été transmis au restaurant.'" : "'Votre choix est enregistré. Vous ne recevrez plus ces demandes de retour.'"};history.replaceState(null,'',location.pathname);}catch{message.textContent='Impossible de traiter votre demande. Vérifiez le lien ou contactez le restaurant.';button.disabled=false;}});
+</script></body></html>`;
+}

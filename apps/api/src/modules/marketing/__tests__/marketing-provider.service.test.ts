@@ -16,6 +16,8 @@ vi.mock('../../../shared/db/client', () => ({
     marketingSuppression: { upsert: vi.fn() },
     customer: { findFirst: vi.fn() },
     marketingOptOut: { upsert: vi.fn() },
+    $executeRaw: vi.fn(),
+    $queryRaw: vi.fn().mockResolvedValue([{ id: 'customer-1' }]),
     marketingProviderReconciliation: {
       upsert: vi.fn().mockResolvedValue({ id: 'reconciliation-1' }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -53,7 +55,7 @@ describe('marketing provider reconciliation', () => {
     vi.stubEnv('TELNYX_FROM_NUMBER', '+33123456789');
     vi.stubEnv('TELNYX_PUBLIC_KEY', 'telnyx-public-key');
     vi.stubEnv('RESEND_API_KEY', 'resend-key');
-    vi.stubEnv('EMAIL_FROM', 'noreply@example.test');
+    vi.stubEnv('MARKETING_EMAIL_FROM', 'bonjour@news.example.test');
     vi.stubEnv('RESEND_WEBHOOK_SECRET', 'resend-secret');
     vi.stubEnv('MARKETING_WHATSAPP_ENABLED', 'false');
 
@@ -82,7 +84,7 @@ describe('marketing provider reconciliation', () => {
         TELNYX_API_KEY: 'key',
         TELNYX_FROM_NUMBER: '+33123456789',
         RESEND_API_KEY: 'key',
-        EMAIL_FROM: 'noreply@example.test',
+        MARKETING_EMAIL_FROM: 'bonjour@news.example.test',
       }),
     ).toEqual({
       sendsEnabled: true,
@@ -117,6 +119,15 @@ describe('marketing provider reconciliation', () => {
         }),
       ),
     ).not.toContain(testTelnyxKey);
+  });
+
+  it('signale un expéditeur marketing manquant, même si EMAIL_FROM est renseigné', () => {
+    expect(
+      getMarketingProviderReadiness({
+        RESEND_API_KEY: 'key',
+        EMAIL_FROM: 'noreply@example.test',
+      }).email.missing,
+    ).toEqual(['MARKETING_EMAIL_FROM']);
   });
 
   it('signale la liste blanche de destinataires sans la révéler', () => {
@@ -406,6 +417,7 @@ describe('marketing provider reconciliation', () => {
     }) as never;
 
   it('supprime le contact après une plainte pour spam, sans rejouer deux fois', async () => {
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
     vi.mocked(db.campaignMessage.findFirst).mockResolvedValue(sentEmail());
 
     await expect(

@@ -14,9 +14,15 @@ import { bookingSlotsOf, normalizeOpeningHours } from '@sokar/shared';
 import type { AvailabilityDto, AvailabilitySlot } from './floor-plan.types';
 import { resolveServiceDurationMinutes } from './floor-plan.types';
 import { TableAllocationService } from './table-allocation.service';
+import {
+  hasSeatFor,
+  isWindowBlocked,
+  loadSeatingItems,
+  loadSeatingTables,
+  planUnassignedSeating,
+} from './unassigned-seating';
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';
-import { ACTIVE_RESERVATION_STATES, intervalsOverlap } from '../../shared/reservations/capacity.js';
 import {
   DEFAULT_RESTAURANT_TIMEZONE,
   zonedTimeToUtc,
@@ -65,6 +71,7 @@ export function markTooSoonSlotsUnavailable(
   timeZone: string,
   now: Date,
   minLeadTimeMinutes: number = 0,
+  includePast = false,
 ): AvailabilityDto {
   const dayStart = Date.parse(`${dto.date}T00:00:00.000Z`);
   if (Number.isNaN(dayStart)) return dto;
@@ -74,15 +81,21 @@ export function markTooSoonSlotsUnavailable(
   // Tous les créneaux de la date commencent au plus tôt à `earliestStartMs` (minuit local en UTC+14) :
   // si maintenant et maintenant + délai ne l'atteignent pas, rien n'est trop proche.
   const earliestStartMs = dayStart - MAX_UTC_OFFSET_AHEAD_MS;
-  if (now.getTime() < earliestStartMs && earliestBookableMs <= earliestStartMs) return dto;
+  if (!includePast && now.getTime() < earliestStartMs && earliestBookableMs <= earliestStartMs)
+    return dto;
   const allTooSoon = earliestBookableMs >= dayStart + DAY_MS + MAX_UTC_OFFSET_BEHIND_MS;
   return {
     ...dto,
-    slots: dto.slots.map((slot) =>
-      slot.available && (allTooSoon || isSlotTooSoonAt(dto.date, slot.time, timeZone, lead, now))
-        ? { ...slot, available: false }
-        : slot,
-    ),
+    slots: dto.slots.map((slot) => {
+      const past =
+        includePast && zonedTimeToUtc(dto.date, slot.time, timeZone).getTime() <= now.getTime();
+      const tooSoon = allTooSoon || isSlotTooSoonAt(dto.date, slot.time, timeZone, lead, now);
+      return {
+        ...slot,
+        ...(slot.available && (tooSoon || past) ? { available: false } : {}),
+        ...(includePast ? { past } : {}),
+      };
+    }),
   };
 }
 
@@ -161,6 +174,8 @@ export class CapacityAwareAvailabilityService {
       /** Private modification preview: never read or populate the public cache. */
       excludeReservationId?: string;
       defaultFloorOnly?: boolean;
+      allowWithoutTables?: boolean;
+      includePast?: boolean;
       /**
        * Délai minimum de réservation, en minutes. Passé par les surfaces EN LIGNE (page et widget
        * Connect, page /book, cartes cadeaux) ; absent (donc 0) pour le téléphone et le personnel.
@@ -170,7 +185,8 @@ export class CapacityAwareAvailabilityService {
     tx?: Prisma.TransactionClient,
   ): Promise<AvailabilityDto> {
     const queryDb = tx ?? this.prisma;
-    const privatePreview = !!args.excludeReservationId || !!tx || !!args.defaultFloorOnly;
+    const privatePreview =
+      !!args.excludeReservationId || !!tx || !!args.defaultFloorOnly || !!args.allowWithoutTables;
     // Une seule lecture de l'horloge par appel : le cache garde le résultat brut (sans passé ni délai),
     // ils se marquent à chaque lecture, y compris pour une valeur en cache depuis quelques secondes.
     // Le délai n'entre pas dans la clé de cache : il ne change que ce qu'on marque après.
@@ -182,7 +198,13 @@ export class CapacityAwareAvailabilityService {
         const cached = await redisCache.get(this.cacheKey(args, version));
         const hit = cached ? parseCachedAvailability(cached) : null;
         if (hit) {
-          return markTooSoonSlotsUnavailable(hit.dto, hit.timeZone, now, args.minLeadTimeMinutes);
+          return markTooSoonSlotsUnavailable(
+            hit.dto,
+            hit.timeZone,
+            now,
+            args.minLeadTimeMinutes,
+            args.includePast,
+          );
         }
       } catch (err) {
         logger.warn(
@@ -220,103 +242,40 @@ export class CapacityAwareAvailabilityService {
       return emptyAvailability(args);
     }
 
-    // Récupérer toutes les réservations bloquantes et holds actifs du jour
-    // pour les tester localement (optimisation P1).
-    const dayStart = zonedTimeToUtc(args.date, '00:00', timeZone);
-    const dayEnd = zonedTimeToUtc(args.date, '23:59:59.999', timeZone);
-
-    const [reservations, holds, tables] = await Promise.all([
-      queryDb.reservation.findMany({
-        where: {
-          restaurantId: args.restaurantId,
-          state: { in: [...ACTIVE_RESERVATION_STATES] },
-          ...(args.excludeReservationId ? { id: { not: args.excludeReservationId } } : {}),
-          OR: [
-            { startsAt: { lt: dayEnd }, endsAt: { gt: dayStart } },
-            // Legacy rows may have startsAt but no endsAt; their duration is
-            // reconstructed below from the restaurant service duration.
-            { startsAt: { gte: dayStart, lt: dayEnd }, endsAt: null },
-            { startsAt: null, reservedAt: { gte: dayStart, lt: dayEnd } },
-          ],
-        },
-        select: { tableId: true, startsAt: true, endsAt: true, reservedAt: true },
+    // Les réservations et holds sans table sont placés virtuellement, comme à la création : la même
+    // fonction donne le même verdict ici et au moment de réserver.
+    const [tables, items] = await Promise.all([
+      loadSeatingTables(queryDb, args.restaurantId, args.defaultFloorOnly),
+      loadSeatingItems(queryDb, {
+        restaurantId: args.restaurantId,
+        date: args.date,
+        timeZone,
+        serviceDurationMinutes,
+        now: new Date(),
+        excludeReservationId: args.excludeReservationId,
       }),
-      queryDb.agenticHold.findMany({
-        where: {
-          restaurantId: args.restaurantId,
-          status: 'ACTIVE',
-          expiresAt: { gt: new Date() },
-          slotStart: { lt: dayEnd },
-          slotEnd: { gt: dayStart },
-        },
-        select: { tableId: true, slotStart: true, slotEnd: true },
-      }),
-      args.preferredSectionId
-        ? queryDb.table.findMany({
-            where: {
-              sectionId: args.preferredSectionId,
-              isActive: true,
-              floorPlan: {
-                restaurantId: args.restaurantId,
-                isActive: true,
-                ...(args.defaultFloorOnly ? { isDefault: true } : {}),
-              },
-              capacity: { gte: args.partySize },
-            },
-            select: { id: true, capacity: true, minCapacity: true, sectionId: true },
-          })
-        : queryDb.table.findMany({
-            where: {
-              isActive: true,
-              floorPlan: {
-                restaurantId: args.restaurantId,
-                isActive: true,
-                ...(args.defaultFloorOnly ? { isDefault: true } : {}),
-              },
-              capacity: { gte: args.partySize },
-            },
-            select: { id: true, capacity: true, minCapacity: true, sectionId: true },
-          }),
     ]);
+    const plan = planUnassignedSeating(tables, items);
 
-    const busyByTable = new Map<string, Array<{ start: Date; end: Date }>>();
-    const globallyBlockedIntervals: Array<{ start: Date; end: Date }> = [];
-    for (const r of reservations) {
-      const start = r.startsAt ?? r.reservedAt;
-      const end = r.endsAt ?? new Date(start.getTime() + serviceDurationMinutes * 60_000);
-      if (!r.tableId) {
-        globallyBlockedIntervals.push({ start, end });
-        continue;
-      }
-      const list = busyByTable.get(r.tableId) ?? [];
-      list.push({ start, end });
-      busyByTable.set(r.tableId, list);
-    }
-    for (const h of holds) {
-      if (!h.tableId) {
-        globallyBlockedIntervals.push({ start: h.slotStart, end: h.slotEnd });
-        continue;
-      }
-      const list = busyByTable.get(h.tableId) ?? [];
-      list.push({ start: h.slotStart, end: h.slotEnd });
-      busyByTable.set(h.tableId, list);
-    }
-
+    const noActiveTables =
+      args.allowWithoutTables &&
+      !(await queryDb.table.findFirst({
+        where: { isActive: true, floorPlan: { restaurantId: args.restaurantId, isActive: true } },
+        select: { id: true },
+      }));
     const slots: AvailabilitySlot[] = allSlots.map((time) => {
       const slotStart = zonedTimeToUtc(args.date, time, timeZone);
       const slotEnd = new Date(slotStart.getTime() + serviceDurationMinutes * 60_000);
 
-      const hasAvailableTable = (candidateTables: typeof tables) =>
-        candidateTables.some((table) => {
-          if (table.minCapacity > args.partySize) return false;
-          const busy = busyByTable.get(table.id) ?? [];
-          return !busy.some((b) => intervalsOverlap(b.start, b.end, slotStart, slotEnd));
-        });
-
-      const hasGlobalConflict = globallyBlockedIntervals.some((interval) =>
-        intervalsOverlap(interval.start, interval.end, slotStart, slotEnd),
-      );
-      const available = !hasGlobalConflict && hasAvailableTable(tables);
+      const candidate = {
+        partySize: args.partySize,
+        start: slotStart,
+        end: slotEnd,
+        sectionId: args.preferredSectionId ?? null,
+      };
+      const available =
+        !isWindowBlocked(plan, slotStart, slotEnd) &&
+        (hasSeatFor(plan, tables, candidate) || !!noActiveTables);
 
       return { time, available };
     });
@@ -330,7 +289,8 @@ export class CapacityAwareAvailabilityService {
 
     if (!privatePreview)
       try {
-        version = await this.getVersion(args.restaurantId);
+        // Version lue AVANT le calcul : une mutation survenue entre-temps l'a déjà dépassée, donc ce
+        // résultat peut-être périmé n'est jamais relu.
         const entry: CachedAvailability = { timeZone, dto };
         await redisCache.set(
           this.cacheKey(args, version),
@@ -345,7 +305,13 @@ export class CapacityAwareAvailabilityService {
         );
       }
 
-    return markTooSoonSlotsUnavailable(dto, timeZone, now, args.minLeadTimeMinutes);
+    return markTooSoonSlotsUnavailable(
+      dto,
+      timeZone,
+      now,
+      args.minLeadTimeMinutes,
+      args.includePast,
+    );
   }
 }
 

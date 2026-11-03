@@ -30,7 +30,7 @@ describe('analytics.routes tenant isolation', () => {
     expect(db.reservation.findMany).toHaveBeenCalledWith({
       where: {
         restaurantId: 'test-rest-1',
-        state: 'CONFIRMED',
+        state: { in: ['CONFIRMED', 'SEATED', 'HONORED'] },
         createdAt: { gte: expect.any(Date), lte: expect.any(Date) },
       },
     });
@@ -38,9 +38,11 @@ describe('analytics.routes tenant isolation', () => {
 
   it('GET /analytics/latency filtre les traces via Call.restaurantId auth', async () => {
     const app = await getApp();
+    vi.mocked(db.$queryRaw).mockResolvedValue([{ total: 3, p50: 200, p95: 200 }]);
     vi.mocked(db.latencyTrace.findMany).mockResolvedValue([
-      { totalE2eMs: 100 },
+      { totalE2eMs: null },
       { totalE2eMs: 200 },
+      { totalE2eMs: 100 },
     ] as unknown as Awaited<ReturnType<typeof db.latencyTrace.findMany>>);
 
     const res = await app.inject({
@@ -50,6 +52,15 @@ describe('analytics.routes tenant isolation', () => {
     });
 
     expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      totalCalls: 3,
+      p50: 200,
+      p95: 200,
+      traces: [{ totalE2eMs: 100 }, { totalE2eMs: 200 }, { totalE2eMs: null }],
+    });
+    expect(vi.mocked(db.$queryRaw).mock.calls[0]).toEqual(
+      expect.arrayContaining(['test-rest-1', expect.any(Date), expect.any(Date)]),
+    );
     expect(db.latencyTrace.findMany).toHaveBeenCalledWith({
       where: {
         call: {
@@ -57,9 +68,45 @@ describe('analytics.routes tenant isolation', () => {
           createdAt: { gte: expect.any(Date), lte: expect.any(Date) },
         },
       },
-      orderBy: { totalE2eMs: 'asc' },
+      orderBy: { totalE2eMs: { sort: 'desc', nulls: 'first' } },
+      take: 50,
     });
   });
+
+  it('ne retourne pas de traces si aucune latence ne peut être calculée', async () => {
+    const app = await getApp();
+    vi.mocked(db.$queryRaw).mockResolvedValue([{ total: 1, p50: null, p95: null }]);
+    vi.mocked(db.latencyTrace.findMany).mockResolvedValue([
+      { totalE2eMs: null },
+    ] as unknown as Awaited<ReturnType<typeof db.latencyTrace.findMany>>);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/analytics/latency?period=2026-06',
+      headers: { authorization: 'Bearer test' },
+    });
+    expect(res.json()).toEqual({
+      period: '2026-06',
+      totalCalls: 0,
+      p50: null,
+      p95: null,
+      traces: [],
+    });
+  });
+
+  it.each(['/analytics/roi', '/analytics/latency', '/analytics/voice'])(
+    '%s refuse les mois invalides',
+    async (path) => {
+      const app = await getApp();
+      for (const period of ['2026-00', '2026-13']) {
+        const res = await app.inject({
+          method: 'GET',
+          url: `${path}?period=${period}`,
+          headers: { authorization: 'Bearer test' },
+        });
+        expect(res.statusCode).toBe(400);
+      }
+    },
+  );
 
   it('GET /analytics/voice expose les indicateurs du pilote avec le scope restaurant', async () => {
     const app = await getApp();

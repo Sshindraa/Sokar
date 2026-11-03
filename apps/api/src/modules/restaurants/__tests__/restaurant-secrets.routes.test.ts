@@ -12,8 +12,6 @@ const restaurantRow = {
   phoneNumber: '+33451221999',
   phoneE164: '+33611112222',
   openingHours: { tue: { open: '12:00', close: '22:00' } },
-  googleCalendarId: 'primary',
-  googleRefreshToken: VALEUR_SENSIBLE,
   slug: null,
   plan: 'STARTER',
 };
@@ -30,92 +28,13 @@ const OPENING_HOURS = {
   sun: null,
 };
 
-describe('fiche restaurant : jeton Google et numéro Sokar', () => {
+describe('fiche restaurant : numéro Sokar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   afterAll(async () => {
     await closeApp();
-  });
-
-  describe('le jeton Google Agenda ne quitte jamais le serveur', () => {
-    it('GET /restaurants/:id renvoie googleCalendarConnected, jamais le jeton', async () => {
-      const app = await getApp();
-      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
-        restaurantRow as unknown as RestaurantRow,
-      );
-
-      const res = await app.inject({
-        method: 'GET',
-        url: '/restaurants/test-rest-1',
-        headers: { authorization: 'Bearer test' },
-      });
-
-      expect(res.statusCode).toBe(200);
-      expect(res.json()).not.toHaveProperty('googleRefreshToken');
-      expect(res.json().googleCalendarConnected).toBe(true);
-      expect(res.json().googleCalendarId).toBe('primary');
-      expect(res.body).not.toContain(VALEUR_SENSIBLE);
-    });
-
-    it('GET /restaurants/:id signale un agenda non relié', async () => {
-      const app = await getApp();
-      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
-        ...restaurantRow,
-        googleRefreshToken: null,
-      } as unknown as RestaurantRow);
-
-      const res = await app.inject({
-        method: 'GET',
-        url: '/restaurants/test-rest-1',
-        headers: { authorization: 'Bearer test' },
-      });
-
-      expect(res.statusCode).toBe(200);
-      expect(res.json().googleCalendarConnected).toBe(false);
-      expect(res.json()).not.toHaveProperty('googleRefreshToken');
-    });
-
-    it('PATCH /restaurants/:id ne renvoie pas le jeton', async () => {
-      const app = await getApp();
-      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
-        phoneNumber: restaurantRow.phoneNumber,
-      } as unknown as RestaurantRow);
-      vi.mocked(db.restaurant.update).mockResolvedValue(restaurantRow as unknown as RestaurantRow);
-
-      const res = await app.inject({
-        method: 'PATCH',
-        url: '/restaurants/test-rest-1',
-        headers: { authorization: 'Bearer test' },
-        payload: { name: 'Le Bistrot' },
-      });
-
-      expect(res.statusCode).toBe(200);
-      expect(res.json()).not.toHaveProperty('googleRefreshToken');
-      expect(res.json().googleCalendarConnected).toBe(true);
-      expect(res.body).not.toContain(VALEUR_SENSIBLE);
-    });
-
-    it('POST /api/auth/sync ne renvoie pas le jeton du restaurant existant', async () => {
-      const app = await getApp();
-      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
-        ...restaurantRow,
-        accountId: null,
-      } as unknown as RestaurantRow);
-
-      const res = await app.inject({
-        method: 'POST',
-        url: '/api/auth/sync',
-        headers: { authorization: 'Bearer test' },
-      });
-
-      expect(res.statusCode).toBe(200);
-      expect(res.json().synced).toBe(true);
-      expect(res.json().restaurant).not.toHaveProperty('googleRefreshToken');
-      expect(res.json().restaurant.googleCalendarConnected).toBe(true);
-      expect(res.body).not.toContain(VALEUR_SENSIBLE);
-    });
   });
 
   describe('le numéro Sokar ne se modifie pas depuis la fiche', () => {
@@ -159,11 +78,10 @@ describe('fiche restaurant : jeton Google et numéro Sokar', () => {
       expect(db.restaurant.create).not.toHaveBeenCalled();
     });
 
-    it('POST /restaurants reste possible pour un opérateur, sans renvoyer de jeton', async () => {
+    it('POST /restaurants reste possible pour un opérateur', async () => {
       const app = await getApp();
       vi.mocked(db.restaurant.create).mockResolvedValue({
         ...restaurantRow,
-        googleRefreshToken: null,
       } as unknown as RestaurantRow);
 
       const res = await app.inject({
@@ -180,8 +98,6 @@ describe('fiche restaurant : jeton Google et numéro Sokar', () => {
       });
 
       expect(res.statusCode).toBe(201);
-      expect(res.json()).not.toHaveProperty('googleRefreshToken');
-      expect(res.json().googleCalendarConnected).toBe(false);
     });
   });
 });

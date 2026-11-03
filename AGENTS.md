@@ -4,7 +4,7 @@ description: Sokar project context for Hermes CLI agents
 
 # Sokar Agent Context
 
-Sokar is a French-first restaurant reservation + call-management SaaS with AI voice.
+Sokar is a French-first restaurant platform: reservations on every channel (phone, web, widget, AI assistants via MCP), service organisation (floor plan, Service Copilot) and customer relationship (CRM, loyalty, gift cards, experiences). The AI voice agent is one feature, not the product definition. Brand: "Le chef de rang numérique de votre restaurant" (`packages/shared/src/brand.ts`); product scope and readiness: `docs/PROJECT_MAP.md#ce-quest-sokar`.
 Keep this file short. Detailed docs are in `docs/runbooks/` and `docs/architecture/`.
 
 ## Stack
@@ -46,6 +46,14 @@ sokar/
 7. Session start: read the **`## TODOs actifs` section only** of `docs/obsidian/Context.md` (`sed -n '/^## TODOs actifs/,/^## Décisions récentes/p' docs/obsidian/Context.md`) plus the **last ~3 entries of `docs/obsidian/Journal.md`** (`tail -3`). Open the rest of `Context.md` only when you need a past decision, and never `cat` a whole vault file: these are append-only logs and reading them in full costs tens of thousands of tokens. The vault is cross-session memory; AGENTS.md is repo-specific, the vault is the running log.
 8. After any significant change (architecture, schema, provider, feature flag, API route, decision, legacy removal), update the vault. Do not wait to be asked. Append a dated entry to `docs/obsidian/Journal.md` (the full log). Touch `docs/obsidian/Context.md` only for a TODO or a current-state change, and only with a decision — **never** an activity entry, which belongs in `Journal.md`. Keep `Context.md` under ~8 Ko; `scripts/quality/check-vault-size.sh` warns at pre-push.
 9. After committing a change on a working branch, run `pnpm pr:submit`: it pushes the branch and creates or reuses its PR. It does not enable auto-merge; merging stays a human decision. Never push directly to `main`.
+
+## Token budget
+
+These rules cut cost without cutting quality: if a rule would hide information you need, quality wins.
+
+1. **One task per session, ~2 h max.** Past ~2 h, or when the task changes, append a handoff to `docs/obsidian/Journal.md` (done / next / key files / open questions) and start a fresh session. Don't cut mid-debug; don't resume a finished session for new work.
+2. **Cap shell output, then target.** For output that can exceed ~50 lines, use `| tail -n 50` (errors, tests, builds) or `| head -n 50` (listings), `grep -n`, `git diff --stat`. Read files by range (`sed -n 'A,Bp'`), not whole. If the capped output is not enough, re-read exactly the useful part (`grep -n -C 5`, another range): never conclude from incomplete output.
+3. **Targeted tests while iterating, full check before done.** While iterating, test only the changed file or package (`pnpm --filter <pkg> test -- <path> 2>&1 | tail -n 40`). Before saying done or pushing, run the full verification from "How to work".
 
 ## Commands
 

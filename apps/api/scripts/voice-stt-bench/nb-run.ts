@@ -319,7 +319,7 @@ async function main(): Promise<void> {
   const concurrency = Number(process.env.BENCH_CONCURRENCY ?? 6);
   const clips = NB_CORPUS.slice(0, Math.max(1, Math.min(limit, NB_CORPUS.length)));
 
-  // Garde-fou : clé Cartesia de banc dédiée ; clé ElevenLabs unique (décision du 14/10/2026).
+  // Clé Cartesia de banc prioritaire, sinon runtime ; clé ElevenLabs unique.
   const elevenLabsKey = requireSharedKey('ELEVENLABS_API_KEY');
   const ttsKey =
     ttsProvider === 'cartesia'

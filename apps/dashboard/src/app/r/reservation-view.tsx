@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Phone,
   Check,
@@ -29,7 +29,7 @@ import styles from './reservation-view.module.css';
 import { ReservationModification } from './reservation-modification';
 import { createReservationDemo } from './reservation-demo';
 
-type Reservation = {
+export type Reservation = {
   restaurantName: string;
   restaurantPhone: string | null;
   restaurantAddress?: string | null;
@@ -61,7 +61,19 @@ const STATES: Record<string, string> = {
   FAILED: 'Non confirmée',
 };
 
-export default function ReservationView({ demo = false }: { demo?: boolean }) {
+export default function ReservationView({
+  demo = false,
+  confirmation,
+  actions,
+}: {
+  demo?: boolean;
+  confirmation?: {
+    reservation: Reservation;
+    managementUrl?: string;
+    withdrawWhatsapp?: () => Promise<void>;
+  };
+  actions?: ReactNode;
+}) {
   const token = useRef('');
   const [reservation, setReservation] = useState<Reservation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -117,7 +129,17 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
     setCancelOpen(false);
     setCancelError('');
     setBusy(false);
-    token.current = window.location.hash.slice(1);
+    token.current = confirmation
+      ? (confirmation.managementUrl?.split('#')[1] ?? '')
+      : window.location.hash.slice(1);
+    if (confirmation) {
+      setReservation(confirmation.reservation);
+      setLoading(false);
+      if (!/^[A-Za-z0-9_-]{27}\.[A-Za-z0-9_-]{43}$/.test(token.current)) {
+        token.current = '';
+        return;
+      }
+    }
     const currentToken = token.current;
     if (!demo && !/^[A-Za-z0-9_-]{27}\.[A-Za-z0-9_-]{43}$/.test(token.current)) {
       setError('Ouvrez le lien personnel reçu avec votre confirmation.');
@@ -133,7 +155,7 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
     } finally {
       if (currentToken === token.current) setLoading(false);
     }
-  }, [request, demo]);
+  }, [request, demo, confirmation]);
 
   useEffect(() => {
     void load();
@@ -147,7 +169,13 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
     setError('');
     const currentToken = token.current;
     try {
-      const current = await request('withdraw_whatsapp');
+      const current =
+        confirmation?.withdrawWhatsapp && !token.current
+          ? await confirmation.withdrawWhatsapp().then(() => ({
+              ...reservation,
+              whatsappReminder: { visible: true, enabled: false },
+            }))
+          : await request('withdraw_whatsapp');
       if (currentToken === token.current) {
         setReservation(current);
         setWithdrawn(true);
@@ -349,6 +377,7 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                       </a>
                     </Button>
                   ))}
+                {actions}
               </div>
             </section>
             <details className={styles.management}>

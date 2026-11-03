@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
 import { db } from '../../../shared/db/client';
 import { ReservationService } from '../reservation.service';
-import { GoogleCalendarClient } from '../../../shared/google-calendar/client';
 
 vi.mock('../../../shared/db/client', () => {
   const mockDb = {
@@ -41,20 +40,12 @@ vi.mock('../../../shared/db/client', () => {
       create: vi.fn(),
     },
     $queryRaw: vi.fn().mockResolvedValue([{ id: 'locked' }]),
+    $executeRaw: vi.fn().mockResolvedValue(1),
     $transaction: vi.fn(async (fn: (tx: PrismaClient) => Promise<unknown>) => fn(mockDb)),
   } as unknown as PrismaClient;
 
   return { db: mockDb };
 });
-
-vi.mock('../../../shared/google-calendar/client', () => ({
-  GoogleCalendarClient: {
-    checkAvailability: vi.fn(),
-    createEvent: vi.fn(),
-    updateEvent: vi.fn(),
-    deleteEvent: vi.fn(),
-  },
-}));
 
 vi.mock('../../../shared/queue/queues', () => ({
   queues: {
@@ -64,13 +55,11 @@ vi.mock('../../../shared/queue/queues', () => ({
   },
 }));
 
-describe('ReservationService - Google Calendar Sync', () => {
+describe('ReservationService', () => {
   const mockRestaurant = {
     id: 'rest-123',
     name: 'Chez Test',
     smsConfirmEnabled: true,
-    googleRefreshToken: 'refresh-token-xyz',
-    googleCalendarId: 'primary',
     timezone: 'Europe/Paris',
     openingHours: {
       mon: { open: '12:00', close: '23:00' },
@@ -105,28 +94,7 @@ describe('ReservationService - Google Calendar Sync', () => {
   });
 
   describe('create', () => {
-    it('should throw SLOT_NOT_AVAILABLE and not create anything if calendar is busy', async () => {
-      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
-        mockRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
-      );
-      vi.mocked(GoogleCalendarClient.checkAvailability).mockResolvedValue(false);
-
-      const input = {
-        restaurantId: 'rest-123',
-        reservedAt: new Date('2099-06-05T19:00:00'),
-        partySize: 4,
-        customerName: 'Alice',
-        customerPhone: '+33612345678',
-      };
-
-      await expect(ReservationService.create(input)).rejects.toThrow('SLOT_NOT_AVAILABLE');
-
-      expect(GoogleCalendarClient.checkAvailability).toHaveBeenCalled();
-      expect(db.reservation.create).not.toHaveBeenCalled();
-      expect(GoogleCalendarClient.createEvent).not.toHaveBeenCalled();
-    });
-
-    it('should create reservation and sync to Google Calendar if available', async () => {
+    it('should create reservation locally', async () => {
       const mockReservation = {
         id: 'res-456',
         restaurantId: 'rest-123',
@@ -134,68 +102,10 @@ describe('ReservationService - Google Calendar Sync', () => {
         partySize: 4,
         customerName: 'Alice',
         customerPhone: '+33612345678',
-        googleEventId: null,
       };
 
       vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
         mockRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
-      );
-      vi.mocked(GoogleCalendarClient.checkAvailability).mockResolvedValue(true);
-      vi.mocked(db.reservation.create).mockResolvedValue(
-        mockReservation as unknown as Awaited<ReturnType<typeof db.reservation.create>>,
-      );
-      vi.mocked(GoogleCalendarClient.createEvent).mockResolvedValue('event-789');
-      vi.mocked(db.reservation.update).mockResolvedValue({
-        ...mockReservation,
-        googleEventId: 'event-789',
-      } as unknown as Awaited<ReturnType<typeof db.reservation.update>>);
-
-      const input = {
-        restaurantId: 'rest-123',
-        reservedAt: new Date('2099-06-05T19:00:00'),
-        partySize: 4,
-        customerName: 'Alice',
-        customerPhone: '+33612345678',
-      };
-
-      const result = await ReservationService.create(input);
-
-      expect(db.reservation.create).toHaveBeenCalled();
-      expect(GoogleCalendarClient.createEvent).toHaveBeenCalledWith(
-        'refresh-token-xyz',
-        'primary',
-        expect.objectContaining({
-          summary: 'Réservation Sokar - Alice',
-        }),
-      );
-      expect(db.reservation.update).toHaveBeenCalledWith({
-        where: { id: 'res-456', restaurantId: 'rest-123' },
-        data: { googleEventId: 'event-789' },
-      });
-      expect(result.googleEventId).toBe('event-789');
-    });
-
-    it('should create reservation locally even if Google credentials are not set', async () => {
-      const restaurantNoGoogle = {
-        ...mockRestaurant,
-        googleRefreshToken: null,
-        googleCalendarId: null,
-      };
-
-      const mockReservation = {
-        id: 'res-456',
-        restaurantId: 'rest-123',
-        reservedAt: new Date('2099-06-05T19:00:00'),
-        partySize: 4,
-        customerName: 'Alice',
-        customerPhone: '+33612345678',
-        googleEventId: null,
-      };
-
-      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
-        restaurantNoGoogle as unknown as Awaited<
-          ReturnType<typeof db.restaurant.findUniqueOrThrow>
-        >,
       );
       vi.mocked(db.reservation.create).mockResolvedValue(
         mockReservation as unknown as Awaited<ReturnType<typeof db.reservation.create>>,
@@ -211,57 +121,12 @@ describe('ReservationService - Google Calendar Sync', () => {
 
       const result = await ReservationService.create(input);
 
-      expect(GoogleCalendarClient.checkAvailability).not.toHaveBeenCalled();
       expect(db.reservation.create).toHaveBeenCalled();
-      expect(GoogleCalendarClient.createEvent).not.toHaveBeenCalled();
-      expect(result.googleEventId).toBeNull();
+      expect(result.id).toBe('res-456');
     });
   });
 
   describe('update', () => {
-    it('should update reservation and update Google event if not cancelled', async () => {
-      const mockReservationWithRest = {
-        id: 'res-456',
-        googleEventId: 'event-789',
-        restaurant: mockRestaurant,
-      };
-
-      const updatedReservation = {
-        id: 'res-456',
-        customerName: 'Alice Updated',
-        partySize: 6,
-        customerPhone: '+33612345678',
-        status: 'CONFIRMED',
-        googleEventId: 'event-789',
-        reservedAt: new Date('2099-06-05T19:00:00'),
-      };
-
-      vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(
-        mockReservationWithRest as unknown as Awaited<
-          ReturnType<typeof db.reservation.findUniqueOrThrow>
-        >,
-      );
-      vi.mocked(db.reservation.update).mockResolvedValue(
-        updatedReservation as unknown as Awaited<ReturnType<typeof db.reservation.update>>,
-      );
-
-      const result = await ReservationService.update('res-456', 'rest-123', {
-        customerName: 'Alice Updated',
-        partySize: 6,
-      });
-
-      expect(db.reservation.update).toHaveBeenCalled();
-      expect(GoogleCalendarClient.updateEvent).toHaveBeenCalledWith(
-        'refresh-token-xyz',
-        'primary',
-        'event-789',
-        expect.objectContaining({
-          summary: 'Réservation Sokar - Alice Updated (CONFIRMED)',
-        }),
-      );
-      expect(result.customerName).toBe('Alice Updated');
-    });
-
     it('audits only changed reservation fields without recording their values', async () => {
       const originalDate = new Date('2099-06-05T19:00:00.000Z');
       const updatedDate = new Date('2099-06-06T20:00:00.000Z');
@@ -273,7 +138,6 @@ describe('ReservationService - Google Calendar Sync', () => {
         reservedAt: originalDate,
         startsAt: originalDate,
         partySize: 4,
-        googleEventId: null,
         restaurant: mockRestaurant,
       };
       const updatedReservation = {
@@ -324,7 +188,6 @@ describe('ReservationService - Google Calendar Sync', () => {
         reservedAt: originalDate,
         startsAt: originalDate,
         partySize: 4,
-        googleEventId: null,
         restaurant: mockRestaurant,
       };
       vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(
@@ -355,73 +218,12 @@ describe('ReservationService - Google Calendar Sync', () => {
       );
     });
 
-    it('should delete Google event and clear googleEventId if status is CANCELLED', async () => {
-      const mockReservationWithRest = {
-        id: 'res-456',
-        googleEventId: 'event-789',
-        state: 'CONFIRMED',
-        restaurant: mockRestaurant,
-      };
-
-      const updatedReservation = {
-        id: 'res-456',
-        status: 'CANCELLED',
-        googleEventId: 'event-789',
-        reservedAt: new Date('2099-06-05T19:00:00'),
-      };
-
-      vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(
-        mockReservationWithRest as unknown as Awaited<
-          ReturnType<typeof db.reservation.findUniqueOrThrow>
-        >,
-      );
-      // First update sets to CANCELLED
-      vi.mocked(db.reservation.update)
-        .mockResolvedValueOnce(
-          updatedReservation as unknown as Awaited<ReturnType<typeof db.reservation.update>>,
-        )
-        // Second update clears googleEventId
-        .mockResolvedValueOnce({
-          ...updatedReservation,
-          googleEventId: null,
-        } as unknown as Awaited<ReturnType<typeof db.reservation.update>>);
-
-      await ReservationService.update('res-456', 'rest-123', {
-        status: 'CANCELLED',
-      });
-
-      expect(db.reservation.update).toHaveBeenCalledWith({
-        where: { id: 'res-456', restaurantId: 'rest-123' },
-        data: { status: 'CANCELLED', state: 'CANCELLED' },
-      });
-      expect(db.reservationAuditLog.create).toHaveBeenCalledWith({
-        data: {
-          event: 'reservation_cancelled',
-          reservationId: 'res-456',
-          actor: 'legacy:reservation-update',
-          fromState: 'CONFIRMED',
-          toState: 'CANCELLED',
-          metadata: { source: 'legacy_reservation_update' },
-        },
-      });
-      expect(GoogleCalendarClient.deleteEvent).toHaveBeenCalledWith(
-        'refresh-token-xyz',
-        'primary',
-        'event-789',
-      );
-      expect(db.reservation.update).toHaveBeenCalledWith({
-        where: { id: 'res-456', restaurantId: 'rest-123' },
-        data: { googleEventId: null },
-      });
-    });
-
     it('routes a state-only lifecycle patch through the canonical projection', async () => {
       const mockReservationWithRest = {
         id: 'res-456',
         restaurantId: 'rest-123',
         status: 'CONFIRMED',
         state: 'CONFIRMED',
-        googleEventId: null,
         restaurant: mockRestaurant,
       };
       const updatedReservation = {
@@ -456,12 +258,11 @@ describe('ReservationService - Google Calendar Sync', () => {
   });
 
   describe('delete', () => {
-    it('should close reservation, preserve audit history, and delete Google event', async () => {
+    it('should close reservation and preserve audit history', async () => {
       const mockReservationWithRest = {
         id: 'res-456',
         status: 'CONFIRMED',
         state: 'CONFIRMED',
-        googleEventId: 'event-789',
         restaurant: mockRestaurant,
       };
       const updatedReservation = {
@@ -475,14 +276,9 @@ describe('ReservationService - Google Calendar Sync', () => {
           ReturnType<typeof db.reservation.findUniqueOrThrow>
         >,
       );
-      vi.mocked(db.reservation.update)
-        .mockResolvedValueOnce(
-          updatedReservation as unknown as Awaited<ReturnType<typeof db.reservation.update>>,
-        )
-        .mockResolvedValueOnce({
-          ...updatedReservation,
-          googleEventId: null,
-        } as unknown as Awaited<ReturnType<typeof db.reservation.update>>);
+      vi.mocked(db.reservation.update).mockResolvedValueOnce(
+        updatedReservation as unknown as Awaited<ReturnType<typeof db.reservation.update>>,
+      );
 
       await ReservationService.delete('res-456', 'rest-123');
 
@@ -503,15 +299,6 @@ describe('ReservationService - Google Calendar Sync', () => {
           },
         },
       });
-      expect(GoogleCalendarClient.deleteEvent).toHaveBeenCalledWith(
-        'refresh-token-xyz',
-        'primary',
-        'event-789',
-      );
-      expect(db.reservation.update).toHaveBeenCalledWith({
-        where: { id: 'res-456', restaurantId: 'rest-123' },
-        data: { googleEventId: null },
-      });
       expect(db.reservation.delete).not.toHaveBeenCalled();
     });
 
@@ -520,7 +307,6 @@ describe('ReservationService - Google Calendar Sync', () => {
         id: 'res-456',
         status: 'CANCELLED',
         state: 'CANCELLED',
-        googleEventId: null,
         restaurant: mockRestaurant,
       };
 
@@ -576,7 +362,6 @@ describe('ReservationService - Google Calendar Sync', () => {
       ).rejects.toThrow('SLOT_NOT_AVAILABLE');
 
       expect(db.reservation.create).not.toHaveBeenCalled();
-      expect(GoogleCalendarClient.checkAvailability).not.toHaveBeenCalled();
     });
   });
 });

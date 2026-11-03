@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { trackCallerVoice } from '../stream/caller-voice-activity';
+import { alawToPcm16, encodeTelnyxFromPcm16 } from '../stream/telnyx-codec';
 import type { CallSession } from '../stream/types';
 import {
   firstAudioHoldCapMs,
@@ -47,6 +49,33 @@ function makeSession(lastVoiceAt?: number): CallSession {
   } as unknown as CallSession;
 }
 
+/** 20 ms au codec de la session : teste le détecteur réel sans audio personnel en fixture. */
+function feedFrame(session: CallSession, amplitude: number): void {
+  if (session.codec === 'PCMA') {
+    let byte = 0xd5;
+    let distance = Infinity;
+    for (let candidate = 0; candidate < 256; candidate++) {
+      const delta = Math.abs(alawToPcm16(Buffer.from([candidate])).readInt16LE() - amplitude);
+      if (delta < distance) {
+        byte = candidate;
+        distance = delta;
+      }
+    }
+    trackCallerVoice(session, Buffer.alloc(160, byte));
+    return;
+  }
+  const pcm = Buffer.alloc(320 * 2);
+  for (let i = 0; i < 320; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2);
+  trackCallerVoice(session, encodeTelnyxFromPcm16('L16', pcm));
+}
+
+async function feedSpeech(session: CallSession, amplitude = 2000): Promise<void> {
+  for (let i = 0; i < 8; i++) {
+    feedFrame(session, amplitude);
+    await vi.advanceTimersByTimeAsync(20);
+  }
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-09-30T16:00:00Z'));
@@ -85,11 +114,30 @@ describe('holdFirstAudioForCallerSilence', () => {
     expect(result.heldMs).toBeLessThan(500);
   });
 
+  it('conserve la réponse après le bruit de 40 ms de 9c291ac3, puis la libère', async () => {
+    const session = makeSession(Date.now() - 200);
+    const pending = holdFirstAudioForCallerSilence(session, () => true);
+    // Enveloppe RMS mesurée à 12,34–12,40 s, dont deux trames dépassent le seuil de voix.
+    for (const rms of [241, 710, 890, 266, 0]) {
+      feedFrame(session, rms);
+      await vi.advanceTimersByTimeAsync(20);
+    }
+    await vi.advanceTimersByTimeAsync(700);
+    expect((await pending).outcome).toBe('released_after_hold');
+  });
+
+  it('préserve une reprise de parole faible mais soutenue', async () => {
+    const session = makeSession(Date.now() - 200);
+    const pending = holdFirstAudioForCallerSilence(session, () => true);
+    await feedSpeech(session, 500);
+    expect((await pending).outcome).toBe('cancelled_voice_resumed');
+  });
+
   it('annule sans rien dire quand l’appelant reprend la parole pendant l’attente (appel 5cebe456)', async () => {
     const session = makeSession(Date.now() - 200);
     const pending = holdFirstAudioForCallerSilence(session, () => true);
     await vi.advanceTimersByTimeAsync(100);
-    session.callerVoice!.lastVoiceAt = Date.now();
+    await feedSpeech(session);
     await vi.advanceTimersByTimeAsync(40);
     expect((await pending).outcome).toBe('cancelled_voice_resumed');
   });
@@ -98,7 +146,7 @@ describe('holdFirstAudioForCallerSilence', () => {
     const session = makeSession(Date.now() - 10);
     const pending = holdFirstAudioForCallerSilence(session, () => true);
     await vi.advanceTimersByTimeAsync(20);
-    session.callerVoice!.lastVoiceAt = Date.now();
+    await feedSpeech(session);
     await vi.advanceTimersByTimeAsync(30);
     expect((await pending).outcome).toBe('cancelled_voice_resumed');
   });
@@ -126,67 +174,90 @@ describe('holdFirstAudioForCallerSilence', () => {
   });
 });
 
-describe('contexte Cartesia : aucun son avant le silence exigé', () => {
-  async function setup(lastVoiceAt: number | undefined) {
-    vi.stubEnv('CARTESIA_API_KEY', 'test-key');
-    const { createCartesiaContextTurn } = await import('../stream/cartesia-context');
-    const session = makeSession(lastVoiceAt);
-    const turn = createCartesiaContextTurn(session)!;
-    const socket = fakeSockets[0];
-    socket.handlers.open?.();
-    turn.push('Bonjour. Pour quel jour ?');
-    // 100 ms d'audio A-law, le format d'une trame de lecture.
-    const audio = Buffer.alloc(1_600, 0xd5).toString('base64');
-    socket.handlers.message?.(JSON.stringify({ type: 'chunk', data: audio }));
-    return { session, turn };
-  }
-  const mediaSent = (session: CallSession) =>
-    vi
-      .mocked(session.telnyxWs.send)
-      .mock.calls.filter(([message]) => String(message).includes('"media"')).length;
+describe.each(['cartesia', 'elevenlabs'] as const)(
+  'contexte %s : aucun son avant le silence exigé',
+  (provider) => {
+    async function setup(lastVoiceAt: number | undefined) {
+      vi.stubEnv('CARTESIA_API_KEY', 'test-key');
+      const { createCartesiaContextTurn } = await import('../stream/cartesia-context');
+      const { ElevenLabsContextTurn } = await import('../stream/elevenlabs-context');
+      const session = makeSession(lastVoiceAt);
+      const turn =
+        provider === 'cartesia'
+          ? createCartesiaContextTurn(session)!
+          : new ElevenLabsContextTurn(session, 0, 'test', 'test', 'ws://127.0.0.1/');
+      const socket = fakeSockets[0];
+      socket.handlers.open?.();
+      turn.push('Bonjour. Pour quel jour ?');
+      // 100 ms d'audio A-law, le format d'une trame de lecture.
+      const audio = Buffer.alloc(1_600, 0xd5).toString('base64');
+      socket.handlers.message?.(
+        JSON.stringify(provider === 'cartesia' ? { type: 'chunk', data: audio } : { audio }),
+      );
+      return { session, turn };
+    }
+    const mediaSent = (session: CallSession) =>
+      vi
+        .mocked(session.telnyxWs.send)
+        .mock.calls.filter(([message]) => String(message).includes('"media"')).length;
 
-  it('retient le premier son, puis le joue une fois l’appelant silencieux', async () => {
-    const { session, turn } = await setup(Date.now() - 200);
-    await vi.advanceTimersByTimeAsync(200);
-    expect(mediaSent(session)).toBe(0);
-    await vi.advanceTimersByTimeAsync(300);
-    expect(mediaSent(session)).toBeGreaterThan(0);
-    turn.cancel();
-  });
+    it('retient le premier son, puis le joue une fois l’appelant silencieux', async () => {
+      const { session, turn } = await setup(Date.now() - 200);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(mediaSent(session)).toBe(0);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(mediaSent(session)).toBeGreaterThan(0);
+      turn.cancel();
+    });
 
-  it('jette la réponse préparée sans envoyer un mot quand l’appelant reprend', async () => {
-    const { session, turn } = await setup(Date.now() - 200);
-    const cancelled = vi.fn();
-    turn.onHoldCancelled = cancelled;
-    await vi.advanceTimersByTimeAsync(100);
-    session.callerVoice!.lastVoiceAt = Date.now();
-    await vi.advanceTimersByTimeAsync(600);
-    expect(cancelled).toHaveBeenCalledTimes(1);
-    expect(mediaSent(session)).toBe(0);
-  });
+    it('joue la réponse après un bruit bref sans appeler le callback d’annulation', async () => {
+      const { session, turn } = await setup(Date.now() - 200);
+      const cancelled = vi.fn();
+      turn.onHoldCancelled = cancelled;
+      for (const rms of [241, 710, 890, 266, 0]) {
+        feedFrame(session, rms);
+        await vi.advanceTimersByTimeAsync(20);
+      }
+      await vi.advanceTimersByTimeAsync(700);
+      expect(cancelled).not.toHaveBeenCalled();
+      expect(mediaSent(session)).toBeGreaterThan(0);
+      turn.cancel();
+    });
 
-  it('ne joue plus rien pendant une pause, et reprend là où il en était', async () => {
-    const { session, turn } = await setup(Date.now() - 2_000);
-    await vi.advanceTimersByTimeAsync(40);
-    const before = mediaSent(session);
-    expect(before).toBeGreaterThan(0);
-    turn.pause();
-    await vi.advanceTimersByTimeAsync(400);
-    const during = mediaSent(session);
-    // Au plus la trame déjà partie : la pause agit dans les 100 ms d'une trame.
-    expect(during - before).toBeLessThanOrEqual(1);
-    await vi.advanceTimersByTimeAsync(400);
-    expect(mediaSent(session)).toBe(during);
-    turn.resume();
-    await vi.advanceTimersByTimeAsync(200);
-    expect(mediaSent(session)).toBeGreaterThan(during);
-    turn.cancel();
-  });
+    it('jette la réponse préparée sans envoyer un mot quand l’appelant reprend', async () => {
+      const { session, turn } = await setup(Date.now() - 200);
+      const cancelled = vi.fn();
+      turn.onHoldCancelled = cancelled;
+      await vi.advanceTimersByTimeAsync(100);
+      await feedSpeech(session);
+      await vi.advanceTimersByTimeAsync(600);
+      expect(cancelled).toHaveBeenCalledTimes(1);
+      expect(mediaSent(session)).toBe(0);
+    });
 
-  it('joue tout de suite quand l’appelant se tait depuis longtemps', async () => {
-    const { session, turn } = await setup(Date.now() - 2_000);
-    await vi.advanceTimersByTimeAsync(40);
-    expect(mediaSent(session)).toBeGreaterThan(0);
-    turn.cancel();
-  });
-});
+    it('ne joue plus rien pendant une pause, et reprend là où il en était', async () => {
+      const { session, turn } = await setup(Date.now() - 2_000);
+      await vi.advanceTimersByTimeAsync(40);
+      const before = mediaSent(session);
+      expect(before).toBeGreaterThan(0);
+      turn.pause();
+      await vi.advanceTimersByTimeAsync(400);
+      const during = mediaSent(session);
+      // Au plus la trame déjà partie : la pause agit dans les 100 ms d'une trame.
+      expect(during - before).toBeLessThanOrEqual(1);
+      await vi.advanceTimersByTimeAsync(400);
+      expect(mediaSent(session)).toBe(during);
+      turn.resume();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(mediaSent(session)).toBeGreaterThan(during);
+      turn.cancel();
+    });
+
+    it('joue tout de suite quand l’appelant se tait depuis longtemps', async () => {
+      const { session, turn } = await setup(Date.now() - 2_000);
+      await vi.advanceTimersByTimeAsync(40);
+      expect(mediaSent(session)).toBeGreaterThan(0);
+      turn.cancel();
+    });
+  },
+);

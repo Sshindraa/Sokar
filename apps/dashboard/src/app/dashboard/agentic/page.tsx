@@ -1,29 +1,28 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { ChevronDown, Copy, Info, MoreHorizontal } from 'lucide-react';
+import { toast } from 'sonner';
+import { useRouter } from 'next/navigation';
 import { useApi } from '../../../lib/api';
 import { getErrorMessage } from '@/types/api';
 import { ApiError, featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DataFetchError } from '@/components/DataFetchError';
 import { FeatureLockCard } from '@/components/FeatureLockCard';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { StatusBadge } from '@/components/StatusBadge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
 import {
-  Save,
-  Bot,
-  Sparkles,
-  AlertCircle,
-  CheckCircle2,
-  Settings,
-  KeyRound,
-  Trash2,
-  Copy,
-} from 'lucide-react';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
 
 type OptInStatus = {
   mcp: boolean;
@@ -79,10 +78,28 @@ const NO_SHOW_OPTIONS = [
   { value: 'block', label: 'Bloquer les futures réservations' },
 ] as const;
 
-const DAYS_FR = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+function InfoTip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={label}
+            className="inline-flex text-muted-foreground transition-all duration-200 hover:text-foreground"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">{children}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 export default function AgenticSettingsPage() {
   const { get, post, put, del, orgId } = useApi();
+  const router = useRouter();
 
   const [optIn, setOptIn] = useState<OptInStatus | null>(null);
   const [settings, setSettings] = useState<ExposureSettings | null>(null);
@@ -105,13 +122,9 @@ export default function AgenticSettingsPage() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [creatingClient, setCreatingClient] = useState(false);
   const [revokingClientId, setRevokingClientId] = useState<string | null>(null);
-  const [error, setError] = useState('');
-  // Refus d'activation parce que le profil du restaurant est incomplet : on propose d'aller le compléter.
-  const [errorNeedsProfile, setErrorNeedsProfile] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [lock, setLock] = useState<FeatureLock | null>(null);
   const [clientToRevoke, setClientToRevoke] = useState<McpClient | null>(null);
-  const [success, setSuccess] = useState('');
   const [newClientName, setNewClientName] = useState('');
   const [newClientScopes, setNewClientScopes] = useState<string[]>(['mcp:read', 'mcp:reserve']);
   const [newClientOrigins, setNewClientOrigins] = useState('');
@@ -153,16 +166,17 @@ export default function AgenticSettingsPage() {
 
   async function handleOptInSave(next: { mcp: boolean; openaiReserve: boolean }) {
     setSavingOptIn(true);
-    setError('');
-    setErrorNeedsProfile(false);
-    setSuccess('');
     try {
       const result = (await post('api/agentic/opt-in', next)) as OptInStatus;
       setOptIn(result);
-      setSuccess('Préférences enregistrées');
+      toast.success('Préférences enregistrées');
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Erreur lors de la sauvegarde'));
-      setErrorNeedsProfile(err instanceof ApiError && err.kind === 'conflict');
+      const needsProfile = err instanceof ApiError && err.kind === 'conflict';
+      toast.error(getErrorMessage(err, 'Erreur lors de la sauvegarde'), {
+        action: needsProfile
+          ? { label: 'Compléter le profil', onClick: () => router.push('/dashboard/settings') }
+          : undefined,
+      });
     } finally {
       setSavingOptIn(false);
     }
@@ -170,8 +184,6 @@ export default function AgenticSettingsPage() {
 
   async function handleSettingsSave() {
     setSavingSettings(true);
-    setError('');
-    setSuccess('');
     try {
       const result = (await put('api/agentic/exposure-settings', {
         maxPartySize,
@@ -183,9 +195,9 @@ export default function AgenticSettingsPage() {
         requireManualValidation,
       })) as ExposureSettings;
       setSettings(result);
-      setSuccess('Paramètres de réservation enregistrés');
+      toast.success('Paramètres de réservation enregistrés');
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Erreur lors de la sauvegarde'));
+      toast.error(getErrorMessage(err, 'Erreur lors de la sauvegarde'));
     } finally {
       setSavingSettings(false);
     }
@@ -210,8 +222,6 @@ export default function AgenticSettingsPage() {
 
   async function handleClientCreate() {
     setCreatingClient(true);
-    setError('');
-    setSuccess('');
     setCreatedApiKey('');
     try {
       const result = (await post('api/agentic/mcp-clients', {
@@ -224,9 +234,9 @@ export default function AgenticSettingsPage() {
       setNewClientName('');
       setNewClientScopes(['mcp:read', 'mcp:reserve']);
       setNewClientOrigins('');
-      setSuccess('Clé MCP créée');
+      toast.success('Clé créée');
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de créer la clé MCP'));
+      toast.error(getErrorMessage(err, 'Impossible de créer la clé'));
     } finally {
       setCreatingClient(false);
     }
@@ -234,14 +244,12 @@ export default function AgenticSettingsPage() {
 
   async function handleClientRevoke(clientId: string) {
     setRevokingClientId(clientId);
-    setError('');
-    setSuccess('');
     try {
       await del(`api/agentic/mcp-clients/${clientId}`);
       setMcpClients(mcpClients.filter((client) => client.id !== clientId));
-      setSuccess('Clé MCP révoquée');
+      toast.success('Clé révoquée');
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de révoquer la clé MCP'));
+      toast.error(getErrorMessage(err, 'Impossible de révoquer la clé'));
     } finally {
       setRevokingClientId(null);
       setClientToRevoke(null);
@@ -252,11 +260,9 @@ export default function AgenticSettingsPage() {
     if (!createdApiKey) return;
     try {
       await navigator.clipboard.writeText(createdApiKey);
-      setError('');
-      setSuccess('Clé copiée');
+      toast.success('Clé copiée');
     } catch {
-      setSuccess('');
-      setError('Copie impossible. Sélectionnez la clé et copiez-la à la main.');
+      toast.error('Copie impossible. Sélectionnez la clé et copiez-la à la main.');
     }
   }
 
@@ -266,7 +272,7 @@ export default function AgenticSettingsPage() {
 
   if (loading) {
     return (
-      <div className="space-y-8">
+      <div className="space-y-6">
         <Skeleton className="h-8 w-40" />
         <Skeleton className="h-64 w-full" />
         <Skeleton className="h-96 w-full" />
@@ -279,11 +285,9 @@ export default function AgenticSettingsPage() {
   if (lock || !settings || !optIn) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
-          Réservations par les assistants IA
-        </h1>
+        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Agents IA</h1>
         {lock ? (
-          <FeatureLockCard lock={lock} feature="Réservations par les assistants IA" />
+          <FeatureLockCard lock={lock} feature="Agents IA" />
         ) : (
           <DataFetchError
             message={`${loadError || 'Impossible de charger vos réglages de réservation.'} Vos réglages n’ont pas été modifiés.`}
@@ -299,180 +303,114 @@ export default function AgenticSettingsPage() {
   const openaiActive = optIn.openaiReserve;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <OnboardingLockBanner task="phone" />
-      <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
-        Réservations par les assistants IA
-      </h1>
+      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Agents IA</h1>
+        <InfoTip label="Précision sur les agents IA">
+          Les assistants IA peuvent chercher votre restaurant, consulter les disponibilités et
+          réserver. Vous pouvez les désactiver à tout moment : les réservations en cours ne sont pas
+          affectées.
+        </InfoTip>
+      </div>
 
-      {error && (
-        <div role="alert" className="sokar-error">
-          <AlertCircle size={18} />
-          <span>
-            {error}
-            {errorNeedsProfile ? (
-              <>
-                {' '}
-                <Link
-                  href="/dashboard/settings"
-                  className="font-medium underline underline-offset-4 transition-all duration-200"
-                >
-                  Compléter le profil
-                </Link>
-              </>
-            ) : null}
-          </span>
-        </div>
-      )}
-      {success && (
-        <div className="rounded-lg border border-primary/20 bg-secondary p-4 text-sm text-primary flex items-center gap-2">
-          <CheckCircle2 size={18} />
-          {success}
-        </div>
-      )}
-
-      {/* Opt-in MCP / OpenAI Reserve */}
-      <Card className="sokar-card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Sparkles size={18} className="text-primary" />
-            Canaux d&apos;exposition
-          </CardTitle>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Canaux</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <p className="text-sm text-muted-foreground max-w-2xl">
-            Activez les canaux par lesquels les assistants IA (ChatGPT, Claude, Cursor) peuvent
-            consulter et réserver chez vous. Vous pouvez les désactiver à tout moment : les
-            réservations en cours ne sont pas affectées.
-          </p>
-
-          <div className="space-y-4">
-            <div className="flex flex-col gap-3 rounded-2xl border border-border bg-secondary p-5 sm:flex-row sm:items-center sm:justify-between transition-all duration-200 hover:bg-accent">
-              <div className="flex items-start gap-4">
-                <div className="rounded-xl bg-secondary p-3 text-primary">
-                  <Bot size={24} />
-                </div>
-                <div>
-                  <p className="font-semibold text-base">Assistants IA (connecteur MCP)</p>
-                  <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                    Visible dans Claude, Cursor et les autres assistants compatibles : ils peuvent
-                    chercher votre restaurant, consulter les disponibilités et réserver.
-                  </p>
-                  <div className="mt-3 flex items-center gap-2">
-                    <span
-                      className={`inline-flex h-2 w-2 rounded-full ${mcpActive ? 'bg-success' : 'bg-faint'} animate-pulse`}
-                    />
-                    <span
-                      className={`text-xs font-medium ${mcpActive ? 'text-success' : 'text-muted-foreground'}`}
-                    >
-                      {mcpActive ? 'Activé' : 'Désactivé'}
-                    </span>
-                  </div>
-                </div>
+        <CardContent className="space-y-3">
+          <div className="flex flex-col gap-3 rounded-xl border border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-medium">Assistants IA (Claude, Cursor…)</p>
+                <StatusBadge level={mcpActive ? 'progress' : 'neutral'}>
+                  {mcpActive ? 'Activé' : 'Désactivé'}
+                </StatusBadge>
               </div>
-              <div>
-                {mcpActive ? (
-                  <Button
-                    variant="outline"
-                    onClick={() => handleOptInSave({ mcp: false, openaiReserve: false })}
-                    disabled={savingOptIn}
-                    className="transition-all duration-200"
-                  >
-                    {savingOptIn ? '...' : 'Désactiver'}
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => handleOptInSave({ mcp: true, openaiReserve: false })}
-                    disabled={savingOptIn}
-                    className="transition-all duration-200"
-                  >
-                    {savingOptIn ? '...' : 'Activer'}
-                  </Button>
-                )}
-              </div>
+              <p className="text-sm text-muted-foreground">
+                Chercher, consulter les disponibilités et réserver.
+              </p>
             </div>
+            {mcpActive ? (
+              <Button
+                variant="outline"
+                onClick={() => handleOptInSave({ mcp: false, openaiReserve: false })}
+                disabled={savingOptIn}
+                className="shrink-0 transition-all duration-200"
+              >
+                {savingOptIn ? '...' : 'Désactiver'}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => handleOptInSave({ mcp: true, openaiReserve: false })}
+                disabled={savingOptIn}
+                className="shrink-0 transition-all duration-200"
+              >
+                {savingOptIn ? '...' : 'Activer'}
+              </Button>
+            )}
+          </div>
 
-            <div
-              className={`flex flex-col gap-3 rounded-2xl border border-border bg-secondary p-5 sm:flex-row sm:items-center sm:justify-between transition-all duration-200 hover:bg-accent ${!mcpActive ? 'opacity-60' : ''}`}
-            >
-              <div className="flex items-start gap-4">
-                <div className="rounded-xl bg-secondary p-3 text-primary">
-                  <Sparkles size={24} />
-                </div>
-                <div>
-                  <p className="font-semibold text-base">OpenAI Reserve (beta)</p>
-                  <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                    Visible dans ChatGPT avec widget natif. Nécessite que vous ayez renseigné
-                    l&apos;adresse, le téléphone, le site web, et les coordonnées GPS de votre
-                    restaurant.
-                  </p>
-                  <div className="mt-3 flex items-center gap-2">
-                    <span
-                      className={`inline-flex h-2 w-2 rounded-full ${openaiActive ? 'bg-success' : 'bg-faint'} animate-pulse`}
-                    />
-                    <span
-                      className={`text-xs font-medium ${openaiActive ? 'text-success' : 'text-muted-foreground'}`}
-                    >
-                      {openaiActive
-                        ? 'Activé'
-                        : mcpActive
-                          ? 'Désactivé'
-                          : "Désactivé (activer MCP d'abord)"}
-                    </span>
-                  </div>
-                </div>
+          <div
+            className={`flex flex-col gap-3 rounded-xl border border-border p-4 transition-all duration-200 sm:flex-row sm:items-center sm:justify-between ${!mcpActive ? 'opacity-60' : ''}`}
+          >
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-medium">OpenAI Reserve (bêta)</p>
+                <StatusBadge level={openaiActive ? 'progress' : 'neutral'}>
+                  {openaiActive ? 'Activé' : 'Désactivé'}
+                </StatusBadge>
+                <InfoTip label="Précision sur OpenAI Reserve">
+                  Affiché dans ChatGPT avec widget natif. Nécessite l’adresse, le téléphone, le site
+                  web et les coordonnées GPS de votre restaurant.
+                </InfoTip>
               </div>
-              <div>
-                {openaiActive ? (
-                  <Button
-                    variant="outline"
-                    onClick={() => handleOptInSave({ mcp: true, openaiReserve: false })}
-                    disabled={savingOptIn}
-                    className="transition-all duration-200"
-                  >
-                    {savingOptIn ? '...' : 'Désactiver'}
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => handleOptInSave({ mcp: true, openaiReserve: true })}
-                    disabled={savingOptIn || !mcpActive}
-                    className="transition-all duration-200"
-                  >
-                    {savingOptIn ? '...' : 'Activer'}
-                  </Button>
-                )}
-              </div>
+              {!mcpActive && !openaiActive && (
+                <p className="text-sm text-muted-foreground">Activez d’abord les assistants IA.</p>
+              )}
             </div>
+            {openaiActive ? (
+              <Button
+                variant="outline"
+                onClick={() => handleOptInSave({ mcp: true, openaiReserve: false })}
+                disabled={savingOptIn}
+                className="shrink-0 transition-all duration-200"
+              >
+                {savingOptIn ? '...' : 'Désactiver'}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => handleOptInSave({ mcp: true, openaiReserve: true })}
+                disabled={savingOptIn || !mcpActive}
+                className="shrink-0 transition-all duration-200"
+              >
+                {savingOptIn ? '...' : 'Activer'}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      <Card className="sokar-card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <KeyRound size={18} className="text-primary" />
-            Clés MCP
-          </CardTitle>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Clés d’accès</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-4">
           {createdApiKey && (
-            <div className="rounded-lg border border-primary/20 bg-secondary p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 space-y-1">
-                  <p className="text-sm font-medium text-primary">Clé créée</p>
-                  <p className="text-xs text-muted-foreground">
-                    Copiez cette clé maintenant : elle ne sera plus affichée.
-                  </p>
-                  <code className="block select-all overflow-x-auto rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground">
-                    {createdApiKey}
-                  </code>
-                </div>
+            <div className="space-y-2 rounded-xl border border-primary/30 p-4">
+              <p className="text-sm font-medium">
+                Nouvelle clé : copiez-la maintenant, elle ne sera plus affichée.
+              </p>
+              <div className="flex items-start gap-2">
+                <code className="block min-w-0 flex-1 select-all break-all rounded-md border border-border bg-background px-3 py-2 text-xs">
+                  {createdApiKey}
+                </code>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={copyCreatedKey}
-                  className="transition-all duration-200"
+                  className="shrink-0 transition-all duration-200"
                 >
                   <Copy size={16} />
                   Copier
@@ -481,324 +419,311 @@ export default function AgenticSettingsPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="space-y-3">
-              {mcpClients.length === 0 ? (
-                <div className="rounded-lg border border-border bg-secondary p-5 text-sm text-muted-foreground">
-                  Aucune clé MCP active.
-                </div>
-              ) : (
-                mcpClients.map((client) => (
-                  <div
-                    key={client.id}
-                    className="rounded-lg border border-border bg-secondary p-4 transition-all duration-200 hover:bg-accent"
-                  >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0 space-y-3">
-                        <div>
-                          <p className="font-medium">{client.name}</p>
-                          <p className="mt-1 font-mono text-xs text-muted-foreground">
-                            {client.keyPrefix}...
-                          </p>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          {client.scopes.map((scope) => (
-                            <span
-                              key={scope}
-                              className="rounded-full border border-border bg-background px-2 py-1 text-xs text-muted-foreground"
-                            >
-                              {MCP_SCOPE_OPTIONS.find((option) => option.value === scope)?.label ??
-                                scope.replace('mcp:', '')}
-                            </span>
-                          ))}
-                        </div>
-
-                        <div className="space-y-1 text-xs text-muted-foreground">
-                          <p>
-                            Dernière utilisation :{' '}
-                            {client.lastUsedAt
-                              ? new Date(client.lastUsedAt).toLocaleString('fr-FR')
-                              : 'Jamais'}
-                          </p>
-                          <p>
-                            Sites autorisés :{' '}
-                            {client.allowedOrigins.length > 0
-                              ? client.allowedOrigins.join(', ')
-                              : 'Aucune restriction client'}
-                          </p>
-                        </div>
-                      </div>
-
+          {mcpClients.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Aucune clé active.</p>
+          ) : (
+            <div className="space-y-2">
+              {mcpClients.map((client) => (
+                <div
+                  key={client.id}
+                  className="flex items-start justify-between gap-3 rounded-xl border border-border p-4 transition-all duration-200 hover:bg-accent"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <p className="font-medium">{client.name}</p>
+                    <p className="font-mono text-xs text-muted-foreground">{client.keyPrefix}…</p>
+                    <p className="text-xs text-muted-foreground">
+                      {client.scopes
+                        .map(
+                          (scope) =>
+                            MCP_SCOPE_OPTIONS.find((option) => option.value === scope)?.label ??
+                            scope.replace('mcp:', ''),
+                        )
+                        .join(' · ')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Dernière utilisation :{' '}
+                      {client.lastUsedAt
+                        ? new Date(client.lastUsedAt).toLocaleString('fr-FR')
+                        : 'jamais'}
+                    </p>
+                    <p className="break-all text-xs text-muted-foreground">
+                      Sites autorisés :{' '}
+                      {client.allowedOrigins.length > 0
+                        ? client.allowedOrigins.join(', ')
+                        : 'aucune restriction'}
+                    </p>
+                  </div>
+                  <DropdownMenu modal={false}>
+                    <DropdownMenuTrigger asChild>
                       <Button
                         type="button"
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => setClientToRevoke(client)}
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Actions pour ${client.name}`}
                         disabled={revokingClientId === client.id}
-                        className="transition-all duration-200"
+                        className="h-8 w-8 shrink-0 transition-all duration-200"
                       >
-                        <Trash2 size={16} />
-                        {revokingClientId === client.id ? '...' : 'Révoquer'}
+                        <MoreHorizontal className="h-4 w-4" />
                       </Button>
-                    </div>
-                  </div>
-                ))
-              )}
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onSelect={() => setClientToRevoke(client)}
+                      >
+                        Révoquer
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              ))}
             </div>
+          )}
 
-            <div className="rounded-lg border border-border bg-background p-4">
-              <div className="space-y-4">
+          <details className="group rounded-xl border border-border">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-4 text-sm font-medium transition-all duration-200 [&::-webkit-details-marker]:hidden">
+              Créer une clé
+              <ChevronDown className="h-4 w-4 text-muted-foreground transition-all duration-200 group-open:rotate-180" />
+            </summary>
+            <div className="space-y-4 border-t border-border p-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Nom</label>
+                <Input
+                  value={newClientName}
+                  onChange={(e) => setNewClientName(e.target.value)}
+                  placeholder="Claude Desktop"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Droits</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {MCP_SCOPE_OPTIONS.map((scope) => (
+                    <button
+                      key={scope.value}
+                      type="button"
+                      aria-pressed={newClientScopes.includes(scope.value)}
+                      onClick={() => toggleClientScope(scope.value)}
+                      className={`rounded-lg border px-2 py-2 text-xs transition-all duration-200 ${
+                        newClientScopes.includes(scope.value)
+                          ? 'border-foreground bg-foreground text-background'
+                          : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground'
+                      }`}
+                    >
+                      {scope.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <label className="text-sm font-medium">Sites autorisés</label>
+                  <InfoTip label="Précision sur les sites autorisés">
+                    Une adresse par ligne. Facultatif pour les applications installées sur
+                    ordinateur.
+                  </InfoTip>
+                </div>
+                <textarea
+                  value={newClientOrigins}
+                  onChange={(e) => setNewClientOrigins(e.target.value)}
+                  placeholder="https://claude.ai"
+                  className="min-h-[92px] w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+
+              <Button
+                type="button"
+                onClick={handleClientCreate}
+                disabled={creatingClient || !newClientName.trim()}
+                className="w-full transition-all duration-200 sm:w-auto"
+              >
+                {creatingClient ? 'Création...' : 'Créer une clé'}
+              </Button>
+            </div>
+          </details>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Paramètres de réservation</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <details className="group rounded-xl border border-border">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-4 text-sm font-medium transition-all duration-200 [&::-webkit-details-marker]:hidden">
+              Modifier les limites et règles
+              <ChevronDown className="h-4 w-4 text-muted-foreground transition-all duration-200 group-open:rotate-180" />
+            </summary>
+            <div className="space-y-6 border-t border-border p-4">
+              <div className="grid max-w-2xl grid-cols-1 gap-6 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Nom</label>
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-sm font-medium">Taille maximale (couverts)</label>
+                    <InfoTip label="Précision sur la taille maximale">
+                      Réservable automatiquement par téléphone et assistants IA. Au-delà, Sokar
+                      confirme le nombre de couverts puis vous passe l’appel, ou prend un message.
+                    </InfoTip>
+                  </div>
                   <Input
-                    value={newClientName}
-                    onChange={(e) => setNewClientName(e.target.value)}
-                    placeholder="Claude Desktop"
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={Number.isNaN(maxPartySize) ? '' : maxPartySize}
+                    onChange={(e) =>
+                      setMaxPartySize(e.target.value === '' ? NaN : Number(e.target.value))
+                    }
+                    aria-invalid={maxPartyInvalid}
+                    className={maxPartyInvalid ? 'border-destructive' : undefined}
+                  />
+                  {maxPartyInvalid ? (
+                    <p role="alert" className="text-xs text-destructive">
+                      Indiquez un nombre entre 1 et 50.
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-sm font-medium">Préavis minimum (minutes)</label>
+                    <InfoTip label="Précision sur le préavis">
+                      Empêche les réservations trop tardives (par exemple 30 min avant).
+                    </InfoTip>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={1440}
+                    value={Number.isNaN(minLeadTimeMinutes) ? '' : minLeadTimeMinutes}
+                    onChange={(e) =>
+                      setMinLeadTimeMinutes(e.target.value === '' ? NaN : Number(e.target.value))
+                    }
+                    aria-invalid={leadTimeInvalid}
+                    className={leadTimeInvalid ? 'border-destructive' : undefined}
+                  />
+                  {leadTimeInvalid ? (
+                    <p role="alert" className="text-xs text-destructive">
+                      Indiquez un nombre entre 0 et 1440 minutes.
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-sm font-medium">
+                      Validité d’une estimation : {Math.round(quoteTtlSeconds / 60)} min
+                    </label>
+                    <InfoTip label="Précision sur la validité d’une estimation">
+                      Durée pendant laquelle une estimation est valable. Elle ne bloque pas votre
+                      capacité.
+                    </InfoTip>
+                  </div>
+                  <input
+                    type="range"
+                    min={30}
+                    max={3600}
+                    step={30}
+                    value={quoteTtlSeconds}
+                    onChange={(e) => setQuoteTtlSeconds(Number(e.target.value))}
+                    className="w-full accent-primary"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Scopes</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {MCP_SCOPE_OPTIONS.map((scope) => (
-                      <button
-                        key={scope.value}
-                        type="button"
-                        onClick={() => toggleClientScope(scope.value)}
-                        className={`rounded-lg border px-2 py-2 text-xs transition-all duration-200 ${
-                          newClientScopes.includes(scope.value)
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-border bg-background text-muted-foreground hover:bg-secondary'
-                        }`}
-                      >
-                        {scope.label}
-                      </button>
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-sm font-medium">
+                      Créneau gardé pendant : {Math.round(holdTtlSeconds / 60)} min
+                    </label>
+                    <InfoTip label="Précision sur le créneau gardé">
+                      Durée pendant laquelle la table est bloquée. Au-delà, le créneau se libère
+                      automatiquement.
+                    </InfoTip>
+                  </div>
+                  <input
+                    type="range"
+                    min={60}
+                    max={3600}
+                    step={30}
+                    value={holdTtlSeconds}
+                    onChange={(e) => setHoldTtlSeconds(Number(e.target.value))}
+                    className="w-full accent-primary"
+                  />
+                </div>
+
+                <div className="space-y-2 sm:col-span-2">
+                  <label className="text-sm font-medium">Politique no-show</label>
+                  <select
+                    value={noShowPolicy}
+                    onChange={(e) => setNoShowPolicy(e.target.value as 'warning' | 'fee' | 'block')}
+                    className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {NO_SHOW_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2 sm:col-span-2">
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-sm font-medium">Canaux de notification</label>
+                    <InfoTip label="Précision sur les canaux de notification">
+                      Gardez au moins un canal de notification.
+                    </InfoTip>
+                  </div>
+                  <div className="flex gap-4">
+                    {(['sms', 'email'] as const).map((ch) => (
+                      <label key={ch} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={notificationChannels.includes(ch)}
+                          disabled={
+                            notificationChannels.length === 1 && notificationChannels.includes(ch)
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setNotificationChannels([...notificationChannels, ch]);
+                            } else {
+                              setNotificationChannels(notificationChannels.filter((c) => c !== ch));
+                            }
+                          }}
+                          className="accent-primary"
+                        />
+                        {ch === 'sms' ? 'SMS' : 'E-mail'}
+                      </label>
                     ))}
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Sites autorisés</label>
-                  <textarea
-                    value={newClientOrigins}
-                    onChange={(e) => setNewClientOrigins(e.target.value)}
-                    placeholder="https://claude.ai"
-                    className="min-h-[92px] w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Une adresse par ligne. Facultatif pour les applications installées sur
-                    ordinateur.
-                  </p>
+                <div className="space-y-2 sm:col-span-2">
+                  <div className="flex items-center gap-1.5">
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <input
+                        type="checkbox"
+                        checked={requireManualValidation}
+                        onChange={(e) => setRequireManualValidation(e.target.checked)}
+                        className="accent-primary"
+                      />
+                      Valider chaque réservation à la main
+                    </label>
+                    <InfoTip label="Précision sur la validation manuelle">
+                      Les réservations faites par les assistants IA restent en attente jusqu’à votre
+                      validation (utile au démarrage).
+                    </InfoTip>
+                  </div>
                 </div>
-
-                <Button
-                  type="button"
-                  onClick={handleClientCreate}
-                  disabled={creatingClient || !newClientName.trim()}
-                  className="w-full transition-all duration-200"
-                >
-                  <KeyRound size={16} />
-                  {creatingClient ? 'Création...' : 'Créer une clé'}
-                </Button>
               </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Exposure settings */}
-      <Card className="sokar-card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Settings size={18} className="text-primary" />
-            Paramètres de réservation
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <p className="text-sm text-muted-foreground max-w-2xl">
-            Contrôlez les limites de réservation, la durée pendant laquelle un créneau est gardé et
-            les règles appliquées aux réservations faites par les assistants IA.
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Taille de groupe maximale réservable automatiquement — téléphone et assistants IA
-              </label>
-              <Input
-                type="number"
-                min={1}
-                max={50}
-                value={Number.isNaN(maxPartySize) ? '' : maxPartySize}
-                onChange={(e) =>
-                  setMaxPartySize(e.target.value === '' ? NaN : Number(e.target.value))
-                }
-                aria-invalid={maxPartyInvalid}
-                className={maxPartyInvalid ? 'border-destructive' : undefined}
-              />
-              {maxPartyInvalid ? (
-                <p role="alert" className="text-xs text-destructive">
-                  Indiquez un nombre entre 1 et 50.
-                </p>
-              ) : null}
-              <p className="text-xs text-muted-foreground">
-                1 à 50 personnes. Au-delà, Sokar, votre chef de rang numérique, confirme le nombre
-                de couverts puis vous passe l’appel, ou prend un message.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Préavis minimum (minutes)</label>
-              <Input
-                type="number"
-                min={0}
-                max={1440}
-                value={Number.isNaN(minLeadTimeMinutes) ? '' : minLeadTimeMinutes}
-                onChange={(e) =>
-                  setMinLeadTimeMinutes(e.target.value === '' ? NaN : Number(e.target.value))
-                }
-                aria-invalid={leadTimeInvalid}
-                className={leadTimeInvalid ? 'border-destructive' : undefined}
-              />
-              {leadTimeInvalid ? (
-                <p role="alert" className="text-xs text-destructive">
-                  Indiquez un nombre entre 0 et 1440 minutes.
-                </p>
-              ) : null}
-              <p className="text-xs text-muted-foreground">
-                Empêche les réservations trop tardives (par exemple 30 min avant)
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Validité d’une estimation : {Math.round(quoteTtlSeconds / 60)} min
-              </label>
-              <input
-                type="range"
-                min={30}
-                max={3600}
-                step={30}
-                value={quoteTtlSeconds}
-                onChange={(e) => setQuoteTtlSeconds(Number(e.target.value))}
-                className="w-full accent-primary"
-              />
-              <p className="text-xs text-muted-foreground">
-                Durée pendant laquelle une estimation est valable
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Créneau gardé pendant : {Math.round(holdTtlSeconds / 60)} min
-              </label>
-              <input
-                type="range"
-                min={60}
-                max={3600}
-                step={30}
-                value={holdTtlSeconds}
-                onChange={(e) => setHoldTtlSeconds(Number(e.target.value))}
-                className="w-full accent-primary"
-              />
-              <p className="text-xs text-muted-foreground">
-                Durée pendant laquelle la table est bloquée
-              </p>
-            </div>
-
-            <div className="space-y-2 sm:col-span-2">
-              <label className="text-sm font-medium">Politique no-show</label>
-              <select
-                value={noShowPolicy}
-                onChange={(e) => setNoShowPolicy(e.target.value as 'warning' | 'fee' | 'block')}
-                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              <Button
+                onClick={handleSettingsSave}
+                disabled={savingSettings || maxPartyInvalid || leadTimeInvalid}
+                className="transition-all duration-200"
               >
-                {NO_SHOW_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                {savingSettings ? 'Enregistrement...' : 'Enregistrer'}
+              </Button>
             </div>
-
-            <div className="space-y-2 sm:col-span-2">
-              <label className="text-sm font-medium">Canaux de notification</label>
-              <div className="flex gap-4">
-                {(['sms', 'email'] as const).map((ch) => (
-                  <label key={ch} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={notificationChannels.includes(ch)}
-                      disabled={
-                        notificationChannels.length === 1 && notificationChannels.includes(ch)
-                      }
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setNotificationChannels([...notificationChannels, ch]);
-                        } else {
-                          setNotificationChannels(notificationChannels.filter((c) => c !== ch));
-                        }
-                      }}
-                      className="accent-primary"
-                    />
-                    {ch === 'sms' ? 'SMS' : 'E-mail'}
-                  </label>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Gardez au moins un canal de notification.
-              </p>
-            </div>
-
-            <div className="space-y-2 sm:col-span-2">
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <input
-                  type="checkbox"
-                  checked={requireManualValidation}
-                  onChange={(e) => setRequireManualValidation(e.target.checked)}
-                  className="accent-primary"
-                />
-                Valider chaque réservation à la main
-              </label>
-              <p className="text-xs text-muted-foreground">
-                Si activé, les réservations faites par les assistants IA restent en attente jusqu’à
-                votre validation (utile au démarrage).
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              onClick={handleSettingsSave}
-              disabled={savingSettings || maxPartyInvalid || leadTimeInvalid}
-            >
-              <Save size={16} className="mr-1" />
-              {savingSettings ? 'Enregistrement...' : 'Enregistrer'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Footer info */}
-      <Card className="sokar-card bg-secondary">
-        <CardContent className="p-5 text-sm text-muted-foreground">
-          <p className="font-medium text-foreground mb-2">Comment ça marche</p>
-          <ul className="space-y-1 list-disc list-inside">
-            <li>
-              Les <strong>estimations</strong> sont valables 5 minutes par défaut. Elles ne bloquent
-              pas votre capacité.
-            </li>
-            <li>
-              Un <strong>créneau gardé</strong> bloque une table 7 minutes par défaut. Au-delà, il
-              se libère automatiquement.
-            </li>
-            <li>
-              Chaque changement de paramètre est conservé dans un historique : pour en annuler un,
-              contactez le support.
-            </li>
-            {DAYS_FR.length > 0 /* keep import used */ && null}
-          </ul>
+          </details>
         </CardContent>
       </Card>
 

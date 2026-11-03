@@ -62,19 +62,6 @@ export function proxy(request: NextRequest) {
   }
   const isPreview = request.nextUrl.searchParams.get('preview') === '1';
 
-  // URL de réservation courte : /book/[slug] sert le même widget que /widget/[slug].
-  // Garder l'URL courte et ses paramètres (date, heure, source) dans le navigateur.
-  const bookMatch = request.nextUrl.pathname.match(/^\/book\/([^/]+)$/);
-  if (bookMatch) {
-    const url = request.nextUrl.clone();
-    url.pathname = `/widget/${bookMatch[1]}`;
-    const rewriteResponse = NextResponse.rewrite(url, {
-      request: { headers: requestHeaders },
-    });
-    applySecurityHeaders(rewriteResponse, request, nonce, false, true, isPreview);
-    return rewriteResponse;
-  }
-
   // Sokar Connect P2 — Premium subdomain detection.
   // Si le host n'est pas sokar.tech (ou www.), on vérifie si c'est un custom domain.
   // Le lookup DB se fait via l'API interne (Edge Runtime ne peut pas accéder à Prisma).

@@ -16,12 +16,16 @@ const DEFAULT_LIMIT = 10;
  *
  * @returns true si la requête est autorisée, false si la limite est dépassée.
  */
-export async function checkRateLimit(key: string, limit: number = DEFAULT_LIMIT): Promise<boolean> {
+export async function checkRateLimit(
+  key: string,
+  limit: number = DEFAULT_LIMIT,
+  windowSeconds: number = WINDOW_SECONDS,
+): Promise<boolean> {
   try {
     const count = await redisCache.incr(key);
     if (count === 1) {
       // Première requête dans la fenêtre — définir le TTL
-      await redisCache.expire(key, WINDOW_SECONDS);
+      await redisCache.expire(key, windowSeconds);
     }
     return count <= limit;
   } catch (err: unknown) {
@@ -43,17 +47,12 @@ export function rateLimitKey(route: string, ip: string): string {
 
 /**
  * Extrait l'IP du client depuis la requête Fastify.
- * Gère les proxies (X-Forwarded-For).
+ * `req.ip` applique déjà `trustProxy` : lire X-Forwarded-For ici laisserait le
+ * client choisir son IP en préfixant le header.
  */
 export function getClientIp(req: {
   ip?: string;
-  headers?: Record<string, string | string[] | undefined>;
   raw?: { socket?: { remoteAddress?: string } };
 }): string {
-  const forwarded = req.headers?.['x-forwarded-for'];
-  if (forwarded) {
-    const ip = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(',')[0];
-    return ip.trim();
-  }
   return req.ip ?? req.raw?.socket?.remoteAddress ?? 'unknown';
 }

@@ -47,3 +47,21 @@ contrôlé. Aucune conclusion sur le bruit, l'accent ou le codec sans preuve aud
 
 À la fin de la qualification, vider les listes de comparaison et de remplacement, puis désactiver
 l'instrumentation temporaire qui n'est plus nécessaire.
+
+## Non-régression avant le premier audio
+
+L'appel production `9c291ac3` du 24/10/2026 a été compris, mais le premier son de sa réponse a été
+annulé (`cancelled_voice_resumed`, 20 ms d'attente) au passage d'un bruit bref. Le garde-fou exige
+désormais 160 ms de signal continu au seuil adaptatif avant cette annulation. Un pic bref attend
+le silence (600 ms par défaut) ou le plafond (1 200 ms), sans perdre la réponse. La coupure par
+transcription et la pause rapide pendant une réponse déjà audible gardent leur fonctionnement.
+
+Validation privée hors dépôt : piste appelant décodée en A-law 8 kHz et redécoupée en blocs de 5 ms,
+avec horloge simulée, garde lancée à 12,375 s : ancienne garde annulée à 20 ms, nouvelle garde libérée
+après 620 ms ; une reprise sur la vraie demande à 7,400 s reste annulée. C'est un rejeu de l'audio,
+pas une reproduction des paquets ou du débruitage Telnyx originaux. Les tests persistés utilisent
+seulement des signaux synthétiques ; aucune voix enregistrée n'est ajoutée au dépôt.
+
+Lors de la recette staging, vérifier qu'un bruit bref avant le premier son conserve la réponse et
+qu'une vraie reprise de parole l'interrompt toujours. L'absence de premier audio ne doit plus rester
+inexpliquée : contrôler `first_audio_hold` et `tts_first_audio` ensemble.

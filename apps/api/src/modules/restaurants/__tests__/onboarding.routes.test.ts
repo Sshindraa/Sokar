@@ -16,8 +16,6 @@ const baseRestaurant = {
   phoneNumber: '+33123456789',
   phoneE164: '+33611112222',
   openingHours: { tue: { open: '12:00', close: '22:00' } },
-  googleRefreshToken: 'google-refresh-token',
-  googleCalendarId: 'primary',
   onboardingTasks: null,
   onboardingDone: false,
   onboardingCompletedAt: null,
@@ -247,14 +245,12 @@ describe('restaurant.routes - onboarding', () => {
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
       ...baseRestaurant,
       openingHours: {},
-      googleRefreshToken: null,
       personality: null,
       phoneNumber: '+000test-rest',
     } as unknown as Awaited<ReturnType<typeof db.restaurant.update>>);
     vi.mocked(db.restaurant.update).mockResolvedValue({
       ...baseRestaurant,
       openingHours: {},
-      googleRefreshToken: null,
       personality: null,
       phoneNumber: '+000test-rest',
       onboardingTasks: {},
@@ -405,10 +401,6 @@ describe('restaurant.routes - onboarding', () => {
         restaurant: expect.objectContaining({ slug: 'nouveau-slug', description: 'Bistrot sympa' }),
         exposureSettings: expect.objectContaining({ maxPartySize: 8, connectPublished: true }),
       });
-      // Le jeton Google Agenda ne quitte jamais le serveur.
-      expect(res.json().restaurant).not.toHaveProperty('googleRefreshToken');
-      expect(res.json().restaurant.googleCalendarConnected).toBe(true);
-      expect(res.body).not.toContain('google-refresh-token');
     });
 
     it('refuse de publier une page sans slug', async () => {

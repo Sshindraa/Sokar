@@ -22,6 +22,8 @@ import { getApp, closeApp } from '../../../test/helpers';
 import { redisCache } from '../../../shared/redis/client';
 import { db } from '../../../shared/db/client';
 
+const OLD_ACCESS = 'old-access-test';
+
 const REDIRECT_URI = 'https://claude.ai/api/mcp/auth_callback';
 const CHATGPT_REDIRECT_URI = 'https://chatgpt.com/connector_platform_oauth_redirect';
 const MCP_RESOURCE = 'http://localhost:4000';
@@ -260,6 +262,71 @@ describe('OAuth MCP integration flow', () => {
     expect(returnedScopes).not.toContain('mcp:read+mcp:reserve+mcp:cancel');
     const stored = await redisCache.get(`sokar:oauth:token:${accessToken}`);
     expect(JSON.parse(stored!)).toMatchObject({ resource: MCP_RESOURCE });
+  });
+
+  it('a single authorization code cannot be exchanged twice concurrently', async () => {
+    const app = await getApp();
+    const code = 'concurrent-test-code';
+    await redisCache.set(
+      `sokar:oauth:code:${code}`,
+      JSON.stringify({
+        clientId,
+        restaurantId: null,
+        restaurantName: null,
+        scopes: ['mcp:read'],
+        redirectUri: REDIRECT_URI,
+        resource: MCP_RESOURCE,
+        codeChallenge: PKCE_CHALLENGE,
+        codeChallengeMethod: 'S256',
+      }),
+      'EX',
+      '600',
+    );
+    const payload = `grant_type=authorization_code&code=${code}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&client_id=${clientId}&client_secret=${clientSecret}&code_verifier=${PKCE_VERIFIER}&resource=${encodeURIComponent(MCP_RESOURCE)}`;
+    const responses = await Promise.all(
+      [1, 2].map(() =>
+        app.inject({
+          method: 'POST',
+          url: '/oauth/token',
+          remoteAddress: '192.0.2.41',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          payload,
+        }),
+      ),
+    );
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 400]);
+  });
+
+  it('rotates a refresh token at most once when requests overlap', async () => {
+    const app = await getApp();
+    const oldRefresh = 'concurrent-refresh-test';
+    await redisCache.set(
+      `sokar:oauth:refresh:${oldRefresh}`,
+      JSON.stringify({
+        clientId,
+        restaurantId: null,
+        restaurantName: null,
+        scopes: ['mcp:read'],
+        resource: MCP_RESOURCE,
+        accessToken: OLD_ACCESS,
+        refreshToken: oldRefresh,
+      }),
+      'EX',
+      '600',
+    );
+    const payload = `grant_type=refresh_token&refresh_token=${oldRefresh}&client_id=${clientId}&client_secret=${clientSecret}&resource=${encodeURIComponent(MCP_RESOURCE)}`;
+    const responses = await Promise.all(
+      [1, 2].map(() =>
+        app.inject({
+          method: 'POST',
+          url: '/oauth/token',
+          remoteAddress: '192.0.2.42',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          payload,
+        }),
+      ),
+    );
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 400]);
   });
 
   // ── 6. MCP call with OAuth token ──────────────────────

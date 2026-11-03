@@ -12,7 +12,7 @@ export interface DeepgramKeytermSources {
 }
 
 /**
- * Tailles de groupe dites seules au téléphone : « trois » isolé revenait vide de
+ * Tailles de groupe et jours, toujours envoyés. Tailles dites seules au téléphone : « trois » isolé revenait vide de
  * Deepgram (appel c5d6b07d). « un » est exclu, trop fréquent comme article.
  */
 export const DEEPGRAM_PARTY_SIZE_KEYTERMS = [
@@ -25,6 +25,16 @@ export const DEEPGRAM_PARTY_SIZE_KEYTERMS = [
   'huit',
   'neuf',
   'dix',
+  // « demain vous êtes ouvert » rendu « donald » (a1ba681f) et « demeure » (45c4cb71).
+  'demain',
+  'après-demain',
+  'lundi',
+  'mardi',
+  'mercredi',
+  'jeudi',
+  'vendredi',
+  'samedi',
+  'dimanche',
 ] as const;
 
 function estimatedTokenCount(value: string): number {

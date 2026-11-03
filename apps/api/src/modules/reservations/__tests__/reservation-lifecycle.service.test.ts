@@ -36,7 +36,6 @@ function makeReservation(overrides: Partial<Reservation> = {}): Reservation {
     idempotencyPayloadHash: null,
     consumedHoldId: null,
     tableId: null,
-    googleEventId: null,
     estimatedRevenue: null,
     giftCardRedemptionSnap: null,
     giftCardComplementAmount: null,
@@ -103,6 +102,37 @@ describe('ReservationLifecycleService', () => {
         }),
       }),
     );
+  });
+
+  it('queues private feedback exactly one day after an honoured visit', async () => {
+    const { prisma, tx } = makePrisma();
+    const previous = makeReservation({
+      state: 'SEATED',
+      startsAt: new Date(Date.now() - 60_000),
+      customerId: 'customer-1',
+      customerEmail: 'client@example.invalid',
+      isTest: false,
+    });
+    const current = { ...previous, state: 'HONORED' as const };
+    tx.reservation.findUnique.mockResolvedValue(previous);
+    tx.reservation.update.mockResolvedValue(current);
+    vi.spyOn(CapacityAwareAvailabilityService, 'invalidateAvailability').mockResolvedValue(
+      undefined,
+    );
+    const before = Date.now();
+    await new ReservationLifecycleService(prisma).transition({
+      reservationId: previous.id,
+      restaurantId: previous.restaurantId,
+      toState: 'HONORED',
+      actor: 'manager',
+    });
+    const event = tx.outboxEvent.create.mock.calls[0][0].data;
+    expect(event).toMatchObject({
+      topic: 'reputation-feedback-email',
+      payload: { reservationId: previous.id },
+    });
+    expect(event.availableAt.getTime()).toBeGreaterThanOrEqual(before + 86_400_000);
+    expect(event.availableAt.getTime()).toBeLessThanOrEqual(Date.now() + 86_400_000);
   });
 
   it('scopes the row, projects cancellation, audits it and invalidates capacity', async () => {

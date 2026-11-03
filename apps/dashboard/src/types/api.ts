@@ -83,9 +83,6 @@ export interface Restaurant {
   managerPhone: string;
   managerEmail: string;
   phoneNumber: string;
-  googleCalendarId: string | null;
-  /** Google Agenda relié. Le jeton lui-même ne quitte jamais le serveur. */
-  googleCalendarConnected: boolean;
   giftCardMinimumAmount: number | null;
   giftCardCommissionRate: number;
   giftCardEnabled: boolean;
@@ -136,6 +133,9 @@ export interface Reservation {
   /** `state` is the business source of truth; legacy rows may omit it. */
   state?: ReservationState;
   estimatedRevenue: number | null;
+  specialRequests?: string | null;
+  overbooked?: boolean;
+  channel?: 'PHONE' | 'WEB' | 'MCP' | 'OPENAI_RESERVE' | 'ADMIN' | 'API' | null;
   tableId: string | null;
   table?: { name: string } | null;
 }
@@ -199,6 +199,7 @@ export interface VoiceTurnTelemetry {
 }
 
 export interface Call {
+  callerPhone: string | null;
   id: string;
   callSid: string;
   durationSec: number | null;
@@ -234,14 +235,25 @@ export interface Customer {
   id: string;
   name: string | null;
   phone: string;
-  visitCount: number;
-  /** Legacy score, no longer computed; kept for API compatibility. Use `lifecycle`. */
-  loyaltyScore: number;
+  emailNormalized?: string | null;
   isVip: boolean;
   notes: string | null;
   lastSeenAt: string | null;
   /** Computed from real visits; null when the visit history could not be read. */
   lifecycle?: CustomerLifecycle | null;
+  /** Honoured visits from the reservations; null when the history could not be read. */
+  visitSummary?: CustomerVisitSummary | null;
+}
+
+/**
+ * The one visit count shown on every customer screen. `lastSeenAt` moves with every call:
+ * never display it as the last visit.
+ */
+export interface CustomerVisitSummary {
+  visits: number;
+  visits365d: number;
+  noShows365d: number;
+  lastVisitAt: string | null;
 }
 
 export type CustomerLifecycleStatus = 'new' | 'active' | 'regular' | 'at_risk' | 'dormant';

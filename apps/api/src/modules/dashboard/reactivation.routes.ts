@@ -1,4 +1,5 @@
 import { MarketingCampaignStatus } from '@prisma/client';
+import { loadCustomerVisitStats } from '../customers/customer-lifecycle';
 import { FastifyInstance } from 'fastify';
 import { db } from '../../shared/db/client';
 import { queues } from '../../shared/queue/queues';
@@ -80,13 +81,17 @@ export async function reactivationRoutes(app: FastifyInstance) {
               id: true,
               name: true,
               phone: true,
-              visitCount: true,
-              lastSeenAt: true,
               isVip: true,
             },
           })
         : [];
     const customerMap = new Map(allCustomers.map((c) => [c.id, c]));
+    // Visits and last visit are the honoured ones from the reservations, as in the CRM: the
+    // legacy `visitCount` counted phone bookings and `lastSeenAt` moves with every call.
+    const visitStats = await loadCustomerVisitStats(
+      restaurantId,
+      allCustomers.map((c) => c.id),
+    );
 
     const result = campaigns.map((campaign) => {
       const linked = campaign.marketingCampaign;
@@ -126,8 +131,8 @@ export async function reactivationRoutes(app: FastifyInstance) {
           id: c.id,
           name: c.name || 'Client inconnu',
           phone: c.phone,
-          visitCount: c.visitCount,
-          lastSeenAt: c.lastSeenAt,
+          visitCount: visitStats.get(c.id)?.visitDates.length ?? 0,
+          lastSeenAt: visitStats.get(c.id)?.visitDates.at(-1) ?? null,
         })),
       };
     });

@@ -49,8 +49,6 @@ export type OnboardingRestaurant = {
   phoneNumber: string;
   phoneAssigned: boolean;
   openingHours: Record<string, DayHours>;
-  googleCalendarId: string | null;
-  googleConnected: boolean;
   personality?: {
     id?: string;
     profileType?: string;

@@ -1,6 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   canViewSensitiveNotes,
+  canWriteSensitiveNotes,
+  redactSensitiveCustomerFields,
   effectiveSensitiveNoteRoles,
   hasSensitiveNoteRoleOverride,
   parseSensitiveNoteRoles,
@@ -47,5 +49,19 @@ describe('customer privacy policy', () => {
     expect(effectiveSensitiveNoteRoles('OWNER,MANAGER')).toEqual(['OWNER', 'MANAGER']);
     expect(hasSensitiveNoteRoleOverride('OWNER,MANAGER')).toBe(true);
     expect(canViewSensitiveNotes('STAFF', 'OWNER,MANAGER')).toBe(false);
+  });
+
+  it("l'écriture suit la lecture, sauf pour READ_ONLY", () => {
+    expect(canWriteSensitiveNotes('MANAGER')).toBe(true);
+    expect(canWriteSensitiveNotes('STAFF')).toBe(false);
+    expect(canWriteSensitiveNotes('STAFF', 'OWNER,STAFF')).toBe(true);
+    expect(canWriteSensitiveNotes('READ_ONLY', 'OWNER,READ_ONLY')).toBe(false);
+    expect(canWriteSensitiveNotes(undefined)).toBe(false);
+  });
+
+  it("masque ensemble les notes et l'occasion spéciale", () => {
+    expect(
+      redactSensitiveCustomerFields({ id: 'c1', notes: 'Allergie', specialOccasion: 'Divorce' }),
+    ).toEqual({ id: 'c1', notes: null, specialOccasion: null });
   });
 });
