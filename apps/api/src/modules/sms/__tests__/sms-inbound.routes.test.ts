@@ -25,10 +25,18 @@ vi.mock('../reply-handler', () => ({
   }),
 }));
 
+// STOP marketing : la logique est testée dans sms-marketing-stop.test.ts.
+vi.mock('../sms-marketing-stop', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../sms-marketing-stop')>()),
+  applyMarketingSmsStop: vi.fn().mockResolvedValue(false),
+}));
+
 import { getApp, closeApp } from '../../../test/helpers';
 import { handleReply } from '../reply-handler';
+import { applyMarketingSmsStop } from '../sms-marketing-stop';
 
 const mockHandleReply = vi.mocked(handleReply);
+const mockApplyMarketingSmsStop = vi.mocked(applyMarketingSmsStop);
 
 const VALID_BODY = {
   data: {
@@ -169,5 +177,73 @@ describe('POST /sms/telnyx/inbound', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(mockHandleReply).toHaveBeenCalledWith('+336****1234', 'NON', 'sms', 'message-2');
+  });
+  describe('STOP SMS marketing', () => {
+    const stopBody = (text: string) => ({
+      data: {
+        event_type: 'message.received',
+        payload: { id: 'message-stop', from: '+336****5678', text },
+      },
+    });
+
+    it('retire le marketing sans dispatcher la réponse de réservation', async () => {
+      mockApplyMarketingSmsStop.mockResolvedValueOnce(true);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/sms/telnyx/inbound',
+        payload: stopBody('STOP'),
+      });
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.payload)).toEqual({ result: 'ok' });
+      expect(mockApplyMarketingSmsStop).toHaveBeenCalledWith('+336****5678');
+      expect(mockHandleReply).not.toHaveBeenCalled();
+    });
+
+    it("garde le flux de réponse habituel s'il n'y a aucun SMS marketing", async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/sms/telnyx/inbound',
+        payload: stopBody('ARRÊT'),
+      });
+      expect(res.statusCode).toBe(200);
+      expect(mockApplyMarketingSmsStop).toHaveBeenCalledWith('+336****5678');
+      expect(mockHandleReply).toHaveBeenCalledWith('+336****5678', 'ARRÊT', 'sms', 'message-stop');
+    });
+
+    it('ne cherche pas de STOP dans une phrase qui contient le mot', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/sms/telnyx/inbound',
+        payload: stopBody('stop, je ne veux plus rien'),
+      });
+      expect(res.statusCode).toBe(200);
+      expect(mockApplyMarketingSmsStop).not.toHaveBeenCalled();
+      expect(mockHandleReply).toHaveBeenCalled();
+    });
+
+    it('répond 503 pour que Telnyx rejoue si le registre est indisponible', async () => {
+      mockApplyMarketingSmsStop.mockRejectedValueOnce(
+        new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE'),
+      );
+      const res = await app.inject({
+        method: 'POST',
+        url: '/sms/telnyx/inbound',
+        payload: stopBody('STOP'),
+      });
+      expect(res.statusCode).toBe(503);
+      expect(JSON.parse(res.payload)).toEqual({ error: 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE' });
+      expect(mockHandleReply).not.toHaveBeenCalled();
+    });
+
+    it('propage les autres erreurs (500, rejoué par Telnyx)', async () => {
+      mockApplyMarketingSmsStop.mockRejectedValueOnce(new Error('database unavailable'));
+      const res = await app.inject({
+        method: 'POST',
+        url: '/sms/telnyx/inbound',
+        payload: stopBody('STOP'),
+      });
+      expect(res.statusCode).toBe(500);
+      expect(mockHandleReply).not.toHaveBeenCalled();
+    });
   });
 });
