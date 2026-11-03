@@ -3688,3 +3688,6 @@ Après l'essai staging classé en indésirable par Outlook (SPF, DKIM et DMARC r
 ### 2026-11-03 — Texte du registre aligné sur la PR 637
 
 La PR #637 est fusionnée : clé dérivée par restaurant et opposition levée par un accord donné en ligne, pas par une saisie de l’équipe. Politique et annexe corrigées dans le brouillon #634 ; note juridique conservée avec avertissement sur ses constats techniques antérieurs. Validation par un avocat toujours attendue. Une case en ligne ne vérifie pas la possession de l’adresse.
+### 2026-11-03 — Registre d'opposition : clé par restaurant et levée par la personne seule
+
+Décision de Hamza à la suite de l'analyse de la PR #634. L'empreinte utilise une clé dérivée par restaurant : les anciennes entrées ne sont plus reconnues, aucune n'existe en production au 3 novembre (à revérifier juste avant la fusion, car une entrée écrite entre-temps ne serait plus reconnue). Seul le geste de la personne (case de réservation, lien de confirmation) lève une opposition ; un accord saisi par l'équipe est refusé (`MARKETING_OPPOSITION_REGISTERED`, 409). Le texte public de la PR #634 devra retirer la levée par le restaurant une fois ce changement fusionné. Rien d'activé, envois toujours coupés.

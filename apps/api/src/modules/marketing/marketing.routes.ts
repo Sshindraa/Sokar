@@ -221,6 +221,10 @@ const requireMarketingCampaigns = [requireOrg(), requireCapability('marketing.ca
 const requireMarketingAutomations = [requireOrg(), requireCapability('marketing.automations')];
 const requireMarketingAttribution = [requireOrg(), requireCapability('marketing.attribution')];
 
+function isOppositionRegistered(error: unknown): boolean {
+  return error instanceof Error && error.message === 'MARKETING_OPPOSITION_REGISTERED';
+}
+
 function statusForError(error: unknown): number {
   if (!(error instanceof Error)) return 500;
   if (error.message === 'CUSTOMER_NOT_FOUND' || error.message === 'SEGMENT_NOT_FOUND') return 404;
@@ -358,6 +362,9 @@ export async function marketingRoutes(app: FastifyInstance) {
         });
         return reply.send({ data: permission });
       } catch (error) {
+        if (isOppositionRegistered(error)) {
+          return reply.status(409).send({ error: 'MARKETING_OPPOSITION_REGISTERED' });
+        }
         const status = statusForError(error);
         if (status === 404) return reply.status(status).send({ error: 'CUSTOMER_NOT_FOUND' });
         throw error;
@@ -386,6 +393,9 @@ export async function marketingRoutes(app: FastifyInstance) {
         }
         if (error instanceof Error && error.message === 'CUSTOMER_EMAIL_REQUIRED') {
           return reply.status(409).send({ error: 'CUSTOMER_EMAIL_REQUIRED' });
+        }
+        if (isOppositionRegistered(error)) {
+          return reply.status(409).send({ error: 'MARKETING_OPPOSITION_REGISTERED' });
         }
         throw error;
       }

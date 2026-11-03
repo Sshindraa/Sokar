@@ -119,6 +119,20 @@ describe('MarketingConsentCard', () => {
     ).toBeEnabled();
   });
 
+  it('explains why an opposition cannot be lifted by the team', async () => {
+    apiMocks.post.mockRejectedValue(toApiError(409, { error: 'MARKETING_OPPOSITION_REGISTERED' }));
+    render(<MarketingConsentCard customerId="customer-1" email="alice@example.com" />);
+    await screen.findAllByText('Jamais demandé');
+
+    fireEvent.click(
+      within(rowFor('E-mail')).getByRole('button', { name: 'Enregistrer un accord' }),
+    );
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer l’accord' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/seul son propre accord/i);
+  });
+
   it('shows the server refusal when recording fails', async () => {
     apiMocks.post.mockRejectedValue(toApiError(409, { error: 'CUSTOMER_EMAIL_REQUIRED' }));
     render(<MarketingConsentCard customerId="customer-1" email="alice@example.com" />);
