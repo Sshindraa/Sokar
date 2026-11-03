@@ -97,7 +97,7 @@ export const OpeningHoursDaySchema = z
     }
   });
 
-export const OpeningHoursSchema = z.record(
+export const OpeningHoursSchema = z.partialRecord(
   z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']),
   z.union([OpeningHoursDaySchema, z.null()]),
 );

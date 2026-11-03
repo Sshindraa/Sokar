@@ -9,7 +9,6 @@ import {
   Megaphone,
   PhoneCall,
   Radio,
-  Settings,
   Share2,
   Sparkles,
   Star,
@@ -28,7 +27,6 @@ export type NavKey =
   | 'growth'
   | 'offers'
   | 'channels'
-  | 'settings'
   | 'reservations'
   | 'briefing'
   | 'calls'
@@ -45,14 +43,7 @@ export type NavKey =
   | 'distribution'
   | 'agentic';
 
-export type NavSectionId =
-  | 'overview'
-  | 'service'
-  | 'clients'
-  | 'marketing'
-  | 'offers'
-  | 'channels'
-  | 'settings';
+export type NavSectionId = 'overview' | 'service' | 'clients' | 'marketing' | 'offers' | 'channels';
 
 export type NavEntry = {
   href: string;
@@ -133,14 +124,6 @@ export const navSections: NavSection[] = [
     ],
   },
 ];
-
-// Réglages reste hors des sections : pied de la barre latérale, dernière entrée du menu Plus.
-export const settingsSection: NavSection = {
-  id: 'settings',
-  labelKey: 'settings',
-  icon: Settings,
-  entries: [{ href: '/dashboard/settings', key: 'settings', icon: Settings }],
-};
 
 // Même règle partout : la page elle-même ou une sous-page. Cartes cadeaux couvre aussi les packs.
 export function isNavEntryActive(pathname: string, entry: NavEntry) {

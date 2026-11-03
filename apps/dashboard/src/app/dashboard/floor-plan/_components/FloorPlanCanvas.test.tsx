@@ -283,6 +283,42 @@ describe('FloorPlanCanvas — guides et duplication de table', () => {
 });
 
 describe('FloorPlanCanvas — taille des tables', () => {
+  it.each(['rect', 'round'] as const)(
+    'affiche une seule fois la capacité complète en édition pour une table %s',
+    async (shape) => {
+      apiMocks.get.mockResolvedValue({
+        ...floorPlan,
+        tables: [{ ...floorPlan.tables![0], shape, capacity: 4 }],
+      });
+      render(<FloorPlanCanvas orgId="org_test" />);
+      const table = await screen.findByRole('button', { name: 'T4 · 4 places' });
+      expect(within(table).getAllByText('4 places')).toHaveLength(1);
+      expect(within(table).queryByText('4 pl.')).not.toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    ['rect', 2, 2],
+    ['rect', 6, 6],
+    ['round', 2, 2],
+    ['round', 6, 6],
+    ['rect', 10, 0],
+    ['round', 10, 0],
+  ] as const)(
+    'représente %i places sur une table %s sans comptage trompeur',
+    async (shape, capacity, chairs) => {
+      apiMocks.get.mockImplementation(async (path: string) => {
+        if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+        return { ...floorPlan, tables: [{ ...floorPlan.tables![0], shape, capacity }] };
+      });
+
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      const table = await screen.findByRole('button', { name: `T4 · ${capacity} places` });
+      expect(table.querySelectorAll('.bg-floor-table-chair')).toHaveLength(chairs);
+      expect(within(table).getByText(`${capacity} places`)).toBeInTheDocument();
+    },
+  );
+
   it('keeps a minimum-size round T4 card shrinkable to its explicit dimensions', async () => {
     render(<FloorPlanCanvas orgId="org_test" />);
 
@@ -302,6 +338,57 @@ describe('FloorPlanCanvas — taille des tables', () => {
       height: '72px',
     });
     expect(table.querySelector('.bg-floor-table-accent')).not.toBeNull();
+  });
+
+  it('dessine quatre assises allongées autour de la table ronde en service', async () => {
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    const table = await screen.findByRole('button', { name: 'T4 · 4 places' });
+    const chairs = table.querySelectorAll<HTMLElement>('.bg-floor-table-chair');
+    expect(chairs).toHaveLength(4);
+    for (const chair of chairs) {
+      expect(parseFloat(chair.style.width)).toBeGreaterThan(parseFloat(chair.style.height));
+    }
+    expect(chairs[1].style.transform).toBe('rotate(90deg)');
+  });
+
+  it('évite les assises superposées et garde la capacité des tables rapprochées', async () => {
+    const first = { ...floorPlan.tables![0], shape: 'rect' as const };
+    const second = { ...first, id: 'table-t5', name: 'T5', positionX: 90 };
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return { ...floorPlan, tables: [first, second] };
+    });
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    for (const name of ['T4', 'T5']) {
+      const table = await screen.findByRole('button', { name: `${name} · 4 places` });
+      expect(table.querySelectorAll('.bg-floor-table-chair')).toHaveLength(0);
+      expect(within(table).getByText('4 places')).toBeInTheDocument();
+    }
+  });
+
+  it('explique la combinaison sur la table et dans sa fiche', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return {
+        ...floorPlan,
+        tableCombinations: [
+          {
+            id: 'combo',
+            floorPlanId: floorPlan.id,
+            name: null,
+            members: [{ tableId: floorPlan.tables![0].id }],
+          },
+        ],
+      };
+    });
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    const table = await screen.findByRole('button', { name: 'T4 · 4 places' });
+    expect(table).toHaveAccessibleDescription(/Peut être combinée avec d’autres tables/);
+    expect(within(table).getByTitle('Tables combinables')).toBeInTheDocument();
+    fireEvent.click(table);
+    expect(screen.getAllByText('Peut être combinée avec d’autres tables').length).toBeGreaterThan(
+      0,
+    );
   });
 
   it('récupère le plan spécifique quand floorPlanId est fourni', async () => {
@@ -729,6 +816,29 @@ describe("FloorPlanCanvas — liste d'attente Live service", () => {
 });
 
 describe('FloorPlanCanvas — actions Live service', () => {
+  it('attend le retour au premier plan avant de charger et actualiser le service', async () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+    try {
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      await screen.findByRole('button', { name: 'T4 · 4 places' });
+      expect(
+        apiMocks.get.mock.calls.some(([path]) => path.includes('/floor-plan/reservations')),
+      ).toBe(false);
+      hidden.mockReturnValue(false);
+      act(() => document.dispatchEvent(new Event('visibilitychange')));
+      await waitFor(() =>
+        expect(
+          apiMocks.get.mock.calls.some(([path]) => path.includes('/floor-plan/reservations')),
+        ).toBe(true),
+      );
+    } finally {
+      hidden.mockRestore();
+    }
+  });
   function makeReservation(state: 'CONFIRMED' | 'SEATED'): PlanningReservation {
     const now = Date.now();
     return {
@@ -856,17 +966,37 @@ describe('FloorPlanCanvas — actions Live service', () => {
 
     render(<FloorPlanCanvas orgId="org_test" mode="service" />);
 
-    const occupancy = await screen.findByRole('progressbar', { name: /Taux d’occupation/ });
-    expect(occupancy).toHaveAttribute('aria-valuenow', '100');
-    expect(screen.getByText('couverts')).toBeInTheDocument();
-    expect(screen.getByText('tables occupées')).toBeInTheDocument();
-    expect(screen.getByText('réservations')).toBeInTheDocument();
-    const occupiedTable = screen.getByRole('button', { name: /Martin Dupont/ });
+    const occupiedTable = await screen.findByRole('button', { name: /Martin Dupont/ });
     fireEvent.click(occupiedTable.querySelector('[role="presentation"]')!);
     expect(screen.getByText('Martin Dupont')).toBeInTheDocument();
     expect(occupiedTable).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getAllByText('Occupée').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByTitle('Occupée')).toBeInTheDocument();
+  });
+
+  it('compte une seule fois une table présente dans sa section et dans le plan', async () => {
+    const table = { ...floorPlan.tables![0], sectionId: 'section-1' };
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return {
+        ...floorPlan,
+        sections: [{ id: 'section-1', name: 'Salle', position: 0, tables: [table] }],
+        tables: [table],
+      };
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+    const tables = await screen.findAllByRole('button', { name: 'T4 · 4 places' });
+    expect(tables).toHaveLength(1);
+    expect(tables[0].querySelector('.rounded-full.bg-floor-table-surface')).toHaveStyle({
+      width: '112px',
+      height: '112px',
+    });
+    expect(within(tables[0]).getByText('Disponible')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Statistiques' }));
+    expect(screen.getByText('Tables actives').previousElementSibling).toHaveTextContent('1');
+    expect(screen.getByText('0 / 4 places')).toBeInTheDocument();
   });
 
   it('signale une date passée et permet de revenir au jour courant', async () => {
@@ -903,6 +1033,210 @@ describe('FloorPlanCanvas — actions Live service', () => {
     expect(await screen.findByText('En direct')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Aujourd’hui' })).not.toBeInTheDocument();
   });
+
+  it('regroupe date, fraîcheur et compteurs et propose le recadrage en service', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+    const width = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(500);
+    const height = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(400);
+    const scrollTo = vi.fn();
+    const previous = Element.prototype.scrollTo;
+    Element.prototype.scrollTo = scrollTo;
+    try {
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      const bar = await screen.findByRole('region', { name: 'État du service' });
+      expect(within(bar).getByText('Aujourd’hui')).toBeInTheDocument();
+      expect(within(bar).getByText('En direct')).toBeInTheDocument();
+      expect(within(bar).queryByText(/Actualisé il y a/)).not.toBeInTheDocument();
+      fireEvent.click(within(bar).getByRole('button', { name: 'Ajuster le plan' }));
+      await waitFor(() => expect(scrollTo).toHaveBeenCalled());
+    } finally {
+      width.mockRestore();
+      height.mockRestore();
+      Element.prototype.scrollTo = previous;
+    }
+  });
+
+  it('montre la salle entière quand elle reste lisible', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return {
+        ...floorPlan,
+        zones: [{ id: 'zone', name: 'Salle', x: 0, y: 0, width: 650, height: 360, rotation: 0 }],
+        tables: Array.from({ length: 4 }, (_, index) => ({
+          ...floorPlan.tables![0],
+          id: `table-${index}`,
+          name: `T${index + 1}`,
+          positionX: 30 + (index % 2) * 180,
+          positionY: 30 + Math.floor(index / 2) * 140,
+          width: 120,
+          height: 70,
+          shape: 'rect',
+        })),
+      };
+    });
+    const width = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(1200);
+    const height = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(500);
+    try {
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      const stage = await screen.findByTestId('floor-plan-live-stage');
+      await waitFor(() => {
+        expect(parseFloat(stage.style.width)).toBeLessThanOrEqual(1200);
+        expect(parseFloat(stage.style.height)).toBeLessThanOrEqual(500.01);
+        expect(parseInt(screen.getByLabelText('Niveau de zoom').textContent!)).toBeGreaterThan(100);
+      });
+    } finally {
+      width.mockRestore();
+      height.mockRestore();
+    }
+  });
+
+  it('cadre les tables à l’ouverture et ajuste ensuite toute la zone', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return {
+        ...floorPlan,
+        width: 10000,
+        zones: [
+          {
+            id: 'zone',
+            floorPlanId: floorPlan.id,
+            sectionId: null,
+            name: 'Salle',
+            x: 0,
+            y: 0,
+            width: 10000,
+            height: 400,
+            rotation: 0,
+          },
+        ],
+      };
+    });
+    const width = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(500);
+    const height = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(400);
+    const previous = Element.prototype.scrollTo;
+    const scrollTo = vi.fn();
+    Element.prototype.scrollTo = scrollTo;
+    try {
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      const stage = await screen.findByTestId('floor-plan-live-stage');
+      const zoom = screen.getByLabelText('Niveau de zoom');
+      const focusedZoom = zoom.textContent;
+      fireEvent.click(screen.getByRole('button', { name: 'Réduire le plan' }));
+      expect(zoom.textContent).not.toBe(focusedZoom);
+      const focusedWidth = parseFloat(stage.style.width);
+      fireEvent.click(screen.getByRole('button', { name: 'Ajuster le plan' }));
+      await waitFor(() => expect(parseFloat(stage.style.width)).toBeLessThan(focusedWidth));
+      expect(parseFloat(stage.style.width)).toBeLessThanOrEqual(500);
+      await waitFor(() => expect(scrollTo).toHaveBeenCalled());
+    } finally {
+      width.mockRestore();
+      height.mockRestore();
+      Element.prototype.scrollTo = previous;
+    }
+  });
+
+  it.each([
+    [0, 120],
+    [45, 90],
+  ])('inclut les assises dans le cadrage initial, rotation %i°', async (rotation, maxZoom) => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return { ...floorPlan, tables: [{ ...floorPlan.tables![0], rotation }] };
+    });
+    const width = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(200);
+    const height = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(200);
+    try {
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      const zoom = await screen.findByLabelText('Niveau de zoom');
+      await waitFor(() => expect(parseInt(zoom.textContent!)).toBeLessThanOrEqual(maxZoom));
+    } finally {
+      width.mockRestore();
+      height.mockRestore();
+    }
+  });
+
+  it('tient compte de la hauteur réellement disponible à l’écran', async () => {
+    const width = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(500);
+    const height = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(400);
+    const rect = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ top: 500 } as DOMRect);
+    try {
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      const zoom = await screen.findByLabelText('Niveau de zoom');
+      await waitFor(() => expect(parseInt(zoom.textContent!)).toBeLessThanOrEqual(150));
+    } finally {
+      width.mockRestore();
+      height.mockRestore();
+      rect.mockRestore();
+    }
+  });
+
+  it('affiche la légende dans un menu et explique les tables attendues', async () => {
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    const trigger = await screen.findByRole('button', { name: 'Légende des statuts' });
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    expect(await screen.findByRole('menu')).toHaveTextContent('Arrivée imminente');
+    expect(screen.getByRole('menu')).toHaveTextContent('Les réservations sans table affectée');
+    for (const [label, color] of [
+      ['Disponible', 'free'],
+      ['Réservée', 'reserved'],
+      ['Arrivée imminente', 'upcoming'],
+      ['En retard', 'late'],
+      ['Occupée', 'occupied'],
+    ]) {
+      expect(within(screen.getByRole('menu')).getByText(label).querySelector('span')).toHaveClass(
+        `bg-floor-status-${color}`,
+      );
+    }
+  });
+
+  it.each([false, true])(
+    'distingue les états simultanés par leur libellé, mode compact %s',
+    async (compact) => {
+      mediaMocks.mobile = compact;
+      mediaMocks.touch = compact;
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-11-02T12:00:00Z'));
+      try {
+        const tables = Array.from({ length: 5 }, (_, index) => ({
+          ...floorPlan.tables![0],
+          id: `table-${index}`,
+          name: `T${index + 1}`,
+          positionX: 60 + index * 180,
+        }));
+        const reservations = [90, 15, -10, -10].map((offset, index) => ({
+          ...makeReservation(index === 3 ? 'SEATED' : 'CONFIRMED'),
+          id: `reservation-${index}`,
+          tableId: tables[index].id,
+          customerName: `Client ${index + 1}`,
+          startsAt: new Date(Date.now() + offset * 60_000).toISOString(),
+          endsAt: new Date(Date.now() + (offset + 120) * 60_000).toISOString(),
+        }));
+        apiMocks.get.mockImplementation(async (path: string) => {
+          if (path.includes('/floor-plan/reservations')) return reservations;
+          if (path.includes('/waiting-list')) return [];
+          return { ...floorPlan, width: 1200, tables };
+        });
+        render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+        for (const [name, label] of [
+          ['T1', 'Réservée'],
+          ['T2', 'Imminente'],
+          ['T3', compact ? 'Retard' : 'En retard'],
+          ['T4', 'Occupée'],
+          ['T5', compact ? 'Libre' : 'Disponible'],
+        ]) {
+          const table = (await screen.findByText(name)).closest('[role="button"]') as HTMLElement;
+          expect(within(table).getByText(label)).toBeInTheDocument();
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it('propose une sortie claire quand le plan Live ne contient aucune table', async () => {
     const onRequestEdit = vi.fn();
@@ -980,7 +1314,7 @@ describe('FloorPlanCanvas — actions Live service', () => {
       fireEvent.click(filter);
 
       expect(await screen.findAllByText('Toutes les tables (2)')).not.toHaveLength(0);
-      expect(screen.getAllByText('Non affectées (1)')).not.toHaveLength(0);
+      expect(screen.getAllByText('Sans serveur affecté (1)')).not.toHaveLength(0);
       expect(screen.getAllByText('Léa (1 table)')).not.toHaveLength(0);
     } finally {
       if (previousScrollIntoView) {
@@ -1014,6 +1348,64 @@ describe('FloorPlanCanvas — actions Live service', () => {
     expect(await screen.findAllByRole('button', { name: 'Libérer la table' })).not.toHaveLength(0);
   });
 
+  it('conserve le résumé et la légende pendant la sélection et permet de fermer la fiche', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+    const table = await screen.findByRole('button', { name: 'T4 · 4 places' });
+    fireEvent.click(table);
+    const close = screen.getByRole('button', { name: 'Fermer la fiche de la table' });
+    const bar = screen.getByRole('region', { name: 'État du service' });
+    expect(within(bar).getByText('Légende')).toHaveAttribute('aria-label', 'Légende des statuts');
+    fireEvent.click(close);
+    expect(table).toHaveAttribute('aria-pressed', 'false');
+    expect(
+      screen.queryByRole('button', { name: 'Fermer la fiche de la table' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('réserve une colonne pour garder accessible une table à droite dans une salle remplie', async () => {
+    const tables = Array.from({ length: 5 }, (_, index) => ({
+      ...floorPlan.tables![0],
+      id: `table-${index}`,
+      name: `T${index + 1}`,
+      positionX: 50 + index * 160,
+    }));
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations') || path.includes('/waiting-list')) return [];
+      return { ...floorPlan, width: 900, tables };
+    });
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    const table = await screen.findByRole('button', { name: 'T5 · 4 places' });
+    const viewport = table.closest('.overflow-auto')!;
+    vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      right: 800,
+      top: 0,
+      bottom: 600,
+      width: 800,
+      height: 600,
+    } as DOMRect);
+    vi.spyOn(table, 'getBoundingClientRect').mockReturnValue({
+      left: 700,
+      right: 780,
+      top: 100,
+      bottom: 180,
+      width: 80,
+      height: 80,
+    } as DOMRect);
+    fireEvent.click(table);
+    const inspector = screen
+      .getByRole('button', { name: 'Fermer la fiche de la table' })
+      .closest('aside');
+    expect(inspector).not.toHaveClass('lg:absolute');
+    expect(table).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'T1 · 4 places' })).toBeInTheDocument();
+  });
+
   describe('placer un client sans réservation', () => {
     const openForm = async () => {
       fireEvent.click(await screen.findByRole('button', { name: 'T4 · 4 places' }));
@@ -1033,6 +1425,26 @@ describe('FloorPlanCanvas — actions Live service', () => {
         if (path.includes('/waiting-list')) return [];
         return floorPlan;
       });
+    });
+
+    it('guide vers une table disponible avant de proposer le placement réel', async () => {
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+      const action = await screen.findByRole('button', {
+        name: 'Choisir une table pour un client',
+      });
+      fireEvent.click(action);
+      const help = screen.getByText('Sélectionnez une table disponible.');
+      expect(help).toHaveAttribute('role', 'status');
+      expect(screen.getByTestId('floor-plan-live-stage')).not.toContainElement(help);
+      expect(action.parentElement).toContainElement(help);
+      expect(help).not.toHaveClass('absolute');
+      expect(apiMocks.post).not.toHaveBeenCalled();
+      fireEvent.click(await screen.findByRole('button', { name: 'T4 · 4 places' }));
+      expect(
+        screen.getAllByRole('button', { name: 'Placer un client sans réservation' }).length,
+      ).toBeGreaterThan(0);
+      expect(screen.queryByText('Sélectionnez une table disponible.')).not.toBeInTheDocument();
+      expect(apiMocks.post).not.toHaveBeenCalled();
     });
 
     it('envoie 2 personnes par défaut sur une table de 4, sous le nom « Sans réservation »', async () => {
@@ -1455,6 +1867,26 @@ describe('StatsPanel — alertes', () => {
     );
   }
 
+  it('précise le nombre de réservations qui arrivent au début du créneau', () => {
+    const reservation: PlanningReservation = {
+      id: 'res-1',
+      tableId: 'table-t4-minimum-round',
+      tableName: 'T4',
+      sectionName: null,
+      startsAt: '2025-06-10T19:00:00',
+      endsAt: '2025-06-10T20:00:00',
+      partySize: 4,
+      customerName: null,
+      state: 'CONFIRMED',
+      seatedAt: null,
+    };
+    renderStats([reservation, { ...reservation, id: 'res-2', partySize: 3 }]);
+
+    expect(screen.getByText('2 arrivées à 19:00')).toBeInTheDocument();
+    expect(screen.getAllByText('7 couverts')[0]).toHaveClass('whitespace-nowrap');
+    expect(screen.queryByText('+2')).not.toBeInTheDocument();
+  });
+
   it('affiche une alerte pour une réservation legacy sans tableId', () => {
     const reservations: PlanningReservation[] = [
       {
@@ -1683,7 +2115,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
     });
   });
 
-  it('cadre en Live les tables sans reprendre la hauteur vide de la zone', () => {
+  it('cadre les zones et les tables entières en Live', () => {
     expect(
       computeLiveContentBounds(
         [{ x: 100, y: 120, width: 500, height: 300, rotation: 0 }],
@@ -1691,7 +2123,15 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
         1400,
         900,
       ),
-    ).toEqual({ x: 156, y: 156, width: 112, height: 112 });
+    ).toEqual({ x: 76, y: 96, width: 548, height: 348 });
+    expect(
+      computeLiveContentBounds(
+        [],
+        [{ positionX: 0, positionY: 0, width: 64, height: 64 }],
+        700,
+        420,
+      ),
+    ).toEqual({ x: -24, y: -24, width: 112, height: 112 });
   });
 
   it('centre la zone des tables dans la fenêtre', () => {
@@ -1775,7 +2215,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
         expect(await screen.findByRole('tablist', { name: 'Vue du service' })).toBeInTheDocument();
         expect(screen.queryByRole('status', { name: 'Pouls du service' })).not.toBeInTheDocument();
         // Ni volumétrie à zéro ni jauge ne mangent la hauteur utile du plan.
-        expect(screen.queryByText('couverts')).not.toBeInTheDocument();
+        expect(screen.queryByText(/couverts prévus/)).not.toBeInTheDocument();
         expect(
           screen.queryByRole('progressbar', { name: /Taux d’occupation/ }),
         ).not.toBeInTheDocument();
@@ -1786,7 +2226,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
         expect(screen.queryByRole('button', { name: 'Zoom arrière' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Zoom avant' })).not.toBeInTheDocument();
         await waitFor(() =>
-          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '224px' }),
+          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '320px' }),
         );
 
         // Le canvas recouvre l'espaceur qui fournit l'aire de défilement. S'il
@@ -1807,8 +2247,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
 
       render(<FloorPlanCanvas orgId="org_test" mode="service" />);
 
-      expect(await screen.findByText('couverts')).toBeInTheDocument();
-      expect(screen.getByRole('progressbar', { name: /Taux d’occupation/ })).toBeInTheDocument();
+      expect(await screen.findByRole('region', { name: 'État du service' })).toBeInTheDocument();
       expect(
         screen.queryByText('Service en direct · Aucune réservation aujourd’hui'),
       ).not.toBeInTheDocument();
@@ -1840,7 +2279,7 @@ describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
 
         expect(await screen.findByRole('button', { name: 'T4 · 4 places' })).toBeInTheDocument();
         await waitFor(() =>
-          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '224px' }),
+          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '320px' }),
         );
       } finally {
         widthSpy.mockRestore();

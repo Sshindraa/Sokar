@@ -61,5 +61,5 @@ export function getSttChunkMs(): number {
 
 export const sttChunkMsSchema = z.preprocess(
   (value) => parseSttChunkMs(value),
-  z.number({ invalid_type_error: STT_CHUNK_MS_ERROR_MESSAGE }),
+  z.number({ error: STT_CHUNK_MS_ERROR_MESSAGE }),
 );

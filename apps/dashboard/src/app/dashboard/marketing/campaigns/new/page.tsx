@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FeatureLockCard } from '@/components/FeatureLockCard';
+import { takeCampaignDraft } from '@/features/companion/campaign-draft';
 import { useApi } from '@/lib/api';
 import { featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
@@ -169,8 +170,18 @@ function initialDraft(): Draft {
   };
 }
 
+// Companion met entre crochets tout ce que le gérant doit compléter ou vérifier : aucun crochet ne part.
+const PENDING_PLACEHOLDER = /\[[^\]]*\]/;
+
 /** Contrôles avant l'appel API : on dit quoi corriger plutôt que d'attendre un refus en anglais. */
 function draftProblem(draft: Draft): string | null {
+  if (
+    [draft.name, draft.objective, draft.subject, draft.bodyTemplate].some((text) =>
+      PENDING_PLACEHOLDER.test(text),
+    )
+  ) {
+    return 'Le texte contient encore un passage entre crochets, comme « [à compléter] » ou « [à vérifier] ». Complétez-le avant l’envoi.';
+  }
   if (!draft.name.trim() || !draft.objective.trim() || !draft.segmentId) {
     return 'Renseignez le nom, l’objectif et le segment de la campagne.';
   }
@@ -240,6 +251,20 @@ export default function NewMarketingCampaignPage() {
   useEffect(() => {
     void loadSegments();
   }, [loadSegments]);
+
+  // Brouillon rédigé par Companion : repris une fois ; le segment reste à choisir.
+  useEffect(() => {
+    const stored = takeCampaignDraft();
+    if (!stored) return;
+    setDraft((previous) => ({
+      ...previous,
+      name: stored.name,
+      objective: stored.objective,
+      channel: stored.channel,
+      subject: stored.channel === 'EMAIL' ? (stored.subject ?? '') : previous.subject,
+      bodyTemplate: stored.body,
+    }));
+  }, []);
 
   const selectedSegment = useMemo(
     () => segments.find((segment) => segment.id === draft.segmentId) ?? null,
