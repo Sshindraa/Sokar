@@ -32,7 +32,6 @@ export default [
       'src/app/dashboard/floor-plan/_components/ServiceCopilotSimulator.tsx',
       'src/app/dashboard/usage/page.tsx',
       'src/components/GaugeDial.tsx',
-      'src/components/HeroDashboardPreview.tsx',
       'src/components/PwaInstallBanner.tsx',
       'src/components/RouteErrorState.tsx',
       'src/components/gift-cards/gift-card-list.tsx',

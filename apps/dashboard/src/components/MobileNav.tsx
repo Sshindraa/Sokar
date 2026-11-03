@@ -30,8 +30,8 @@ export default function MobileNav({ buttonStyle = 'standalone' }: MobileNavProps
   }, [open]);
 
   const links = [
-    { label: 'Services', href: '/#services' },
-    { label: "Cas d'usage", href: '/#demo' },
+    { label: 'La journée', href: '/#services' },
+    { label: 'Aperçu', href: '/#demo' },
     { label: 'Tarifs', href: '/pricing' },
     { label: "S'inscrire", href: '/register' },
   ];

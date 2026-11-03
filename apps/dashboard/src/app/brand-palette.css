@@ -31,3 +31,87 @@
   --accent: 216 24% 12% / 0.7;
   --glass-2: 216 24% 12% / 0.7;
 }
+
+/* Accueil « une journée de service » : le fond suit l'heure, du clair à la nuit. */
+.brand-palette {
+  --day-paper: 210 30% 93%;
+  --day-ink: 216 42% 14%;
+  --day-ink-muted: 216 18% 36%;
+  --day-dusk: 216 42% 20%;
+  --day-night: 0 0% 0%;
+}
+
+.day-paper {
+  --day-muted: var(--day-ink-muted);
+  background-color: hsl(var(--day-paper));
+  color: hsl(var(--day-ink));
+}
+
+.day-dusk {
+  --day-muted: 212 30% 82%;
+  background-color: hsl(var(--day-dusk));
+  color: hsl(0 0% 100%);
+}
+
+.day-night {
+  --day-muted: 212 16% 68%;
+  background-color: hsl(var(--day-night));
+  color: hsl(0 0% 100%);
+}
+
+/* Hauteurs fractionnaires : le léger recouvrement évite une ligne entre deux sections. */
+.day-paper,
+.day-dusk,
+.day-night {
+  margin-bottom: -1px;
+}
+
+.day-muted {
+  color: hsl(var(--day-muted));
+}
+
+.day-to-dusk {
+  background-image: linear-gradient(to bottom, hsl(var(--day-paper)), hsl(var(--day-dusk)));
+}
+
+.day-to-night {
+  background-image: linear-gradient(to bottom, hsl(var(--day-dusk)), hsl(var(--day-night)));
+}
+
+.day-screen {
+  border: 1px solid hsl(0 0% 100% / 0.12);
+  box-shadow: 0 30px 80px hsl(var(--day-ink) / 0.3);
+}
+
+.day-cta {
+  background-color: hsl(var(--day-ink));
+  color: hsl(0 0% 100%);
+}
+
+.day-cta-secondary {
+  border: 1px solid hsl(var(--day-ink) / 0.25);
+  color: hsl(var(--day-ink));
+}
+
+.day-cta-night {
+  background-color: hsl(0 0% 100%);
+  color: hsl(var(--day-ink));
+}
+
+.day-cta-night-secondary {
+  border: 1px solid hsl(0 0% 100% / 0.25);
+  color: hsl(0 0% 100%);
+}
+
+/* Halo derrière les titres : il s'éteint avant le bord de la section, sinon la coupe se voit. */
+.day-halo-day {
+  background-image:
+    radial-gradient(ellipse 42% 50% at 50% 42%, hsl(0 0% 100% / 0.95), transparent 100%),
+    radial-gradient(ellipse 34% 30% at 64% 26%, hsl(0 0% 100% / 0.5), transparent 100%);
+}
+
+.day-halo-night {
+  background-image:
+    radial-gradient(ellipse 22% 36% at 55% 42%, hsl(0 0% 100% / 0.2), transparent 100%),
+    radial-gradient(ellipse 45% 40% at 60% 42%, hsl(213 28% 52% / 0.32), transparent 100%);
+}
