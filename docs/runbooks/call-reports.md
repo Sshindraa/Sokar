@@ -110,14 +110,13 @@ pnpm --filter @sokar/api exec tsx scripts/call-report-local.ts <id> [--refresh]
 Le script lit l'enregistrement, le dialogue et les journaux par SSH ; la clé Deepgram ne quitte pas le
 VPS ; les réponses Deepgram sont gardées hors dépôt (relancer est gratuit, `--refresh` les ignore).
 
-Sans SSH (session Claude cloud), le rapport JSON se lit en HTTPS avec `SOKAR_VOICE_READ_TOKEN`, pour
-les restaurants de `VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS` (voir `environment.md`) :
+Sans SSH (session Claude cloud), le rapport JSON se lit en HTTPS, pour les restaurants de
+`VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS`. Le secret réseau de l'environnement ajoute l'en-tête
+`Authorization` (voir `environment.md`) ; ailleurs, passer `-H "Authorization: Bearer <jeton>"` :
 
 ```bash
-curl -sS -H "Authorization: Bearer $SOKAR_VOICE_READ_TOKEN" \
-  "https://api.sokar.tech/api/internal/voice/calls/latest?restaurantId=<id>"
-curl -sS -H "Authorization: Bearer $SOKAR_VOICE_READ_TOKEN" \
-  "https://api.sokar.tech/api/internal/voice/calls/<début-de-l-id>/report"
+curl -sS "https://api.sokar.tech/api/internal/voice/calls/latest?restaurantId=<id>"
+curl -sS "https://api.sokar.tech/api/internal/voice/calls/<début-de-l-id>/report"
 ```
 
 L'audio n'est pas exposé par cette voie : l'écoute (`voice_call_audio.py --listen`) reste sur le Mac.

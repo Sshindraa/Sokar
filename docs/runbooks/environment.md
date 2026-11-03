@@ -898,9 +898,11 @@ propriétaire le 30/09/2026, car les nombres de mots ne suffisaient pas à compr
 `VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS`), et `GET /api/internal/voice/calls/:callId/report`
 (rapport d'appel JSON stocké, début de l'id accepté, mêmes restaurants que le dialogue). Jamais le
 numéro de l'appelant, le transcript brut, l'audio ni les champs d'enregistrement. Pour une session
-Claude : autoriser `api.sokar.tech` dans l'accès réseau de l'environnement et y poser la même
-valeur en variable d'environnement `SOKAR_VOICE_READ_TOKEN`. Une session cloud ne peut pas ouvrir
-de SSH (port 22 sortant fermé) : cette lecture HTTPS est la voie prévue.
+Claude cloud : dans l'environnement (« Edit », puis « Secrets réseau »), un secret de type Bearer,
+site `api.sokar.tech`, préfixe de chemin `/api/internal/voice/`, en-tête `Authorization`, préfixe
+`Bearer`, même valeur que la prod. Le proxy injecte l'en-tête : le jeton n'entre jamais dans le
+conteneur et aucune variable d'environnement n'est nécessaire (posé le 25/10/2026). Une session
+cloud ne peut pas ouvrir de SSH (port 22 sortant fermé) : cette lecture HTTPS est la voie prévue.
 
 Le rapport d'appel (plus de drapeau `CALL_REPORT_ENABLED` depuis le 23/10/2026) est construit après chaque appel d'un restaurant de
 `CALL_RECORDING_TEST_RESTAURANT_IDS` : un rapport (JSON + Markdown) stocké à côté de l'enregistrement,

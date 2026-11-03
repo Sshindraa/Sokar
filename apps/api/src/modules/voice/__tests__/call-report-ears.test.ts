@@ -132,6 +132,27 @@ describe('compareEars', () => {
     expect(result[0]).toMatchObject({ kind: 'word', severity: 'low' });
   });
 
+  it('ne prend pas « à », « a » ou « y » hors épellation pour une lettre isolée (appel a1ba681f)', () => {
+    const result = compareEars({
+      live: 'hamza je',
+      engines: { nova: 'léa votre assistante ia à votre écoute amza je' },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ kind: 'word', severity: 'low' });
+    expect(
+      compareEars({ live: 'alors on y va', engines: { nova: 'alors on va' } })[0],
+    ).toMatchObject({ kind: 'word', severity: 'low' });
+  });
+
+  it('garde « a » épelé, annoncé par « deux » ou dans une épellation', () => {
+    expect(
+      compareEars({ live: 'isaac avec deux a', engines: { nova: 'isaac avec deux' } })[0],
+    ).toMatchObject({ kind: 'isolated_letters', severity: 'high' });
+    expect(compareEars({ live: 'm a r c', engines: { nova: 'm à r c' } })[0]).toMatchObject({
+      kind: 'isolated_letters',
+    });
+  });
+
   it('fonctionne avec une seule oreille après coup', () => {
     const result = compareEars({ live: 'a m', engines: { nova: 'a 2 m' } });
     expect(result).toHaveLength(1);
