@@ -3,6 +3,8 @@
 import { ClerkProvider } from '@clerk/nextjs';
 import { usePathname } from 'next/navigation';
 import { clerkFrFR } from '@/lib/clerk-fr';
+import { Toaster } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { useEffect, useLayoutEffect, type ReactNode } from 'react';
 
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
@@ -36,13 +38,21 @@ export default function Providers({ children }: { children: ReactNode }) {
 
   // Public marketing pages must not depend on Clerk. Auth is mounted only
   // where the route actually needs login/session state.
+  // Toaster et TooltipProvider sont partagés par toutes les pages, y compris les pages publiques.
+  const app = (
+    <TooltipProvider delayDuration={200}>
+      {children}
+      <Toaster />
+    </TooltipProvider>
+  );
+
   if (!needsClerk || !publishableKey || (isDemoMode && !needsOperatorSession)) {
-    return <>{children}</>;
+    return <>{app}</>;
   }
 
   return (
     <ClerkProvider publishableKey={publishableKey} localization={clerkFrFR}>
-      {children}
+      {app}
     </ClerkProvider>
   );
 }

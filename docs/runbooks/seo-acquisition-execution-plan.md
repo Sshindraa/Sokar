@@ -120,11 +120,16 @@ d'appels/jour ne constitue une validation : mesurer la fréquence, la nature des
 
 ### 3.2 Offre et message provisoires
 
+La plateforme Sokar couvre les réservations, l'organisation du service et la relation client ;
+l'assistant vocal en est une fonction. Le message ci-dessous est une hypothèse pour un premier
+pilote Essential, pas la définition de tout le produit. Voir la
+[carte produit](../PROJECT_MAP.md#ce-quest-sokar) pour les modules développés et leurs limites.
+
 **Essential**, sur la base historique de **199 € HT/mois**, avec périmètre et limites à revérifier
 dans le catalogue actif, les entitlements, le site et Stripe avant toute proposition ferme.
 
-> Sokar aide les restaurants indépendants à gérer leurs appels et leurs réservations dans un même
-> système, pour limiter les interruptions pendant le service.
+> Sokar aide les restaurants à réunir leurs réservations et à préparer leur service dans un même
+> outil. Un assistant vocal est conçu pour traiter les appels transférés lorsque l'équipe est occupée.
 
 Premier usage : remplacer un processus manuel de réservation. Ne pas promettre la parité complète
 avec Zenchef ni une synchronisation Zenchef/TheFork/POS sans preuve d'un adaptateur réel opérationnel.

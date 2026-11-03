@@ -25,7 +25,7 @@ export default function GaugeDial({
   sublabel,
   suffix = '%',
   size = 168,
-  accentClassName = 'text-brand',
+  accentClassName = 'text-foreground',
 }: {
   value: number;
   label: string;
@@ -64,16 +64,12 @@ export default function GaugeDial({
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className="text-3xl font-black tracking-tight text-foreground md:text-4xl">
+        <span className="text-3xl font-semibold tabular-nums tracking-tight text-foreground md:text-4xl">
           {clamped}
           <span className="text-lg font-bold text-muted-foreground">{suffix}</span>
         </span>
-        <span className="mt-1 max-w-[9rem] text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-          {label}
-        </span>
-        {sublabel && (
-          <span className="mt-0.5 text-[10px] text-muted-foreground/70">{sublabel}</span>
-        )}
+        <span className="mt-1 max-w-[9rem] text-xs font-medium text-muted-foreground">{label}</span>
+        {sublabel && <span className="mt-0.5 text-xs text-muted-foreground">{sublabel}</span>}
       </div>
     </div>
   );

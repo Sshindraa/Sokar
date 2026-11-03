@@ -8,15 +8,30 @@ export async function enqueueReservationConfirmation(
     restaurantId: string;
     state: string;
     customerPhone: string | null;
+    customerEmail?: string | null;
     channel: string;
+    isTest?: boolean;
   },
 ): Promise<boolean> {
-  // Voice keeps its existing confirmation path; do not open messaging on MCP/other integrations.
+  const confirmationChannel = reservation.channel === 'WEB' || reservation.channel === 'ADMIN';
   if (
-    reservation.channel !== 'WEB' ||
-    reservation.state !== 'CONFIRMED' ||
-    !reservation.customerPhone
-  )
+    confirmationChannel &&
+    reservation.state === 'CONFIRMED' &&
+    reservation.customerEmail &&
+    !reservation.isTest
+  ) {
+    await enqueue(tx, {
+      restaurantId: reservation.restaurantId,
+      topic: 'reservation-confirmation-email',
+      aggregateType: 'reservation',
+      aggregateId: reservation.id,
+      eventType: 'reservation.confirmation_email.requested',
+      idempotencyKey: `reservation-confirmation-email:${reservation.id}`,
+      payload: { reservationId: reservation.id },
+    });
+  }
+  // Voice keeps its existing confirmation path; do not open messaging on MCP/other integrations.
+  if (!confirmationChannel || reservation.state !== 'CONFIRMED' || !reservation.customerPhone)
     return false;
   const restaurant = await tx.restaurant.findUnique({
     where: { id: reservation.restaurantId },

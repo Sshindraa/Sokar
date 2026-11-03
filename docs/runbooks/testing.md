@@ -442,9 +442,7 @@ pnpm --filter @sokar/api exec vitest run \
 ```
 
 Ces tests couvrent l'exigence `HONORED`, le token haché et expirant, le rejeu public, la transaction
-score faible → tâche de récupération, l'isolation tenant et les transitions de résolution. Le flag
-`REPUTATION_ENABLED` reste `false` ; aucun SMS, email, WhatsApp ou appel de plateforme d'avis n'est
-effectué.
+score faible → tâche de récupération, l'isolation tenant et les transitions de résolution. L’envoi privé par e-mail est réservé aux offres Pro/Multi-site ; aucun appel de plateforme d’avis n’est effectué.
 
 La récupération quotidienne réutilise le job existant `reconciliation/sms` :
 une claim `in_progress` âgée de 15 minutes devient `unknown` par CAS Redis et

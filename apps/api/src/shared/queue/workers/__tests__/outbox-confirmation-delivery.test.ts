@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../db/client';
 import { queues } from '../../queues';
 import { processOutboxDeliveryJob, type OutboxDeliveryJobData } from '../outbox-delivery.worker';
+import { processReservationConfirmationEmail } from '../../../../modules/reservations/reservation-confirmation-email';
 
 vi.mock('../../../db/client', () => ({
   db: {
@@ -22,6 +23,9 @@ vi.mock('../../../../modules/gift-cards/gift-card-delivery.service', () => ({
 vi.mock('../../../../modules/usage/usage-tariff.service', () => ({
   recordPricedUsageEvent: vi.fn(),
 }));
+vi.mock('../../../../modules/reservations/reservation-confirmation-email', () => ({
+  processReservationConfirmationEmail: vi.fn().mockResolvedValue('sent'),
+}));
 
 describe('confirmation outbox delivery', () => {
   const job = { data: { outboxEventId: 'event-1' } } as Job<OutboxDeliveryJobData>;
@@ -38,6 +42,21 @@ describe('confirmation outbox delivery', () => {
       restaurant: { name: 'Example', timezone: 'Europe/Paris', smsConfirmEnabled: true },
     } as never);
   });
+  it('hands the e-mail intent to the confirmation e-mail processor, not to SMS', async () => {
+    vi.mocked(db.outboxEvent.findUnique).mockResolvedValue({
+      restaurantId: 'rest-1',
+      topic: 'reservation-confirmation-email',
+      aggregateId: 'res-1',
+      payload: { reservationId: 'res-1' },
+    } as never);
+    await processOutboxDeliveryJob(job);
+    expect(processReservationConfirmationEmail).toHaveBeenCalledWith({
+      reservationId: 'res-1',
+      restaurantId: 'rest-1',
+    });
+    expect(queues.smsClient.add).not.toHaveBeenCalled();
+  });
+
   it('routes repeated deliveries to the same SMS job with its historical payload', async () => {
     vi.mocked(db.outboxEvent.findUnique).mockResolvedValue({
       restaurantId: 'rest-1',

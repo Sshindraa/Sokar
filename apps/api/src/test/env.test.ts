@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { CEREBRAS_BASE_URL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
-import { VoiceConfigSchema, VoiceDeepgramConfigSchema, optionalUrlSchema } from '../env';
+import {
+  VoiceConfigSchema,
+  VoiceDeepgramConfigSchema,
+  marketingEmailDailyBudgetSchema,
+  optionalEmailAddressSchema,
+  optionalUrlSchema,
+} from '../env';
 
 /**
  * Incident du 2026-09-22 : `pm2` transmet à ses process l'environnement du
@@ -27,6 +33,40 @@ describe('optionalUrlSchema', () => {
   it('refuse une valeur non vide qui n’est pas une URL', () => {
     expect(optionalUrlSchema.safeParse('pas-une-url').success).toBe(false);
     expect(optionalUrlSchema.safeParse('hooks.example.test').success).toBe(false);
+  });
+});
+
+describe('optionalEmailAddressSchema', () => {
+  it('traite une adresse absente ou vide comme non configurée', () => {
+    expect(optionalEmailAddressSchema.parse(undefined)).toBeUndefined();
+    expect(optionalEmailAddressSchema.parse('   ')).toBeUndefined();
+  });
+
+  it('accepte une adresse seule et retire les espaces', () => {
+    expect(optionalEmailAddressSchema.parse(' bonjour@news.sokar.tech ')).toBe(
+      'bonjour@news.sokar.tech',
+    );
+  });
+
+  it('refuse le format « Nom <adresse> » : le nom affiché vient du restaurant', () => {
+    expect(optionalEmailAddressSchema.safeParse('Sokar <bonjour@news.sokar.tech>').success).toBe(
+      false,
+    );
+  });
+});
+
+describe('marketingEmailDailyBudgetSchema', () => {
+  it('vaut 40 par défaut et accepte un entier positif ou nul', () => {
+    expect(marketingEmailDailyBudgetSchema.parse(undefined)).toBe(40);
+    expect(marketingEmailDailyBudgetSchema.parse('')).toBe(40);
+    expect(marketingEmailDailyBudgetSchema.parse('0')).toBe(0);
+    expect(marketingEmailDailyBudgetSchema.parse('120')).toBe(120);
+  });
+
+  it('refuse un négatif, une décimale ou un texte', () => {
+    expect(marketingEmailDailyBudgetSchema.safeParse('-1').success).toBe(false);
+    expect(marketingEmailDailyBudgetSchema.safeParse('40.5').success).toBe(false);
+    expect(marketingEmailDailyBudgetSchema.safeParse('abc').success).toBe(false);
   });
 });
 

@@ -18,6 +18,8 @@ const MAX_VOICE_RMS = 1_200;
 const NOISE_MARGIN = 3;
 /** Une trame isolée (clic, souffle) n'est pas de la voix. */
 const VOICE_RUN_CHUNKS = 2;
+/** Un bruit bref peut dépasser deux trames : annuler une réponse exige 160 ms de signal continu. */
+const SUSTAINED_VOICE_MS = 160;
 /** Le bruit de fond monte lentement (constante ~20 s) et jamais au-delà : la voix ne le relève pas. */
 const FLOOR_RISE = 0.001;
 const FLOOR_CEILING = 800;
@@ -38,6 +40,10 @@ export interface CallerVoiceActivity {
   trackedMs?: number;
   voiceRun: number;
   lastVoiceAt?: number;
+  /** Durée continue au-dessus du seuil adaptatif (indépendante de la taille des trames). */
+  voiceRunMs?: number;
+  /** Dernier instant où ce signal était soutenu depuis SUSTAINED_VOICE_MS. */
+  lastSustainedVoiceAt?: number;
   /** Durée continue de parole claire en cours, en ms. */
   clearRunMs?: number;
   /** Dernier instant où l'appelant parlait clairement depuis au moins CLEAR_VOICE_MS. */
@@ -93,6 +99,8 @@ export function trackCallerVoice(
   );
   if (rms > threshold) {
     state.voiceRun++;
+    state.voiceRunMs = (state.voiceRunMs ?? 0) + chunkMs;
+    if (state.voiceRunMs >= SUSTAINED_VOICE_MS) state.lastSustainedVoiceAt = now;
     if (state.voiceRun >= VOICE_RUN_CHUNKS) {
       // Reprise de parole pendant l'écoute : la pause qui précède dit comment cet appelant parle.
       if (
@@ -112,6 +120,7 @@ export function trackCallerVoice(
     return { rms, chunkMs };
   }
   state.voiceRun = 0;
+  state.voiceRunMs = 0;
   state.noiseFloor =
     rms < state.noiseFloor
       ? rms

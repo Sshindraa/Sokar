@@ -1,5 +1,8 @@
 import { clerkClient } from '@clerk/fastify';
 import { db } from '../../shared/db/client';
+import { lockAccountMemberships } from './site-context';
+import { assertClerkOrganizationMember } from './clerk-membership.service';
+import { logger } from '../../shared/logger/pino';
 
 /**
  * Équipe d'un restaurant : invitations et rôles.
@@ -28,7 +31,8 @@ export type TeamErrorCode =
   | 'CANNOT_EDIT_SELF'
   | 'CANNOT_EDIT_OWNER'
   | 'INVITATION_NOT_FOUND'
-  | 'IDENTITY_PROVIDER_UNAVAILABLE';
+  | 'IDENTITY_PROVIDER_UNAVAILABLE'
+  | 'TRANSFER_INVALID';
 
 export class TeamError extends Error {
   constructor(
@@ -238,13 +242,6 @@ export async function revokeInvitation(input: {
   }
 }
 
-async function findAccountMember(accountId: string, userId: string) {
-  return db.restaurantAccountMembership.findFirst({
-    where: { accountId, restaurantId: null, clerkUserId: userId },
-    select: { id: true, role: true },
-  });
-}
-
 function assertEditable(
   member: { role: string } | null,
   userId: string,
@@ -268,12 +265,108 @@ export async function changeMemberRole(input: {
   if (!isInvitableRole(input.role)) {
     throw new TeamError('INVALID_ROLE', 'Ce rôle ne peut pas être attribué.');
   }
-  const member = await findAccountMember(input.accountId, input.userId);
-  assertEditable(member, input.userId, input.actingUserId);
-  await db.restaurantAccountMembership.updateMany({
-    where: { accountId: input.accountId, restaurantId: null, clerkUserId: input.userId },
-    data: { role: input.role },
+  await db.$transaction(async (tx) => {
+    await lockAccountMemberships(tx, input.accountId);
+    const member = await tx.restaurantAccountMembership.findFirst({
+      where: { accountId: input.accountId, restaurantId: null, clerkUserId: input.userId },
+      select: { id: true, role: true },
+    });
+    assertEditable(member, input.userId, input.actingUserId);
+    await tx.restaurantAccountMembership.updateMany({
+      where: {
+        accountId: input.accountId,
+        clerkUserId: input.userId,
+        ...(input.role === 'READ_ONLY' ? {} : { restaurantId: null }),
+      },
+      data: { role: input.role },
+    });
   });
+}
+
+export async function transferOwnership(input: {
+  accountId: string;
+  organizationId: string;
+  actingUserId: string;
+  targetUserId: string;
+  previousOwnerAccess: 'MANAGER' | 'READ_ONLY' | 'NONE';
+}): Promise<void> {
+  if (input.actingUserId === input.targetUserId)
+    throw new TeamError('TRANSFER_INVALID', 'Choisissez un autre membre.');
+  await db.$transaction(
+    async (tx) => {
+      await lockAccountMemberships(tx, input.accountId);
+      const owners = await tx.restaurantAccountMembership.findMany({
+        where: { accountId: input.accountId, restaurantId: null, role: 'OWNER' },
+        select: { id: true, clerkUserId: true },
+      });
+      if (owners.length !== 1 || owners[0].clerkUserId !== input.actingUserId) {
+        throw new TeamError(
+          'TRANSFER_INVALID',
+          'Le propriétaire du compte ne peut pas être vérifié.',
+        );
+      }
+      const target = await tx.restaurantAccountMembership.findFirst({
+        where: { accountId: input.accountId, restaurantId: null, clerkUserId: input.targetUserId },
+        select: { id: true },
+      });
+      if (!target) throw new TeamError('MEMBER_NOT_FOUND', 'Choisissez un membre du compte.');
+      try {
+        await assertClerkOrganizationMember({
+          organizationId: input.organizationId,
+          userId: input.targetUserId,
+        });
+        if (input.previousOwnerAccess === 'NONE') {
+          await clerkClient.organizations.updateOrganizationMembershipMetadata({
+            organizationId: input.organizationId,
+            userId: input.actingUserId,
+            publicMetadata: { [SOKAR_ROLE_METADATA_KEY]: 'REVOKED' },
+          });
+        }
+      } catch (error) {
+        throw unavailable(error);
+      }
+      // tenant-scoping: global — membre vérifié par accountId dans la même transaction.
+      await tx.restaurantAccountMembership.update({
+        where: { id: target.id },
+        data: { role: 'OWNER' },
+      });
+      await tx.reservationAuditLog.create({
+        data: {
+          event: 'account_ownership_transferred',
+          actor: input.actingUserId,
+          metadata: {
+            accountId: input.accountId,
+            newOwnerId: input.targetUserId,
+            previousOwnerAccess: input.previousOwnerAccess,
+          },
+        },
+      });
+      if (input.previousOwnerAccess === 'NONE') {
+        await tx.restaurantAccountMembership.deleteMany({
+          where: { accountId: input.accountId, clerkUserId: input.actingUserId },
+        });
+      } else {
+        await tx.restaurantAccountMembership.updateMany({
+          where: { accountId: input.accountId, clerkUserId: input.actingUserId },
+          data: { role: input.previousOwnerAccess },
+        });
+      }
+    },
+    { timeout: 30000 },
+  );
+  if (input.previousOwnerAccess === 'NONE') {
+    try {
+      await clerkClient.organizations.deleteOrganizationMembership({
+        organizationId: input.organizationId,
+        userId: input.actingUserId,
+      });
+    } catch {
+      logger.warn(
+        { accountId: input.accountId },
+        'Former owner remains in Clerk without Sokar access',
+      );
+    }
+  }
 }
 
 /**
@@ -286,21 +379,28 @@ export async function removeMember(input: {
   userId: string;
   actingUserId: string;
 }): Promise<void> {
-  const member = await findAccountMember(input.accountId, input.userId);
-  assertEditable(member, input.userId, input.actingUserId);
-
-  try {
-    await clerkClient.organizations.deleteOrganizationMembership({
-      organizationId: input.organizationId,
-      userId: input.userId,
-    });
-  } catch (cause) {
-    // Déjà sorti de l'organisation : il reste seulement à retirer ses accès Sokar.
-    if ((cause as { status?: number } | null)?.status !== 404) throw unavailable(cause);
-  }
-  await db.restaurantAccountMembership.deleteMany({
-    where: { accountId: input.accountId, clerkUserId: input.userId },
-  });
+  await db.$transaction(
+    async (tx) => {
+      await lockAccountMemberships(tx, input.accountId);
+      const member = await tx.restaurantAccountMembership.findFirst({
+        where: { accountId: input.accountId, restaurantId: null, clerkUserId: input.userId },
+        select: { id: true, role: true },
+      });
+      assertEditable(member, input.userId, input.actingUserId);
+      try {
+        await clerkClient.organizations.deleteOrganizationMembership({
+          organizationId: input.organizationId,
+          userId: input.userId,
+        });
+      } catch (cause) {
+        if ((cause as { status?: number } | null)?.status !== 404) throw unavailable(cause);
+      }
+      await tx.restaurantAccountMembership.deleteMany({
+        where: { accountId: input.accountId, clerkUserId: input.userId },
+      });
+    },
+    { timeout: 30000 },
+  );
 }
 
 const CLAIM_MISS_TTL_MS = 60_000;
@@ -330,33 +430,41 @@ export async function claimInvitedMembership(input: {
   });
   if (!account || account.status !== 'ACTIVE') return miss();
 
-  let role: unknown;
-  try {
-    const memberships = await clerkClient.organizations.getOrganizationMembershipList({
-      organizationId: input.organizationId,
-      userId: [input.userId],
-      limit: 1,
-    });
-    role = (memberships.data[0] as ClerkMembershipLike | undefined)?.publicMetadata?.[
-      SOKAR_ROLE_METADATA_KEY
-    ];
-  } catch {
-    // Fournisseur d'identité indisponible : pas d'accès accordé, on réessaiera.
-    return null;
-  }
-  if (!isInvitableRole(role)) return miss();
-
-  const existing = await db.restaurantAccountMembership.findFirst({
-    where: { accountId: account.id, restaurantId: null, clerkUserId: input.userId },
-    select: { id: true },
-  });
-  if (!existing) {
-    await db.restaurantAccountMembership.create({
-      data: { accountId: account.id, restaurantId: null, clerkUserId: input.userId, role },
-    });
-  }
-  claimMisses.delete(missKey);
-  return role;
+  return db.$transaction(
+    async (tx) => {
+      await lockAccountMemberships(tx, account.id);
+      const owner = await tx.restaurantAccountMembership.findFirst({
+        where: { accountId: account.id, restaurantId: null, role: 'OWNER' },
+        select: { id: true },
+      });
+      if (!owner) return null;
+      const existing = await tx.restaurantAccountMembership.findFirst({
+        where: { accountId: account.id, clerkUserId: input.userId },
+        select: { id: true },
+      });
+      if (existing) return null;
+      let role: unknown;
+      try {
+        const memberships = await clerkClient.organizations.getOrganizationMembershipList({
+          organizationId: input.organizationId,
+          userId: [input.userId],
+          limit: 1,
+        });
+        role = (memberships.data[0] as ClerkMembershipLike | undefined)?.publicMetadata?.[
+          SOKAR_ROLE_METADATA_KEY
+        ];
+      } catch {
+        return null;
+      }
+      if (!isInvitableRole(role)) return miss();
+      await tx.restaurantAccountMembership.create({
+        data: { accountId: account.id, restaurantId: null, clerkUserId: input.userId, role },
+      });
+      claimMisses.delete(missKey);
+      return role;
+    },
+    { timeout: 30000 },
+  );
 }
 
 /** Réservé aux tests : vide la mémoire des tentatives de rattachement sans résultat. */

@@ -29,7 +29,7 @@ const GenericAgentRequestSchema = z.object({
     'cancel_reservation',
     'get_reservation_status',
   ]),
-  arguments: z.record(z.unknown()).default({}),
+  arguments: z.record(z.string(), z.unknown()).default({}),
 });
 
 function mapToolErrorToStatus(code: string): number {

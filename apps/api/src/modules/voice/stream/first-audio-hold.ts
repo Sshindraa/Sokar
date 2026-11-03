@@ -1,9 +1,9 @@
 /**
  * Attente avant le premier son d'une réponse : la réponse est déjà calculée (texte et voix), mais
  * elle ne part que si l'appelant est silencieux depuis `VOICE_FIRST_AUDIO_SILENCE_MS`. S'il reprend
- * la parole pendant l'attente, la réponse est jetée sans qu'il ait entendu un mot. Avant le premier
- * son, l'écho de l'agent n'existe pas : le détecteur de voix de l'appelant est fiable et annule tout
- * de suite, sans attendre la transcription (0,5 à 1 s plus tard).
+ * la parole pendant l'attente avec un signal soutenu (160 ms au seuil adaptatif), la réponse est
+ * jetée sans qu'il ait entendu un mot. Un pic bref retarde seulement la lecture jusqu'au silence,
+ * au plus jusqu'au plafond existant ; il ne doit jamais laisser l'agent muet (appel 9c291ac3).
  *
  * Appel 5cebe456 : l'agent lâchait un ou deux mots (« Bonjour. », « 5, ») quand l'appelant reprenait
  * après une pause. Rejoué sur l'enregistrement, avec 600 ms : 4 réponses sur 18 annulées avant d'avoir
@@ -48,8 +48,9 @@ export async function holdFirstAudioForCallerSilence(
     await new Promise((resolve) => setTimeout(resolve, POLL_MS));
     const now = Date.now();
     const heldMs = now - startedAt;
-    const lastVoiceAt = session.callerVoice?.lastVoiceAt;
-    if (lastVoiceAt !== undefined && lastVoiceAt > (voiceAtStart ?? 0)) {
+    if (!shouldContinue()) return { outcome: 'aborted', heldMs };
+    const lastSustainedVoiceAt = session.callerVoice?.lastSustainedVoiceAt;
+    if (lastSustainedVoiceAt !== undefined && lastSustainedVoiceAt > (voiceAtStart ?? 0)) {
       return { outcome: 'cancelled_voice_resumed', heldMs };
     }
     if (callerSilenceMs(session, now) >= silenceMs)

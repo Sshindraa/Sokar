@@ -177,9 +177,11 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         } catch (err: unknown) {
           app.log.error(
             { err: err instanceof Error ? err.message : String(err), hasTo: Boolean(payload.to) },
-            'Restaurant not found for phone number',
+            'Restaurant lookup failed for phone number',
           );
-          return reply.send({ result: 'ok' });
+          if ((err as { code?: string } | null)?.code === 'P2025')
+            return reply.send({ result: 'ok' });
+          throw err;
         }
 
         // ── Parallélisation des 3 lectures indépendantes (ctx.id only) ──
@@ -292,6 +294,13 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             );
             // Continue: la session sera tout de même créée et l'appel répondu
             // (le webhook est un retry, le call existe déjà en DB).
+            const existingCall = await app.db.call.findFirst({
+              where: { callSid: payload.call_leg_id, restaurantId: ctx.id },
+              select: { outcome: true, durationSec: true },
+            });
+            if (existingCall?.outcome || existingCall?.durationSec != null) {
+              return reply.send({ result: 'ok' });
+            }
           } else {
             app.log.error(
               { err: err instanceof Error ? err.message : String(err), code },
@@ -313,51 +322,56 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           city: ctx.city,
           cuisineTypes: ctx.cuisineType,
         });
-        CallSessionManager.getInstance().create({
-          callControlId: payload.call_control_id,
-          callSessionId: payload.call_leg_id,
-          from: payload.from,
-          to: payload.to,
-          restaurantId: ctx.id,
-          restaurantName: ctx.name,
-          deepgramKeyterms,
-          managerPhone: ctx.managerPhone,
-          onlineReservationsActive: ctx.onlineReservationsActive === true,
-          smsConfirmEnabled: ctx.smsConfirmEnabled,
-          timezone: ctx.timezone,
-          openingHours: (ctx.openingHours as OpeningHours | null) ?? null,
-          // Contexte en cache d'avant ce champ : `loadContext` le recalcule sous 5 min.
-          maxPartySize: ctx.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE,
-          giftCardMinimumAmount: ctx.giftCardMinimumAmount ?? undefined,
-          systemPrompt,
-          isVip: customer?.isVip ?? false,
-          telnyxWs: null as unknown as import('ws').WebSocket, // Sera attaché dans le WebSocket start event
-          callLegId: payload.call_leg_id,
-          codec: telnyxCodec,
-          ...(ctx.personality
-            ? {
-                greetingStyle: {
-                  profileType: ctx.personality.profileType,
-                  fillerStyle: ctx.personality.fillerStyle,
-                },
-              }
-            : {}),
-          personality: ctx.personality
-            ? {
-                fillerStyle: (['CASUAL', 'FORMAL', 'WARM'] as const).includes(
-                  ctx.personality.fillerStyle as 'CASUAL' | 'FORMAL' | 'WARM',
-                )
-                  ? (ctx.personality.fillerStyle as 'CASUAL' | 'FORMAL' | 'WARM')
-                  : 'CASUAL',
-                systemPromptExtra: ctx.personality.systemPromptExtra,
-                speakingRate: Number(ctx.personality.speakingRate ?? 1),
-                volume: Number(ctx.personality.volume ?? 1),
-                emotion: ctx.personality.emotion,
-                voiceIdCa: ctx.personality.voiceIdCa,
-                pronunciationDictId: ctx.personality.pronunciationDictId,
-              }
-            : null,
-        });
+        const manager = CallSessionManager.getInstance();
+        const existingSession = manager.get(payload.call_control_id);
+        if (existingSession?.ended || existingSession?.ending) return reply.send({ result: 'ok' });
+        const voiceSession =
+          existingSession ??
+          manager.create({
+            callControlId: payload.call_control_id,
+            callSessionId: payload.call_leg_id,
+            from: payload.from,
+            to: payload.to,
+            restaurantId: ctx.id,
+            restaurantName: ctx.name,
+            deepgramKeyterms,
+            managerPhone: ctx.managerPhone,
+            onlineReservationsActive: ctx.onlineReservationsActive === true,
+            smsConfirmEnabled: ctx.smsConfirmEnabled,
+            timezone: ctx.timezone,
+            openingHours: (ctx.openingHours as OpeningHours | null) ?? null,
+            // Contexte en cache d'avant ce champ : `loadContext` le recalcule sous 5 min.
+            maxPartySize: ctx.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE,
+            giftCardMinimumAmount: ctx.giftCardMinimumAmount ?? undefined,
+            systemPrompt,
+            isVip: customer?.isVip ?? false,
+            telnyxWs: null as unknown as import('ws').WebSocket, // Sera attaché dans le WebSocket start event
+            callLegId: payload.call_leg_id,
+            codec: telnyxCodec,
+            ...(ctx.personality
+              ? {
+                  greetingStyle: {
+                    profileType: ctx.personality.profileType,
+                    fillerStyle: ctx.personality.fillerStyle,
+                  },
+                }
+              : {}),
+            personality: ctx.personality
+              ? {
+                  fillerStyle: (['CASUAL', 'FORMAL', 'WARM'] as const).includes(
+                    ctx.personality.fillerStyle as 'CASUAL' | 'FORMAL' | 'WARM',
+                  )
+                    ? (ctx.personality.fillerStyle as 'CASUAL' | 'FORMAL' | 'WARM')
+                    : 'CASUAL',
+                  systemPromptExtra: ctx.personality.systemPromptExtra,
+                  speakingRate: Number(ctx.personality.speakingRate ?? 1),
+                  volume: Number(ctx.personality.volume ?? 1),
+                  emotion: ctx.personality.emotion,
+                  voiceIdCa: ctx.personality.voiceIdCa,
+                  pronunciationDictId: ctx.personality.pronunciationDictId,
+                }
+              : null,
+          });
         app.log.info(
           { callId: payload.call_control_id },
           'Voice session pre-created in call.initiated',
@@ -368,89 +382,56 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         // Answer with media streaming
         const publicUrl = process.env.PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
         const wsUrl =
-          publicUrl.replace(/^https?/, 'wss') + `/voice/stream/${payload.call_control_id}`;
+          publicUrl.replace(/^https?/, 'wss') +
+          `/voice/stream/${payload.call_control_id}?token=${encodeURIComponent(voiceSession.streamToken!)}`;
 
-        reply.send({ result: 'ok' });
-
-        // ── Answer direct (sans queue BullMQ) ──
-        // Avant : enqueue BullMQ → worker pickup → Telnyx API = 50-150ms de queue
-        // Après : Telnyx API direct via telnyxFetch (keep-alive) = 28-54ms
-        // Fallback : si l'answer direct échoue, on enqueue un job retry sur la queue
-        // pour préserver la fiabilité (8 retries avec backoff exponentiel).
+        // Do not acknowledge the webhook until the answer or its durable retry is accepted.
         const idempotencyKey = buildTelnyxWebhookJobId('answer', payload.call_control_id);
         const apiKey = process.env.TELNYX_API_KEY;
-        if (apiKey) {
-          telnyxFetch(`/v2/calls/${payload.call_control_id}/actions/answer`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${apiKey}`,
-              'Idempotency-Key': idempotencyKey,
+        if (!apiKey) throw new Error('TELNYX_API_KEY not configured');
+        let answered = false;
+        try {
+          const response = await telnyxFetch(
+            `/v2/calls/${payload.call_control_id}/actions/answer`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${apiKey}`,
+                'Idempotency-Key': idempotencyKey,
+              },
+              body: JSON.stringify(buildTelnyxStreamConfig(wsUrl, telnyxCodec)),
             },
-            body: JSON.stringify(buildTelnyxStreamConfig(wsUrl, telnyxCodec)),
-          })
-            .then(async (res) => {
-              if (res.ok) {
-                app.log.info({ callId: payload.call_control_id }, 'Telnyx call answered (direct)');
-              } else {
-                const body = await res.text();
-                app.log.warn(
-                  {
-                    callId: payload.call_control_id,
-                    status: res.status,
-                    body: body.slice(0, 200),
-                  },
-                  'Direct answer failed — falling back to queue retry',
-                );
-                // Fallback : enqueue le job pour retry automatique
-                await app.queues.telnyxWebhooks.add(
-                  'answer-call',
-                  {
-                    callControlId: payload.call_control_id,
-                    callLegId: payload.call_leg_id,
-                    streamUrl: wsUrl,
-                    codec: telnyxCodec,
-                    idempotencyKey,
-                  },
-                  { jobId: idempotencyKey },
-                );
-              }
-            })
-            .catch((err) => {
-              app.log.error(
-                {
-                  err: err instanceof Error ? err.message : String(err),
-                  callId: payload.call_control_id,
-                },
-                'Direct answer threw — falling back to queue retry',
-              );
-              // Fallback : enqueue le job pour retry automatique
-              app.queues.telnyxWebhooks
-                .add(
-                  'answer-call',
-                  {
-                    callControlId: payload.call_control_id,
-                    callLegId: payload.call_leg_id,
-                    streamUrl: wsUrl,
-                    codec: telnyxCodec,
-                    idempotencyKey,
-                  },
-                  { jobId: idempotencyKey },
-                )
-                .catch((enqueueErr) =>
-                  app.log.error(
-                    {
-                      err: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr),
-                    },
-                    'Failed to enqueue answer-call fallback',
-                  ),
-                );
-            });
-        } else {
-          app.log.error('TELNYX_API_KEY not configured — cannot answer call');
+          );
+          answered = response.ok;
+          if (!answered)
+            app.log.warn(
+              { callId: payload.call_control_id, status: response.status },
+              'Direct answer failed',
+            );
+        } catch (error) {
+          app.log.warn(
+            {
+              err: error instanceof Error ? error.message : String(error),
+              callId: payload.call_control_id,
+            },
+            'Direct answer failed',
+          );
         }
-
-        return; // réponse déjà envoyée
+        if (!answered) {
+          await app.queues.telnyxWebhooks.add(
+            'answer-call',
+            {
+              callControlId: payload.call_control_id,
+              callLegId: payload.call_leg_id,
+              streamUrl: wsUrl,
+              codec: telnyxCodec,
+              idempotencyKey,
+            },
+            { jobId: idempotencyKey },
+          );
+        }
+        return reply.send({ result: 'ok' });
       }
 
       case 'call.speak.ended': {
@@ -466,6 +447,9 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
       }
 
       case 'call.hangup': {
+        const pending = CallSessionManager.getInstance().get(payload.call_control_id);
+        if (pending && !pending.telnyxWs)
+          CallSessionManager.getInstance().delete(payload.call_control_id);
         const durationSec =
           typeof payload.duration_sec === 'number' ? Math.round(payload.duration_sec) : null;
 

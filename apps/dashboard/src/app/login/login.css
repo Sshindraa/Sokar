@@ -246,12 +246,34 @@
 
   .sokar-login__access {
     gap: clamp(0.75rem, 2svh, 2rem);
-    padding: max(1rem, env(safe-area-inset-top)) 1.5rem max(1rem, env(safe-area-inset-bottom));
+    /* globals.css applique déjà les zones de sécurité au body : ne pas les compter deux fois. */
+    padding: 1rem 1.5rem;
+  }
+
+  /* Le formulaire ne se centre pas verticalement : sur mobile, il remonte sous l'en-tête. */
+  .sokar-login__form {
+    margin: 1.5rem auto 0;
+  }
+
+  .sokar-login__intro .sokar-login__eyebrow,
+  .sokar-login__intro p {
+    display: none;
+  }
+
+  /* Le libellé « Adresse e-mail » reste au-dessus du champ : le placeholder ne fait que le répéter. */
+  .sokar-login__form input::placeholder {
+    color: transparent;
   }
 
   .sokar-login__mobile-brand {
     display: inline-flex;
   }
+}
+
+/* Dans l'appli iOS, les liens de découverte (Accueil, Créer votre compte) sont masqués. */
+[data-shell='ios'] .sokar-login__back,
+[data-shell='ios'] .sokar-login__signup {
+  display: none;
 }
 
 /* Fit the initial sign-in view on shorter laptop and phone screens by

@@ -15,6 +15,7 @@ describe('équipe de service (STAFF)', () => {
     ['GET', '/restaurants/:id/floor-plans/:floorPlanId'],
     ['GET', '/restaurants/:id/floor-plan/reservations'],
     ['GET', '/restaurants/:id/availability'],
+    ['GET', '/customers/service-cards'],
     ['GET', '/restaurants/:id'],
     ['GET', '/restaurants/sites'],
     ['GET', '/restaurant/onboarding'],
@@ -94,6 +95,46 @@ describe('équipe de service (STAFF)', () => {
 });
 
 describe('autres rôles', () => {
+  it('READ_ONLY ne lit pas les routes de direction, Companion compris', () => {
+    expect(decide('READ_ONLY', 'GET', '/companion/tonight')).toEqual({
+      allowed: false,
+      code: 'ROLE_FORBIDDEN',
+    });
+    expect(decide('READ_ONLY', 'POST', '/companion/chat')).toEqual({
+      allowed: false,
+      code: 'READ_ONLY_ACCESS',
+    });
+    expect(decide('OWNER', 'GET', '/companion/tonight')).toEqual({ allowed: true });
+    expect(decide('MANAGER', 'GET', '/companion/tonight')).toEqual({ allowed: true });
+  });
+
+  it('remplissage de service : direction seule, l’équipe de service et la lecture seule sont refusées', () => {
+    for (const path of ['/marketing/fill-service/preview', '/marketing/fill-service']) {
+      expect(decide('STAFF', 'POST', path)).toEqual({ allowed: false, code: 'ROLE_FORBIDDEN' });
+      expect(decide('READ_ONLY', 'POST', path)).toEqual({
+        allowed: false,
+        code: 'READ_ONLY_ACCESS',
+      });
+      expect(decide('OWNER', 'POST', path)).toEqual({ allowed: true });
+      expect(decide('MANAGER', 'POST', path)).toEqual({ allowed: true });
+    }
+  });
+
+  it('suggestions de services creux : lecture et ignorance réservées à la direction', () => {
+    for (const [method, path] of [
+      ['GET', '/marketing/fill-suggestions'],
+      ['POST', '/marketing/fill-suggestions/dismiss'],
+    ]) {
+      expect(decide('STAFF', method, path)).toEqual({ allowed: false, code: 'ROLE_FORBIDDEN' });
+      expect(decide('READ_ONLY', method, path)).toEqual({
+        allowed: false,
+        code: method === 'GET' ? 'ROLE_FORBIDDEN' : 'READ_ONLY_ACCESS',
+      });
+      expect(decide('OWNER', method, path)).toEqual({ allowed: true });
+      expect(decide('MANAGER', method, path)).toEqual({ allowed: true });
+    }
+  });
+
   it('READ_ONLY lit tout et n’écrit rien', () => {
     expect(decide('READ_ONLY', 'GET', '/customers')).toEqual({ allowed: true });
     expect(decide('READ_ONLY', 'HEAD', '/calls')).toEqual({ allowed: true });

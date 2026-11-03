@@ -200,8 +200,8 @@ export class GiftCardRefundService {
   }
 
   async reconcilePayment(paymentIntentId: string, stripeAccountId?: string) {
-    const pi = await retrievePaymentIntent(paymentIntentId, stripeAccountId);
-    const totalRefunded = pi.refundedAmount ?? 0;
+    let pi = await retrievePaymentIntent(paymentIntentId, stripeAccountId);
+    const initialRefunded = pi.refundedAmount ?? 0;
     await this.prisma.$transaction(async (tx) => {
       await lockGiftCardPayment(tx, paymentIntentId);
       // tenant-scoping: global — Signed Stripe event bootstrap by unique payment; stored connected account must match provider account.
@@ -220,7 +220,9 @@ export class GiftCardRefundService {
               },
               data: {
                 status:
-                  totalRefunded > 0 || pi.pendingRefund || pi.disputed ? 'PAYMENT_REVIEW' : 'OPEN',
+                  initialRefunded > 0 || pi.pendingRefund || pi.disputed
+                    ? 'PAYMENT_REVIEW'
+                    : 'OPEN',
               },
             });
           return;
@@ -252,6 +254,8 @@ export class GiftCardRefundService {
         });
       }
       await lockGiftCard(tx, entry.giftCardId);
+      pi = await retrievePaymentIntent(paymentIntentId, stripeAccountId);
+      const totalRefunded = pi.refundedAmount ?? 0;
       const card = await tx.giftCard.findUniqueOrThrow({
         where: { id: entry.giftCardId, restaurantId: entry.restaurantId },
       });
@@ -264,6 +268,29 @@ export class GiftCardRefundService {
         },
       });
       if (['REFUND_PENDING', 'REFUND_FAILED', 'CANCELLED'].includes(card.status)) return;
+      let otherPaymentNeedsReview = false;
+      if (['PAYMENT_REVIEW', 'REFUND_REVIEW'].includes(card.status) && !pi.disputed) {
+        const otherEntries = await tx.giftCardPaymentEntry.findMany({
+          where: {
+            giftCardId: card.id,
+            restaurantId: card.restaurantId,
+            paymentIntentId: { not: paymentIntentId },
+          },
+        });
+        for (const other of otherEntries) {
+          const state = await retrievePaymentIntent(
+            other.paymentIntentId,
+            other.stripeAccountId ?? undefined,
+          );
+          if (
+            state.disputed ||
+            state.pendingRefund ||
+            (state.refundedAmount ?? 0) > other.refundedAmountCents
+          ) {
+            otherPaymentNeedsReview = true;
+          }
+        }
+      }
       const pending = await tx.giftCardPaymentEntry.findMany({
         where: { giftCardId: card.id, restaurantId: card.restaurantId, pendingRefund: true },
       });
@@ -275,26 +302,30 @@ export class GiftCardRefundService {
         where: { id: card.id, restaurantId: card.restaurantId },
         data: {
           remainingAmount,
-          status: pi.disputed
-            ? 'PAYMENT_REVIEW'
-            : pending.length > 0
-              ? 'REFUND_REVIEW'
-              : remainingAmount.lte(0) &&
-                  delta > 0 &&
-                  !(card.type === 'CROWDFUNDED' && !card.closedAt)
-                ? 'CANCELLED'
-                : card.status === 'REFUND_REVIEW'
-                  ? remainingAmount.gt(0) || (card.type === 'CROWDFUNDED' && !card.closedAt)
-                    ? 'ACTIVE'
-                    : 'REDEEMED'
-                  : card.status,
-          stripePaymentStatus: pi.disputed
-            ? 'disputed'
-            : totalRefunded >= pi.amountReceived
-              ? 'refunded'
-              : totalRefunded > 0
-                ? 'partially_refunded'
-                : card.stripePaymentStatus,
+          status:
+            pi.disputed || otherPaymentNeedsReview
+              ? 'PAYMENT_REVIEW'
+              : pending.length > 0
+                ? 'REFUND_REVIEW'
+                : remainingAmount.lte(0) &&
+                    delta > 0 &&
+                    !(card.type === 'CROWDFUNDED' && !card.closedAt)
+                  ? 'CANCELLED'
+                  : card.status === 'REFUND_REVIEW' || card.status === 'PAYMENT_REVIEW'
+                    ? remainingAmount.gt(0) || (card.type === 'CROWDFUNDED' && !card.closedAt)
+                      ? 'ACTIVE'
+                      : 'REDEEMED'
+                    : card.status,
+          stripePaymentStatus:
+            pi.disputed || otherPaymentNeedsReview
+              ? 'disputed'
+              : totalRefunded >= pi.amountReceived
+                ? 'refunded'
+                : totalRefunded > 0
+                  ? 'partially_refunded'
+                  : card.stripePaymentStatus === 'disputed'
+                    ? 'succeeded'
+                    : card.stripePaymentStatus,
         },
       });
     }, DEFAULT_TRANSACTION_OPTIONS);

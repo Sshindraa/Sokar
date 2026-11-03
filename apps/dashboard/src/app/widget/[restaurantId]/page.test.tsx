@@ -713,7 +713,7 @@ describe('réservation publique sur le widget réellement servi par /book', () =
 
   it('confirme une réservation publique sans identifiant de service et conserve l’attribution', async () => {
     const { widget, fetchSpy } = await submitTest(undefined);
-    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    expect(await widget.findByText('Confirmée')).toBeTruthy();
     const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST');
     expect(posts.map(([url]) => url)).toEqual([
       '/api/proxy/marketing/attribution/click',
@@ -732,7 +732,7 @@ describe('réservation publique sur le widget réellement servi par /book', () =
 
   it('résout le slug public pour une ancienne URL de widget par identifiant', async () => {
     const { widget, fetchSpy } = await submitTest(undefined, false, true);
-    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    expect(await widget.findByText('Confirmée')).toBeTruthy();
     expect(widget.getByRole('link', { name: 'Retour' }).getAttribute('href')).toBe(
       '/restaurant/chez-sokar',
     );
@@ -747,7 +747,7 @@ describe('réservation publique sur le widget réellement servi par /book', () =
 
   it('associe le code cadeau fourni au parcours normal, sans montant de débit', async () => {
     const { widget, fetchSpy } = await submitTest(undefined, false, false, 'SKR-TEST-01');
-    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    expect(await widget.findByText('Confirmée')).toBeTruthy();
     const call = fetchSpy.mock.calls.find(([url]) => url.endsWith('/confirm'));
     const body = JSON.parse(call![1]!.body as string);
     expect(body.giftCardCode).toBe('SKR-TEST-01');
@@ -756,7 +756,7 @@ describe('réservation publique sur le widget réellement servi par /book', () =
 
   it('ne transmet pas de carte cadeau depuis un lien de test', async () => {
     const { widget, fetchSpy } = await submitTest(crypto.randomUUID(), false, false, 'SKR-TEST-01');
-    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    expect(await widget.findByText('Confirmée')).toBeTruthy();
     const call = fetchSpy.mock.calls.find(([url]) => url.endsWith('/confirm'));
     expect(JSON.parse(call![1]!.body as string).giftCardCode).toBeUndefined();
   });
@@ -805,7 +805,7 @@ describe('réservation publique sur le widget réellement servi par /book', () =
   it('transmet le jeton au hold puis à la confirmation, sans création réelle ni attribution', async () => {
     const token = crypto.randomUUID();
     const { widget, fetchSpy } = await submitTest(token);
-    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    expect(await widget.findByText('Confirmée')).toBeTruthy();
     const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST');
     expect(posts.map(([url]) => url)).toEqual([
       '/api/proxy/public/r/chez-sokar/hold',
@@ -818,9 +818,9 @@ describe('réservation publique sur le widget réellement servi par /book', () =
       expect(body).not.toHaveProperty('whatsappReminderConsent');
     }
     expect(widget.getByText(/supprimée automatiquement sous 24 h/)).toBeTruthy();
-    expect(widget.getByRole('link', { name: 'Gérer ma réservation' }).getAttribute('href')).toBe(
-      '/r?test',
-    );
+    expect(widget.queryByRole('link', { name: 'Gérer ma réservation' })).toBeNull();
+    expect(widget.container.querySelector('dl')?.textContent).toContain('20:30');
+    expect(widget.getByRole('button', { name: 'Ajouter au calendrier' })).toBeTruthy();
     expect(widget.getByRole('link', { name: 'Retour' }).getAttribute('href')).toContain(
       'testBooking=',
     );
@@ -832,7 +832,7 @@ describe('réservation publique sur le widget réellement servi par /book', () =
     async (token) => {
       const { widget, fetchSpy } = await submitTest(token, true);
       expect(await widget.findByText('Ce lien de test a expiré.')).toBeTruthy();
-      expect(widget.queryByText('Table réservée !')).toBeNull();
+      expect(widget.queryByText('Confirmée')).toBeNull();
       const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST');
       expect(posts.map(([url]) => url)).toEqual(['/api/proxy/public/r/chez-sokar/hold']);
       expect(JSON.parse(posts[0][1]!.body as string).testBookingToken).toBe(token);

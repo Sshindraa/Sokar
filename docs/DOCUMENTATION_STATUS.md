@@ -19,19 +19,20 @@
 
 ## Sources de vérité
 
-| Sujet                                 | Source actuelle                                                                                        |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Carte du code et des flux             | [`PROJECT_MAP.md`](./PROJECT_MAP.md)                                                                   |
-| État produit courant                  | [`obsidian/Context.md`](./obsidian/Context.md)                                                         |
-| Historique des livraisons             | trois dernières entrées de [`obsidian/Journal.md`](./obsidian/Journal.md), puis recherche ciblée       |
-| Plan CRM, marketing et prix 199/299 € | [`roadmap-produit-crm-marketing-199-299.md`](./roadmap-produit-crm-marketing-199-299.md)               |
-| Déploiement et rollback               | [`runbooks/deployment.md`](./runbooks/deployment.md), [`runbooks/rollback.md`](./runbooks/rollback.md) |
-| Contrat de données                    | `packages/database/prisma/schema.prisma` et migrations SQL                                             |
-| Contrat API réellement chargé         | `apps/api/src/main.ts` et routes de chaque module                                                      |
-| Prix affichés actuellement            | `apps/dashboard/src/app/constants.ts` et `apps/dashboard/src/app/pricing/page.tsx`                     |
-| Gel et preuves de release             | [`release/product-gates.json`](./release/product-gates.json) et `scripts/verify-product-gates.mjs`     |
-| État courant des audits et portes     | [`audits/2026-09-15-current-state.md`](./audits/2026-09-15-current-state.md)                           |
-| Roadmap de passage en production      | [`roadmap-production-readiness.md`](./roadmap-production-readiness.md)                                 |
+| Sujet                                 | Source actuelle                                                                                                              |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Carte du code et des flux             | [`PROJECT_MAP.md`](./PROJECT_MAP.md)                                                                                         |
+| Présentation produit et limites       | [`PROJECT_MAP.md` — Ce qu'est Sokar](./PROJECT_MAP.md#ce-quest-sokar) ; vérifier les portes et runbooks avant toute promesse |
+| État produit courant                  | [`obsidian/Context.md`](./obsidian/Context.md)                                                                               |
+| Historique des livraisons             | trois dernières entrées de [`obsidian/Journal.md`](./obsidian/Journal.md), puis recherche ciblée                             |
+| Plan CRM, marketing et prix 199/299 € | [`roadmap-produit-crm-marketing-199-299.md`](./roadmap-produit-crm-marketing-199-299.md)                                     |
+| Déploiement et rollback               | [`runbooks/deployment.md`](./runbooks/deployment.md), [`runbooks/rollback.md`](./runbooks/rollback.md)                       |
+| Contrat de données                    | `packages/database/prisma/schema.prisma` et migrations SQL                                                                   |
+| Contrat API réellement chargé         | `apps/api/src/main.ts` et routes de chaque module                                                                            |
+| Prix affichés actuellement            | `apps/dashboard/src/app/constants.ts` et `apps/dashboard/src/app/pricing/page.tsx`                                           |
+| Gel et preuves de release             | [`release/product-gates.json`](./release/product-gates.json) et `scripts/verify-product-gates.mjs`                           |
+| État courant des audits et portes     | [`audits/2026-09-15-current-state.md`](./audits/2026-09-15-current-state.md)                                                 |
+| Roadmap de passage en production      | [`roadmap-production-readiness.md`](./roadmap-production-readiness.md)                                                       |
 
 ## Audit de `docs/audits/`
 
@@ -92,7 +93,7 @@ une archive par défaut.
 | `mistral-marketplace-submission.md`                   | `DRAFT EXTERNE`     | Le serveur MCP/OAuth Sokar existe.                                                                                                                                                                                                                                                                                                                                                                                             | Créer ou revalider un client Mistral, les redirect URIs, l'icône, le contact et les exigences Marketplace au moment de la soumission.                                                                                                                                                                                                             |
 | `onboarding-strategy.md`                              | `LIVRÉ / RÉFÉRENCE` | Les cinq actions proposées sont dans le code : démo audio/transcript, trois scénarios, message fondateur, progressive disclosure et écran préalable au renvoi d'appel.                                                                                                                                                                                                                                                         | Mesurer activation, écoute de la démo, abandon et premier appel réel ; corriger selon les données.                                                                                                                                                                                                                                                |
 | `positioning-vs-zenchef.md`                           | `ACTIF`             | Matrice produit et marché recalée sur l'implémentation actuelle.                                                                                                                                                                                                                                                                                                                                                               | Ne revendiquer que les capacités testées ; réviser après livraison des epics CRM/POS/marketing.                                                                                                                                                                                                                                                   |
-| `roadmap-produit-crm-marketing-199-299.md`            | `ACTIF`             | Blueprint technique détaillé avec registre d'exécution local ; CRM, détection/preview/fusion API, segments, permissions, campagnes contrôlées, attribution de réservation, fondations réputation/récupération, fidélité simple, expériences, événements et distribution locale sont livrés derrière flags ; catalogue local Essential 199 € / Pro 299 €.                                                                       | Finir les écarts du registre ; synchroniser le catalogue Stripe, rejouer Checkout/facture et obtenir les preuves externes avant toute facturation 199/299 €.                                                                                                                                                                                      |
+| `roadmap-produit-crm-marketing-199-299.md`            | `ACTIF`             | Blueprint technique détaillé avec registre d'exécution local ; CRM, détection/preview/fusion API, segments, permissions, campagnes contrôlées, attribution de réservation, fondations réputation/récupération, fidélité simple, expériences, événements et distribution locale sont livrés derrière flags ; catalogue local Essential 199 € / Pro 299 €.                                                                       | Finir les écarts du registre et obtenir les preuves terrain ; état du catalogue et du checkout dans [`stripe-billing.md`](./runbooks/stripe-billing.md).                                                                                                                                                                                          |
 | `architecture/adr-usage-ledger-and-costing.md`        | `ACTIF`             | Ledger idempotent, compteurs voix, collecteurs SMS/WhatsApp/email, résolution tarifaire versionnée, import CSV/JSON dry-run contrôlé, rapprochement facture read-only exportable en JSON, ajustements séparés soumis à décision opérateur, projection de consommation sans quota client, suivi interne 70/90/100 % optionnel, export interne borné et paquet fichier séparant l'usage EUR des factures fournisseur documentés. | La preuve Telnyx d'août et le paquet MRC USD sont consignés ; l'intégration comptable et le rattachement/conversion du trafic non nul de mai sont différés. Les tests Postgres concurrents des ajustements sont exécutés. Le cockpit `/admin/margin` reste la surface de suivi des coûts ; `USAGE_ALERTS_ENABLED` n'est pas une gate commerciale. |
 | `architecture/adr-transactional-outbox.md`            | `ACTIF`             | Outbox additive, lease `SKIP LOCKED`, dispatch minute et topic usage livrés.                                                                                                                                                                                                                                                                                                                                                   | Brancher les mutations CRM/réservation dans leur transaction et ajouter rétention/consommation métier complète.                                                                                                                                                                                                                                   |
 | `architecture/adr-crm-marketing-control-plane.md`     | `PARTIEL`           | Identités, chronologie, RFM, préférences/tags, segments bornés, permissions par canal, campagnes idempotentes, automations bornées, callbacks signés, inbox de réconciliation sans PII, désinscription opaque, rapport, preview chiffré depuis `UsageTariff`, export, masquage des notes/métadonnées avec surcharge par établissement et API de fusion/réparation auditée sont documentés avec leurs contrôles.                | Coût des consommations réellement rapproché, providers POS/paiement/groupe et réputation, plus les pilotes, restent ouverts ; les fondations locales sont suivies dans leurs ADR dédiés ; aucun déploiement pendant le gel.                                                                                                                       |
@@ -158,9 +159,8 @@ une archive par défaut.
 
 ### À ne pas annoncer comme livré
 
-- Tarifs Essential 199 € et Pro 299 € : le catalogue local et les surfaces publiques sont alignés,
-  mais l'offre reste bloquée commercialement jusqu'à la migration Stripe, la facture et le checkout
-  rejoués en sandbox puis validés.
+- Porte `P1_ESSENTIAL` : les deux pilotes Essential et leurs sept jours de métriques restent à
+  valider ; état du catalogue et du checkout dans [`stripe-billing.md`](./runbooks/stripe-billing.md).
 - Connexion caisse et dépenses réelles : la fondation POS provider-neutral (schéma, import local,
   hash et matcher) est livrée ; aucun fournisseur de production ni dépense réelle n'est raccordé.
 - Permissions fines et administration multi-identité : les pages CRM, l'édition des préférences et
@@ -180,10 +180,10 @@ une archive par défaut.
   par `CUSTOMER_GROUPS_ENABLED=false` tant que les identités réelles et l'effacement inter-sites ne
   sont pas prouvés.
 - Collecte de feedback réputation : l'API post-visite, les tokens opaques, les scores 1–5, les
-  tâches de récupération et l'expiration sont livrés localement derrière `REPUTATION_ENABLED=false`.
+  tâches de récupération et l’expiration sont accompagnés d’un envoi privé à J+1 pour Pro/Multi-site.
 - Fidélité opérationnelle Pro : le catalogue d'avantages, les règles explicables, les grants à code
   hashé, le redeem atomique, l'expiration et la page `/dashboard/loyalty` sont livrés localement
-  derrière `LOYALTY_ENABLED=false`. Aucun provider, portefeuille de points ou débit POS n'est actif.
+  pour les offres Pro et Multi-site. Aucun provider, portefeuille de points ou débit POS n'est actif.
 - Expériences Pro : le catalogue, les sessions datées, la capacité transactionnelle, le snapshot de
   prix, la réservation/annulation idempotente, l'expiration et la page `/dashboard/experiences` sont
   livrés localement derrière `EXPERIENCES_ENABLED=false`. Aucun paiement, widget, téléphone ou canal

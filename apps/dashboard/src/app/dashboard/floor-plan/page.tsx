@@ -80,7 +80,6 @@ export default function FloorPlanPage() {
   const [createLoading, setCreateLoading] = useState(false);
   // Erreur de création : affichée dans la fenêtre elle-même, pas derrière son voile.
   const [createError, setCreateError] = useState('');
-  const [walkInModalOpen, setWalkInModalOpen] = useState(false);
 
   const clearReportedDelay = useCallback(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -276,32 +275,18 @@ export default function FloorPlanPage() {
           initialDelayImpact={initialDelayImpact}
           onInitialDelayApplied={clearReportedDelay}
           onRequestEdit={openFloorPlanEditor}
-          onRequestWalkIn={() => setWalkInModalOpen(true)}
         />
       )}
       {selectedFloorPlanId && activeView === 'service-live' && (
         <>
-          <Dialog open={walkInModalOpen} onOpenChange={setWalkInModalOpen}>
-            <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
-              <DialogHeader>
-                <DialogTitle>Accueillir un walk-in</DialogTitle>
-                <DialogDescription>
-                  Trouvez instantanément la table idéale pour des clients sans réservation.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="pt-2">
-                <ServiceCopilotSimulator
-                  key={`simulator-modal-${selectedFloorPlanId}`}
-                  orgId={orgId}
-                  selectedFloorPlanId={selectedFloorPlanId}
-                />
-              </div>
-            </DialogContent>
-          </Dialog>
-
           <details className="group hidden md:block">
             <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl border border-border bg-card/70 px-4 py-3 text-sm font-medium text-foreground transition-all duration-200 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-              <span>Accueillir un walk-in · Simulateur Copilot</span>
+              <span>
+                <span className="block">Simuler un placement · Copilot</span>
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                  Prévisualisation uniquement · aucun client placé
+                </span>
+              </span>
               <ChevronDown
                 size={17}
                 aria-hidden="true"

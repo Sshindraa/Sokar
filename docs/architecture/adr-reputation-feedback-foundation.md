@@ -3,31 +3,15 @@
 Date : 14 septembre 2026
 Statut : accepté, fondation locale livrée ; activation commerciale et production gelées
 
-## Contexte
+## Décision — version privée ciblée (28 octobre 2026)
 
-SevenRooms et les suites restaurant comparables combinent collecte d'avis, suivi des clients
-insatisfaits et actions de récupération. Sokar ne doit pas annoncer cette couverture à partir d'un
-simple bouton « avis » : il faut d'abord garantir qu'un retour provient d'une visite réellement
-honorée, qu'il ne peut être soumis qu'une fois, qu'un score faible crée une action opérateur
-traçable et qu'aucune donnée sensible n'est exposée par un lien public.
+Pour les offres Pro et Multi-site, une réservation honorée avec adresse e-mail et client actif déclenche, après 24 heures, une demande de retour privé envoyée par Resend avec `EMAIL_FROM`. Le contenu est un message de service sans publicité ni lien vers Google ou une autre plateforme d'avis : aucune redirection conditionnée par la note. Une note de 1 ou 2 ouvre une tâche de récupération dans l'écran existant.
 
-La première unité utile peut fonctionner sans choisir un fournisseur d'envoi ou une plateforme
-d'avis. Elle doit donc fournir un contrat provider-neutral et rester désactivée tant que les
-parcours SMS/email/WhatsApp, les plateformes externes et le pilote n'ont pas été qualifiés. La
-fondation d'avantages fidélité est suivie séparément dans
-[`adr-loyalty-benefits-foundation.md`](./adr-loyalty-benefits-foundation.md).
+Le client reçoit au maximum une demande tous les 90 jours par restaurant. Un lien permet de refuser les demandes futures de ce restaurant, sans affecter les confirmations de réservation. Le refus et la date de demande suivent une fusion de profils. Les réservations de test ne déclenchent pas d'envoi. Les notifications entrent dans le suivi d'usage transactionnel existant.
 
-## Décision
+Le plafond est de **10 tentatives par jour UTC pour toute la plateforme**, y compris les refus et les résultats incertains. Au-delà, la demande est reportée au jour suivant. Ce plafond propre aux retours ne constitue pas un plafond global de tous les messages Resend ; le budget et les autres usages doivent être surveillés ensemble. Un résultat de fournisseur incertain n'est pas renvoyé automatiquement.
 
-Nous livrons une fondation locale en quatre étapes :
-
-1. créer une demande de feedback pour une réservation `HONORED` et un client actif ;
-2. remettre au client un token opaque à durée limitée, sans contacter de provider ;
-3. accepter une note 1–5 et un commentaire borné, de façon idempotente ;
-4. créer dans la même transaction une tâche de récupération pour les notes ≤ 2.
-
-La demande est unique par réservation. Le feedback est unique par demande. Les listes et les
-mutations opérateur sont toujours filtrées par `restaurantId` résolu côté serveur.
+La demande reste unique par réservation et le feedback unique par demande. Les listes et mutations opérateur sont filtrées par restaurant.
 
 ## Modèle de données
 
@@ -50,8 +34,7 @@ orpheline après un effacement RGPD du profil.
 
 ## Token et endpoint public
 
-`reputation.service.ts` génère 32 octets aléatoires encodés en base64url. Le token brut n'est
-retourné qu'à la création ; seul `SHA-256("sokar:reputation-feedback:" + token)` est persisté.
+Les demandes manuelles utilisent un token aléatoire. Pour l’e-mail, un HMAC dérive un token opaque par réservation à partir de `REPUTATION_EMAIL_SECRET` ; seul `SHA-256("sokar:reputation-feedback:" + token)` est persisté. Le token est transmis dans le fragment du lien et retiré après soumission.
 Le token n'est jamais écrit dans les logs, les réponses de liste ou le dashboard.
 
 Le endpoint `POST /reputation/feedback/submit` accepte le token, la note et un commentaire de
@@ -68,8 +51,7 @@ Les routes protégées sont :
 - `GET /reputation/recovery-tasks` ;
 - `PATCH /reputation/recovery-tasks/:id`.
 
-Elles exigent `requireOrg`, la capability `reputation.feedback`, un rôle `OWNER` ou `MANAGER` et
-`REPUTATION_ENABLED=true`.
+Elles exigent `requireOrg`, la capability `reputation.feedback`, un rôle `OWNER` ou `MANAGER`.
 
 ## Invariants et concurrence
 
@@ -98,26 +80,8 @@ fonction de traitement du worker est volontairement séparée pour permettre un 
 page `/dashboard/reputation` couvre les états loading/empty/error, le calcul de score et les
 transitions opérateur ; elle ne déverrouille aucun provider.
 
-## Ce qui n'est pas livré par cet ADR
+## Périmètre et exploitation
 
-Cette fondation ne fournit pas encore :
+Aucun SMS, WhatsApp, avis public ou programme de points n'est envoyé par ce parcours. Le lien de désinscription reste valable après expiration du questionnaire. Les pages publiques ne sont pas indexées et ne transmettent pas le token dans les URL serveur.
 
-- l'envoi SMS/email/WhatsApp, les templates, consentements par canal et limites de fréquence ;
-- le raccordement Google, Tripadvisor ou une autre plateforme, ni la réponse/publication d'avis ;
-- un programme de points, des coupons ou une reconnaissance temps réel au service ; les avantages
-  opérationnels simples sont décrits dans l'ADR fidélité dédié ;
-- un score agrégé public ou une promesse d'amélioration de note ;
-- la qualification d'un pilote avec données réelles.
-
-Ces éléments restent des gates externes dans `docs/release/product-gates.json`. Le flag
-`REPUTATION_ENABLED` vaut `false` par défaut dans les exemples d'environnement et ne doit pas être
-ouvert en production pendant le gel des offres 199/299 €.
-
-## Migration, rollback et activation
-
-La migration est additive et doit être appliquée avant toute activation future. Un rollback
-applicatif désactive `REPUTATION_ENABLED` et laisse les tables en place. Une restauration de base ne
-se fait qu'avec le runbook de rollback et une sauvegarde horodatée. L'ouverture d'un pilote devra
-apporter un secret de lien, un fournisseur d'envoi qualifié, des callbacks testés, une preuve de
-limitation de fréquence et un plan d'effacement avant de changer le manifest de gates. L'écran
-opérateur local doit être validé avec ces parcours avant toute activation.
+La migration `20261028120000_reputation_private_email` est additive. Avant déploiement, configurer une valeur aléatoire d'au moins 32 caractères pour `REPUTATION_EMAIL_SECRET` dans l'environnement API, ainsi que `API_URL`, `EMAIL_FROM` et Resend ; ne jamais placer ce secret dans Git. Sans secret, l'envoi échoue. Un rollback applicatif conserve les tables ; la restauration de base suit le runbook dédié.

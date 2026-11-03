@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../shared/db/client';
 import {
   TeamError,
+  claimInvitedMembership,
   changeMemberRole,
   inviteMember,
   listTeam,
   removeMember,
   resetClaimMisses,
   revokeInvitation,
+  transferOwnership,
 } from '../team.service';
 
 const clerk = vi.hoisted(() => ({
@@ -16,6 +18,7 @@ const clerk = vi.hoisted(() => ({
   createOrganizationInvitation: vi.fn(),
   revokeOrganizationInvitation: vi.fn(),
   deleteOrganizationMembership: vi.fn(),
+  updateOrganizationMembershipMetadata: vi.fn(),
 }));
 vi.mock('@clerk/fastify', () => ({ clerkClient: { organizations: clerk } }));
 
@@ -38,6 +41,54 @@ beforeEach(() => {
     id: 'inv_1',
     emailAddress: 'serveur@example.com',
     createdAt: Date.parse('2026-10-13T10:00:00Z'),
+  });
+});
+
+describe('claimInvitedMembership', () => {
+  it('ne transforme pas une attribution limitée à un site en accès global', async () => {
+    vi.mocked(db.restaurantAccount.findUnique).mockResolvedValue({
+      id: 'account_1',
+      status: 'ACTIVE',
+    } as never);
+    vi.mocked(db.restaurantAccountMembership.findFirst).mockResolvedValue({
+      id: 'site-membership',
+    } as never);
+    clerk.getOrganizationMembershipList.mockResolvedValue({
+      data: [{ publicMetadata: { sokarRole: 'MANAGER' } }],
+    });
+    expect(
+      await claimInvitedMembership({ organizationId: 'org_1', userId: 'user_site' }),
+    ).toBeNull();
+    expect(db.restaurantAccountMembership.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { accountId: 'account_1', clerkUserId: 'user_site' },
+      }),
+    );
+    expect(db.restaurantAccountMembership.create).not.toHaveBeenCalled();
+  });
+
+  it('rattache une invitation authentifiée quand aucune attribution ne préexiste', async () => {
+    vi.mocked(db.restaurantAccount.findUnique).mockResolvedValue({
+      id: 'account_1',
+      status: 'ACTIVE',
+    } as never);
+    vi.mocked(db.restaurantAccountMembership.findFirst)
+      .mockResolvedValueOnce({ id: 'owner' } as never)
+      .mockResolvedValueOnce(null);
+    clerk.getOrganizationMembershipList.mockResolvedValue({
+      data: [{ publicMetadata: { sokarRole: 'STAFF' } }],
+    });
+    expect(await claimInvitedMembership({ organizationId: 'org_1', userId: 'user_new' })).toBe(
+      'STAFF',
+    );
+    expect(db.restaurantAccountMembership.create).toHaveBeenCalledWith({
+      data: {
+        accountId: 'account_1',
+        restaurantId: null,
+        clerkUserId: 'user_new',
+        role: 'STAFF',
+      },
+    });
   });
 });
 
@@ -194,7 +245,84 @@ describe('listTeam', () => {
   });
 });
 
+describe('transferOwnership', () => {
+  it.each(['MANAGER', 'READ_ONLY', 'NONE'] as const)(
+    'transfère au membre et applique l’accès %s choisi',
+    async (previousOwnerAccess) => {
+      vi.mocked(db.restaurantAccountMembership.findMany).mockResolvedValue([
+        { id: 'owner', clerkUserId: 'user_owner' },
+      ] as never);
+      vi.mocked(db.restaurantAccountMembership.findFirst).mockResolvedValue({
+        id: 'target',
+      } as never);
+      clerk.getOrganizationMembershipList.mockResolvedValue({ data: [{}] });
+      await transferOwnership({
+        accountId: 'account_1',
+        organizationId: 'org_1',
+        actingUserId: 'user_owner',
+        targetUserId: 'user_target',
+        previousOwnerAccess,
+      });
+      expect(db.restaurantAccountMembership.update).toHaveBeenCalledWith({
+        where: { id: 'target' },
+        data: { role: 'OWNER' },
+      });
+      if (previousOwnerAccess === 'NONE') {
+        expect(clerk.updateOrganizationMembershipMetadata).toHaveBeenCalledWith({
+          organizationId: 'org_1',
+          userId: 'user_owner',
+          publicMetadata: { sokarRole: 'REVOKED' },
+        });
+        expect(clerk.deleteOrganizationMembership).toHaveBeenCalledWith({
+          organizationId: 'org_1',
+          userId: 'user_owner',
+        });
+        expect(db.restaurantAccountMembership.deleteMany).toHaveBeenCalledWith({
+          where: { accountId: 'account_1', clerkUserId: 'user_owner' },
+        });
+      } else {
+        expect(db.restaurantAccountMembership.updateMany).toHaveBeenCalledWith({
+          where: { accountId: 'account_1', clerkUserId: 'user_owner' },
+          data: { role: previousOwnerAccess },
+        });
+      }
+    },
+  );
+
+  it('refuse le transfert si le demandeur n’est plus le propriétaire', async () => {
+    vi.mocked(db.restaurantAccountMembership.findMany).mockResolvedValue([
+      { id: 'owner', clerkUserId: 'other' },
+    ] as never);
+    await expect(
+      transferOwnership({
+        accountId: 'account_1',
+        organizationId: 'org_1',
+        actingUserId: 'user_owner',
+        targetUserId: 'user_target',
+        previousOwnerAccess: 'MANAGER',
+      }),
+    ).rejects.toMatchObject({ code: 'TRANSFER_INVALID' });
+    expect(db.restaurantAccountMembership.update).not.toHaveBeenCalled();
+  });
+});
+
 describe('changeMemberRole', () => {
+  it('retire les droits locaux supérieurs lors du passage global en lecture seule', async () => {
+    vi.mocked(db.restaurantAccountMembership.findFirst).mockResolvedValue({
+      id: 'm1',
+      role: 'MANAGER',
+    } as never);
+    await changeMemberRole({
+      accountId: 'account_1',
+      userId: 'user_staff',
+      role: 'READ_ONLY',
+      actingUserId: 'user_owner',
+    });
+    expect(db.restaurantAccountMembership.updateMany).toHaveBeenCalledWith({
+      where: { accountId: 'account_1', clerkUserId: 'user_staff' },
+      data: { role: 'READ_ONLY' },
+    });
+  });
   it('change le rôle d’un membre', async () => {
     vi.mocked(db.restaurantAccountMembership.findFirst).mockResolvedValue({
       id: 'm1',

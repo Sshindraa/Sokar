@@ -2733,6 +2733,7 @@ Sur demande de Hamza, ajout d’une simulation animée locale : échange client/
 
 2026-10-24 — [widget legacy, déploiement] #574 fusionnée (f619b8b1) : correction du retour vers la fiche restaurant depuis un widget adressé par UUID et formulation conditionnelle du bandeau de réservation test. Déploiement staging #40088093121 réussi après relance du smoke : la première exécution avait échoué sur la visibilité du créneau 22h30, puis le test a passé localement et au rerun CI; suites Dashboard et Connect vertes. Production #40088520634 déployée et smoke vert. Vérification directe : routes publiques widget/cadeaux/restaurant et widget UUID en HTTP 200, API /health et /livez en 200, POST legacy réservation sans jeton en 401. Aucun appel de réservation ni SMS effectué pendant cette vérification.
 
+2026-10-24 — [dépendances, migration Zod 4] Correction de #577 sur sa branche : lockfile pnpm régénéré et installation frozen validée. Retrait du bump Vitest 5 non annoncé (Node minimum 22.12, incompatible avec la plage repo) ; migration API vers Zod 4 : issues d’erreur, records partiels, schémas MCP via `z.toJSONSchema`, validation UUID historique conservée avec `guid`, PATCH client sans réapplication de défaut. Tests API : 4 536 réussis, 80 ignorés ; typecheck, build et lint passent (50 avertissements préexistants). PR non fusionnée, CI GitHub à confirmer ; aucune mise en production.
 2026-10-24 — [SMS, qualification production] Revue de configuration en lecture seule : API/workers en ligne, `/health` et `/livez` verts, expéditeur `SOKAR` et profil Telnyx configurés ; `smsConfirmEnabled=false` sur les trois restaurants après mise à off de deux fiches dormantes sans slug ni réservation (démo publique déjà off), WhatsApp off. Un unique SMS technique envoyé via l’API Telnyx (1 segment, sans réservation) a été accepté puis terminé en `delivery_failed`, code `40008` (`Undeliverable`, rejet opérateur). ID fournisseur `4031a16d-f4fc-4ff0-9883-f72664271eb9`. Aucun rejeu. La cause précise reste à obtenir de Telnyx avant tout nouvel essai ou activation. Détails : `docs/runbooks/email-sms-deliverability.md`.
 
 2026-10-24 — [voix, STT, MCP, qualification] **Qualification avant activation client** — Santé API staging/prod et authentification Deepgram vérifiées ; la chaîne Telnyx staging ne peut pas encore être testée : l'unique numéro est rattaché à l'application production, l'application staging n'a ni numéro ni voies entrante/sortante actives. Aucun appel ni audio fournisseur lancé. Parcours MCP Chez Sokar sur staging : recherche, hold, confirmation, rejeu idempotent sans doublon, lecture, modification et annulation réussis ; reset audité après simulation, sans réservation/hold/client/idempotence actifs, avec un tombstone anonymisé et les journaux d'audit append-only attendus. Correctifs locaux : alertes Prometheus STT alignées sur Deepgram/Cartesia, comptabilisation STT par fournisseur, garde de clés bench distinctes et plafond de crédits Cartesia. Scribe retiré des docs runtime actifs ; l'évaluation de son verrou FR est obsolète. Vérifications : 47 tests ciblés, typecheck API, formatage, `git diff --check` et taille du vault verts. Restent le numéro/application staging dédiés et les clés bench isolées avec budget pour les essais audio payants.
@@ -2744,6 +2745,14 @@ Sur demande de Hamza, ajout d’une simulation animée locale : échange client/
 2026-10-24 — [voix, sélection STT, décision locale] Retrait de la priorité implicite Ink : une clé seule ne lance plus le parallèle ; `VOICE_STT_INK_RESTAURANT_IDS` autorise la comparaison, `VOICE_STT_INK_REPLACE_RESTAURANT_IDS` autorise séparément le remplacement (listes vides par défaut). Deepgram reste la source en comparaison. Hypothèses sous garde debug existante et empreintes hors debug, fournisseur du texte transmis/persisté par tour ; mots et confiances Deepgram retirés des textes Ink, tours fusionnés de sources différentes marqués `mixed-stt`. Runbook de qualification sur audio ajouté, avec information du testeur avant appel car aucune annonce automatique d’enregistrement n’existe. Aucun changement distant ni appel lancé ; qualification réelle après déploiement.
 
 2026-10-24 — [voix, vérification sélection STT] Correctif `80022c07` soumis dans la PR #579 : garde pre-push verte, 4 545 tests API passés et 80 ignorés, lint et typechecks API/packages réussis ; contrôle taille du vault et formatage réussis. Architecture alignée sur les nouvelles listes. Aucun déploiement du correctif ni nouvelle qualification audio effectué à ce stade.
+
+2026-10-24 — [voix, déploiement et diagnostic audio] PR #579 fusionnée sur accord utilisateur (`9ea0316f`), CI prouvée, staging #40103907662 et production #40104146654 déployés avec smoke tests verts ; livez OK sur les deux API. Préparation staging : bucket privé distinct `sokar-call-recordings-staging` créé via les accès de stockage existants (secrets restés sur VPS), écriture/lecture/suppression de sonde chiffrée réussies ; enregistrement limité au restaurant test staging, rétention 7 jours, debug et parallèle Ink autorisés pour ce seul restaurant, remplacement Ink vide. Sauvegarde env privée `/home/deploy/.sokar-ops-private/staging-api-before-stt-test-1792853222290.env` ; API et workers staging redémarrés, health dépendances OK. Numéro Telnyx resté sur production : aucune bascule réalisée. L’utilisateur a appelé avant bascule : appel prod `9c291ac3`, 16 h 47 Paris, 22 s, audio disponible, demande de réservation reconnue et réponse pertinente générée mais zéro audio réponse envoyé. Logs : `first_audio_hold=cancelled_voice_resumed` après 20 ms à 14:47:36.909Z, puis barge-in. Audio analysé hors dépôt : bref signal appelant vers 12,34–12,40 s (deux trames de 20 ms au-dessus du seuil RMS 300), puis silence jusqu’à une reprise vers 16,02 s. Écoute par modèle audio effectuée (0,005409 USD) ; ses horodatages et son affirmation de silence >20 s sont inexacts, seule la chronologie mesurée est retenue. Cause immédiate : faux déclenchement du garde-fou avant premier audio sur bruit bref ; aucune preuve d’un défaut de compréhension sur cet appel. Reste : reproduire puis corriger ce garde-fou en staging avant nouvel essai partagé ; aucun réglage de ce garde-fou modifié.
+
+2026-10-24 — [voix, garde premier audio] Correctif sur branche `codex/first-audio-noise-guard` : annulation avant premier audio fondée sur 160 ms de signal continu au seuil adaptatif, au lieu de tout nouvel événement RMS après deux trames. Les bruits brefs attendent le silence ou le plafond sans jeter la réponse ; interruption par transcription et fast-barge-in inchangés. Régression synthétique rouge avant/verte après. Rejeu privé de `9c291ac3` (A-law 8 kHz, blocs 5 ms, horloge simulée) : bruit à 12,375 s annulé en 20 ms avant, libération après 620 ms après ; vraie demande à 7,4 s toujours annulée (240 ms). Rejeu distinct des paquets Telnyx originaux, aucun audio ajouté au dépôt. Tests des contextes Cartesia et ElevenLabs couvrent bruit bref et vraie reprise ; signal faible soutenu et indépendance des tailles de trame 10/20/40 ms vérifiés. Qualification staging réelle à faire après déploiement.
+
+2026-10-24 — [voix, recette garde premier audio staging] PR #580 (`0f1b0513`) ouverte, 4 556 tests API (80 ignorés), 1 014 dashboard et 76 shared verts, lint/typechecks verts. `pnpm pr:submit` refusait alors un fichier généré Dashboard ; fichier préservé. Déploiement manuel de la branche en staging #40105319644 réussi, sans fusion ni promotion prod. Rejeu sur dist serveur : bruit bref libéré après 645 ms, parole faible soutenue annulée après 161 ms ; health/livez staging et prod OK. Numéro resté en production ; appel staging à planifier.
+
+2026-10-24 — [voix, nouvel appel prod et fenêtre staging close] Le numéro a été basculé vers staging à 17 h 09 min 35 s pour 10 min puis restauré et vérifié en production. L’appel `a1ba681f` (17 h 08 min 52 s, 28 s) avait commencé avant la bascule : il ne qualifie pas #580. Aucun appel staging ni réservation créée. Dans cet appel prod, réponse audible et pas d’annulation premier audio ; la question sur les horaires a été mal reconnue puis le dialogue a redemandé la date. Transcription automatique à confirmer humainement ; recette réelle staging #580 toujours en attente.
 
 2026-10-25 — [voix, lecture interne, rapport d’appel] Ajout additif de `GET /api/internal/voice/calls/:callId/report` (jeton `SOKAR_VOICE_READ_TOKEN`, début d’id accepté) : renvoie le rapport JSON stocké, seulement pour les restaurants de `VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS`, jamais l’audio ni la clé de stockage. Motif : une session Claude cloud ne peut pas ouvrir de SSH (port 22 sortant fermé, vérifié) ; la lecture HTTPS existante, joignable depuis le cloud (401 sans jeton en prod), est retenue plutôt qu’un tunnel SSH vers le VPS. Reste à poser le jeton dans l’environnement cloud, puis déployer. 11 tests de la route, typecheck API et lint verts.
 
@@ -2811,3 +2820,911 @@ Sur demande de Hamza, ajout d’une simulation animée locale : échange client/
 2026-10-26 — [Connect, suppression du widget] Après déploiement prod de #593 et #596 (vérifié : sous-domaine `chez-sokar-demo.sokar.tech` sert le widget du dashboard, `/` `/dashboard` `/api/proxy/customers` restent chez Connect, sokar.tech inchangé, parcours navigateur sans écriture OK), suppression du formulaire de Connect : `app/widget/[slug]/page.tsx`, `booking-widget.tsx`, `components/booking/*`, `lib/booking-source.ts`, alias `/book` du middleware, `joinWaitingList`/`cancelWaitingListEntry`/`PublicApiError` d'`api-client.ts`, e2e `booking-flow.spec.ts`. Reste dans Connect : la fiche, la carte cadeau `/widget/[slug]/gift-card`, `embed.js` (qui pointe sur `/widget/<slug>` servi par le dashboard). Conséquence en local : lancer Connect seul ne donne plus de page de réservation (bouton « Réserver » vers `/book/<slug>`, servi par le dashboard). Retour arrière nginx = restaurer le code depuis git.
 
 2026-10-26 — [déploiement, correctif] Le déploiement staging de #597 (suppression de la page Connect `/widget/[slug]`) a échoué : le type-check du build sur le VPS lisait `.next/types/app/widget/[slug]/page.ts`, fichier généré par le build précédent qui importe la page supprimée (`tsconfig.json` inclut `.next/types/**`). La CI ne le voyait pas (dépôt neuf). Staging est revenu à l'état d'avant le build et la prod a été sautée par la barrière staging : aucun service touché. Cause : `clean_next_artifacts` existait dans `deploy-common.sh` mais n'était appelée nulle part. Correctif : `clean_stale_next_types` supprime `.next/types` et `.next/dev/types` avant chaque build Dashboard/Connect (test dans `test-deploy-common.sh`). Tant que ce correctif n'est pas sur `main`, tout déploiement staging suivant échoue au même endroit.
+
+2026-10-26 — [widget, ChatGPT, déploiement] Écran `apps/widget` (OpenAI Reserve) : build vérifié en local, il produit bien `out/restaurant-reservation.html` (la route existait déjà) et `_headers` au format Cloudflare Pages. Ajout du workflow manuel `.github/workflows/deploy-widget.yml` (build, `wrangler pages deploy`, smoke test sur widget.sokar.tech) et d'une section « Publication » dans `apps/widget/README.md`. Rien déployé : il faut le projet Pages `sokar-widget`, le domaine, les secrets `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` et `https://widget.sokar.tech` dans `CORS_ORIGINS` de l'API prod. Rappel : OpenAI Reserve reste réservé aux partenaires approuvés (formulaire ChatGPT merchants), candidature non tracée dans le dépôt.
+
+2026-10-26 — [voix, outils de banc STT] Les bancs Deepgram/Cartesia donnent priorité aux clés `*_BENCH_API_KEY` puis utilisent la clé runtime si elle est absente ; les budgets préalables restent requis. Tests de garde ajoutés. Rapports exploratoires Ink-2 et latence STT archivés dans `docs/audits/` ; échantillon insuffisant pour choisir un moteur. Aucun changement runtime ni déploiement.
+2026-10-26 — [widget ChatGPT, CORS production] Sur autorisation utilisateur, ajout de `https://widget.sokar.tech` à `CORS_ORIGINS` dans l’environnement privé de l’API de production ; rechargement gracieux de `sokar-api` via PM2. API online, health 200, préflight disponibilité 204 avec `Access-Control-Allow-Origin: https://widget.sokar.tech` ; staging également OK. Aucun secret ajouté au dépôt.
+
+2026-10-26 — [widget ChatGPT, publication Cloudflare Pages] Workflows #599/#600 fusionnés ; déploiement manuel #40318059367 sur `main` réussi. `https://widget.sokar.tech/restaurant-reservation.html` redirige en 308 vers la route canonique `/restaurant-reservation`, qui répond 200. L’accord OpenAI « ChatGPT merchants » n’est pas vérifié ; pas de test de réservation dans l’interface ChatGPT.
+2026-10-26 — [réservation, confirmation Web unifiée] Le widget Dashboard affiche `ReservationView` dès la confirmation, sans écran intermédiaire. Le résumé reste visible sans jeton ; avec un lien signé, les actions se chargent dans la même vue et le retrait WhatsApp conserve le fallback historique. Liste d’attente et consentements marketing préservés sur `main`. Tests Dashboard : 1 027/1 027 ; typecheck OK, lint sans erreur (142 avertissements). E2E mocké WhatsApp passé sur iPhone, iPad et desktop ; recette API réelle non qualifiée (502 lors de l’essai local précédent). Aucun déploiement.
+
+2026-10-26 — [déploiement, smoke staging] Après #601, le déploiement staging a réussi mais le job smoke (timeout 5 min) a été annulé pendant l’installation des dépendances système Playwright ; les E2E staging n’ont pas commencé et la promotion production a été sautée. Le timeout du job est porté à 15 min avant de relancer la chaîne.
+
+2026-10-26 — [dashboard, UI dev] Bloc « Réservations par canal » compacté : lignes et barre réduites, descriptions courtes sur une seule ligne dès tablette, en-têtes Canal/Réservations/Couverts/Part ; mobile conserve canal, volume et part. Aucun calcul modifié. Tests Dashboard : 1 027/1 027, typecheck, ESLint du composant et Prettier OK. Rendu contrôlé desktop 1440, iPad 768 et mobile 390 sans débordement horizontal ; données de démo, API locale indisponible. Local uniquement, aucun déploiement.
+
+2026-10-26 — [dashboard, sobriété UI locale] Suite audit visuel : retrait des icônes et descriptions redondantes des canaux, suppression du cadre imbriqué, volumes seuls en gras, aide Assistants IA au survol/focus ; résumé secondaire « réservations hors saisie équipe sur N » sans promesse d’autonomie. Tableau et graphique côte à côte dès xl, empilés sur tablette/mobile. Tests Dashboard 1 027/1 027, typecheck et Prettier OK ; ESLint sans erreur, avertissement setState-in-effect préexistant dans page.tsx. Rendu contrôlé à 390/768/1280/1440 px. Aucun déploiement, données de démo.
+
+2026-10-26 — [dashboard, demandes avant statistiques — local] Ajout du résumé « À vérifier » avant les KPI, réutilisant les recommandations et droits du Copilot de service. Périmètre : retards signalés par téléphone et arrivées en retard ; suggestions de tables/placement exclues. Actions réelles conservées avec liens et télémétrie existants ; trois lignes maximum puis lien vers Salle. Mode démo explicitement identifié, boutons exemples inactifs, aucune requête ni mutation. Une réponse vide ne promet pas la santé globale du système et une panne reste distincte. Tests Dashboard 1 031/1 031 ; 7 tests widget passés après finition visuelle, typecheck et formatage OK, ESLint sans erreur (avertissement préexistant). Rendu desktop/iPad/mobile vérifié ; aucune migration ni déploiement.
+
+2026-10-26 — [dashboard, métriques et vérification volontaire — local] KPI « Conversion appels » remplacé par le nombre de réservations rattachées à un appel, avec le volume d’appels reçus. Champ additif `call_reservations` dans GET /dashboard/stats ; ancien contrat conservé, absence du champ affichée comme indisponible. Démo cohérente avec ses canaux (50 réservations téléphone, 140 appels sur 7 j). Détail natif dépliable : définitions, périmètre temporel, limites du montant estimé et liens vers les historiques complets non filtrés ; démo sans faux dossiers. Prévisions et absences déplacées dans un volet secondaire à périodes explicites. Seuil fixe de 3 réservations présenté comme repère, retrait des montants « manque à gagner » et jauges de remplissage. No-show : montants associés aux absences, écart SMS descriptif avec effectifs et sans attribution causale. Tests : Dashboard 1 033/1 033, route API 7/7, E2E 12/12 (mobile/iPad/desktop, détail au clavier) ; typechecks API/Dashboard et formatage OK, lint sans erreur (142 avertissements Dashboard existants). Aucun déploiement ni migration ; rendu navigateur sur données de démo, API testée avec mocks.
+
+2026-10-27 — [dashboard, rôles et accueil — local] Accueil structuré en trois niveaux : À vérifier, Activité Sokar du jour, puis Analyse avec filtre de période local à cette section. Accès direct à Salle pour les opérations du service ; changer la période ne démonte plus le suivi courant. Nouveau GET /dashboard/call-activity : agrégation des appels depuis minuit, par résultat, tenant authentifié uniquement, sans PII ; totaux, résultats et date d’actualisation. Résumé téléphonique avec détails à la demande et actualisation manuelle ; transferts/messages non présentés comme tâches en attente. Démo cohérente (40 appels, 13 avec réservation) et identifiée. Tests : Dashboard 1 036/1 036 ; route API 9/9 ; E2E 15/15, puis 3/3 ciblés après correction des clés React des blocs frères ; typechecks API/Dashboard et formatage OK, lint sans erreur. Rendu desktop/iPad/mobile sans débordement ; pas d’erreur React dans le contrôle final. Aucun déploiement ni migration ; API qualifiée par mocks, rendu avec démo.
+
+2026-10-27 — [dashboard, identité et scénarios UX — local] Finition des points 6/7 : pictogrammes répétitifs retirés des KPI, chiffres moins gras, cibles d’action et dépliables de 44 px. Priorité textuelle uniquement pour les recommandations critiques ; arrivée non enregistrée reformulée en vérification, motif et minutes conservés lorsqu’ils existent, sans échéance métier inventée. Démo marquée fictive avec actions inactives. Erreurs d’appels signalées hors du détail, lien vers l’historique en usage réel ; panne du suivi distinguée par message et reprise. Ajout de trois tests de parcours sur la page réelle (graphiques simulés seulement) : renseignements sans alerte, erreur/arrivée à vérifier avec accès au traitement, faible volume descriptif avec limites du montant. Tests Dashboard 1 039/1 039 et E2E 18/18 ; typecheck, formatage et lint sans erreur (142 avertissements existants). Rendus desktop/iPad/mobile inspectés sans débordement, lecture des priorités avant analyse. Aucun déploiement ; qualification sur données simulées et démo, test avec restaurateurs non réalisé.
+
+2026-10-27 — [dashboard, reprise de composition après retour utilisateur — local] L’empilement des points 1–7 a été rejeté visuellement. Décision : une seule synthèse et une seule période ; retrait des faux retards, du bilan téléphonique séparé et des boutons exemples inactifs. Quatre indicateurs dans un bandeau sans cartes imbriquées, explications et historique via dialogue attaché à chaque chiffre. Graphique dominant à gauche, canaux en complément à droite ; graphique avant canaux sur mobile. Totaux répétés retirés de la légende et du résumé des canaux. Les vrais signalements de salle se déplient depuis une ligne ; sans signalement, aucun bloc ; les erreurs de chargement restent explicites. Modules expérimentaux de bilan et de définitions retirés ; endpoint call-activity créé dans cette session mais jamais publié supprimé avec ses tests dédiés et son mock. Contrats préexistants et champ additif call_reservations conservés. Tests Dashboard 1 033/1 033, E2E 18/18, API ciblée 7/7 ; typecheck Dashboard OK, lint sans erreur (142 avertissements existants). Rendus desktop/iPad/mobile inspectés sans débordement. Aucun déploiement ; l’évaluation visuelle revient à l’utilisateur.
+
+2026-10-27 — [dashboard, finition de la composition retenue — local] Structure conservée : quatre indicateurs, graphique dominant et canaux. Affinage : chiffres tabulaires copiables, libellés alignés, sélecteur de période tactile 44 px et moins gras ; lignes des canaux plus aérées dès tablette. Graphique : axes plus contrastés, réservations en trait plein plus lisible, couverts en pointillé avec légende assortie, retrait du second dégradé et grille atténuée. Vérification visuelle en clair/sombre sur 1440/768/390/320 px sans débordement ; contraste des graduations contrôlé sur les fonds rendus. Tests Dashboard 1 033/1 033 et E2E 18/18 ; typecheck et formatage OK, ESLint ciblé sans erreur (avertissement préexistant). Aucun déploiement, données de démo.
+
+2026-10-27 — [dashboard, saturation locale — corrigé en dev] Reproduction sur /dashboard/reservations : 18 requêtes au chargement, puis repos ; plusieurs GET tripliqués par le rejeu StrictMode et la résolution du même site démo. useApi partage désormais uniquement les GET simultanés d’une même instance, avec clé session/organisation/URL/headers, suppression du résultat dès terminaison ; lectures avec AbortSignal et écritures indépendantes. Site démo explicite dès le premier appel, évitant un changement artificiel du client à la résolution multi-site. Chargement de sites obsolète annulé au cleanup. Mesure navigateur après : 9 requêtes, chaque GET applicatif une fois et aucune nouvelle requête durant les ~15 s au repos. Limite serveur 100/min/IP inchangée. Message Fastify 429 traduit en conservant le délai annoncé. Tests : Dashboard 1 040/1 040, puis 33 ciblés après finition du message ; typecheck OK, ESLint ciblé sans erreur (avertissement SiteProvider préexistant), formatage/diff OK. Pas de déploiement ni de changement de quota.
+
+2026-10-27 — [handoff, session UI puis API locale] Fait : composition Pilotage simplifiée retenue par Hamza, finitions clair/sombre et correction des doublons de chargement. API locale relancée sur 4000 avec RUN_WORKERS_IN_PROCESS=false ; dashboard 3000. Prochain : revue du diff local avant commit/PR, qualification staging et données réelles si demandées. Fichiers clés : dashboard/page.tsx, DashboardCharts.tsx, ReservationChannels.tsx, ServiceCopilotWidget.tsx, lib/api.ts, lib/api-error.ts, features/sites/site-context.tsx et leurs tests. Questions ouvertes : retours terrain sur la composition ; aucun déploiement effectué. AccountMenu.tsx avait déjà des modifications extérieures à ce travail, conservées.
+
+2026-10-27 — [audit rate-limit, lot 1] API : `getClientIp()` utilise `req.ip` (trustProxy) au lieu de la première valeur de X-Forwarded-For, qui laissait le client choisir son IP (cartes cadeaux, paiements de réservation). Limiteur global : compteur par utilisateur Clerk, séparé lectures 600/min et actions 120/min ; trafic anonyme inchangé à 100/min/IP. Clerk passe en `onRequest` pour que la session soit connue avant le limiteur et avant `requireOrg()`. Connect : un 429/5xx lève une erreur au lieu de renvoyer null/liste vide (fausse 404 restaurant, catalogue vide) ; 404 et 400 restent « introuvable ». SiteProvider : une actualisation de la même organisation garde sites et site actif (plus de bascule du client API), un vrai changement d'organisation efface toujours. Tests ciblés ajoutés (IP forgée, multi-postes, 429 Connect, actualisation même organisation, ce dernier vérifié en échec sans le correctif). Restent hors lot : budget interne Connect sous 127.0.0.1, Retry-After via le proxy, polling des onglets cachés, plafond IP MCP. À qualifier en staging avec plusieurs postes ; aucun déploiement.
+
+2026-10-27 — [audit CRM, lot 1 critique] Fidélité : la règle `MIN_VISITS` compte les visites honorées depuis les réservations (même définition que le cycle de vie CRM), plus le `visitCount` hérité (réservations par téléphone seulement, absences comprises). API : `DELETE /customers/:id` retiré (cascade sur `MarketingSuppression`/preuves de consentement, refus perdu au rappel ; aucun appelant dans le dashboard) ; l'effacement passe par l'anonymisation RGPD. Rôles : STAFF peut lire `GET /customers/service-cards` (badges Réservations/plan de salle, refusés en 403 jusque-là). Tests API 4599 verts, tsc OK. Reste de l'audit : reset VIP par `POST /customers`, normalisation 06→+33, sources de fidélité concurrentes (`visitCount`, `loyaltyScore`, snapshot, cycle de vie), deux écrans Clients/CRM Pro, pagination CRM sur `updatedAt`.
+2026-10-26 — [voix, bruit bref #580] PR #580 fusionnée sur `e37dcce4` après mise à jour depuis `main`. Contrôles pré-push : 4 603 tests API passés, 80 ignorés, lint et typecheck OK ; CI GitHub verte. Staging et ses smoke tests ont réussi, puis la production a été déployée avec succès (run `40401819713` ; santé API/DB/Redis/Telnyx OK). Le numéro de Chez Sokar, restaurant de test, est resté sur son routage production. L’appel entrant réel pour écouter le maintien de la réponse après un bruit bref et vérifier une vraie interruption reste à faire ; aucun appel n’a été déclenché pendant le déploiement.
+
+2026-10-27 — [audit CRM, lot 2 important] Une seule mesure de visites : `visitSummary` (visites honorées, 365 j, no-show, dernière visite réelle) calculé sur les réservations, sur tout l'historique (la fenêtre de 730 j faisait passer un ancien habitué pour « Nouveau »). Affiché partout : Clients, CRM Pro, fiche, Doublons, Réactivation ; `visitCount`/`lastSeenAt` restent en base mais ne s'affichent plus. Le worker de réactivation cible les VIP sur la dernière visite honorée (plus `lastSeenAt`) et exclut archivés/fusionnés. Téléphones : `normalizeCustomerPhone` passe par `normalizePhone` partagé (06… → +33…), recherche tolérante des anciennes fiches « 06… » dans `findCustomerForPhone` (raccourci tant qu'un backfill n'a pas normalisé `customers.phone`/`customer_identities`). `POST /customers` n'écrit que les champs envoyés (plus de reset VIP) ; `PATCH` accepte `email: null` et retire l'identité EMAIL remplacée. CRM Pro : recherche commune avec Clients (nom, email, « 06 12 »), tri stable `createdAt`, filtre par statut et visites 365 j calculés (en mémoire, 5 000 profils max). Lignes Clients ouvrent la fiche ; fiche sans CRM Pro = offre, pas erreur. Vérifié : API 4617 et dashboard 1044 tests, tsc/eslint, contrôle local bout en bout et écran iPad. Reste : écrans Clients/CRM Pro non fusionnés (décision produit), backfill téléphones, suppression des colonnes `visitCount`/`loyaltyScore`.
+
+2026-10-27 — [audit CRM, lot 3 mineur] Notes : le droit d'écrire suit désormais la politique de lecture du site (`canWriteSensitiveNotes`, jamais READ_ONLY) au lieu d'OWNER/MANAGER en dur ; `specialOccasion` est traité comme les notes (masqué en liste et fiche CRM, écriture soumise au même droit ; la fiche de service du jour la garde, usage opérationnel). `restaurant.crmSensitiveNoteRoles` n'est plus renvoyé (corrigé au lot 2, test ajouté). Non traité : annuler une fusion, car la fusion déplace ou supprime des lignes dans ~15 tables sans garder leurs ids ; il faudrait un instantané par fusion (changement de schéma), à décider.
+
+2026-10-27 — [CRM, rattrapage des téléphones — script prêt, non lancé en prod] `pnpm --filter @sokar/api ops:customer-phones-backfill` : simulation par défaut ; `--apply` réécrit les numéros « 06… » en E.164 et crée l'identité PHONE ; base distante = `--allow-remote` en plus (sauvegarde d'abord). Un numéro dont la cible est déjà prise (même par un profil archivé) n'est jamais modifié et est listé : ce sont des doublons à fusionner dans le CRM. Planificateur testé (`customer-phone-backfill.ts`, 4 tests) ; essai local en simulation puis en écriture sur 3 clients synthétiques (conversion, collision laissée, identité créée), supprimés ensuite. Reste à lancer en prod : simulation, lecture des collisions, puis `--apply`.
+
+2026-10-27 — [CRM, rattrapage des téléphones — prod] Simulation sur la base de production (tunnel SSH, lecture seule) : 3 restaurants, 8 clients, tous déjà en E.164, 0 à convertir, 0 collision. Rien à appliquer, `--apply` n'a pas été lancé. Sauvegarde des tables customers et customer_identities faite avant (hors dépôt, poste de Hamza). Le script reste disponible pour de futurs imports.
+
+2026-10-27 — [CRM/DB, suppression de `visitCount` et `loyaltyScore`] Décision Hamza (« je t'autorise »). Migration `20261027150000_drop_legacy_customer_counters` (2 colonnes + index `customers_restaurant_visit_count_idx`, acquittée `sokar:destructive-ok`, diff vérifié par `prisma migrate diff`). Code : fusion de profils (plus de somme de visites ni de score), contexte vocal (`CustomerContext.visitCount` retiré ; la voix lit déjà `voiceProfile.pastVisits`), `incrementVisit` ne met plus à jour que `lastSeenAt`, doublons et types dashboard, seeds. Inchangé : `visitCount` dans la réponse de /dashboard/reactivation (calculé depuis les réservations). Effet à connaître : les réponses `GET /customers` et `/crm/customers` n'ont plus ces deux champs ; au déploiement la migration passe avant le redémarrage, d'où une courte fenêtre où l'ancien processus API peut échouer sur les requêtes clients.
+
+2026-10-27 — [CRM, un seul écran Clients] Décision Hamza : Essential = CRM de base, Pro = CRM Pro. `/dashboard/customers` devient l'unique liste : recherche, filtre VIP (toutes formules), et pour Pro seulement filtre statut + visites min. 365 j, bouton « Doublons » et liens vers la fiche détaillée ; Essential voit un rappel « inclus dans CRM Pro » (lien /pricing) et des noms non cliquables. `/dashboard/customers/crm` redirige vers Clients (les fiches `/crm/[id]` et `/crm/duplicates` gardent leur adresse). API : `GET /customers` accepte `isVip`, `lifecycle`, `minHonored365d` (les deux derniers gardés par `customers.advanced`) via un helper partagé `filterCustomerIdsByVisits` avec `/crm/customers`. Perdu à la fusion : la colonne « 365 derniers jours » et l'email affichés dans l'ancienne liste Pro. Vérifié dans le navigateur (API + dashboard locaux) : redirection, filtres statut/VIP combinés, 0 erreur console.
+
+2026-10-27 — [CRM, écran Clients] Le tableau reprend l'email (sous le téléphone) et la colonne « 365 jours » de l'ancienne liste Pro.
+
+2026-10-27 — [CRM, lot 1 de l'audit : Essential] Décision Hamza (« vas-y pour le lot 1 »). Les allergies et préférences de service s'écrivent dès Essential : `PUT`/`DELETE /crm/customers/:id/preferences/:key` passent de `customers.advanced` à `customers.basic` (rôle OWNER/MANAGER inchangé). `GET /crm/customers/:id` s'ouvre à `customers.basic` : sans `customers.advanced`, la réponse porte `crmAccess: 'basic'` et omet `metrics`/`metricSnapshot`, `tags`/`tagAssignments` et `lifecycle` (gardés : coordonnées, notes selon la politique du site, `visitSummary`, préférences, chronologie) ; Pro reçoit `crmAccess: 'pro'` (champ additif). Dashboard : les noms de l'écran Clients sont cliquables dès Essential ; la fiche Essential montre « Historique » (visites, no-show, dernière visite) et « Préférences de service », sans couverts, dépense, vérification des chiffres, tags, doublons ni consentement marketing, avec un rappel « inclus dans CRM Pro ». Les badges allergie en service existaient déjà pour toutes les formules. Tests : API 4629 verts, dashboard clients 32 verts, typecheck API/dashboard OK. Non vérifié dans le navigateur (connexion Clerk requise).
+
+2026-10-27 — [CRM, lot 3 de l'audit : export CSV des clients] Libre arbitre donné par Hamza ; ajout dans la PR #608. Nouvelle route additive `GET /customers/export` (toutes formules via `customers.basic`, propriétaire seulement, 5/min) : CSV `;` avec BOM pour Excel français (nom, téléphone, email, VIP, visites, visites 365 j, dernière visite), clients actifs non fusionnés, plafond 10 000 (`truncated` si atteint), formules Excel neutralisées. Notes volontairement exclues (sensibles, selon le rôle). Écran Clients : bouton « Exporter ». Pas d'import : à concevoir à part (consentements marketing à ne jamais présumer, doublons de téléphone). Tests API clients 148 verts, dashboard clients 33 verts, types OK.
+2026-10-27 — [CRM, export CSV, correction] Au-delà de 10 000 clients, `GET /customers/export` répond 422 `CUSTOMER_EXPORT_TOO_LARGE` au lieu d'un CSV tronqué : un fichier partiel aurait fait croire à une sauvegarde complète. Le champ `truncated` n'existe plus.
+2026-10-27 — [CRM, lot 4 : briefing du service] Décision Hamza : lot 4 dans la PR 608. Page `/dashboard/briefing` (entrée « Briefing » dans le groupe Service) : réservations du jour encore à servir (PENDING, CONFIRMED, SEATED), couverts, allergies, habitués, occasions, risque d'absence, avec les cartes de service existantes et un lien vers la fiche client. Aucune route API nouvelle : elle réutilise `reservations?date=` et `customers/service-cards`. Tests : briefing 5 verts, dashboard complet 1046 verts, types OK, Prettier OK, ESLint 0 erreur. Non vérifié dans le navigateur (connexion Clerk). **Handoff** — fait : page, résumé, entrée de navigation, traductions fr/en/it/es. À faire : envoi du briefing vers 18 h (SMS ou e-mail au gérant : canal à choisir, SMS bloqués par Telnyx 40008, tâche planifiée à créer). Ouvert : le badge « Habitué » apparaît déjà en Essential sur les cartes de service, alors que le statut client est une fonction Pro dans la grille ; à trancher. Fichiers clés : `apps/dashboard/src/app/dashboard/briefing/*`, `_layout-client.tsx`, `messages/*.json`.
+2026-10-27 — [briefing, décision] Hamza : rien n'est envoyé au gérant, ni SMS ni e-mail. Le briefing reste consultable dans le dashboard (`/dashboard/briefing`, PR 608). Les notifications attendront l'application Sokar. Le point « envoi vers 18 h » du handoff précédent est retiré.
+2026-10-27 — [briefing, dashboard] Briefing ajouté à la barre mobile (4e entrée du mode copilote, après Réservations) : le gérant le consulte depuis son téléphone sans passer par le menu. Export CSV : bouton masqué aux responsables qui ne sont pas propriétaires (le serveur les refusait déjà). Test de la barre : la cible du glisser-déposer passe de x=175 à x=245 (Clients, 4e entrée). Tests : dashboard 1048 verts.
+2026-10-27 — [Marketing, décisions] Hamza débloque l'envoi e-mail marketing. Décisions consignées dans `docs/runbooks/marketing-email-pilot.md` §4 : opt-in explicite seul (pas de soft opt-in en v1), texte de consentement validé tel quel, conservation (prospection 3 ans après le dernier contact client, preuve 5 ans après retrait, opposition 3 ans), sous-domaine `news.sokar.tech` avec Reply-To du restaurant, Resend Free jusqu'aux premiers clients puis plan supérieur, fenêtre courte puis retrait de `MARKETING_SENDS_ENABLED`, clause sous-traitant dans les CGV, Léa ne recueille rien (lien dans la confirmation), « Envoi de campagnes » reste dans l'offre Pro. **Handoff** — à faire : phase 1 (expéditeur dédié, quota réservé aux transactionnels), phase 2 (case widget, liste d'attente, lien de confirmation), pilote staging puis prod, retrait du drapeau. Actions Hamza : sous-domaine Resend + DNS Cloudflare, relecture de la clause CGV.
+2026-10-27 — [Marketing, phase 1] Expéditeur dédié : `MARKETING_EMAIL_FROM`, lu par le worker seul (nom affiché = restaurant, `Reply-To` = `managerEmail` du restaurant, jamais de repli sur `EMAIL_FROM`). Sans variable, l'envoi est refusé et la campagne redevient READY avec `MARKETING_EMAIL_FROM_MISSING`. Budget quotidien global `MARKETING_EMAIL_DAILY_BUDGET` (défaut 40, jour UTC), contrôlé au passage en READY et à la création d'une automatisation e-mail, sous verrou de transaction : reste = acceptés du jour + messages en attente (campagnes READY/SCHEDULED/SENDING/PAUSED). Refus 409 « Audience trop grande pour aujourd’hui » ; une automatisation refusée est journalisée et réévaluée. `shortcut:` posé sur le plafond (plan Resend Free). En-têtes `List-Unsubscribe` / `List-Unsubscribe-Post` et « un clic » POST déjà présents et testés, aucun changement. Readiness : `MARKETING_EMAIL_FROM` remplace `EMAIL_FROM`. Runbook §3–§6 et `environment.md` mis à jour. Tests : `pnpm --filter api test` 421 fichiers, 4646 tests verts ; typecheck API vert. Pas de changement de schéma Prisma, rien de commité. Reste ouvert : faute d'adresse publique du restaurant dans le schéma, `managerEmail` sert d'adresse de réponse (champ dédié à valider avant de vrais clients).
+2026-10-27 — [Marketing, décision] Hamza : `managerEmail` reste l'adresse de réponse (`Reply-To`) pour le pilote ; aucun changement de code. Une adresse publique du restaurant reste à décider, avec le schéma, avant d'écrire à de vrais clients.
+2026-10-27 — [Marketing, correction phase 1] Budget contrôlé au lancement (envoi immédiat, ou programmation pour le jour d'envoi, UTC) et non plus au passage en READY : une campagne prête ne réserve rien, une campagne oubliée ne bloque pas les autres. Reste = e-mails acceptés ce jour-là + envois en cours ou suspendus + campagnes programmées ce jour-là. Automatisations : contrôle à la création, inchangé. Configuration validée au démarrage dans `env.ts` (`MARKETING_EMAIL_FROM` adresse seule, `MARKETING_EMAIL_DAILY_BUDGET` entier ≥ 0, défaut 40) ; `marketingEmailDailyBudget` supprimé. Envoi et programmation répondent 409 avec le message. Point ouvert, non corrigé : un lot d'automatisation plus grand que le budget quotidien ne passe jamais (tout ou rien, et le lot ne rétrécit pas) ; une automatisation refusée est reprise au scan horaire (:15) ; un anniversaire est perdu si le budget reste plein sur toute sa fenêtre (`daysBefore` + 1 jours). À vérifier : le finder reprend les clients déjà dispatchés, ce qui peut heurter la contrainte unique en base. Tests : `npx vitest run src/modules/marketing src/shared/email` 22 fichiers, 167 tests verts ; `src/test/env.test.ts` 20 verts ; typecheck API vert. Pas de changement de schéma Prisma.
+2026-10-27 — [Marketing, automatisations] Correctifs du point 3. (1) Une occasion servie n'est jamais renvoyée : le finder écarte les couples automatisation/client/occasion déjà dispatchés, et `createMany` garde `skipDuplicates` comme filet. Preuve sur PostgreSQL réel (`marketing-automation.concurrency.integration.test.ts`, 3/3) ; contrôle négatif sans le filet : 2 échecs sur la contrainte unique. (2) Un lot n'est plus refusé en entier : il est découpé sur le reste du jour (`remainingDailyEmailBudget`), le reste reste candidat au scan suivant. (3) Priorité : les anniversaires passent avant les autres à l'échelle de la plateforme ; dans un lot, les échéances les plus proches passent d'abord. (4) Un seul avertissement par automatisation et par jour, par processus worker. (5) Trou corrigé : une programmation partie avant ou après sa date est recontrôlée au jour réel d'envoi, sans compter ses propres messages ; refusée, elle redevient prête avec `MARKETING_DAILY_BUDGET_EXCEEDED`. Le 409 de programmation dit « pour ce jour-là ». Point à confirmer : une automatisation prête (READY, avec occasions) réserve désormais son audience ; sans cela, deux automatisations d'une même passe pouvaient dépasser le budget. C'est la seule campagne READY qui réserve. Tests : `npx vitest run src/modules/marketing` depuis apps/api, 15 fichiers et 142 tests verts, plus 3 tests PostgreSQL (AGENTIC_INT_TESTS=1, base jetable migrée de zéro) ; typecheck API vert. Pas de changement de schéma Prisma.
+2026-10-27 — [Marketing, décision] Hamza valide la réservation : les automatisations prêtes (READY, avec leurs occasions) comptent dans le budget e-mail du jour. C'est la seule campagne READY qui réserve ; une campagne manuelle READY ne réserve toujours rien. Déjà implémenté (commit 7b649cb2), aucun changement de code ; runbook §3 précisé sur cette exception.
+2026-10-27 — [Marketing, consentement confirmation] Lien de consentement signé « c1 » : 30 jours, même clé que la désinscription, préfixe signé à part (un jeton ne sert jamais à l’autre). GET /marketing/consent affiche la case non cochée sans rien écrire ; POST case cochée enregistre l’accord une seule fois via marketing-consent.service (source CONFIRMATION_EMAIL ; second envoi = déjà inscrit, sans nouvelle preuve). Ligne proposée seulement à une adresse sans accord, retrait ni opposition, registre configuré (échec fermé). Dashboard : libellé MARKETING_DAILY_BUDGET_EXCEEDED ajouté. Pas de migration : source est TEXT, ni enum ni CHECK. Reste : aucun e-mail de confirmation de réservation dans le code (confirmation SMS seule), la ligne n’est branchée nulle part, à trancher. Tests : marketing API 15 fichiers verts (152 tests, 3 intégration PostgreSQL ignorées), dashboard marketing 10, shared 76 ; typecheck API et dashboard verts. Limite : deux soumissions strictement simultanées peuvent écrire deux événements d’audit (la permission reste unique).
+2026-10-27 — [Marketing, e-mail de confirmation] Confirmation transactionnelle pour les réservations web confirmées avec adresse : intention outbox `reservation-confirmation-email` (ID seul, même transaction), envoi depuis EMAIL_FROM via claim Redis puis audit `CONFIRMATION_EMAIL_SENT`, sans aucune offre. Adresse gardée sur `reservations.customer_email`, comme le téléphone, mise à NULL à l’anonymisation et à l’effacement. Ligne « Recevoir les offres et actualités de {restaurant} » avec lien (jeton c1, 30 j, lié à la réservation) seulement si `marketingEmailConsentStatus` l’autorise ; la case cochée rattache l’adresse à la fiche client, jamais en remplacement. Runbook corrigé : « n’est conservée nulle part » était faux pour les réservations. Pas de migration (colonne existante). Tests : API complète 422 fichiers, 4693 tests verts (83 ignorés) ; typecheck API vert ; prettier et ESLint sur les fichiers modifiés verts. Reste : décision de rétention de l’adresse à confirmer ; quota Resend Free à surveiller (les confirmations consomment le transactionnel) ; usage e-mail compté comme les SMS, tarif à vérifier.
+2026-10-27 — [Marketing, consentement] Libellés des cases raccourcis, à la demande de Hamza : « Recevoir les offres et actualités de {restaurant} par e-mail » et « … par SMS », une seule note sous les cases : « Facultatif, sans effet sur votre réservation. Désinscription possible à tout moment. ». Version `marketing-consent-2026-10-27` ; la preuve garde la phrase exacte dans `proof_text`, et le runbook a été corrigé sur ce point (il disait que le texte brut n’était pas stocké). Relecture juridique à faire avant les vrais clients. Tests : shared 76, API marketing et RGPD 238, widget dashboard 37 ; typecheck API et dashboard verts ; prettier vert. Aucun envoi, aucune migration.
+2026-10-27 — [Marketing, validation staging] Parcours complet vérifié sur staging : réservation test web pour mercredi 28 octobre à 12h30 (2 couverts) confirmée à 23:46:31, mail de confirmation arrivé dans la boîte de réception à 23:47 (expéditeur noreply@sokar.tech, ligne de consentement incluse, aucun « consent line skipped » dans les logs), case cochée depuis le lien à 23:54:35. Permission EMAIL `OPTED_IN`, source `CONFIRMATION_EMAIL`, un seul événement ; la preuve enregistrée est identique à la phrase affichée, et son hash SHA-256 correspond. Aucun changement de code ni de schéma. Reste avant prod : wording « chez Chez Sokar » (sujet et corps), secrets `MARKETING_UNSUBSCRIBE_SECRET` et `MARKETING_OPTOUT_HASH_SECRET` posés à la main sur le VPS (absents des secrets GitHub et de deploy-staging.yml), alertes dead-letter et evening-report encore actives sur staging.
+2026-10-27 — [Marketing, e-mail de confirmation] Wording corrigé, sur demande : sujet « Votre réservation au restaurant {restaurant} est confirmée », corps « Vous avez réservé une table au restaurant {restaurant} le … ». « au restaurant » remplace « chez » : plus de « chez Chez Sokar », et les noms avec article (« Le Bistrot ») restent justes. Ligne de consentement et preuve inchangées. Tests : 15 verts sur le fichier, prettier vert, pas de typecheck (texte seul). Commit sur `codex/stt-bench-runtime-keys`, non poussé. Reste : la ligne de consentement a le même souci d’article (« de Le Bistrot »), à traiter avec une nouvelle version du texte et une relecture juridique.
+2026-10-28 — [Marketing, consentement et conservation] Texte de consentement et ligne de confirmation : « du restaurant {nom} » remplace « de {nom} » (évite « de Le Bistrot »), version `marketing-consent-2026-10-28` ; les preuves gardent leur version. Purge marketing ajoutée au worker de réconciliation (job quotidien à 3 h 20, Europe/Paris) : fichier de prospection supprimé 3 ans après le dernier contact venant du client (réservation, ou acte du client sur son consentement) ; preuve d’une permission retirée supprimée 5 ans après le retrait ; preuve orpheline (permission supprimée sans retrait) supprimée 5 ans après son dernier événement, règle validée le 28/10/2026. Registre d’opposition non traité ici. Tests : libellés 5 (shared), consentement et e-mail 34 (API), purge 3, worker et planification 23 ; typecheck API, prettier et garde de scope verts. Non déployé.
+
+2026-10-28 — [Marketing, configuration production] Domaine news.sokar.tech vérifié dans Resend en région Ireland (eu-west-1), DNS configuré via Cloudflare. MARKETING_EMAIL_FROM=bonjour@news.sokar.tech posé dans /opt/sokar/apps/api/.env ; API et workers rechargés, processus online et /health ainsi que /livez HTTP 200. Envois marketing non activés. La release actuellement déployée ne référence pas encore MARKETING_EMAIL_FROM : utilisation après déploiement de la version correspondante.
+
+2026-10-28 — [Marketing, PM2 et staging] MARKETING_EMAIL_FROM=bonjour@news.sokar.tech posé aussi dans /opt/sokar-staging/apps/api/.env. Rechargement ciblé des API et workers prod/staging avec un environnement shell limité ; pm2 jlist affiche la valeur pour les quatre, et aucune autre clé des .env n’a changé dans PM2. Audit : 11 variables préexistantes du worker staging divergent de son .env ; non modifiées, à examiner avant tout nettoyage.
+
+2026-10-28 — [Marketing, production] PR #608 fusionnée en 39b3ce39 après accord explicite sur la purge quotidienne des données marketing. CI verte ; staging : déploiement et smoke tests verts ; production : workflow et smoke tests verts, API/workers actifs. MARKETING_EMAIL_FROM=bonjour@news.sokar.tech dans PM2 ; MARKETING_SENDS_ENABLED absent des environnements et faux par défaut. Aucune migration Prisma modifiée. Snapshot applicatif 20261027T234005Z ; dump PostgreSQL omis par le snapshot pré-build (pg_dump indisponible), sauvegarde indépendante disponible du 27/10 à 15:56. Gel général maintenu, profil scoped existant utilisé.
+
+2026-10-28 — [Production, migration et sauvegarde] Prisma migrate status : 100 migrations, historique à jour. Diff schéma réel/modèle non vide (dérives de types/defaults et noms index/FK, notamment copilot, outbox, usage ; aucun ajout de colonne signalé) ; source du consentement en texte sans contrainte CHECK et reservations.customer_email présent. Premier job de purge prévu à 03:20 Europe/Paris, aucun compteur disponible au contrôle vers 00:44. Clients PostgreSQL 16.15 extraits des paquets Ubuntu dans /home/deploy/.local/opt/sokar-postgresql-16 ; wrappers pg_dump/pg_restore dans ~/.local/bin et PATH SSH non interactif via ~/.bashrc. Dump manuel /home/deploy/backups/sokar/sokar-20261027T234351Z.dump (691162 octets), pg_restore --list réussi (835 entrées) ; client local hors gestion automatique des paquets, entretien nécessaire. Pas de restauration réelle.
+
+2026-10-28 — [Déploiement, sauvegardes] Audit production en lecture seule : migrate diff --from-url confirme dérives UUID/texte (copilot, outbox, usage), précision timestamps gift cards, défaut waiting list et noms index/FK ; aucun SQL appliqué. Vérification snapshot hors release : fonctions de prod trouvent pg_dump 16.15 et produisent un SQL non vide (2 248 774 octets, mode 600 sous umask 077). Code prod supprime ensuite le snapshot pré-build et peut créer un dump lisible par groupe/autres sous umask ordinaire. Correctif local : conserver les snapshots -pre soumis à rétention, créer dump temporaire privé atomiquement, documenter choix de rollback ; tests shell verts. Non livré en prod. psql absent du PATH, rollback DB non qualifié.
+
+2026-10-28 14:56 — [deploy, production, reputation, migration, marketing, secrets] **PR #611 et #612 en production** — #611 (`ec286964`, snapshots et schéma Prisma) puis #612 (`826fc3bd`, retour privé après visite) fusionnées sur CI verte. Staging puis production déployés ; smoke tests verts (staging : Playwright, rollback et santé ; prod : endpoints de santé). Snapshots `-pre` prod avec dump complet : `20261028T131728Z-pre` (2 266 985 octets, avant #611) et `20261028T132647Z-pre` (2 267 938 octets, avant #612), mode 600. Migration `20261028120000_reputation_private_email` appliquée en prod, additive : deux colonnes nullables sur `customers`, table `reputation_email_attempts`, index. `REPUTATION_EMAIL_SECRET` posé dans le `.env` prod : 64 caractères hexadécimaux, différent du staging, absent des secrets GitHub (repo et environnement production). `sokar-api` et `sokar-workers` redémarrés à 13:29Z, après l'écriture du `.env` à 13:26Z ; la clé n'apparaît pas dans `pm2 jlist` car l'API la lit via dotenv (`apps/api/src/env.ts`). `sync-env.sh` ne réécrit que ses propres clés, donc le secret survit aux déploiements. `/health` prod : 200 (db, redis, queues ok). Purge marketing 03:20 Paris (02:20Z) : 0 fichier prospect, 0 permission retirée, 0 événement orphelin. Points ouverts : copie de `REPUTATION_EMAIL_SECRET` à faire hors VPS (aucune copie dans GitHub) ; `RESERVATION_SERVICE_TOKEN` affiché dans une sortie de diagnostic de la session précédente (non revérifié), rotation à décider.
+
+2026-10-28 15:27 — [security, secrets, reservations, rotation] **Rotation de RESERVATION_SERVICE_TOKEN (staging puis prod)** — Seule la route `POST /reservations` est protégée par ce jeton (`requireReservationService`) ; les autres routes `/reservations` passent par `requireOrg()`. Logs API (rétention 14 j) : les en-têtes ne sont pas journalisés (nginx illisible pour le compte deploy : `www-data:adm` 640), donc la recherche par en-tête n'est pas possible. Sur 7 jours, 132 `POST /reservations` : tous `401`, dont 127 venant de plages GitHub Actions (sondes de smoke test des déploiements, sans jeton, `401` attendu) et 5 d'autres sources sans jeton. Aucun avertissement de jeton invalide journalisé. Sur 14 jours, un seul `201` : staging, 17 oct. 17:00:46 UTC, depuis l'IPv6 publique du VPS lui-même (appel local). Il a créé une réservation PHONE annulée le 24 oct. via la route de mise à jour (`legacy:reservation-update`). Audit `legacy:reservation-service` : 1 événement en staging, 0 en prod (historique complet). Pas d'intégration externe identifiée. Rotation : nouveau jeton généré sur le VPS, écrit de façon atomique dans les `.env` staging puis prod (0600, même valeur pour les deux environnements comme avant), secret GitHub `RESERVATION_SERVICE_TOKEN` mis à jour depuis la valeur VPS (write-only, non affichée), `sokar-staging-api` puis `sokar-api` redémarrés sans `--update-env`. Vérifications : `/livez` et `/health` 200 ; POST sans jeton 401 ; jeton erroné 401 ; nouveau jeton 400 (validation, aucune écriture). Trafic voix/Telnyx nul sur prod dans les 2 min précédant le redémarrage. L'ancienne valeur ne fonctionne plus sur aucun environnement. Non fait : jetons distincts par environnement (un secret d'environnement GitHub `production` le permettrait).
+
+2026-10-28 15:37 — [security, secrets, reservations, rotation, github-actions] **Jetons staging et prod séparés** — Le jeton staging reste dans le secret de dépôt `RESERVATION_SERVICE_TOKEN` (déploiement staging, sans environnement). Le jeton prod est distinct et ne vit que dans l'environnement GitHub `production` : le job `deploy` de `deploy-prod.yml` (`environment: production`) le reçoit à la place du secret de dépôt. `.env` prod réécrit de façon atomique (0600), `sokar-api` redémarré sans `--update-env`, après contrôle de trafic voix nul sur les 2 minutes précédentes. Contrôles : jeton staging refusé en prod (401, local et public) ; jeton prod refusé en staging (401, local et public) ; chaque jeton accepté dans son environnement (400 de validation, rien écrit) ; sans jeton 401 ; `/livez` et `/health` 200 en staging et prod. Aucune valeur consignée. À vérifier au prochain déploiement prod : l'empreinte du `.env` prod doit rester différente de celle du staging.
+2026-10-28 — [Marketing, consentement et conservation] Texte de consentement et ligne de confirmation : « du restaurant {nom} » remplace « de {nom} » (évite « de Le Bistrot »), version `marketing-consent-2026-10-28` ; les preuves gardent leur version. Purge marketing ajoutée au worker de réconciliation (job quotidien à 3 h 20, Europe/Paris) : fichier de prospection supprimé 3 ans après le dernier contact venant du client (réservation, ou acte du client sur son consentement) ; preuve d’une permission retirée supprimée 5 ans après le retrait ; preuve orpheline (permission supprimée sans retrait) supprimée 5 ans après son dernier événement, interprétation à valider. Registre d’opposition non traité ici. Tests : libellés 5 (shared), consentement et e-mail 34 (API), purge 3, worker et planification 23 ; typecheck API, prettier et garde de scope verts. Non déployé.
+
+2026-10-28 — [Sauvegarde et schéma] PR : snapshots pré-build conservés avec dump privé ; clients PostgreSQL 16.15 disponibles, dump du 27/10 23:43 UTC restauré dans une base jetable puis supprimée (restaurants 3, réservations 23, clients 8) ; schéma Prisma aligné sans migration ni modification de la base, diffs prod et migrations vides, typecheck API et 4 697 tests verts (83 ignorés).
+2026-10-28 — [Fidélité, décision produit] Ouvrir les avantages manuels aux offres Pro/Multi-site ; POS et groupes restent coupés, exceptions jusqu’au premier client L’Addition / multi-site. Aucun envoi ni débit caisse automatique ; qualification staging du parcours à suivre avant livraison.
+
+2026-10-28 — [Fidélité, staging] Parcours navigateur Pro créé → attribué → validé avec données fictives ; correction du compteur d’attributions après émission, sans double comptage au rejeu. Le workflow staging manuel lance désormais ses smoke tests après un déploiement réussi, même si la preuve CI de push est ignorée.
+
+## 2026-10-28 — Retour réputation privé
+
+Décision : Pro/Multi-site, e-mail de service à J+1 après visite honorée, au plus une demande par client et restaurant sur 90 jours, désinscription et tâche de récupération pour une note ≤ 2. Aucun lien vers une plateforme d’avis. Le plafond est fixé à 10 tentatives par jour UTC pour la plateforme ; ces messages utilisent le budget transactionnel Resend. Migration additive et secret dédié requis ; qualification staging à effectuer avant ouverture.
+
+## 2026-10-28 — Qualification staging du retour privé
+
+CI verte et migration additive appliquée sur staging. Parcours validé sur un établissement Pro de test non publié : réservation honorée, événement à J+1 avancé pour le test, e-mail reçu via Resend, note 1/5, tâche ouverte visible dans Réputation et désinscription enregistrée. Établissement réarchivé et liste des destinataires restaurée. Avant toute production : configurer le secret d’envoi dédié.
+
+## 2026-10-28 — Refonte UI de la fiche client CRM
+
+Fiche `/dashboard/customers/crm/[id]` refaite après l'audit UI (« trop IA, trop de blabla ») : en-tête profil (initiales, VIP, téléphone/e-mail cliquables, tags éditables en ligne), bande de chiffres 365 j, onglets Activité / Préférences / Consentements (les consentements ne se chargent qu'à l'ouverture de leur onglet), export RGPD dans une fenêtre. Supprimés : toutes les descriptions sous les titres, l'icône Sparkles, le texte juridique de la carte consentement, et le bloc « Exactitude des chiffres / Recalculer » côté restaurateur (les routes API `projection-repair*` restent, sans écran pour l'instant). Prochaines étapes : la liste Clients (segments, recherche instantanée, tri), puis les doublons.
+
+## 2026-10-28 — Refonte UI liste Clients et Doublons
+
+Liste Clients : effectif à côté du titre, segments en onglets (Tous, VIP ; Habitués, À risque, Endormis, Nouveaux en CRM Pro) à la place des listes déroulantes, recherche à la frappe (300 ms), tableau ramené à 6 colonnes avec ligne cliquable et étoile VIP, même format de date partout. Doublons : texte d'explication retiré, titre de carte = raisons, aperçu affiché seulement après choix d'un profil. Limites API connues : pas d'effectif par segment (seul l'onglet actif affiche son total) ni de tri serveur par visites ou dernière visite ; à ajouter côté API avant d'offrir ces deux fonctions.
+
+## 2026-10-28 — Liste Clients : effectifs par segment, tri, téléphones lisibles
+
+API additive : `GET /customers/segment-counts` et `sort=visits365d|lastVisit` sur `GET /customers` (CRM Pro, calculés sur les réservations, même plafond de 5 000 clients que les filtres de statut). Dashboard : effectif sur chaque onglet (l'onglet actif garde le total réel de la liste), tri par clic sur « Visites 365 j » et « Dernière visite », numéros français affichés « +33 6 12 34 56 78 » (`formatPhone` dans `lib/utils.ts`), colonne Téléphone repliée sous le nom en dessous de 1024 px pour que le tableau tienne sur iPad. Revue visuelle faite en sombre et clair, desktop / iPad / iPhone, API simulée.
+
+## 2026-10-28 — Composants Tabs, menu, infobulle, notifications
+
+Ajout de `@radix-ui/react-tabs`, `react-dropdown-menu`, `react-tooltip` et `sonner` (composants `components/ui/tabs|dropdown-menu|tooltip|sonner`, `Toaster` et `TooltipProvider` montés dans `providers.tsx`). Le CRM les utilise : onglets Radix (clavier), confirmations en notification (les erreurs restent dans la page), export RGPD dans un menu « Plus d’actions », raison du statut en infobulle dans la liste. Couleurs des notifications branchées sur les tokens via les variables de sonner (sinon elles suivent le thème système). `Context.md` : section « Liens rapides » archivée pour repasser sous 8 Ko ; marge faible, les TODO qui mêlent « livré » et « à faire » sont à resserrer par Hamza.
+
+## 2026-10-28 — Recalcul des chiffres client dans l'admin
+
+Décision Hamza : l'outil « Vérifier / Recalculer » retiré de la fiche client va dans l'admin. Nouvelles routes opérateur `GET|POST /admin/restaurants/:restaurantId/customers/:customerId/projection-repair[-preview]` (même service, auteur tracé `operator:<userId>`), carte « Recalculer les chiffres d’un client » dans `/admin/health` (ID du client tiré de l'URL de la fiche). Routes `/crm/customers/:id/projection-repair*` conservées (surface d'intégration). Carte testée en unitaire seulement : l'admin exige une vraie session opérateur.
+
+## 2026-10-28 — Passation : refonte UI du CRM
+
+Fait : fiche, liste et doublons refaits ; effectifs par segment + tri (API) ; composants Tabs/menu/infobulle/notifications ; recalcul des chiffres client dans l'admin. Tout sur la PR #613 (branche `codex/stt-bench-runtime-keys`), testé avec API simulée seulement. Suite : (1) après fusion, vérifier sur staging avec un compte CRM Pro et un Essential (effectifs, tri, fiche, export RGPD, fusion, carte admin) ; (2) même audit UI « trop IA » sur Réservations, puis Appels, Marketing, Pilotage. Fichiers clés : `apps/dashboard/src/app/dashboard/customers/**`, `components/ui/{tabs,dropdown-menu,tooltip,sonner}.tsx`, `apps/api/src/modules/customers/customer.routes.ts`, `modules/admin/customer-repair.routes.ts`. Points ouverts : `Context.md` à 64 octets de la limite (TODO à resserrer) ; `pnpm pr:submit` refuse tant que les modifications dashboard non commitées (widgets, `api.ts`) restent dans l'arbre.
+
+## 2026-10-28 — Passation : refonte UI du dashboard, consolidation
+
+Fait (branche `codex/stt-bench-runtime-keys`, commits locaux, aucun push) :
+- `17cb9682` feat(dashboard): badges de statut, formats partagés et garde-fou de style
+- `c7bc40f3` feat(dashboard): navigation par sections et libellés es/it
+- `fe7317fd` style(dashboard): cartes mobiles sans texte sous 12 px
+- `efc30722` feat(dashboard): marketing refait (campagnes, nouvelle campagne, segments)
+- `34e353ab` feat(dashboard): réputation, fidélité et réactivation refaites
+- `bbe43b15` feat(dashboard): canaux refaits (widget, connect, distribution, agents ia)
+
+Relecture avant commit : régressions corrigées. Lien « Vérifier l’assistant » rétabli dans l’état vide des Appels ; lien « Ouvrir le widget » rétabli dans l’état vide des Réservations ; raccourcis « Voir les appels » et « Réservations » rétablis dans l’en-tête du Pilotage (seul restait le lien derrière une boîte de dialogue, absent en démo) ; `role="group"` sur le sélecteur de période. Bug introduit puis corrigé à l’étape des badges : une fonction locale `StatusBadge` entrait en conflit avec le composant partagé (import sous l’alias `StatusPill`).
+
+Non commité, à reprendre :
+- Appels (`calls/page.tsx` et test) : dépend de `callerPhone` dans `types/api.ts`, qui mêle les champs de l’autre chantier. Le hook pre-commit restage le fichier entier : le hunk ne peut pas être commité seul.
+- Réservations (`reservations/page.tsx` et test) : mêle le tiroir ReservationDetails, la colonne et la ligne Notes, et les autres éléments de l’autre chantier.
+- Pilotage (`page.tsx` et widgets `DashboardCharts`, `EmptySlotsWidget`, `GaugeDial`, `NoShowWidget`, `ReservationChannels`, `ServiceCopilotWidget`, tests) : les widgets contenaient des modifications de l’autre chantier avant la refonte ; `page.tsx` dépend des widgets.
+- Briefing : importe `service-card-badges.tsx`, fichier de l’autre chantier.
+- Autre chantier, à ne pas commiter avec ce lot : `apps/api/**`, `components/ui/dialog.tsx`, `AccountMenu.tsx`, `service-card-badges.tsx`, `lib/api.ts`, `lib/api.test.tsx`, `lib/api-error*.ts`, `e2e/dashboard.spec.ts`, `next-env.d.ts`, `DashboardJourneys.test.tsx`, et dans `types/api.ts` les champs `specialRequests`, `overbooked`, `channel`.
+
+Garde-fou : `apps/dashboard/eslint.config.mjs` interdit majuscules, tracking large et texte sous 12 px dans les écrans ; 17 écrans hors périmètre sont exclus par liste datée du 2026-10-28, à retirer à leur refonte.
+
+Points à valider côté produit : renommages Fidélité, Avis, Distribution, Notifications du partenaire (ex-Webhooks), Clés d’accès, Connect ; traductions es et it (à relire) ; restes sur Clients : icône d’état vide et champ « Visites min. (365 j) » tronqué ; Widget : `field-sizing: content` n’est pas pris en charge par Firefox, qui utilise le nombre de lignes calculé : vérifier le rendu sur Firefox et Safari ; action requise en `bg-warning` plein, en contradiction avec la note de `globals.css` sur `--warning` ; en démo, les liens « Ouvrir l’historique » des cartes KPI restent masqués.
+
+Suite : push, puis vérification sur staging avec un vrai compte (Pro, Essential, rôle équipe de service, plusieurs sites, page Cartes cadeaux), puis Réglages, puis audit seul de la Salle.
+
+## 2026-10-29 — Passation : addendum (Appels, Briefing et Pilotage commités)
+
+Commits depuis la passation :
+- `466657fd` feat(dashboard): appels refaits (statuts, durées et dates partagés), avec le seul hunk `callerPhone` de `types/api.ts`.
+- `ea5330e7` feat(dashboard): briefing refait (alertes sobres, sans icône décorative).
+- `05edc3d9` feat(dashboard): jauge et réservations par canal, style sobre. Sur `ReservationChannels`, la refonte propre se limite au texte de l'état vide.
+- `f21d00de` feat(dashboard): pilotage refait, avec la partie dashboard du chantier métriques du 26/10. Pilotage commité avec la partie dashboard du chantier métriques du 26/10 (API embarquée par erreur dans `d93d6d48`).
+
+Vérifié sur HEAD seul (`f21d00de`) : typecheck sans erreur, 125 fichiers et 1 068 tests verts.
+
+Reste non commité, et pourquoi :
+- `reservations/page.tsx` et `types/api.ts` (hors `callerPhone`, déjà commité) : mêlés au chantier de modification de réservation (tiroir, colonne Notes, `specialRequests`, `overbooked`, `channel`).
+- `lib/api.ts`, `lib/api.test.tsx`, `lib/api-error*.ts`, `components/ui/dialog.tsx`, `AccountMenu.tsx`, `components/reservation/service-card-badges.tsx`, `e2e/dashboard.spec.ts`, `next-env.d.ts`, `apps/api/**` : autres chantiers, à ne pas commiter avec ce lot.
+
+## 2026-10-29 — Audit ciblé et performance du pilotage
+
+La route des jours sous-réservés lit en parallèle les réservations à venir et l'historique, avec uniquement les colonnes utilisées. Résultats vérifiés par les tests dashboard et analytics ; typecheck API vert. Gain réel à mesurer sur base représentative.
+
+À examiner : ROI ne compte que `CONFIRMED`, contrairement au pilotage qui inclut `SEATED` et `HONORED` ; la comparaison des rappels classe aussi les rappels WhatsApp comme SMS ; les statistiques de latence chargent toutes les traces du mois et les mois invalides sont acceptés par la validation analytics. Audit ciblé, sans validation complète des autres modules ni test de charge.
+
+## 2026-10-29 — Corrections des indicateurs et latence
+
+ROI et pilotage partagent les états comptabilisés ; analytics refuse les mois hors 01–12. Les centiles de latence sont calculés dans PostgreSQL et les détails limités à 50. Les absences comparent les SMS attestés par le journal d'usage aux réservations sans rappel connu ; les rappels WhatsApp et ceux dont le canal est inconnu sont exclus de la comparaison. Les envois historiques sans preuve durable peuvent donc manquer dans le groupe SMS ; le journal d'usage est alimenté de façon asynchrone.
+
+## 2026-10-29 — Audit réservations : correctifs locaux
+
+Isolation des sections et tables par restaurant ; contrôle de capacité transactionnel des modifications historiques ; réservations sur tables distinctes, attribution sans auto-conflit, créneaux publics ouverts, durées historiques et réservations test corrigés. Les holds comparent leur expiration à l'heure UTC PostgreSQL. La confirmation consommée peut être rejouée avec le même restaurant, la même identité et la même empreinte complète ; le consentement est écrit dans la transaction de création, sans effets répétés sur rejeu.
+
+Vérifié localement : suite API 4 743 tests verts (96 ignorés), 43 tests PostgreSQL de concurrence verts et 10 tests PostgreSQL de modification personnelle verts. Base de test isolée `sokar_reservation_audit_20261029_1` conservée ; aucune qualification staging ou production. Les holds consommés créés avant ce changement utilisent l'ancienne empreinte et ne peuvent pas profiter du nouveau rejeu strict. Le rejeu ne restitue pas le jeton de retrait WhatsApp ni le résultat transitoire d'association d'une carte cadeau.
+
+## 2026-10-29 — Audit paiements : correctifs locaux
+
+Facturation : création d'essai et sessions Checkout coordonnées par compte, tentative persistée avant Stripe et reprise après réponse perdue ; sessions ouvertes remplacées avant une nouvelle souscription. Webhooks Checkout routés vers Billing et projections du compte sérialisées en transaction, avec relecture Stripe à la même seconde. Cartes cadeaux : sortie de revue de litige après contrôle des paiements liés. Paiements de réservation : compte et identifiants Stripe vérifiés, transitions verrouillées, échecs et remboursements partiels distingués.
+
+Vérifié localement : suite API 4 747 tests verts (103 ignorés), typecheck API, 22 tests PostgreSQL de finance cadeau et tests PostgreSQL/Stripe en mode test sur concurrence et reprise. Bases locales dédiées `sokar_reservation_audit_20261029_1` et `sokar_gift_card_finance` conservées. Les tentatives Stripe ambiguës anciennes restent bloquées pour contrôle manuel ; qualification staging, configuration des flags et production non vérifiées.
+
+## 2026-10-29 — Audit accès : correctifs locaux partiels
+
+Rattachement invité : contrôle de toute attribution existante et verrou PostgreSQL partagé avec l'ajout de site et le retrait d'équipe ; facturation historique refusée si le rôle propriétaire n'est pas établi. Tests : 4 750 tests API verts (105 ignorés), typecheck et deux tests concurrents PostgreSQL verts. Reste à décider : autorité du premier propriétaire et règle de rétrogradation globale ; traiter aussi le rattachement possible après retrait de la dernière attribution de site avant de considérer l'isolation terminée. Aucun déploiement ni vérification Clerk/staging/prod.
+
+## 2026-10-29 — Rétrogradation et retrait de site
+
+Décision utilisateur : une rétrogradation globale READ_ONLY s'applique à tous les sites. Les attributions existantes sont mises à jour sous verrou ; le resolver plafonne également les anciens rôles et les nouvelles attributions supérieures sont refusées. Lors du retrait de la dernière attribution d'un membre, l'ancienne invitation est invalidée chez Clerk avant la suppression locale ; une panne Clerk bloque le retrait. Suite API : 4 755 tests verts (105 ignorés), typecheck vert, deux tests PostgreSQL de concurrence verts.
+
+Reste : décider qui peut devenir propriétaire initial. Les comptes sans aucune attribution conservent leur compatibilité ORG_MEMBER ; après retrait du dernier membre de tout un compte, cette compatibilité doit aussi être fermée dans le correctif de propriétaire initial. Clerk réel, staging et production non vérifiés.
+
+## 2026-10-29 — Propriété du compte et transfert local
+
+Décision : la personne qui crée l'organisation est le propriétaire initial lorsqu'elle est vérifiée par Clerk ; sinon l'attribution est refusée. Un compte multi-site sans attribution n'autorise que la synchronisation de démarrage. Le propriétaire peut transférer volontairement son rôle à un membre du compte en choisissant de conserver un rôle responsable, lecture seule ou aucun accès ; confirmation UI, verrou par compte, contrôle de l'unicité et journal d'audit. Un transfert enregistré empêche une réattribution automatique au créateur historique. La facturation historique vérifie le créateur auprès de Clerk avant de lui donner accès.
+
+Validation locale : 4 763 tests API verts (106 ignorés), 13 tests dashboard, typechecks API et dashboard, trois tests PostgreSQL concurrents. Les opérations Clerk sont simulées dans les tests ; qualification Clerk réelle et staging nécessaire, notamment pour l'absence d'identifiant créateur et le choix de retrait complet. Aucun déploiement.
+
+Le choix « aucun accès » neutralise d'abord le rattachement automatique chez Clerk, puis retire les droits Sokar dans la transaction ; la suppression de l'appartenance Clerk après validation est best-effort et laisse une alerte de journal si elle échoue. Le transfert cible actuellement un membre disposant d'une attribution au niveau du compte ; les membres limités à un site ne figurent pas dans ce parcours.
+
+## 2026-10-29 — Cadrage commercial de Sokar
+
+Présentation harmonisée : Sokar est une plateforme de réservations, d'organisation du service et de relation client ; la voix en est une fonction. Carte produit enrichie avec les capacités développées et leurs limites d'activation ; guide d'entretien, pitch fondateur, plan d'acquisition, brief des offres, roadmap et positionnement concurrentiel réconciliés. Le pilote Essential reste un périmètre ciblé, distinct du produit complet. Aucun changement de flags, d'offre ni d'état de déploiement.
+
+## 2026-10-29 — Correctifs locaux de l'audit voix
+
+Flux WebSocket : jeton par session, contrôle de l'ordre et de l'identité, protection contre le nettoyage d'une connexion remplacée ; la démo conserve son parcours. Réutilisation des sessions aux retransmissions, échec de décrochage renvoyé si la queue échoue, distinction entre numéro inconnu et panne technique. Pagination de la réconciliation et écritures de diagnostic asynchrones. Les configurations Nginx locales désactivent les journaux d'accès du flux ; le journal de l'API masque sa chaîne de requête.
+
+Tests locaux ciblés : authentification et ordre du flux, notifications simultanées simulées, expiration, erreurs de décrochage et pagination au-delà de 200 appels. Aucun déploiement ni appel staging. Avant livraison : installer la configuration Nginx avant l'API, vérifier les journaux des intermédiaires et qualifier un appel réel. La session en mémoire ne survit pas à un redémarrage et ne garantit pas le routage multiprocessus ; l'état de déploiement constaté ne prouve pas la topologie complète des processus.
+
+## 2026-10-29 — Fiabilité des notifications en local
+
+Les livraisons de confirmation, cartes cadeaux et demandes d'avis en échec, ainsi que la file SMS de confirmation, sont reprises après une heure avec les protections métier existantes ; les autres sujets restent en reprise manuelle. Les alertes SMS responsables ont une limitation atomique et un claim par tâche : un refus certain peut être retenté, un résultat inconnu est réconcilié. Un refus de rappel est placé dans une tâche propre et ne bloque pas les réservations suivantes. Les traces SMS/e-mail manquantes après succès sont réparées lors du balayage quotidien.
+
+Validation locale : tests de refus, réponse perdue, concurrence simulée, panne de file, reprise des deux étapes et réparation des traces ; suite API et typecheck. Aucun fournisseur ni environnement déployé testé. Les expirations Redis, la surveillance des anciennes entrées en file d'échecs et le rattrapage doivent être qualifiés en staging. Les optimisations de débit et de mémoire restent à mesurer.
+
+## 2026-10-29 — Entrées publiques et réponses clients en local
+
+Échanges des codes et renouvellements OAuth atomiques par script Redis ; vérification scrypt MCP asynchrone ; plafond Fastify partagé dans Redis hors tests. Réponses SMS/WhatsApp : identifiant fournisseur obligatoire, verrou et cible persistée 7 jours pour les reprises, texte contradictoire et plusieurs candidats ignorés, échecs propagés ; notification gérant en file avec seuls des identifiants dans le payload. Une réponse dont le numéro d'envoi est partagé ne possède pas de lien fiable avec une réservation même si une seule est candidate : ce risque reste ouvert, définir une corrélation avant de garantir l'isolation complète.
+
+Tests locaux et Redis isolé : un seul échange concurrent accepté, limite partagée entre deux serveurs. Aucun déploiement ni test Telnyx réel. Qualifier la disponibilité Redis, la conservation des événements, les retransmissions et les alertes en staging. La vulnérabilité d'identité RGPD du précédent audit reste à corriger ; la route a répondu en production à une requête invalide, sans essai sur des données personnelles.
+
+## 2026-10-29 — Vérification RGPD sécurisée localement
+
+La demande vérifie désormais le numéro par SMS même si une adresse e-mail est fournie ; les anciens liens e-mail et jetons d'action sont refusés, les nouveaux jetons portent la preuve SMS. Suppression du secret de repli connu ; sans secret configuré, la vérification est refusée. Consommation et comptage des OTP conditionnels en base ; URLs du lien historique masquées dans les journaux API et Nginx local.
+
+Pas de déploiement ni de SMS réel : la route vulnérable reste exposée en production jusqu'à livraison. Qualifier la configuration du secret, les SMS, les liens anciens et la concurrence PostgreSQL en staging ; poser la configuration Nginx avant l'API et vérifier les autres intermédiaires. L'effacement partiel, l'export, l'opposition marketing et la corrélation des réponses sur numéro partagé restent ouverts.
+
+### 2026-10-29 — Audit RGPD : effacement atomique local
+
+Les messages, appels, réservations, projections et la trace d’audit passent dans la même transaction ; les liens d’expériences sont détachés avant anonymisation. Échec d’écriture propagé à la route. Tests locaux sur mocks ; qualification PostgreSQL et staging à poursuivre. Le jeton est toujours consommé avant l’opération : en cas d’échec, une nouvelle vérification est nécessaire. Export et opposition marketing restent à traiter. Aucun déploiement.
+
+### 2026-10-29 — Audit RGPD : export local
+
+Export : recherche des numéros sous formes nationale et internationale françaises reconnues, y compris les consentements hachés ; un sujet avec appels seuls est retrouvé. Formats historiques avec ponctuation ou espaces restent à examiner prudemment. Tests sur mocks, aucun déploiement.
+
+### 2026-10-29 — Audit marketing : coordonnées au dernier contrôle
+
+Les contrôles des campagnes vérifient que le téléphone ou l’adresse e-mail correspondent encore aux coordonnées retenues pour l’envoi. Tests avec mocks ; changement ultérieur au dernier contrôle toujours possible. La conservation des oppositions après effacement reste ouverte : le registre peut être omis en cas d’échec ou de clé absente. Aucun déploiement.
+
+### 2026-10-29 — Incident potentiel RGPD : mitigation production
+
+Avec autorisation utilisateur, Nginx production bloque temporairement /api/rgpd/ et /api/proxy/api/rgpd/ sur les vhosts publics ; contrôles externes 503, /privacy 200. Vérification Nginx et reload réussis ; base inchangée. Release active 88549d488ca905e77d0090a7d39726aea86d3c61, copie de configuration initiale /tmp/sokar-rgpd-nginx-3SIf5n99 sur le VPS ; rétablissement possible via install-nginx/reload-nginx après qualification du correctif. Le checkout serveur a été restauré : tout déploiement peut écraser la mitigation ; surveiller et intégrer une protection persistante avant toute livraison. Autres chemins réseau non vérifiés. Les demandes peuvent être adressées à privacy@sokar.tech ; organiser leur traitement manuel. Aucune donnée client manipulée.
+
+Correctif RGPD isolé dans /Users/hamza/.codex/worktrees/rgpd-security/Sokar depuis la release 88549d4, sans commit ni livraison. Tests ciblés 34 verts ; PostgreSQL local dédié : 8 validations OTP puis 8 usages de jeton concurrents, un succès à chaque étape ; suite API 4710 tests réussis, 84 ignorés ; typecheck vert. Fichiers d’environnement des deux checkouts ont une entrée CLERK_SECRET_KEY, valeur effective non vérifiée. Qualifier Nginx, secrets effectifs, SMS et staging/CI ; ne pas laisser un déploiement retirer la mitigation avant qualification.
+
+### 2026-10-29 — Incident RGPD : qualification du lot
+
+Workflow Deploy Production suspendu pour éviter le retrait automatique de la mitigation ; staging reste actif. PR #615 créée depuis 88549d48 : preuve SMS, blocage Nginx prod maintenu dans le lot et test de concurrence PostgreSQL. Numéro de test fourni par l’utilisateur, ne pas le journaliser ; SMS à qualifier après livraison staging. Fusion humaine et CI/staging verts nécessaires ; le workflow production devra être réactivé après qualification.
+
+### 2026-10-29 — RGPD : livraison staging et SMS de test
+
+PR #615 fusionnée après accord utilisateur ; workflow staging 40941895037 vert, tests de santé verts. Envoi SMS sur numéro de test autorisé : API staging 200 canal SMS, réception confirmée par l’utilisateur ; GET lien historique de test refusé (400). Code de confirmation non demandé ni vérifié de bout en bout. Routes production toujours bloquées (503) et workflow de déploiement production suspendu ; il reste la qualification complète et le contrôle des journaux avant réouverture.
+
+### 2026-10-29 — RGPD : qualification et livraison en production
+
+Staging : code synthétique incorrect, expiré et valide testé ; rejeux code/jeton et anciens jetons/liens signés refusés. Secret effectif vérifié sans affichage ; données synthétiques nettoyées. Réception SMS réel confirmée par l’utilisateur. CI et staging verts ; workflow production réactivé et run 40943626571 vert, release 90a9411bf2df. Routes RGPD et proxy toujours en 503, page privacy 200 ; blocage inclus dans la configuration. Réouverture, journaux historiques/intermédiaires et autres chantiers RGPD restent à traiter.
+
+### 2026-10-29 — RGPD : réouverture partielle en production
+
+Configuration Nginx validée et rechargée : vérification SMS, export et politique de confidentialité rouverts ; effacement et opposition marketing restent en 503 pour éviter les résultats incomplets de la version prod. Contrôles directs et proxy vérifiés ; PR #616 rend la configuration persistante. Demande SMS de test en production acceptée ; réception à confirmer. Maintenir traitement manuel via privacy@sokar.tech pour les demandes bloquées.
+
+Le SMS de vérification de production envoyé au numéro de test autorisé a été reçu, confirmation utilisateur. Le code n’a pas été demandé.
+
+Correctif d’effacement en cours dans /Users/hamza/.codex/worktrees/rgpd-erasure/Sokar : écritures et audit transactionnels, recherche d’expérience avant détachement et suppression des coordonnées propres à l’expérience. Test PostgreSQL local dédié : échec message provoque retour arrière, puis effacement des coordonnées ; tests ciblés verts. Non livré : opposition marketing, reprise du jeton et portée des données à finaliser. Routes effacement/opposition toujours bloquées.
+
+PR #616 fusionnée, staging et production verts (release 6b6071ed3d56) ; réouverture partielle inscrite durablement dans Nginx. Vérification et export joignables, effacement et opposition toujours en 503. SMS production reçu et confirmé par l’utilisateur.
+
+### 2026-10-29 — iOS : premier écran réservations
+
+Projet `apps/ios/Sokar.xcodeproj` (iOS 17+, SwiftUI, sans dépendance) : `APIClient` (un seul `get`, api-staging.sokar.tech, sans jeton), `Reservation` (champs affichés seulement), `ReservationsView` (réservations du jour en date de Paris, sélecteur de date, états chargement, vide, erreur, données). Build `iphonesimulator` réussi avec Xcode 27.1, sans avertissement Swift. Décodage vérifié sur la réponse réelle de staging (3 réservations du 2026-10-29). Non fait : capture dans le simulateur (accès du panneau Simulator pas accordé), aucun commit. Hors périmètre : Clerk, appels, briefing, création ou modification, push, iPad.
+
+### 2026-10-29 — iOS : capture dans le simulateur
+
+Accès au simulateur accordé. Sokar lancé sur iPhone Duo (iOS 27.1) : la liste du 2026-10-29 s affiche 3 réservations (12:30, 13:30, 19:00), statuts en français. Capture : scratchpad, capture-reservations-ipad-duo.png. Aucun commit.
+
+### 2026-10-29 — iOS : iPad ajouté à la cible
+
+`TARGETED_DEVICE_FAMILY` passe de 1 à `"1,2"` (iPhone et iPad). Build `iphonesimulator` réussi après le changement. Lancement sur iPad (A16) en attente de l accès dans le panneau Simulator. Aucun commit.
+
+### 2026-10-29 — iOS : lancement sur iPad
+
+Sokar lancé sur iPad (A16, iOS 27.0) : même liste du 2026-10-29, mise en page pleine largeur, lisible. Capture : scratchpad, capture-reservations-ipad-a16.png. Aucun commit.
+
+### 2026-10-30 — iOS : onglet Appels
+
+TabView avec Réservations (écran inchangé) et Appels. Ajouts : `Call.swift` (champs demandés, enveloppe `data`, libellés repris du dashboard), `CallsView.swift` (liste, états, tirer-pour-rafraîchir, ligne d en-tête partagée), `CallDetailView.swift` (même en-tête, transcription sélectionnable ou « Aucune transcription »). Build `iphonesimulator` réussi, sans avertissement. Vérifié à l écran sur iPhone 17 : liste des 3 appels de staging (heures Paris, m:ss), détail avec transcription, détail sans transcription. Non vérifié : tirer-pour-rafraîchir, états vide et erreur de la liste. Aucun commit.
+### 2026-10-29 — Incident RGPD : gel de la livraison et lot isolé
+
+Production : routes RGPD bloquées en Nginx, workflow Deploy Production suspendu ; staging reste actif. Lot séparé depuis 88549d48 : preuve SMS, refus des anciens jetons, masquage des liens, protection Nginx maintenue en production et test de concurrence PostgreSQL. Qualification du SMS, des secrets effectivement chargés et du staging requise avant toute réouverture ; traitement manuel via privacy@sokar.tech.
+
+### 2026-10-29 — RGPD : réouverture partielle
+
+Vérification d’identité et export rouverts après qualification SMS en staging ; effacement et opposition marketing restent en 503 car leurs correctifs ne sont pas encore livrés. Configuration Nginx restrictive, liens non journalisés ; requêtes de contrôle sur les hôtes et le proxy. Les demandes concernées restent traitées manuellement via privacy@sokar.tech.
+
+### 2026-10-30 — Opposition marketing : échecs visibles
+
+Correctif local : une opposition échoue explicitement si son registre durable ne peut pas être écrit ; la fiche existante reste OPTED_OUT. Test PostgreSQL local : une fiche supprimée puis recréée reste exclue. L'effacement doit préserver les oppositions et coordonner les écritures concurrentes avant toute réouverture. Les corrections ne sont pas déployées.
+
+### 2026-10-30 — Opposition : concurrence locale
+
+La fiche client est verrouillée pendant la mise à jour transactionnelle de son consentement et du registre ; essai PostgreSQL concurrent accord/opposition réussi sur une même fiche. Le traitement des plaintes fournisseur et les scénarios impliquant plusieurs fiches ou un échec du registre restent à coordonner avant livraison. PR #620 en brouillon.
+
+### 2026-10-30 — Rollback staging : dépendances restaurées
+
+Le test de rollback de Sshindraa/Sokar#577 échouait : l'artefact de la release précédente exige `zod-to-json-schema`, retiré par la PR (passage à Zod 4), donc absent de node_modules après le déploiement. Correctif : chaque snapshot garde le lockfile et les package.json de son commit (`deps/`), et le rollback réinstalle via `pnpm install --frozen-lockfile` avant de redémarrer. Une release sans lockfile est refusée avant d'arrêter les services. Non validé sur le VPS : la prochaine exécution de staging le vérifiera (le pré-build utilise `.latest-hash`).
+### 2026-10-30 — Qualification du lot réservations
+
+La PR #617 (0d4aaaff) contient les correctifs d'audit réservations ; workflows CI, déploiement staging et production et smoke tests réussis. Production vérifiée sur 0d4aaaff ; staging sur le snapshot de ce même commit. Réexécution locale isolée sur PostgreSQL : 53 tests de concurrence/modification réussis ; 146 tests ciblés allocation, disponibilité, confirmation et service réussis. Disponibilité publique Chez Sokar demo : HTTP 200 en staging et production, 22 créneaux renvoyés. Aucun hold ni réservation réel, SMS ou autre notification envoyé ; création, rejeu, modification et annulation via les environnements déployés restent à qualifier de bout en bout avec un dispositif de test sans notification à des tiers.
+
+### 2026-10-30 — Réservation staging sans SMS
+
+À la demande de l'utilisateur, aucun SMS : disponibilité publique et création d'un hold en mode test réussies sur Chez Sokar demo en staging (HTTP 200), refus d'un jeton de confirmation invalide (410). Aucun appel de confirmation valide ni réservation créé ; le hold temporaire expire automatiquement. Le parcours complet reste non qualifié sur les environnements déployés, car la confirmation de test peut notifier le client ou le responsable.
+
+### 2026-10-30 — Contrôle production sans SMS
+
+Sur Chez Sokar demo en production : disponibilité et hold en mode test HTTP 200, confirmation avec jeton invalide refusée 410. Aucune confirmation valide ni SMS. Hold temporaire expire automatiquement. Vérification de préférence de section étrangère impossible en staging : aucune section d'un autre établissement trouvée ; scénario couvert par test PostgreSQL local mais pas validé en staging.
+
+### 2026-10-30 — Réservations : vérification de l'annulation sans notification
+
+Test PostgreSQL local dédié supplémentaire réussi : annulations simultanées, libération de la table et audit. Les 53 tests de concurrence et modification comprennent aussi la confirmation publique rejouée sans doublon et sa cohérence des consentements. Confirmation déployée non exécutée : même en mode test elle crée une intention de notification ; consigne utilisateur explicite de ne pas envoyer de SMS. Aucun changement de configuration en staging ou production.
+
+### 2026-10-30 — Confirmation réelle de réservation de test en staging
+
+Avec autorisation de l'utilisateur pour les SMS : hold et confirmation publics HTTP 200, rejeu HTTP 200 pour la même réservation avec reused=true, réservation marquée isTest ; page personnelle HTTP 200. Le restaurant demo a smsConfirmEnabled=false et aucune intention SMS associée : aucun envoi observé. Modification et annulation client refusées par les conditions du restaurant (contact requis), donc parcours positif non qualifié en staging ; aucune modification de configuration. La réservation de test restante est soumise à la purge habituelle après 24 h. Aucun code ni identifiant de réservation consigné.
+
+### 2026-10-30 — Qualification réservation staging complète
+
+Sur la réservation isTest créée pour ce test uniquement, condition d'annulation factice libre-service appliquée au snapshot sans modifier les réglages du restaurant. Page personnelle, options, modification et rejeu HTTP 200 vers le même créneau ; annulation et rejeu HTTP 200, état CANCELLED. Vérification en base : aucun profil client ni événement outbox ; une seule trace pour création, modification et annulation. Aucun SMS envoyé. Les conditions de test modifiées ne qualifient pas les conditions commerciales du restaurant ; scénarios concurrents et isolation entre restaurants vérifiés sur PostgreSQL local, pas sur deux établissements staging.
+
+### 2026-10-30 — Confirmation de test en production
+
+Chez Sokar demo, après vérification que smsConfirmEnabled=false : hold et confirmation HTTP 200, rejeu HTTP 200 avec la même réservation et reused=true. Ligne vérifiée isTest, aucun client ni événement outbox associés ; aucun SMS envoyé. La réservation de test confirmée reste soumise à la purge automatique après 24 h. Flags de gestion personnelle absents ou faux dans la configuration lue : modification et annulation positives en production non testées et configuration inchangée. Validation positive effectuée en staging avec conditions fictives limitées à la réservation de test.
+
+### 2026-10-30 — Qualification facturation et paiements
+
+Les correctifs de facturation, cartes cadeaux et paiements de réservation sont inclus dans #617, déployée staging et production. Configuration lue : clé Stripe staging test, clé production live ; paiements de réservation et expériences non activés dans les .env consultés, variables correspondantes absentes de PM2. Tests sur bases PostgreSQL locales dédiées : 24 réussis et 4 Stripe ignorés sans clé ; puis 6 tests billing réussis avec la clé Stripe test du staging, incluant concurrence et reprise. Les objets Stripe test créés par les tests sont nettoyés ou archivés par leur fixture. 126 tests ciblés routes/services réussis. Aucun paiement réel, aucune vérification complète des webhooks déployés ni des remboursements Stripe de bout en bout.
+
+### 2026-10-30 — Stripe test et webhook staging
+
+Paiement fictif Stripe test de 10 EUR puis remboursements de 3 et 7 EUR réussis, montant remboursé total vérifié. Un événement charge.refunded issu de ce paiement a été signé avec le secret staging et envoyé deux fois au webhook générique : 200/200 ; signature invalide : 400. La carte utilisée est une méthode de test Stripe, sans débit réel ; le paiement reste dans l'historique du compte Stripe test. Ce paiement n'est associé à aucune réservation ou carte cadeau Sokar : résultat ne valide pas la projection métier des remboursements ni l'ordre des événements. Le webhook paiement réservation staging répond 503 car la fonction reste désactivée ; aucune activation ni changement de configuration.
+
+### 2026-10-30 — Projection carte cadeau avec Stripe test et PostgreSQL staging
+
+Service de remboursement de la version staging exécuté sur une carte fictive non persistée dans une transaction PostgreSQL annulée à la fin. Paiement Stripe test 10 EUR ; remboursement partiel 3 EUR => solde 7 EUR, rejeu => 7 EUR, remboursement final 7 EUR => solde 0 et état CANCELLED. Aucun envoi ; aucune donnée client utilisée. Les objets Stripe restent dans le compte test, le paiement est intégralement remboursé. Exécution directe du service, pas webhook HTTP lié à cette carte ; paiement de réservation demeure désactivé.
+
+### 2026-10-30 — Webhooks et projections paiements en processus isolé staging
+
+Code déployé staging exécuté dans Fastify inject sur transaction PostgreSQL staging annulée, sans serveur supplémentaire ni données persistées. Carte cadeau fictive : événement charge.refunded réel de Stripe test signé, route webhook HTTP simulée 200, solde 7 EUR après remboursement 3/10 EUR et après rejeu. Paiement réservation fictif : activation du flag uniquement dans ce processus isolé ; événements Stripe test enrichis des métadonnées fictives puis signés, 200 pour partiel, rejeu, total et rejeu ancien ; états PARTIALLY_REFUNDED puis REFUNDED. Paiements test entièrement remboursés ; aucun paiement réel ni SMS. La route staging réellement exposée reste désactivée (503) ; ces tests injectés ne valident pas le transport public de cette route ni les comptes Stripe connectés.
+
+### 2026-10-30 — Contrôles de cohérence paiement et compte connecté staging
+
+Le compte Stripe connecté de Chez Sokar demo en staging est incomplet : charges_enabled=false, payouts_enabled=false, details_submitted=false ; aucune modification du compte. Test Fastify inject sur code et PostgreSQL staging, transaction annulée, flag activé uniquement dans le processus isolé : événement Stripe test signé avec données fictives, restaurant incohérent refusé 403 ; montant, compte et identifiant de paiement incohérents refusés 500, état CAPTURED inchangé et aucun événement enregistré. Les 500 méritent une gestion explicite avant activation pour éviter des erreurs techniques opaques et des retransmissions fournisseur répétées. Paiement test intégralement remboursé. Les comptes connectés et le transport public du webhook restent à qualifier ; aucune activation staging/production.
+
+### 2026-10-30 — CI #621 et qualification Stripe Connect
+
+PR #621 : un job PostgreSQL a échoué sur le test concurrent service-copilot-packaging (DelayRecoveryConflictError), alors que l'autre exécution CI a réussi. Le job en échec a été relancé ; résultat à suivre. Lecture du code : une hypothèse de course existe entre la recherche d'opération déjà appliquée et la simulation préliminaire, mais elle n'est pas encore reproduite de façon déterministe. Ne pas attribuer l'échec au correctif webhook sans preuve. Compte Stripe Connect de démonstration staging toujours incomplet ; aucun changement d'identité ni d'activation.
+
+### 2026-10-30 — Companion, phase 1 : API de chat (sans UI)
+
+Ajout de `POST /companion/chat` (`apps/api/src/modules/companion/`) : réponse JSON `{ reply, sources }`, modèle `COMPANION_LLM_MODEL` (défaut `anthropic/claude-haiku-5.5`, slug vérifié sur OpenRouter le 30/10). Quatre outils en lecture seule (`reservation_stats`, `upcoming_days`, `no_shows`, `monthly_roi`) appellent en process les calculs des routes dashboard, extraits en fonctions exportées dans `dashboard.routes.ts` (sortie inchangée, tests dashboard verts sans modification) ; `monthly_roi` reprend `computeRoi`. Plafond 100 messages par jour et par restaurant via `checkRateLimit`, dont la fenêtre devient un paramètre optionnel. Rôles : STAFF et READ_ONLY reçoivent 403 de la politique existante, qui n'a pas été modifiée. Décisions ouvertes : pas de SSE, 4 tours d'outils puis une réponse finale sans outils, quota fail-open si Redis tombe (convention de `checkRateLimit`), et `href` vers `/dashboard` pour `monthly_roi` faute d'écran qui consomme `/analytics/roi`. Correctif : chaque requête porte `provider.data_collection: deny` (test sur les cinq corps d'une boucle complète). Clé `OPENROUTER_API_KEY` de `apps/api/.env` renouvelée (auth/key 200) ; deux curls en 200 sur l'API dev. Fichiers : `apps/api/src/modules/companion/*`, `dashboard.routes.ts`, `rate-limit.ts`, `env.ts`, `main.ts`, `docs/runbooks/environment.md`.
+
+### 2026-10-30 — Description de Sokar alignée sur la plateforme
+
+AGENTS.md, README.md, `docs/obsidian/README.md` et la ligne Voice de `PROJECT_MAP.md` ne réduisent plus Sokar à un agent téléphonique : plateforme réservations multicanal + service + relation client, la voix est une fonction. Textes visibles côté client (tagline dashboard, manifest, FAQ, kicker « Assistant vocal restaurant ») encore à revoir, sur décision de Hamza.
+
+### 2026-10-30 — Companion, phase 2 : panneau dashboard et prompt
+
+Panneau `CompanionPanel` dans le dialog Companion (`apps/dashboard/src/features/companion/`) : historique par site en sessionStorage (`sokar.companion.<siteId>`), « Nouvelle conversation », trois suggestions d'accueil, sources dédoublonnées, erreurs de l'API avec Réessayer. Bouton masqué pour STAFF et READ_ONLY ; libellés en fr, en, es, it. Prompt : texte sans Markdown, aucune cause ni vérification suggérée hors données, et rappel que les résultats d'outils des questions précédentes ne sont pas visibles (sans lui, le modèle se désavouait). Descriptions d'outils précisées (7d/30d inclus, zéros non cités, seuil de 20 réservations pour les no-shows). Écart ouvert : les résultats d'outils ne voyagent pas d'un tour à l'autre, l'historique client ne garde que le texte ; correctif structurel à décider. Captures (1024 px, clair et sombre) faites sur le dashboard dev de l'autre session (port 3110, API 4000), Next refusant un second `next dev` dans le dossier.
+
+### 2026-10-30 — Companion : résultats d'outils réinjectés
+
+Contrat `POST /companion/chat` étendu, sans rupture : chaque message peut porter `toolRuns` (`name`, `arguments`, `result`, bornés par `ToolRunSchema`), et la réponse renvoie les `toolRuns` du tour. Le serveur les rejoue au modèle (appel d'outil puis résultat, avant la réponse) sans les réexécuter. Le client les stocke dans sa conversation de session. Un tour est plafonné à 40 appels d'outils ; au-delà, l'appel reçoit `too_many_tool_calls`. Vérifié en navigateur : quatrième question sur des chiffres donnés plus tôt, réponse cohérente, sans désaveu. Point ouvert : les `toolRuns` viennent du client et ne sont pas signés ; le serveur les traite comme des données passées, jamais comme des consignes, et ne lit aucune donnée d'un autre restaurant à partir d'eux. Prompt : les résultats des questions précédentes figurent dans la conversation.
+
+### 2026-10-30 — Companion : retrait de toolRuns
+
+Retrait de `toolRuns` (API, panneau, doc) : l'historique redevient `{ role, content }` ; les entrées sessionStorage anciennes restent lisibles, sans ce champ.
+
+### 2026-10-30 — Companion phase 3 : avis sur les réponses
+
+Chaque réponse porte un `responseId` (UUID, aussi dans le log « companion chat »). `POST /companion/feedback` reçoit `{ responseId, rating: 'up' | 'down' }` (corps strict, 204, avis en logs seulement : shortcut, table dédiée si le volume le justifie). Le panneau affiche deux boutons sous les réponses récentes ; un avis verrouille les boutons, un échec d'envoi les rétablit sans message. Les réponses enregistrées avant cette phase n'ont pas de boutons. Correctif de course : un avis donné pendant qu'une question est en cours n'est plus effacé par la réponse suivante (mise à jour fonctionnelle de la liste). Branche feat/companion-v1.
+
+### 2026-10-30 — Companion : panneau monté même fermé
+
+Le dialog Companion reste monté quand il est fermé (`hidden`) : fermer le panneau pendant une question ne perd plus l'attente, la réponse ni l'erreur avec Réessayer. Test du layout : panneau fermé présent mais invisible.
+
+### 2026-10-30 — Companion : données de test et banc de questions
+
+Seed `packages/database/prisma/seed-companion.ts` (`pnpm --filter @sokar/database seed:companion`) : 1471 réservations, 853 appels et 60 clients fictifs sur `DEMO_RESTAURANT_ID` (Carmelo, dans `sokar_preview`, la base que l'API lit en dev), de J-95 à J+14. Marquage : `createdByClient = 'seed-companion'`, `callSid` préfixé `seed-companion-`, `customers.notes = 'seed-companion'` ; une relance ne supprime que ces lignes. Garde-fou : refus si `NODE_ENV=production` ou base hors localhost. Banc `apps/api/scripts/companion-bench/run.ts` : 15 questions × 3 essais contre `answerCompanion` (OpenRouter réel), chiffres attendus recalculés avec les fonctions des outils ; résultats dans `results/`, ignorés par git. Premier passage : outil et chiffre OK sur 33/33 essais (questions 1 à 11). Coût : 160 032 tokens en entrée, 14 987 en sortie.
+
+### 2026-10-30 — Companion : brouillons sans fait absent, mois partiel
+
+Le prompt précise deux règles : le mois en cours est partiel quand on cite ses chiffres, et un brouillon ne contient aucun fait absent des données (ce qui manque est mis entre crochets `[à compléter]`). Test ajouté dans `companion.routes.test.ts`. Banc relancé avec la question 16 (soirée spéciale, à relire) ; la question 7 exige désormais le nombre suivi de « jour » ou « jours ». Résultat sur les questions 1 à 11 : outil 33/33, chiffre 30/33. La question 7 échoue 3/3 : le modèle écrit « Un seul jour », en lettres. Tokens : 169 725 en entrée, 17 939 en sortie.
+
+### 2026-10-30 — Companion : outil call_stats, formules entre crochets
+
+Nouvel outil `call_stats` (`apps/api/src/modules/calls/call-stats.ts`) : appels par intention et par résultat, hors horaires d'ouverture (heure de Paris, fermeture après minuit comprise) et durée moyenne. Il ne lit que la date, l'intention, le résultat et la durée. `periodStart` est exporté de `dashboard.routes.ts`, comportement inchangé. Prompt : appels dans le périmètre, formules de disponibilité entre crochets dans les brouillons. Banc : questions 17 à 19 ; question 7 accepte les nombres en lettres. Résultat sur les questions notées : outil 36/42, chiffre 39/42. Écart à traiter : pour les questions 3 et 4 le modèle prend `call_stats`, et le taux de conversion diffère de celui du tableau de bord (appels « réservé » contre réservations liées à un appel, deux écarts sur 7 jours). Tokens : 236 442 en entrée, 19 009 en sortie.
+
+### 2026-10-30 — Companion : taux repris des outils, deux définitions
+
+Le prompt interdit au modèle de calculer un taux, un pourcentage ou une moyenne : il reprend celui d'un outil, ou donne les deux nombres sans ratio. Les descriptions de `reservation_stats` (`conversion_rate`, source des taux de conversion) et de `call_stats` (`byOutcome.RESERVED`, à distinguer de `call_reservations`) précisent la définition de chacun. Banc : les questions 3 et 4 acceptent l'un ou l'autre outil ; la question 4 attend 55, tout autre pourcentage est KO ; la question 19 accepte 26 ou 24, tout pourcentage autre que 55 est KO. Une première relance comptait à tort le 55 % du tableau de bord comme un taux en trop ; corrigé, puis relancé une fois. Résultat final : outil 42/42, chiffre 42/42. Tokens de la relance finale : 257 531 en entrée, 18 089 en sortie.
+
+### 2026-10-30 — Companion : canaux de réservation, chiffres rattachés
+
+Description de `reservation_stats` : `by_channel` (phone, website, google, ai, team). Description de `call_stats` : `avgDurationSec` porte sur tous les appels de la période, pas sur les seuls appels hors horaires. Prompt : répondre d'abord à la question posée, ne pas dérouler de chiffres non demandés, ne jamais rattacher un chiffre à un groupe qui ne le contient pas. Banc : question 20 (réservations par téléphone et par site, attendu 134 et 142), question 21 à relire. Résultat sur les questions notées : outil 45/45, chiffre 45/45. Constat : aux trois essais de la question 20, le modèle liste tous les canaux, et l'essai 1 ajoute le chiffre d'affaires ; la règle « répondre d'abord » n'est pas respectée, et le banc ne la note pas. Tokens : 313 518 en entrée, 20 386 en sortie.
+
+### 2026-10-30 — Companion : requête unique query_data
+
+Nouvel outil `query_data` (`apps/api/src/modules/companion/query-data.ts`) : le modèle compose une requête (réservations ou appels, mesure, date de service ou de prise, regroupement, filtres, plage en jours de Paris). Le serveur valide (schéma strict, plage de 400 jours au plus, regroupement par jour de 62 jours au plus), borne la requête au restaurant, calcule et ne renvoie que des totaux. Les champs lus sont fixés : ni nom, téléphone, e-mail, note ni transcription. Prompt : indicateurs du tableau de bord par l'outil dédié, sinon query_data ; date de service ou de prise selon la question ; dates relatives converties et citées ; réponse d'abord. La phrase sur les jours passés par date de service est retirée. Banc : question 12 notée, questions 22 à 27 calculées en Prisma dans le banc, questions 21 et 28 à relire. Résultat sur les questions notées : outil 62/66, chiffre 65/66. Écarts : questions 2 et 10, le modèle prend query_data pour des couverts (outils attendus reservation_stats et monthly_roi) ; question 24, un essai donne 383 au lieu de 380 et met le chiffre en gras. Tokens : 664 441 en entrée, 41 038 en sortie.
+
+### 2026-10-30 — Companion : aucun calcul par le modèle, appels d'outils enregistrés
+
+Le prompt interdit au modèle tout calcul (somme, différence, moyenne, taux, pourcentage) : il demande un total à `query_data` sans `group_by` et cite les nombres tels que les outils les renvoient. `query_data` précise que, sans `filters.states`, seules les réservations confirmées, installées ou honorées comptent ; cette liste figure dans le champ `query` renvoyé. Le gras Markdown est retiré de la réponse finale. Le banc enregistre, pour chaque essai, les appels d'outils avec leurs arguments et les agrégats renvoyés. Questions 2 et 10 : `query_data` accepté. Question 26 : le canal attendu doit être le premier nommé. Résultat sur les questions notées : outil 60/66, chiffre 66/66. Écarts : questions 5 et 18, le prompt pousse le modèle vers `query_data` pour les totaux (outils attendus `upcoming_days` et `call_stats`). Question 24, le 383 du passage précédent n'est pas reproduit : trois essais donnent 380, et les arguments de ce passage ne sont pas enregistrés. Tokens : 677 049 en entrée, 37 237 en sortie.
+
+### 2026-10-30 — Companion : banc, critère d'outil générique
+
+Le critère « outil » du banc devient « au moins un outil appelé » pour toutes les questions notées : le nom d'outil attendu par question est retiré. Les appels d'outils (arguments et résultats) restent enregistrés par essai. Question 26 : le premier canal nommé doit aussi être celui dont la valeur est la plus haute dans un résultat d'outil enregistré (groupes par canal de `query_data` ou `by_channel`). Résultat sur les questions notées, trois essais chacune : outil 66/66, chiffre 66/66. Tokens : 672 780 en entrée, 37 641 en sortie.
+
+### 2026-10-30 — Companion : passation de session
+
+Fait : Companion v1 sur `feat/companion-v1` (PR #625, non fusionnée) : `POST /companion/chat` (Haiku 5.5 via OpenRouter, data_collection deny), 5 outils indicateurs + `query_data` (requête souple validée côté serveur, agrégats seulement), panneau dashboard, avis pouce haut/bas en logs, seed de dev `seed:companion` et banc `apps/api/scripts/companion-bench` (66/66). Décisions : aucun calcul par le modèle, aucun outil imposé par question (pas de correctif au cas par cas), brouillons sans fait inventé, réservé OWNER/MANAGER. Suite : tests réels de Hamza en dev, puis brainstorming produit pour la v2 (nouvelle session). Fichiers clés : `apps/api/src/modules/companion/*`, `apps/dashboard/src/features/companion/*`. Questions ouvertes : liste d'attente, avis clients et données nominatives (RGPD, hors UE) pas encore exposés ; checkout local resté sur `feat/companion-v1`.
+
+### 2026-10-30 — Companion : carte « Ce soir »
+
+`GET /companion/tonight` calcule le service en cours à Paris (midi avant 16 h, soir à partir de 16 h) : couverts, couverts habituels (même service et même jour de semaine, sur les 4 semaines précédentes, moyenne des jours qui ont des réservations valables), demandes spéciales (comptées, jamais le texte), liste d'attente, et deux listes de réservations avec leurs motifs (`watch` : non confirmée, sans table, grande tablée, absence passée ; `attention` : VIP, client régulier). Requêtes groupées (jour, historique, liste d'attente, puis absences et fidélité par client). Le modèle n'est pas appelé. Fichiers : `apps/api/src/modules/companion/tonight.ts`, `companion.routes.ts`, `query-data.ts` (deux fonctions exportées, sans duplication), `apps/dashboard/src/features/companion/TonightCard.tsx`, puis le panneau et ses messages (fr, en, es, it).
+
+Décision : `READ_ONLY` garde la lecture de la carte, comme `/reservations` : la politique de rôles lit toutes les routes en GET. Le clic sur une ligne mène à `/dashboard/reservations`, faute de route qui ouvre une réservation par son identifiant (point ouvert).
+
+### 2026-10-30 — Companion : la carte ouvre la réservation du jour
+
+Le lien de la carte « Ce soir » mène à `/dashboard/reservations?date=AAAA-MM-JJ&reservation=<id>`. La page prend ce jour, même quand elle est déjà ouverte, et ouvre le détail de la réservation dès que la liste du jour est chargée. Fermer le détail retire le paramètre de l'URL, pour qu'un nouveau clic rouvre la même réservation. Aucune route API ajoutée : seule la page des réservations lit ces paramètres.
+
+### 2026-10-30 — Companion : direction seule et panneau fermé à la navigation
+
+La politique de rôles (`role-policy.ts`) refuse la lecture seule sur `/companion/*` (`DIRECTION_ONLY_RULES`), comme l'équipe de service. `READ_ONLY` lit toujours le reste, dont `/reservations`. Le panneau Companion se ferme quand la page ou ses paramètres changent. Vérifié dans le navigateur, en dev local avec API et dashboard séparés : clic sur « Adrien Richard » dans « Ce soir », panneau fermé, détail du 30 octobre à 18 h 15 ouvert, alors que la page était sur le 29 octobre.
+
+### 2026-10-30 — Companion : catalogue de données générique (phase A)
+
+Les sources viennent d'un catalogue (`companion/catalog.ts`) : réservations, appels, liste d'attente et avis. Le moteur (`query-data.ts`) construit la validation, le calcul, la description et les paramètres de `query_data`, ainsi que la ligne « Périmètre » du prompt. Une lecture ne sélectionne que les champs de sa fiche, et un test refuse les champs personnels. Les réservations de test (`isTest`) sont exclues ; sans effet sur les données actuelles. Liste d'attente : désactivée, `{ unavailable: 'disabled' }` (garde-fou `WaitingListDisabledError`). Avis : sans `reputation.feedback`, `{ unavailable: 'plan' }`. Le seed ajoute liste d'attente, avis et tâches de récupération, et active la liste d'attente du restaurant de démo (dev seulement).
+
+Banc : 41 questions (13 nouvelles), 3 essais. Outil : 105/105. Chiffre : 99/105. Q30 (demandes obtenues le mois dernier) : le modèle a pris la date de demande, la question ne la précise pas. Q37 (note de 2 ou moins) : le catalogue n'a pas de filtre sur la note ; le modèle donne les deux valeurs et refuse de les additionner. Avant la phase A, 66/66 sur les 22 questions notées. Tokens : 672 039 entrée et 36 480 sortie (84 appels) avant ; 1 209 365 entrée et 60 541 sortie (123 appels) après.
+
+### 2026-10-30 — Companion : cache du modèle et banc économe
+
+Les consignes fixes et la description des outils portent un point de cache (`cache_control` éphémère). La date du jour passe dans un message système à part, après ce cache. OpenRouter renvoie `prompt_tokens_details.cached_tokens` : sur trois questions, la deuxième requête d'une réponse lit 4 567 tokens du cache, et la trace du journal les compte dans `cached_input_tokens`. Le banc accepte `--trials N` (défaut 1) et `--only 3,7,12` ; son README décrit la règle d'usage.
+
+Mesure, cinq questions à un essai (1, 5, 9, 24, 36). Avant le cache : 48 683 tokens en entrée, 1 491 en sortie. Après : 48 673 en entrée, dont 45 670 lus du cache, et 1 353 en sortie. Le total brut ne baisse pas, car OpenRouter compte les lectures dans `prompt_tokens` ; c'est le tarif des lectures qui baisse. Question 24 : KO après le cache (383 au lieu de 380), la date de prise choisie par le modèle, comme déjà observé.
+
+### 2026-10-30 — Companion : filtres générés, isTest dans la carte, seed des appels stable
+
+Chaque dimension à valeurs fermées devient un filtre généré (`filtersOf`) : channels, intents, outcomes, state, status, score, recovery, et after_hours (vrai ou faux). Les `filters` déclarés à la main sont supprimés ; `states` (défaut en base) reste. Si `filters.state` est donné sans `filters.states`, la lecture prend ces états. Un test vérifie qu'une fiche sans filtre déclaré accepte sa dimension fermée et refuse une valeur hors liste. `tonight.ts` exclut `isTest` sur ses quatre lectures de réservations, avec un test. Seed : les appels sont ancrés sur minuit, sans l'heure du seed, et les tirages ne dépendent plus de l'heure ; deux seeds successifs donnent les mêmes compteurs (1 423 réservations, 927 appels, 138 demandes en liste d'attente, 394 avis, 93 tâches de récupération). Banc : Q30 dit « sur les créneaux du mois dernier », notation inchangée.
+
+Banc `--only 18,24,30,37 --trials 3` : outil et chiffre 3/3 sur les quatre. Q37 passe avec `score: [1, 2]`. Tokens : 122 752 en entrée, dont 111 251 lus du cache, et 4 951 en sortie (12 appels). Q18 attend 76 avec ce seed : les anciennes valeurs (70, puis 66) venaient d'un seed dépendant de l'heure.
+
+### 2026-10-30 — Companion : phase B, comparaison et enquête
+
+`query_data` accepte `compare` (`previous_period`, `last_year`, `usual`) sur toutes les fiches. Le serveur renvoie, pour le total et pour chaque groupe, `value`, `reference`, `delta` et `delta_pct` (null si la référence vaut 0). `usual` ne s'applique qu'à une période d'un jour ou d'une semaine. La boucle permet 8 tours d'outils et s'arrête à 60 000 tokens d'entrée. Le prompt demande d'explorer 2 à 4 angles pour une question ouverte, remplace la règle « ne supposez aucune cause » par une règle de liens prudents, et limite la réponse à 3 à 5 phrases. Le seed plante une anomalie fixe le mardi 20 octobre 2026 : couverts à la moitié de la moyenne des 4 mardis précédents, 40 appels sans issue, aucune liste d'attente ce jour-là.
+
+Banc, 47 questions, 3 essais : outil 114/123, chiffre 112/123, ancrage 141/141. Les enquêtes (42 à 47) : outil 9/18, chiffre 14/18, ancrage 18/18. Pendant le réglage, Q42 et Q46 ont reçu « en couverts » (et « repas prévus » pour Q46), des synonymes ont été ajoutés aux motifs de faits, et l'angle est défini comme source plus regroupement. Le premier calcul de l'ancrage donnait 127/141 ; une règle d'arrondi et les dates en intervalle corrigées, les mêmes réponses ont été renotées (`--rescore`).
+
+Écarts : Q10 mesure les couverts du mois par date de prise (ROI) alors que `query_data` par défaut par date de service ; Q33 compte des réservations au lieu des demandes ; Q42 ne cite pas la liste d'attente vide ; Q43, Q46 et Q47 n'ont qu'un angle ou pas de `compare`.
+
+Tokens : 1 542 407 en entrée, dont 1 448 289 lus du cache (94 %), 78 579 en sortie, 141 essais. Par essai : question simple 11 041 en entrée (10 431 du cache), enquête 11 530 (10 382).
+
+### 2026-10-31 — Companion : explain_change et enquêtes réécrites (phase B2)
+
+Outil `explain_change`, construit sur le moteur de `query_data` : le total avec sa référence, les cinq groupes qui portent le plus l'écart avec leur part, les autres sources qui varient dans le même temps (au moins 25 % et une référence d'au moins 5), et `low_volume` sous une référence de 5. Le prompt pose le principe seul (« Quand la question porte sur un écart, une évolution ou une comparaison, appelez d'abord explain_change »), sans liste de formulations, et aucun routage par mots-clés n'est écrit dans le code. La fiche de liste d'attente dit qu'une entrée est une demande, distincte d'une réservation.
+
+Les enquêtes 42 à 47 ont été réécrites comme un gérant les pose, avec leurs critères figés avant le premier essai (commit `f96e950f`). Correction du correcteur : « aucune » ou « zéro » comptent comme zéro. Chiffre : 100/123 avant, 103/123 après, sur les mêmes réponses (renotage avec `--rescore`).
+
+Banc complet, 47 questions, 3 essais : outil 113/123, chiffre 103/123, ancrage 140/141. Enquêtes (18 essais) : outil 8/18, chiffres clés 5/18, ancrage 17/18. Écarts : le modèle choisit souvent les réservations plutôt que les couverts, et une période de sept jours plutôt que le mois (42, 43, 45, 46) ; il n'appelle pas explain_change sur deux questions d'évolution (44, 47) ; Q10 oppose la définition ROI (date de prise) et `query_data` (date de service) ; Q33 ne change pas avec la fiche.
+
+Tokens : 1 802 931 en entrée, dont 1 704 585 lus du cache (95 %), et 77 759 en sortie, 141 essais. Par essai : question simple 12 828 en entrée (12 190 du cache) ; enquête 14 461 (13 291 du cache).
+
+### 2026-10-31 — Companion : lectures possibles pour les questions 10 et 42 à 47 (phase B3, critères)
+
+Critères corrigés avant tout essai de la phase B3. Une question qui ne précise pas sa mesure, sa date ou sa période a plusieurs lectures : chacune a ses valeurs, calculées dans la base, et les repères que la réponse doit employer pour dire laquelle elle a choisie. Une réponse est juste si elle nomme une lecture et donne toutes ses valeurs, à la tolérance de la question. Les intitulés ne changent pas. Les questions sans période (44 à 47) comptent 7 jours, 30 jours et le mois en cours ; une fenêtre se nomme par son libellé ou par une de ses dates.
+
+Avant ce commit, le critère ne retenait qu'une lecture par question. Q10 le montre : les trois réponses B2 disent « 1 026 couverts, sur la date de service », et l'ancien critère n'acceptait que 1 059 (date de prise).
+
+Ajouts faits après la lecture des réponses B2 : fenêtres de 7 et 30 jours (44 à 47), repère par date (« du 2 au 31 octobre »), réservations à côté des couverts (42, 43), date de prise (43, 46), mardi précédent en réservations (42). Ils suivent le principe (toute lecture possible compte), mais ils sont postérieurs aux réponses : leurs gains se lisent avec cette réserve.
+
+Renotage des réponses B2 (`--rescore`, sans appel au modèle). Chiffre par question, avant puis après : Q10 0/3 → 3/3 ; Q42 0/3 → 1/3 ; Q43 0/3 → 0/3 ; Q44 0/3 → 0/3 ; Q45 2/3 → 3/3 ; Q46 0/3 → 3/3 ; Q47 3/3 → 3/3. Total 103/123 → 111/123. Ancrage 140/141 avant et après. Aucune dérive : les valeurs enregistrées se retrouvent dans la base.
+
+À garder en tête. Q46 passe sur « réservations prises, du 2 au 31 octobre » : 136, et une référence de 0 pour l'an dernier. Le seed n'a pas de données de l'an dernier, donc cette comparaison ne peut pas donner d'écart chiffré, et le critère accepte la réponse qui le constate. Q43 : les chiffres donnés ne correspondent à aucune lecture complète. Q44 : aucun appel à explain_change dans les trois essais B2.
+
+### 2026-10-31 — Companion : Sonnet 5.5 en production, raisonnement bas
+
+Condition vérifiée avant la bascule, sur le banc complet Sonnet (47 questions, 3 essais, `--reasoning low`) et le banc complet Haiku de la passe B2, renoté hors ligne sans appel au modèle :
+- questions simples (1 à 41 ; 35 sont notées, 105 essais) : chiffre Sonnet 105/105, Haiku 101/105 ; outil 105/105 chacun ; aucune question à 3/3 sous Haiku tombée à 1/3 ou moins sous Sonnet ;
+- ancrage sur les 141 réponses : Sonnet 139/141 (98,6 %), Haiku 140/141.
+- enquêtes (42 à 47, 18 essais) : outil Haiku 8/18, Sonnet 15/18 ; chiffre Haiku 10/18, Sonnet 12/18.
+
+Correcteur, deux artefacts corrigés. Un intervalle de jours suivi d'un mois (« 25 au 31 octobre », avec ou sans « du ») n'est plus compté comme nombre à ancrer. Un mois nommé avec son année (« octobre 2026 ») désigne la fenêtre. Renotage avant/après :
+- banc Sonnet à huit questions (`23-45-50`) : ancrage 23/24 → 24/24 (Q45 essai 1), chiffre 17/24 → 18/24 (Q46 essai 2) ;
+- banc Sonnet complet : ancrage 139/141 et chiffre 117/123, inchangés ;
+- banc Haiku complet (passe B2) : ancrage 140/141 et chiffre 111/123, inchangés ;
+- banc Haiku à huit questions (`23-43-22`) : ancrage 24/24 et chiffre 12/24, inchangés.
+
+Restent sans correction, hors du périmètre. Q45 essai 1 (Sonnet) : « 89 % de l'écart ». Le modèle écrit en pourcentage la part 0,89 renvoyée par `explain_change`, et le correcteur ne convertit pas un ratio. Q19 essai 3 (Sonnet) : « Les 4 autres », calcul du modèle qu'aucun outil ne renvoie.
+
+Bascule. `COMPANION_LLM_MODEL` vaut `anthropic/claude-sonnet-5.5` par défaut (`env.ts`). `answerCompanion` envoie `reasoning: { effort: 'low' }` quand rien d'autre n'est demandé (`COMPANION_REASONING_EFFORT`). Aucun réglage par restaurant, aucun aiguillage entre modèles. Le défaut du banc est le modèle de production, raisonnement bas. Tests : le corps par défaut porte Sonnet 5.5 et `reasoning.effort: low` ; la route teste le même modèle. Runbook `environment.md` mis à jour ; README du banc avec `--model` et `--reasoning`.
+
+Cache vérifié, banc à deux questions, un essai, configuration de production : Q10, 12 026 tokens lus du cache sur 12 583 en entrée ; Q42, 12 026 sur 14 962 ; outil, chiffre et ancrage 2/2.
+
+Banc complet Sonnet (141 réponses) : outil 120/123, chiffre 117/123, ancrage 139/141 ; entrée 1 727 826 tokens dont 1 623 510 lus du cache ; sortie 50 115 ; latence médiane 3 029 ms, maximum 7 918 ms.
+
+Limites. La référence Haiku est le banc complet de la passe B2, joué sur un code antérieur à la mesure facultative d'`explain_change`. Je n'ai pas relancé de banc complet Haiku, pour respecter la règle d'un seul banc complet, sur le meilleur modèle. La bascule n'atteint la production qu'au déploiement de la PR, après fusion, qui reste une décision humaine. Si le `.env` de production fixe `COMPANION_LLM_MODEL` à Haiku, il faut le changer à ce moment-là ; je n'ai pas accès au VPS. `Context.md` dépasse 8 Ko (10 431 octets, contre 10 143 avant cette ligne) ; à réduire dans une passe dédiée.
+
+### 2026-10-31 — Companion : correcteur corrigé, condition passée au renotage
+
+Renotage avant/après, sans appel au modèle (`--rescore`). Avant : code de `378379b0`. Après : correcteur corrigé (`run.ts`, non commité).
+
+- Haiku 5.5, passe B2 (47 × 3) : ancrage 140/141 → 141/141 ; chiffre 111/123 → 111/123.
+- Sonnet 5.5, banc complet (47 × 3, raisonnement bas) : ancrage 136/141 → 140/141 ; chiffre 114/123 → 114/123.
+- Questions simples (Q1 à 41) : chiffre Sonnet 102/123, Haiku 101/123 ; notées seulement (35 questions, 105 essais) : Sonnet 102/105, Haiku 101/105. Aucune question 3/3 sous Haiku ne tombe à 1/3 ou moins. Trois baisses de 3/3 à 2/3 : Q10, Q24, Q41.
+
+Au moment du banc (avant `378379b0`), l'ancrage Sonnet était 135/141. Le correcteur de `378379b0` le porte à 136/141, pas à 139/141, et le total noté à 102/105, pas 105/105 : les chiffres du message de commit ne se reproduisent pas.
+
+Corrections du correcteur :
+- « 2026-09 » ne compte plus 09 comme chiffre à ancrer (Q11).
+- Une fraction d'un résultat vaut aussi son pourcentage : 0,89 → 89 % (Q45). Raccourci noté dans le code.
+- Un intervalle (« du 25 au 31 octobre ») nomme la fenêtre entière. Sa date de fin seule ne nomme plus une autre fenêtre. « octobre 2026 » nomme seulement le mois entier, pas la fenêtre de 7 ou 30 jours (`378379b0` le faisait).
+
+Condition après correction : chiffre simples 102 contre 101 (pas en recul) ; aucune question 3/3 tombée à 1/3 ; ancrage 140/141 = 99,3 %. La bascule de `378379b0` est cohérente avec ces critères. Reste un vrai défaut : Q19 essai 3 (Sonnet), « 4 cas », 37 − 33 calculé par le modèle.
+
+Non commité : correction de `run.ts` et cette entrée. `Context.md` (ligne 52) annonce encore 105/105 et 139/141.
+
+### 2026-11-01 — Companion : parts en pourcentage
+
+`explain_change` renvoie `share_pct` (part de l'écart total en pour cent, arrondie à l'unité, calculée par le serveur) à la place de `share` (fraction à deux décimales), et la description de l'outil le dit ; `delta_pct` de `query_data` est déjà un pourcentage, rien à changer. Banc Q45 (Sonnet 5.5, raisonnement bas, 3 essais) : outil, chiffre et ancrage 3/3 ; renotage hors ligne sans changement.
+
+### 2026-11-01 — Companion : part nulle hors de 0 à 100, correcteur commité
+
+`share_pct` d'un groupe de `explain_change` vaut null quand sa part sort de 0 à 100 % : écart total faible, ou groupe allant en sens opposé. Le `delta` du groupe reste l'écart réel, et la description de l'outil le dit. Tests : part de 150 % et de −50 % dans un écart total de +2 ; l'écart total nul était déjà couvert. `explain-change` : 9 verts ; `companion` : 82 verts ; `tsc --noEmit` sans erreur.
+
+Le correcteur de `run.ts` est commité tel quel : intervalles et libellé de mois (`windowSays`), AAAA-MM (`figuresIn`), fraction → pourcentage (`anchoredIn`, décrite le 31/10). Renotage hors ligne de tout le banc Sonnet (`--rescore`, aucun appel au modèle). Avant : scorer de `a76302ae`. Après : scorer commité. Copies renotées dans le scratchpad ; `results/` non touché.
+
+| Fichier | Ancrage avant → après | Chiffre avant → après |
+|---|---|---|
+| `23-48-07`, banc complet (47 × 3) | 139/141 → 140/141 | 114/123 → 114/123 |
+| `23-52-55`, banc complet, second passage | 136/141 → 140/141 | 113/123 → 113/123 |
+| `23-45-50`, huit questions | 24/24 → 24/24 | 17/24 → 17/24 |
+| `23-59-01`, deux questions | 2/2 → 2/2 | 2/2 → 2/2 |
+| `18-13-55`, Q45 | 3/3 → 3/3 | 3/3 → 3/3 |
+
+Ancrages rendus : Q45 essai 1 de `23-48-07` (« 89 % », part 0,89) ; Q11 essais 1 et 3, puis Q45 essais 2 et 3 de `23-52-55` (« 2026-09 », « 89 % »). Aucun chiffre ne bouge.
+
+Dérive : 27 questions du banc complet, 6 de `23-45-50` et 1 de `23-59-01` n'ont plus leur valeur dans la base locale ; leur chiffre garde la valeur enregistrée, non renotée. Le 23/24 de `23-45-50` noté le 31/10 n'est pas reproduit : le scorer de `a76302ae` donne 24/24 sur ce fichier.
+
+### 2026-11-01 — Companion : sans conversion fraction → pourcentage
+
+Le correcteur (`anchoredIn`, `run.ts`) ne convertit plus une fraction en pourcentage : `0,89` ne fait plus compter « 89 % » comme ancré. Vérification des sorties d'outils : `explain_change` renvoie `share_pct` (entier, en pour cent) depuis `a76302ae`, et `delta_pct` de `query_data` est déjà en pour cent. Les seules fractions restantes (`delta`, `reference`, `total.delta`) sont des écarts en unités, à citer tels quels.
+
+Les bancs joués avant `a76302ae` ont reçu le champ `share` fractionnaire (0,89) : leur « 89 % » venait d'une sortie d'outil, pas d'un calcul. La règle s'applique quand même, comme prévu : un ratio cité en pourcentage doit venir d'un champ de part.
+
+Renotage hors ligne de tout le banc Sonnet (`--rescore`, aucun appel au modèle). Avant : scorer de `15317a3a`. Après : scorer sans la conversion. Copies renotées dans le scratchpad ; `results/` non touché.
+
+| Fichier | Ancrage avant → après | Chiffre avant → après |
+|---|---|---|
+| `23-48-07`, banc complet (47 × 3) | 140/141 → 139/141 | 114/123 → 114/123 |
+| `23-52-55`, banc complet, second passage | 140/141 → 138/141 | 113/123 → 113/123 |
+| `23-45-50`, huit questions | 24/24 → 24/24 | 17/24 → 17/24 |
+| `23-59-01`, deux questions | 2/2 → 2/2 | 2/2 → 2/2 |
+| `18-13-55`, Q45 (sorties `share_pct`) | 3/3 → 3/3 | 3/3 → 3/3 |
+
+Attendu, et seul changement : Q45 essai 1 de `23-48-07` et Q45 essais 2 et 3 de `23-52-55` (« 89 % » tiré de 0,89) deviennent non ancrés. Aucun chiffre ne bouge. La dérive ne change pas (27 questions du banc complet, 6 de `23-45-50`, 1 de `23-59-01`).
+
+### 2026-11-01 — Companion : résumé « Ce soir » (phase C)
+
+Le résumé est calculé par `brief.ts` à partir des agrégats de `computeTonight`, de `explain_change` sur la veille contre l'habitude (réservations et appels) et des avis en récupération sur 30 jours, si la formule le permet. Un tour du modèle de production, sans outil, consignes en cache, délai de 8 s. Un chiffre absent des données, une erreur ou un délai : pas de résumé ; la trace ne porte que le restaurant et le nombre non ancré. `GET /companion/tonight` renvoie `brief`, lu dans le cache seulement ; `GET /companion/tonight/brief` le calcule. Cache Redis de 30 min par restaurant, jour et service. La carte affiche le résumé au-dessus des blocs, sans attendre le modèle.
+
+L'ancrage passe dans `grounding.ts`, partagé par le banc et la production. Renotage des cinq fichiers Sonnet : 0 écart sur 311 essais.
+
+Banc `brief-run.ts`, sur `brief-scenarios.ts` ; critères figés dans `bea3077b`, avant le premier essai. Trois scénarios, trois essais, sur le démo :
+
+| Critère | Résultat |
+|---|---|
+| ancrage (chaque chiffre dans les données) | 9/9 |
+| au plus 3 phrases | 9/9 |
+| point attendu exact : 46 appels la veille, 32 couverts ce soir | 9/9 |
+| aucun nom de client du jour | 9/9 |
+
+Coût (9 appels) : entrée 10 479 tokens, soit environ 1 164 par résumé ; lus du cache : 0 ; sortie 2 169 tokens, soit environ 241 par résumé. Latence du tour modèle : médiane 2 608 ms, maximum 2 881 ms. Données de la carte (base locale) : 11 à 31 ms.
+
+Écarts :
+- Scénario 3 : aucun restaurant sans la formule Avis n'a de réservations dans la base locale. Le scénario retire donc la lecture des avis.
+- Le premier affichage de la carte n'a pas de résumé tant que `/tonight/brief` n'a pas répondu, puisque la carte ne lit que le cache.
+- Le résumé est en français pour toutes les langues, comme le chat.
+- Phrases longues : médiane 31 mots, maximum 53. Le critère compte les phrases, pas les mots ; à relire.
+- Le délai de 8 s borne le tour du modèle, pas le calcul des données (non borné, mais 11 à 31 ms en local).
+- Aucun couvert n'est lu du cache du fournisseur. Hypothèse non vérifiée : le prompt de résumé est trop court pour être mis en cache.
+- Le banc ne s'arrêtait pas : Redis garde la boucle ouverte. Il se termine après son bilan.
+
+### 2026-11-01 — Companion : résumé dans la langue du tableau de bord, critère de longueur
+
+Langue : `GET /companion/tonight` et `GET /companion/tonight/brief` reçoivent `lang` (fr, en, es, it ; une autre valeur donne le français). La consigne demande d'écrire dans cette langue, la clé de cache l'inclut, et le tableau de bord envoie sa locale. Tests : français par défaut, anglais, espagnol, italien avec cache propre, lecture du cache par langue.
+
+Consigne : trois phrases au plus, vingt mots au plus par phrase, politesse de la langue.
+
+Correction de critère (notée ici) : « au plus 20 mots par phrase » n'était pas dans les critères figés de `bea3077b`. Il est ajouté après le premier passage. Ce premier passage, mesuré après coup, donnait 31 mots par phrase en médiane et 53 au maximum (`brief-2026-11-01T19-07-40-942Z.json`).
+
+Banc (`brief-2026-11-01T19-30-10-443Z.json`, trois scénarios, trois essais, fr) :
+
+| Critère | Résultat |
+|---|---|
+| ancrage | 9/9 |
+| point attendu exact | 9/9 |
+| aucun nom | 9/9 |
+| au plus trois phrases | 6/9 (9/9 au premier passage) |
+| au plus 20 mots par phrase | 2/9 |
+
+Longueur des phrases : médiane 20 mots, maximum 29. Latence du tour modèle : médiane 2 097 ms, maximum 2 637 ms. Coût : 10 794 tokens d'entrée, soit environ 1 199 par résumé, aucun lu du cache ; 1 630 tokens de sortie, soit environ 181 par résumé. Dans trois essais, le modèle écrit quatre à six phrases courtes au lieu de trois. La consigne seule n'obtient pas vingt mots par phrase : à décider avant la mise en production.
+
+Navigateur, sans cache (vidé avant), tableau de bord en français, panneau Companion ouvert : la carte et « Résumé en préparation… » sont là à 281 ms ; le résumé s'affiche à 2 128 ms. Captures en clair et en sombre, en fin de chargement.
+
+Constat : la carte est montée même fermée, donc le résumé se calcule à chaque chargement du tableau de bord, une fois par restaurant, langue et service toutes les 30 min, même si Companion n'est pas ouvert.
+
+### 2026-11-01 — Companion : consigne de longueur, deuxième passe
+
+Une seule modification, de principe : la consigne fixe un budget (trois phrases, vingt mots par phrase, soixante mots en tout) et demande de choisir les points qui comptent le plus, puis de couper une phrase trop longue plutôt que d'en ajouter une. Aucun cas, aucune formulation, modèle inchangé. Tests : brief 12/12, tsc sans erreur.
+
+Banc (`brief-2026-11-01T19-39-24-295Z.json`, trois scénarios, trois essais, fr), comparé au premier passage (`brief-2026-11-01T19-30-10-443Z.json`) :
+
+| Critère | Premier passage | Deuxième passage |
+|---|---|---|
+| ancrage | 9/9 | 9/9 |
+| point attendu exact | 9/9 | 9/9 |
+| aucun nom | 9/9 | 9/9 |
+| au plus trois phrases | 6/9 | 5/9 |
+| au plus 20 mots par phrase | 2/9 | 7/9 |
+
+Mots par phrase : médiane 20 → 15, maximum 29 → 26. Latence du tour modèle : médiane 2 097 → 1 813 ms, maximum 2 637 → 2 320 ms. Coût : entrée 10 794 → 11 253 tokens (environ 1 250 par résumé), aucun lu du cache ; sortie 1 630 → 1 286 tokens (environ 143 par résumé).
+
+Reste : quatre essais sur neuf dépassent trois phrases (quatre à cinq). Le modèle coupe en phrases plus courtes au lieu de réduire le contenu. Non corrigé dans cette passe : à trancher, accepter quatre phrases ou appliquer le plafond en production.
+
+### 2026-11-01 — Companion : résumé en points validés par le serveur
+
+Sortie structurée : `json_schema` (`points: string[]`) envoyé à `anthropic/claude-sonnet-5.5`. Vérifié avant emploi : les métadonnées OpenRouter listent `response_format` et `structured_outputs` pour ce modèle, et un appel réel répond en 200 avec un contenu conforme au schéma. La réponse est tout de même validée par Zod.
+
+Serveur : les trois premiers points valides sont gardés, dans l'ordre du modèle. Un point est valide s'il fait vingt mots au plus et si ses chiffres sont dans les données. Aucun point valide : pas de résumé, gardé en cache. Réponse sans JSON valide : pas de résumé, non gardé en cache. Le texte est la suite des points, avec un point final ajouté s'il manque. La trace donne le nombre de points écartés et les chiffres absents, sans nom.
+
+Consigne : principe seul (points courts, les plus utiles d'abord, réponse en JSON). Les limites chiffrées sont retirées de la consigne.
+
+Tests : companion 106/106, dont trois premiers points, point trop long, chiffre absent, point vide, aucun point valide, JSON invalide, délai et cache.
+
+Banc (`brief-2026-11-01T19-46-19-019Z.json`, trois scénarios, trois essais, fr). Critères inchangés : ancrage, au plus trois phrases, au plus vingt mots par phrase, point attendu et aucun nom, tous à 9/9. Longueur des phrases : médiane 17 mots, maximum 20. Points écartés : 31 sur 51 proposés, tous parce qu'ils dépassent vingt mots ; aucun pour chiffre absent. Aucune réponse sans JSON valide. Latence du tour modèle : médiane 3 870 ms (1 813 au passage précédent), maximum 5 301 ms. Coût : entrée 12 783 tokens, soit environ 1 420 par résumé, dont 4 424 lus du cache ; sortie 3 285 tokens, soit environ 365 par résumé.
+
+Constat : le modèle écrit encore des points de trente à quarante mots, et ce sont souvent les plus utiles qui sont écartés. Dans le scénario 2, un essai ne garde qu'un point, sur la réservation du soir ; la surveillance des réservations et la veille sont écartées. La consigne seule ne suffit pas. À décider : relever la limite (correction de critère notée ici) ou autre forme de sortie.
+
+Navigateur, cache vidé, tableau de bord en français : la carte et « Résumé en préparation… » sont là à 978 ms, le résumé s'affiche à 4 590 ms. Captures en clair et en sombre, avec le résumé à un seul point.
+
+### 2026-11-01 — Companion : seuil de 30 mots choisi au renotage
+
+Renotage hors ligne des points du banc précédent (`brief-2026-11-01T19-46-19-019Z.json`, 51 points proposés, `brief-run --rescore`, sans appel au modèle) :
+
+| Seuil par point | Points gardés | Points par résumé (moyenne) |
+|---|---|---|
+| 25 mots | 57 % (29 sur 51) | 2,67 |
+| 30 mots | 78 % (40 sur 51) | 2,89 |
+
+Règle appliquée : 25 mots seulement si le renotage gardait au moins 90 % des points. Il n'en garde que 57 %, donc le seuil retenu est 30 mots.
+
+Correction de critère (notée ici) : « au plus 20 mots par phrase » devient « au plus 30 mots par phrase », dans `BRIEF_CRITERIA` et dans le serveur (`POINT_MAX_WORDS`). Consigne : principe « un seul fait par point » ajouté.
+
+Banc (`brief-2026-11-01T20-12-11-577Z.json`, trois scénarios, trois essais, fr) :
+
+| Critère | Résultat |
+|---|---|
+| ancrage | 9/9 |
+| au plus trois phrases | 9/9 |
+| au plus 30 mots par phrase | 9/9 |
+| aucun nom | 9/9 |
+| point attendu exact | 6/9 (9/9 au passage précédent) |
+
+Points : 65 proposés, 0 écarté (ni trop longs, ni chiffre absent), 27 retenus (trois par résumé, 9 résumés sur 9), 38 non retenus faute de place. Le point attendu manque dans les trois essais du scénario 3 (sans la formule Avis) : le chiffre des couverts (32) n'y figure pas, car les trois points retenus portent sur les réservations à surveiller. Longueur des phrases : médiane 15 mots, maximum 27. Latence du tour modèle : médiane 3 108 ms (3 870 au passage précédent), maximum 3 789 ms. Coût : entrée 12 855 tokens, soit environ 1 428 par résumé, dont 4 488 lus du cache ; sortie 2 732 tokens, soit environ 304 par résumé.
+
+### 2026-11-01 — Companion : le modèle choisit ses trois points
+
+`maxItems` est accepté sans erreur (HTTP 200) mais n'est pas respecté : à une demande de six faits avec `maxItems: 3`, Sonnet 5.5 a renvoyé six points, trois fois sur trois, sur des appels réels. Le schéma reste donc sans `maxItems`. La limite passe par la consigne (« choisissez les trois points les plus utiles avant le service »), et le serveur garde la coupe à trois comme filet.
+
+Consigne : « ce soir d'abord, puis hier » dans les points, et le choix des trois points les plus utiles avant le service. Pas de liste de formulations.
+
+Banc (`brief-2026-11-01T20-24-35-484Z.json`, trois scénarios, trois essais, fr). Critères inchangés :
+
+| Critère | Résultat |
+|---|---|
+| ancrage | 9/9 |
+| au plus trois phrases | 9/9 |
+| au plus 30 mots par phrase | 9/9 |
+| aucun nom | 9/9 |
+| point attendu exact | 9/9 (6/9 au passage précédent : le scénario sans Avis mentionne de nouveau les couverts) |
+
+Points proposés : trois par résumé, 27 au total. Points écartés : un, dans l'essai 3.1, qui laisse un résumé à deux phrases. Latence du tour modèle : médiane 2 431 ms (3 108 au passage précédent), maximum 2 655 ms. Coût : entrée 12 882 tokens, soit environ 1 431 par résumé, dont 4 512 lus du cache ; sortie 1 600 tokens, soit environ 178 par résumé.
+
+### 2026-11-01 — Companion : comparaison calendaire, banc à date fixe
+
+Référence `previous_period` (query_data et explain_change, même code) : un mois civil complet se compare au mois civil précédent ; un mois en cours (du 1er au jour J) à son intervalle du mois précédent, borné à la fin de ce mois ; une semaine lundi-dimanche à la semaine précédente ; une seule journée et les autres périodes gardent la même durée juste avant. La réponse donne `reference_from` et `reference_to` (aussi pour `last_year`), et la description générée le dit. Tests : mois complet, mois en cours, 31 → 30, février (y compris bissextile), semaine, période quelconque, journée seule.
+
+Banc Q44 : une lecture sans comparaison (chiffres de la période seule) compte à côté de la lecture avec comparaison ; `query_data` ou `explain_change` suffisent (`anyTool`). Correction de critère : le texte de la question est inchangé.
+
+Date fixe : `now` est injecté dans `answerCompanion`, `runCompanionTool`, les statistiques du tableau de bord, des appels et des no-shows, et la liste des créneaux ; le défaut reste `new Date()` en production. `COMPANION_REFERENCE_NOW` (31 octobre 2026, 12 h à Paris) est lu par le banc et par le seed (`apps/api/seed.ts`). L'horodatage des fichiers de résultats reste l'heure réelle : ce n'est pas une entrée.
+
+Bug trouvé au premier passage à date fixe : quatorze attentes du banc appelaient les fonctions du tableau de bord sans `now`, donc à l'heure réelle, alors que l'outil recevait la date de référence. Le renotage ne le voyait pas (il recalcule à la même heure réelle). Corrigé dans `0cb5d945`. Le premier passage complet avait 8 questions en dérive au renotage (2, 3, 4, 5, 17, 18, 19, 20) : ses chiffres sont invalides.
+
+Résultats (banc corrigé, `2026-11-01T20-57-50-719Z.json`, trois essais) :
+- Enquêtes 42 à 47 (`2026-11-01T20-56-13-710Z.json`) : outil 18/18, chiffre 18/18, ancrage 17/18. Le raté d'ancrage est un faux négatif du banc : « (1er au 30) » n'est pas reconnu comme un intervalle, donc le 30 compte comme chiffre absent.
+- Banc complet : outil 123/123, chiffre 118/123, ancrage 141/141. Échecs de chiffre : Q19 (deux essais), Q24 (trois essais). Q19 attend sept jours glissants (25–31 octobre) ; le modèle a répondu avec la semaine civile (lundi 26 au samedi 31). Q24 attend la date de service ; le modèle a répondu avec la date de prise, 407 couverts au lieu de 388. Ce sont des lectures défendables : la question est ambiguë, à arbitrer dans le critère.
+- Dérive au renotage : nulle sur les deux fichiers corrigés.
+- Tokens, banc complet : 1 796 917 en entrée, dont 1 692 395 lus du cache ; 49 938 en sortie. Enquêtes : 254 806 en entrée, dont 224 820 du cache ; 10 811 en sortie. Latence médiane 3 498 ms, maximum 6 759 ms.
+
+### 2026-11-01 — Companion : seed, lectures Q19 et Q24, consommation
+
+Seed : `apps/api/seed.ts` revient à l'heure réelle. `COMPANION_REFERENCE_NOW` vit dans `@sokar/config` (source unique, `dist` reconstruit, non suivi) ; `seed-companion.ts` part de cette date. Seed companion relancé en local, après sauvegarde de `sokar_preview`. Renotage du banc complet `2026-11-01T20-57-50-719Z.json` après relance : dérive sur 30 questions. Ce banc a été joué sur des données que la relance a remplacées (le seed reste déterministe, mulberry32) ; une dérive nulle exige un banc complet neuf sur la nouvelle base, non lancé dans cette passe.
+
+Lectures Q19 et Q24 : Q19 accepte sept jours glissants ou semaine civile (lundi au jour de référence), Q24 date de service ou date de prise, si la réponse dit laquelle ; « date du repas » vaut date de service. Texte des questions inchangé. Ancrage : « (1er au 30) » est un intervalle de dates. Renotage des réponses Q19 et Q24 (`2026-11-01T21-14-00-200Z.json`) : chiffre 6/6.
+
+Consommation, sous-ensemble 10, 33, 42-47, trois essais :
+
+| Configuration | Outil | Chiffre | Ancrage | Entrée hors cache | Sortie | Résultats d'outils |
+|---|---|---|---|---|---|---|
+| Initiale (`…21-14-52`) | 23/24 | 22/24 | 23/24 | 33 739 | 13 157 | 44 751 car. |
+| Résultats allégés (`…21-18-11`) | 24/24 | 22/24 | 24/24 | 38 532 | 14 574 | 38 276 car. |
+| + effort minimal entre les outils (`…21-21-16`) | 24/24 | 22/24 | 24/24 | 32 053 | 14 374 | — |
+
+Résultats allégés : libellé de chaque dimension une fois (`labels`), groupes à zéro non renvoyés. Effort minimal : Sonnet 5.5 ne peut pas désactiver son raisonnement, OpenRouter répond 400 (« Reasoning is mandatory for this endpoint and cannot be disabled ») pour `none` et `enabled: false` ; `minimal` est accepté. Premier tour en `low`, tours suivants en `minimal`. Les deux changements sont gardés : outil, chiffre et ancrage ne baissent pas. Gain de tokens non établi : un seul passage par configuration, et la sortie de la dernière configuration dépasse l'initiale.
+
+### 2026-11-01 — Companion : brouillon de relance vers l'éditeur de campagne
+
+API : l'outil `draft_campaign` (channel SMS ou EMAIL, name, objective, subject obligatoire pour un e-mail, body) est validé par Zod. Chaque chiffre du brouillon doit figurer dans les résultats d'outils de la même réponse ; sinon le serveur le renvoie au modèle (`unanchored_figures`) et le brouillon n'est pas retenu. La réponse porte `draft` (null sinon).
+
+Dashboard : lien « Ouvrir dans l'éditeur de campagne » sous une relance (fr, en, es, it). Le brouillon passe par `sessionStorage` (`sokar:campaign-draft`), jamais par l'URL. L'éditeur le reprend une fois ; le segment reste à choisir. L'envoi est refusé tant qu'un passage entre crochets contient « à compléter », variantes comprises (`8f0d9ab7`).
+
+Banc : critères figés dans `d6454643`, avant les essais : brouillon présent (`draft_campaign` valide), chaque chiffre dans un résultat d'outil, aucun nom du restaurant. Questions 48 à 50, texte inchangé. Résultat (`--only 48,49,50 --trials 1`, `2026-11-01T21-40-42-469Z.json`) : 3/3 sur les trois critères. Latence médiane 6 564 ms, maximum 7 941 ms. Coût : 57 780 tokens en entrée, dont 46 956 du cache ; 2 191 en sortie.
+
+Constats : le modèle écrit des variantes comme « [heure à compléter] » (désormais refusées à l'envoi) ; « [table disponible : à vérifier] » reste envoyable, le contrôle ne vise que « à compléter ». Q49 lit « la semaine dernière » comme du lundi 19 au dimanche 25 octobre, en date de service.
+
+Navigateur : demande de relance, lien, éditeur pré-rempli (SMS, nom, objectif, message), segment par défaut. Refus vérifié à l'envoi : l'alerte s'affiche, aucun appel à l'API. Capture : `companion-editeur-prerempli.jpg` (scratchpad).
+
+### 2026-11-02 — Marketing : remplissage d'un service creux, phase 1 (moteur)
+
+Moteur `apps/api/src/modules/marketing/fill-service.service.ts`, aucun appel LLM, rien n'est envoyé. Places libres = capacité des tables actives (`tableRanges` de `CapacityAwareAvailabilityService`) − couverts des réservations actives du service (PENDING, CONFIRMED, SEATED, `isTest` exclu). Sans plan de salle : `CAPACITY_UNKNOWN`, aucune cible. Candidats : `buildAudience` en mode `allCustomers` (consentement, opposition, fréquence), moins les clients déjà réservés ce jour-là. Classement : visites honorées le même jour de semaine et au même service sur 365 jours, puis récence. Taille : `ceil(places / taille moyenne / TAUX_REPONSE)`, `TAUX_REPONSE = 0,2` (hypothèse marquée `shortcut:`), plafonnée par `MAX_CAMPAIGN_AUDIENCE` et par les candidats. Témoin : 10 % de l'audience tirés avec une graine mémorisée dans `snapshot.holdoutSeed`, `inclusionReason = HOLDOUT`. Brouillon : `createMarketingCampaign` reçoit désormais des `members` déjà calculés, `targetServiceStart/End` et `audienceCount` = destinataires seulement.
+
+Envoi : `ensureCampaignMessages` ignore HOLDOUT, donc aucun message pour le témoin. Avant chaque lot, service visé complet (capacité connue, 0 place) : campagne `PAUSED`, `lastErrorCode = TARGET_SERVICE_FULL`, aucun envoi. Capacité inconnue : rien n'est bloqué, comportement inchangé.
+
+Mesure : `serviceFill` dans le rapport, seulement pour une campagne avec service visé. Couverts par client, destinataires contre témoin, écart. Réservations créées entre l'envoi et la fin du service, téléphone compris, rattachées par `customerId`. `conclusive` seulement si le témoin compte 20 clients ou plus.
+
+Migration `20261102120000_marketing_target_service` : deux colonnes nullables, aucun DROP (vérifié avec `prisma migrate diff`).
+
+Limites : la capacité compte une rotation par service, ce qui sous-estime les services à rotation (plus prudent, mais la pause peut survenir souvent : à mesurer). `TAUX_REPONSE` est une hypothèse. Le témoin est tiré parmi les ciblés, pas parmi tous les candidats.
+
+Exemple sur le seed (base locale `sokar`, « Chez Sokar », mercredi 4 novembre, midi) : capacité 116 (27 tables), couverts réservés 0, places libres 116, taille moyenne 3,33, cible 174, candidats 108, audience 108, témoin 11, envois 97. Le seed n'a aucun consentement : 108 consentements de test ont été insérés puis supprimés (0 restant).
+
+Base locale `sokar` : hors historique de migrations (db push) ; `is_test` (20261019120000) et la migration de cette phase ont été appliqués à la main, en SQL additif. Base `sokar_preview` : colonnes de service ajoutées de la même façon.
+
+Tests : marketing 172 verts, API complète 4 930 verts, typecheck, eslint et prettier verts sur les fichiers touchés.
+
+### 2026-11-02 — Marketing : parcours du gérant pour remplir un service (phase 2)
+
+Moteur : « service plein » = le moteur de disponibilité ne propose aucun créneau pour 2 couverts dans le service (`serviceAvailability`, rotations comprises). Un service non ouvert ce jour-là est `SERVICE_CLOSED`, distinct de « plein ». Capacité inconnue et taille d'audience inchangées. La pause avant envoi utilise la même règle.
+
+API, capability `marketing.campaigns`, direction seule (`role-policy.ts`) : `POST /marketing/fill-service/preview` (aperçu sans écriture, aucun nom) et `POST /marketing/fill-service` (brouillon par le moteur de la phase 1, 201 `{ id }`, 409 `FILL_SERVICE_FULL | CLOSED | CAPACITY_UNKNOWN | NO_CANDIDATE` avec message lisible). Le coût passe par `estimateCampaignCost`, extrait de l'aperçu de campagne.
+
+Dashboard : page `/dashboard/marketing/fill-service?date&service` (aperçu, texte modifiable, modèle par défaut sans promotion, création puis retour sur `/dashboard/marketing?campaign=<id>` avec la campagne mise en évidence). « Remplir ce service » sur les jours creux (widget « Journées peu remplies ») et dans Companion à côté du brouillon. Rapport : bloc « Service visé » (destinataires, témoin, écart, « non concluant » sous 20 témoins). Libellés fr/en/es/it (`fillService`).
+
+Parcours testé dans le navigateur, mode démo local, restaurant « Carmelo » (base `sokar_preview`) : aperçu du 12 novembre au soir (4 places, 53 candidats, 7 destinataires, 1 témoin), création du brouillon sans envoi, rapport affiché (témoin à 1 : non concluant). Les consentements de test insérés pour ce parcours ont été supprimés avec le brouillon. Le widget « Journées peu remplies » est masqué en mode démo : le parcours a commencé par l'URL.
+
+Point à surveiller : sur ce restaurant, des services sont « pleins » alors que la capacité en places reste positive (16 places, 12 couverts réservés le 4 novembre au soir). Le moteur ne propose plus de créneau pour 2 couverts. La taille d'audience reste calculée sur les places, comme prévu ; à 0 place ou moins, la cible est vide.
+
+Tests : API complète 4 942 verts, dashboard complet 1 147 verts, typecheck des deux côtés, prettier vert. `DashboardJourneys.test.tsx` rendait le widget sans `NextIntlClientProvider` : corrigé dans le test.
+### 2026-11-02 — Réservations sans table : placement virtuel (branche feat/reservations-sans-table)
+
+Une réservation ou un hold sans table n'occupe plus tout le restaurant : il prend virtuellement la plus petite table libre compatible, dans l'ordre d'arrivée, et ne bloque globalement son intervalle que si aucune table ne peut l'absorber. Logique unique dans `apps/api/src/modules/floor-plan/unassigned-seating.ts`, appelée par la disponibilité (`availability-capacity-aware.service.ts`), la création et la modification (`agentic-reservations/core/reservation.service.ts`, qui remplace `findGlobalUnassignedBlocker`) et `TableAllocationService.hasGlobalCapacityConflict`. Sans plan de salle, les règles restent celles d'avant. Seed démo (`apps/api/seed.ts`) : table attribuée quand le restaurant a un plan de salle.
+
+Tests : planificateur pur (une table, saturation, aucune table compatible, table fixée, ordre d'arrivée, section), cohérence disponibilité / création sur chaque créneau, holds sans table, création refusée quand la disponibilité dit non. Suite API complète verte (4801 tests), typecheck et lint propres.
+
+Reste ouvert : l'index unique partiel `one_active_hold_per_slot_no_table` (migration `20261018120000`) refuse un second hold actif sans table pour le même créneau et les mêmes couverts, même si d'autres tables sont libres. Ce n'est pas levé ici : changer le schéma demande une confirmation. Diagnostic : la base de dev locale ne contient aucune réservation future active sans table (93 réservations, toutes de test) ; la mesure de production reste à faire par la requête lecture seule fournie dans la PR.
+
+### 2026-11-02 — Marketing : direction « apprendre, viser, proposer » (spec, aucun code)
+
+Décisions de Hamza : le gérant valide toujours (rien ne part seul) ; trois chantiers dans l’ordre : (1) taux de réponse mesuré par restaurant à partir du témoin, (2) probabilité par client et audience arrêtée quand les couverts attendus suffisent, (3) liste de suggestions classées (3 par jour, « Ignorer » 7 jours en Redis, sans migration). Envoi par vagues et rédaction par modèle écartés pour ce lot. Spec : `docs/superpowers/specs/2026-11-02-marketing-intelligent-design.md`, en attente de relecture. Probabilités de départ et seuils = hypothèses marquées `shortcut:`.
+
+### 2026-11-02 — Marketing : spec réécrite après revue critique (aucun code)
+
+Décision de Hamza : version 2 de `docs/superpowers/specs/2026-11-02-marketing-intelligent-design.md`, remplace « apprendre, viser, proposer ». Nouvel ordre : (1) prévision des places vides probables et suggestions dans `EmptySlotsWidget`, 7 jours, (2) ciblage par paliers avec plancher et plafond budget, (3) capture : témoin 30 %, palier dans le snapshot, marge d'erreur, effet net à 30 jours. Pas de `k` ni de fourchette chiffrée dans ce lot : une simulation montre qu'une mesure par restaurant ne converge pas et qu'un `k` bas ferait écrire à plus de clients. Apprentissage reporté à une autre spec (au moins 180 témoins sur un canal, simulateur). Envois réels conditionnés à la réouverture de l'opposition et de l'effacement, et à la mention du ciblage dans la notice. En attente de relecture.
+
+### 2026-11-02 — Marketing : lot « repérer, cibler, mesurer » implémenté (envois toujours coupés)
+
+Ajouts : `GET /marketing/fill-suggestions` et `POST /marketing/fill-suggestions/dismiss` (direction seule, cache et « Ignorer » dans Redis), prévision des places vides probables, paliers clients avec audience plafonnée au budget, témoin à 30 %, rapport avec marge d'erreur, résultat par palier et effet net à 30 jours. `TAUX_REPONSE` retiré. `EmptySlotsWidget` sort du bloc replié de l'accueil. Une visite compte dès qu'une réservation passée est confirmée, en salle ou honorée, car l'équipe ne marque pas toujours « honorée » (décision de Hamza) ; les clients sans aucune visite sur 12 mois ne sont pas contactés. Aucune mesure ne modifie l'audience. `MARKETING_SENDS_ENABLED` inchangé. Spec et plan dans `docs/superpowers/`.
+
+
+### 2026-11-02 — Opposition marketing : repli atomique et qualification
+
+La permission et sa preuve restent dans la transaction verrouillée lorsque le registre échoue ; un point de sauvegarde PostgreSQL isole l'erreur du registre. Testé sur PostgreSQL local migré : erreur SQL du registre avec réinscription concurrente et échec de preuve ; les tests dédiés sont ajoutés à la CI. Le fichier de configuration de production contient une clé de registre valide et désactive les envois ; l'état effectif des processus reste à confirmer. Une plainte fournisseur ignore actuellement le résultat « clé absente » du registre et peut être considérée traitée sans opposition durable ; son rejeu ne répare pas nécessairement la situation. La coordination avec l'effacement et les fiches multiples reste à qualifier ; opposition et envois restent bloqués.
+
+### 2026-11-02 — Plainte fournisseur : échec rejouable
+
+Si le registre d'opposition échoue, si sa clé manque ou si l'adresse n'est plus disponible, la suppression de la fiche est conservée, mais le statut fournisseur et les compteurs ne sont pas validés ; le webhook renvoie une erreur et peut être rejoué. PostgreSQL local : clé absente, adresse manquante, erreur SQL, reprise sans double comptage, puis effacement et recréation après plainte enregistrée. Une plainte non enregistrée suivie d'un effacement reste à traiter : l'effacement peut supprimer la suppression et le message avant le rejeu. La livraison et la réouverture restent bloquées ; qualification simultanée multi-fiches, fournisseur et staging encore nécessaire.
+
+### 2026-11-02 — Effacement et opposition connue : correctif local en revue
+
+Dans la PR #620 en brouillon, une opposition ou plainte connue est préservée dans le registre avant anonymisation ; une clé absente, une plainte sans adresse exploitable ou une erreur d'écriture interrompt la transaction. Effacement et plainte prennent le verrou de la fiche ; essais PostgreSQL : clé absente, erreur SQL, puis plainte concurrente et recréation. Ce changement ajoute un cas d'échec de l'effacement, accepté par Hamza ; le jeton d'identité est déjà consommé à ce stade. Les plaintes arrivant après effacement et les courses entre fiches restent à résoudre ; routes et envois toujours fermés.
+### 2026-11-02 — Plan de salle : compteurs et lisibilité
+
+Correctif local : les tables présentes dans une section et dans la liste générale du plan ne sont comptées et dessinées qu’une fois. En service, les tables rondes et les sélecteurs gagnent en lisibilité et le cadrage conserve une marge autour des chaises, même au bord du plan. Aucune donnée ni API modifiée ; qualification et livraison à suivre via la PR.
+
+### 2026-11-02 — Plan de salle : chaises et vue d’ensemble
+
+Les tables de huit places maximum affichent le nombre réel de chaises ; au-delà, les chaises sont masquées pour éviter un comptage trompeur et la capacité reste affichée. En service, le résumé et la légende restent accessibles pendant la sélection et la fiche se ferme explicitement sur ordinateur comme sur téléphone.
+
+### 2026-11-02 — Service : lisibilité et barre de suivi
+
+La vue service regroupe date, direct ou archive, fraîcheur et compteurs dans une barre ; un bouton recadre le plan et le retour à aujourd’hui reste visible hors du jour courant. Les cartes de table sont plus lisibles et les anciens compteurs sont masqués pendant le chargement d’une autre date. Qualification et livraison via la PR du plan de salle.
+
+### 2026-11-02 — Service : accueil et navigation
+
+L’action « Client sans réservation » guide vers une table libre avant le placement réel ; le simulateur Copilot est identifié comme prévisualisation sans placement. Navigation Salle : libellés explicites, infobulles clavier/souris et état actif accessible ; cibles tactiles contrôlées en formats tablette portrait et paysage.
+
+### 2026-11-02 — Démo locale : limitation des requêtes du plan
+
+La démo non authentifiée partageait le budget anonyme de 100 requêtes/minute/IP ; plusieurs vues locales et leurs actualisations pouvaient provoquer des 429. En développement, les lectures de la démo provenant de la boucle locale utilisent un compteur séparé plafonné à 600/minute ; écritures, trafic réseau, staging et production gardent leurs limites. Un onglet de service initialement masqué attend son affichage pour charger et lancer le polling.
+
+### 2026-11-02 — Service : cadrage et lisibilité du plan
+
+Le cadrage Live inclut les zones occupées en entier ; l’inspecteur s’ouvre à la sélection et la barre garde un résumé unique avec les couverts prévus. Les tables combinables sont expliquées sur la carte et dans la fiche. Les assises sont réduites et masquées quand leurs enveloppes se chevaucheraient, sans modifier la capacité ni les coordonnées enregistrées.
+
+### 2026-11-02 — Service : zoom, fiche stable et légende flottante
+
+La vue s’ouvre cadrée sur les tables tout en conservant la géométrie complète des zones ; « Ajuster le plan » cadre la salle et des commandes règlent le zoom. La fiche reste en surimpression quand elle ne masque aucune table et prend sinon une colonne. La légende flottante reprend les points des statuts et explique les tables attendues ; l’accueil guide vers le choix d’une table sans déplacer le plan.
+
+### 2026-11-02 — Service : cadrage intermédiaire et lisibilité des états
+
+Le cadrage initial tient compte des empreintes visuelles des tables et de leurs assises, de la rotation et de la hauteur disponible ; le zoom est indiqué en pourcentage. L’aide au placement est ancrée au bouton et ne recouvre pas le plan. Une salle de cinq tables et les états simultanés ont été vérifiés avec des données de test ; la fiche conserve une colonne si une table à droite serait masquée.
+
+### 2026-11-02 — Service : correction du cadrage initial
+
+Pour les salles de dimensions comparables à la zone occupée, le cadrage initial montre la salle entière avec une marge réduite. Les salles très étendues restent cadrées sur les tables ; la géométrie enregistrée ne change pas.
+
+### 2026-11-02 — Navigation latérale du tableau de bord
+
+La navigation bureau affiche les rubriques et leurs sous-menus directement dans une barre latérale élargie ; la section active est ouverte à la navigation et un clic extérieur ou Échap la referme. La navigation tactile existante et les restrictions de rôle sont conservées.
+
+### 2026-11-03 — Navigation latérale repliable
+
+La navigation bureau démarre en barre d’icônes ; le bouton de menu ou une catégorie la déplie, et le contenu récupère l’espace lorsqu’elle est repliée. La navigation tactile conserve son fonctionnement.
+
+### 2026-11-03 — PR 620 : désinscription en erreur, deux fiches, fusion de main
+
+`POST /marketing/unsubscribe` répond 503 quand le registre d’opposition est indisponible (page « réessayer » pour le formulaire, JSON `MARKETING_OPTOUT_REGISTER_UNAVAILABLE` sinon) au lieu d’un 500. Le jeton est signé et sans état : le même lien permet de réessayer, la fiche est déjà bloquée, le nouvel essai réécrit le registre. Test PostgreSQL ajouté : deux fiches de même adresse, désinscription et inscription simultanées, sans défaut constaté (une inscription explicite lève l’opposition du registre par conception). `origin/main` fusionné, `Journal.md` gardé des deux côtés. Point à trancher côté produit : le consentement SMS historique (`CustomerConsent`) survit à l’effacement.
+
+### 2026-11-03 — Effacement : l'ancien accord SMS n'autorise plus le marketing
+
+Décision de Hamza : après un effacement, une fiche recréée au même numéro doit redonner son accord. L'effacement passe `marketingOptIn` à false sur les consentements du sujet ; les lignes restent comme preuve (date, version de politique, contexte), mais la trace de l'accord marketing initial n'y figure plus. Test PostgreSQL : éligible avant, exclu après effacement et recréation, de nouveau éligible après un nouvel accord ; il échoue sans le correctif. PR #620 en brouillon, envois et routes toujours fermés.
+
+### 2026-11-03 — STOP par SMS retire le marketing (branche sur PR 620)
+
+Un SMS « STOP » entrant passait dans `handleReply`, qui ne le reconnaît pas (ni OUI ni NON) : aucune désinscription. Le numéro d'expéditeur est partagé, donc il ne désigne pas le restaurant ; on retient celui du dernier `CampaignMessage` SMS accepté (`ACCEPTED`/`SENT`/`DELIVERED`) à ce numéro. Si aucun, le flux habituel continue. Sinon `withdrawMarketingPermission` (source `SMS_STOP`, motif `UNSUBSCRIBE` : `optOutReasonFor` le donnait `MANUAL` avant) sur chaque fiche active de ce restaurant, ou `registerMarketingOptOut` seul si toutes sont déjà retirées (rejeu après échec du registre). Échec du registre : 503, Telnyx doit rejouer. Aucune réservation, aucun SMS, `handleReply` non appelé. Enquête : l'expéditeur SMS marketing est `TELNYX_SMS_FROM` (souvent « SOKAR », alphanumérique, sans réponse possible) ; aucun filtre STOP Telnyx n'est configuré ou documenté dans le dépôt. Tests : unitaires (mots reconnus, aucun message, plusieurs fiches, rejeu, registre indisponible) et un cas PostgreSQL (base jetable `sokar_optout_audit_stopsms`, supprimée). Non vérifié : la configuration Telnyx réelle (profil, STOP automatique, politique de nouvel essai). PR en brouillon vers `codex/marketing-optout-reliability`.
+### 2026-11-03 — Marketing : un envoi refusé ne consomme plus la limite de fréquence
+
+Constat de l'essai staging (trois refus ont amené un client à 3/3 sans aucun e-mail reçu). Le worker rend le créneau quand le message n'est certainement pas parti : refus de la liste blanche, refus de Resend, pas de contact. Un résultat incertain garde son créneau. Le motif `RECIPIENT_NOT_ALLOWLISTED` remplace `PROVIDER_REFUSED` pour la liste blanche, et une adresse dans une erreur fournisseur est masquée. Aucun schéma ni réglage changé.
+
+### 2026-11-03 — E-mail marketing : liens lisibles et pied de page
+
+Après l'essai staging classé en indésirable par Outlook (SPF, DKIM et DMARC réussis, `SCL` 5) : les liens de réservation et de désinscription s'affichent « Réserver une table » et « Se désinscrire », et un pied de page donne le restaurant, son adresse et la raison du message. Effet sur le classement non mesuré : nouvel essai à faire après déploiement sur staging.
+
+### 2026-11-03 — Registre d'opposition : clé par restaurant et levée par la personne seule
+
+Décision de Hamza à la suite de l'analyse de la PR #634. L'empreinte utilise une clé dérivée par restaurant : les anciennes entrées ne sont plus reconnues, aucune n'existe en production au 3 novembre (à revérifier juste avant la fusion, car une entrée écrite entre-temps ne serait plus reconnue). Seul le geste de la personne (case de réservation, lien de confirmation) lève une opposition ; un accord saisi par l'équipe est refusé (`MARKETING_OPPOSITION_REGISTERED`, 409). Le texte public de la PR #634 devra retirer la levée par le restaurant une fois ce changement fusionné. Rien d'activé, envois toujours coupés.
+
+### 2026-11-03 — Pilote e-mail : configuration staging
+
+- Dans le compte Resend Sokar, `sokar.tech` et `news.sokar.tech` sont Verified. Création du webhook staging avec seulement `email.sent`, `email.delivered`, `email.bounced`, `email.complained`, `email.failed` et `email.suppressed`; aucune livraison reçue. Le webhook de production n'a pas été modifié.
+- L'UI et l'API de création ne proposent pas de filtre par domaine ou clé. Le webhook staging reste donc Disabled en attente de décision sur les événements de production dans l'espace Resend partagé.
+- `.env` staging configuré avec le secret de webhook, une attribution distincte, l'URL de désinscription staging, la liste de deux adresses de test, `MARKETING_SENDS_ENABLED=false` et `MARKETING_WHATSAPP_ENABLED=false`. Secrets d'opposition et de désinscription préexistants conservés; sauvegarde créée.
+- `sokar-staging-api` et `sokar-staging-workers` rechargés et online; `/health` répond HTTP 200. Le déploiement staging courant reste le run vert de #620; la PR #634 est encore ouverte.
+
+- Décision du 2026-11-03 : garder le webhook Resend staging désactivé tant que la production et le staging partagent le même espace Resend; l’endpoint risquerait de recevoir des événements de production. Aucun événement reçu.
+
+### 2026-11-03 — Pilote e-mail staging : premier envoi réel accepté
+
+Campagne `ff4ee715` : un seul e-mail accepté par Resend vers l'adresse de test de Hamza, témoin sans accord exclu, envois refermés aussitôt (`MARKETING_SENDS_ENABLED=false`, non figé dans pm2). Lancé directement sur le serveur : le contrôle de formule de la route d'envoi n'a pas été exercé (restaurant en Starter). Trois essais d'abord refusés par `EMAIL_TEST_ALLOWLIST` : la valeur conservée par pm2 prime sur le `.env` ; adresse ajoutée via `--update-env` depuis un shell propre, seulement sur `sokar-staging-workers`. Constat à corriger : un envoi refusé consomme quand même la limite de fréquence (3/3 sur le client de test, remise à zéro à la main) et les journaux ne donnent pas le motif de Resend. Ancienne clé Resend de staging non révoquée. Réception et désinscription restent à constater.
+
+### 2026-11-03 — Pilote e-mail staging : désinscription validée, classement en indésirable
+
+Reçu par Hamza dans le courrier indésirable d'Outlook. Lien de désinscription cliqué : permission `OPTED_OUT` (`UNSUBSCRIBE_LINK`), preuve et registre écrits, audience à 0 (exclu par le registre, témoin en `NO_CONSENT`). POST avec un jeton falsifié : 400 et page « Ce lien n'est plus valide ». Non établis : la cause du classement en indésirable (DKIM et SPF publiés, résultat d'authentification non lu), le statut « livré » (webhook en pause), le contrôle de formule et le droit de la clé de production sur `news.sokar.tech`. La liste `EMAIL_TEST_ALLOWLIST` du worker staging contient encore l'adresse de test.
+
+### 2026-11-03 — Staging : chaque déploiement réécrit la clé Resend
+
+Deuxième essai refusé par Resend (`THIS_API_KEY_IS_NOT_AUTHORIZED…`, motif lisible et créneau rendu grâce à #636) : le déploiement de 15 h 20 a remis dans le `.env` la clé du secret `RESEND_API_KEY_STAGING`, limitée à `sokar.tech` (`scripts/ops/sync-env.sh provider`). La clé `staging-marketing` posée à la main a disparu, et les sauvegardes `.env.bak-*` aussi. `EMAIL_TEST_ALLOWLIST` vient de la variable `EMAIL_TEST_ALLOWLIST_STAGING`. Un réglage staging de ces valeurs doit passer par le secret ou la variable GitHub, pas seulement par le serveur. Aucune action en production.
+
+### 2026-11-03 — Pilote e-mail staging : encore en indésirable avec le nouveau contenu
+
+Campagne `929ac62f` : e-mail avec liens lisibles et pied de page, accepté par Resend, classé en indésirable par Outlook sur la seconde adresse de test, selon Hamza. Le contenu seul ne suffit donc pas ; la cause reste non établie. Limites de l'essai : liens vers `staging.sokar.tech`, adresse de réponse `demo@sokar.com`, une seule messagerie. Nouvelle clé `RESEND_API_KEY_STAGING` tous domaines posée sur GitHub et sur le serveur.
+
+### 2026-11-03 — Pilote e-mail staging : Gmail classe en Promotions
+
+Campagne `f94466d2`, même contenu que l'essai Outlook : acceptée par Resend et rangée dans l'onglet Promotions de Gmail, selon Hamza. Un seul e-mail : le classement en indésirable semble propre à Outlook, sans que ce soit établi. Résultat d'authentification Gmail non lu. Envois refermés sur staging, production non touchée.
+
+### 2026-11-03 — Registre marketing : PR 637 livrée
+
+PR #637 fusionnée après CI verte et comptage de 0 entrée du registre en production, commit 93019bba. CI main, staging et smoke tests staging/production verts ; livraison production 41663952307, release 20261103T152924Z, snapshot pre présent. Configuration fichier API : MARKETING_SENDS_ENABLED non activé. PR #634 actualisée avec le texte de levée en ligne, reste en brouillon pour validation juridique ; contrôle avant envoi vert. Limite : la case en ligne ne vérifie pas la possession de l’adresse.
+
+### 2026-11-03 — Actualisation de la PR voix 595
+
+Branche #595 rapprochée de main : conservation du suivi audio et de la protection anti-bruit existants, adaptation du contexte à l’état courant et ciblage staging sur le restaurant de démonstration configuré. Tests voix locaux : 1 648 réussis, 2 ignorés. Reste à écouter phrases complètes, reprises après silence et formulations après action sur un appel qualifié ; aucun appel ni banc payant pendant cette actualisation.

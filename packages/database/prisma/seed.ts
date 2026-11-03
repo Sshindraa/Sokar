@@ -223,14 +223,12 @@ async function main() {
   // Customer VIP de test
   await prisma.customer.upsert({
     where: { restaurantId_phone: { restaurantId: restaurant.id, phone: '+33655667788' } },
-    update: { name: 'Bob VIP', isVip: true, visitCount: 12, loyaltyScore: 9.5 },
+    update: { name: 'Bob VIP', isVip: true },
     create: {
       restaurantId: restaurant.id,
       phone: '+33655667788',
       name: 'Bob VIP',
       isVip: true,
-      visitCount: 12,
-      loyaltyScore: 9.5,
     },
   });
 

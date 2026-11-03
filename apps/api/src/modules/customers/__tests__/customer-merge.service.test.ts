@@ -51,8 +51,6 @@ function customer(overrides: Record<string, unknown> = {}) {
     mergedIntoId: null,
     archivedAt: null,
     name: 'Alice Martin',
-    visitCount: 2,
-    loyaltyScore: new Prisma.Decimal(0),
     isVip: false,
     notes: null,
     specialOccasion: null,
@@ -125,7 +123,6 @@ describe('customer merge service', () => {
         name: 'Élodie Martin',
         phone: '+33600000001',
         emailNormalized: null,
-        visitCount: 1,
         isVip: false,
         archivedAt: null,
       },
@@ -134,7 +131,6 @@ describe('customer merge service', () => {
         name: 'Elodie Martin',
         phone: '+33600000002',
         emailNormalized: null,
-        visitCount: 1,
         isVip: false,
         archivedAt: null,
       },
@@ -143,7 +139,6 @@ describe('customer merge service', () => {
         name: 'Autre nom',
         phone: '00 33 6 00 00 00 01',
         emailNormalized: 'client@example.com',
-        visitCount: 3,
         isVip: true,
         archivedAt: null,
       },
@@ -163,7 +158,6 @@ describe('customer merge service', () => {
         name: `Client ${index}`,
         phone: '+33600000000',
         emailNormalized: null,
-        visitCount: 1,
         isVip: false,
         archivedAt: null,
       })),
@@ -237,10 +231,10 @@ describe('customer merge service', () => {
 
   it('fusionne dans une transaction sérialisable et rejoue la même clé sans second audit', async () => {
     const rows = [
-      customer({ id: 'target', name: 'Cible', phone: '+33611111111', visitCount: 2 }),
+      customer({ id: 'target', name: 'Cible', phone: '+33611111111' }),
       // An exact phone match is the primary duplicate signal and must be
       // mergeable; the source identity is deduplicated during the transaction.
-      customer({ id: 'source', name: 'Source', phone: '+33611111111', visitCount: 3 }),
+      customer({ id: 'source', name: 'Source', phone: '+33611111111' }),
     ];
     vi.mocked(db.customer.findMany)
       .mockResolvedValueOnce(rows as never)

@@ -63,6 +63,24 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
     }
   });
 
+  it('every object in input and output schemas rejects extra properties', () => {
+    const openObjects: string[] = [];
+    const walk = (node: unknown, path: string): void => {
+      if (Array.isArray(node)) return node.forEach((child, i) => walk(child, `${path}[${i}]`));
+      if (!node || typeof node !== 'object') return;
+      const schema = node as Record<string, unknown>;
+      if (schema.type === 'object' && schema.additionalProperties === undefined) {
+        openObjects.push(path);
+      }
+      for (const [key, child] of Object.entries(schema)) walk(child, `${path}/${key}`);
+    };
+    for (const tool of TOOL_LIST) {
+      walk(tool.inputSchema, `${tool.name}.input`);
+      walk(tool.outputSchema, `${tool.name}.output`);
+    }
+    expect(openObjects).toEqual([]);
+  });
+
   it('every tool declares the OAuth scope required by its operation', () => {
     const expectedScopes: Record<string, string> = {
       answer_availability: 'mcp:read',

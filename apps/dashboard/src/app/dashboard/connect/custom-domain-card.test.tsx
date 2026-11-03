@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CustomDomainCard, normalizeDomainInput } from './custom-domain-card';
+const toast = vi.hoisted(() => Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }));
+vi.mock('sonner', () => ({ toast }));
 
 vi.mock('@/lib/api', () => ({ useApi: () => ({ siteId: 'site_1' }) }));
 
@@ -36,7 +38,7 @@ describe('CustomDomainCard', () => {
   it('accepte une adresse collée depuis le navigateur et envoie le nom de domaine seul', async () => {
     render(<CustomDomainCard restaurantId="r1" customDomain={null} customDomainStatus={null} />);
 
-    fireEvent.change(screen.getByLabelText('Votre domaine'), {
+    fireEvent.change(screen.getByLabelText('Domaine'), {
       target: { value: 'https://Reserve.MonResto.fr/' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Configurer le domaine' }));
@@ -52,12 +54,16 @@ describe('CustomDomainCard', () => {
   it('refuse un texte qui n’est pas un domaine, en français, sans appeler l’API', async () => {
     render(<CustomDomainCard restaurantId="r1" customDomain={null} customDomainStatus={null} />);
 
-    fireEvent.change(screen.getByLabelText('Votre domaine'), {
+    fireEvent.change(screen.getByLabelText('Domaine'), {
       target: { value: 'pas un domaine' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Configurer le domaine' }));
 
-    expect(await screen.findByText(/Saisissez le nom de domaine seul/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringContaining('Saisissez le nom de domaine seul'),
+      ),
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -70,7 +76,8 @@ describe('CustomDomainCard', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retirer le domaine personnalisé' }));
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Actions du domaine' }), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Retirer le domaine' }));
 
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toHaveTextContent('Retirer le domaine personnalisé ?');
@@ -93,12 +100,16 @@ describe('CustomDomainCard', () => {
     });
     render(<CustomDomainCard restaurantId="r1" customDomain={null} customDomainStatus={null} />);
 
-    fireEvent.change(screen.getByLabelText('Votre domaine'), {
+    fireEvent.change(screen.getByLabelText('Domaine'), {
       target: { value: 'reserve.monresto.fr' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Configurer le domaine' }));
 
-    expect(await screen.findByText(/Certains champs ne sont pas valides/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringMatching(/Certains champs ne sont pas valides/),
+      ),
+    );
     expect(screen.queryByText('Validation Error')).not.toBeInTheDocument();
   });
 });

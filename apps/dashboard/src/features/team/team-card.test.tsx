@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   patch: vi.fn(),
   del: vi.fn(),
+  refresh: vi.fn(),
   role: 'OWNER' as string | undefined,
   status: 'ready' as 'idle' | 'ready',
 }));
@@ -17,6 +18,7 @@ vi.mock('@/lib/api', () => ({
 vi.mock('@/features/sites/site-context', () => ({
   useSiteSelection: () => ({
     status: mocks.status,
+    refresh: mocks.refresh,
     activeSite: mocks.role ? { id: 'site-1', role: mocks.role } : undefined,
   }),
 }));
@@ -142,6 +144,24 @@ it('demande une confirmation avant de retirer un membre', async () => {
   expect(
     await screen.findByText('Léo Serveur ne fait plus partie de l’équipe.'),
   ).toBeInTheDocument();
+});
+
+it('propose de transmettre la propriété et de choisir son propre accès', async () => {
+  render(<TeamCard />);
+  await screen.findByText('Léo Serveur');
+  fireEvent.click(screen.getByRole('button', { name: 'Transférer la propriété' }));
+  expect(mocks.post).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Votre accès après transfert'), {
+    target: { value: 'READ_ONLY' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmer le transfert à Léo Serveur' }));
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith('team/transfer-ownership', {
+      targetUserId: 'u-staff',
+      previousOwnerAccess: 'READ_ONLY',
+    }),
+  );
+  expect(mocks.refresh).toHaveBeenCalled();
 });
 
 it('annule une invitation en attente', async () => {

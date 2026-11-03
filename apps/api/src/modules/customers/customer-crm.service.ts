@@ -1,3 +1,4 @@
+import { normalizePhone } from '@sokar/shared';
 import {
   Prisma,
   type Customer,
@@ -153,18 +154,33 @@ function normalizeText(value: string, field: string, maxLength: number): string 
 }
 
 /**
- * Normalize an E.164-like phone without guessing a country code. Invalid or
+ * Normalize a phone to E.164. A French national number (« 06 12 34 56 78 ») becomes
+ * « +33612345678 » with the shared rule, since every Sokar restaurant is in France: without
+ * it the same guest booked from the dashboard and calling in got two profiles. Invalid or
  * masked values return null so legacy call paths keep their original lookup.
  */
 export function normalizeCustomerPhone(value: string): string | null {
   const trimmed = value.trim();
-  if (!trimmed) return null;
-  const compact = trimmed.replace(/[\s().-]/g, '');
-  if (compact.startsWith('00')) {
-    const international = `+${compact.slice(2)}`;
-    return SAFE_PHONE_PATTERN.test(international) ? international : null;
+  if (!trimmed || /[^0-9+\s().-]/.test(trimmed)) return null;
+  const normalized = normalizePhone(trimmed);
+  return SAFE_PHONE_PATTERN.test(normalized) ? normalized : null;
+}
+
+/**
+ * Forms under which an existing profile may already be stored: the E.164 value and, for a
+ * French number, the national form older rows and identities were saved with.
+ * shortcut: lookup tolerates legacy « 06… » rows instead of rewriting them; drop it once a
+ * backfill has normalized `customers.phone` and `customer_identities.normalized_value`.
+ */
+export function customerPhoneLookupValues(value: string): string[] {
+  const normalized = normalizeCustomerPhone(value);
+  const values = new Set<string>();
+  if (normalized) {
+    values.add(normalized);
+    if (/^\+33[1-9][0-9]{8}$/.test(normalized)) values.add(`0${normalized.slice(3)}`);
   }
-  return SAFE_PHONE_PATTERN.test(compact) ? compact : null;
+  values.add(value.trim());
+  return [...values];
 }
 
 /** Normalize email for identity matching while preserving no email address in logs. */

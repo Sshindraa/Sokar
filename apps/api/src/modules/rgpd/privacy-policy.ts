@@ -45,6 +45,7 @@ ${PRIVACY_DOCUMENT.roles}
 ## Données collectées
 - Numéro de téléphone (E.164)
 - Nom du client
+- Adresse e-mail saisie pour une réservation en ligne (envoi de sa confirmation)
 - Consentements (réservation, SMS transactionnel, email transactionnel, marketing)
 - Métadonnées de réservation (date, heure, nombre de personnes, demandes spéciales)
 - Données de compte, de restaurant et de facturation

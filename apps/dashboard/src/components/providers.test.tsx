@@ -10,6 +10,21 @@ vi.mock('@clerk/nextjs', () => ({
   ),
 }));
 
+// Le Toaster (sonner, thème système) lit matchMedia, absent de jsdom.
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    dispatchEvent: () => false,
+  }),
+});
+
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();

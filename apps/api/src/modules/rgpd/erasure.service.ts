@@ -28,6 +28,10 @@ import { AuditLogService } from '../agentic-reservations/core/audit-log.service'
 import { trackRgpdEvent } from '../analytics/events.service';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
 import { normalizeCustomerPhone } from '../customers/customer-crm.service';
+import {
+  isMarketingOptedOut,
+  registerMarketingOptOut,
+} from '../marketing/marketing-opt-out.service';
 
 export class ErasureSubjectNotFoundError extends Error {
   constructor(message: string) {
@@ -134,19 +138,80 @@ export class ErasureService {
     let experienceReservationsDetached = 0;
     let eventOrdersDetached = 0;
     let eventWaitlistEntriesDetached = 0;
+    let callsAnonymized = 0;
+    let consentsRetained = 0;
     const reservationsAnonymized = await this.prisma.$transaction(async (tx) => {
+      for (const customer of [...crmCustomers].sort((a, b) => a.id.localeCompare(b.id))) {
+        await tx.$queryRaw`SELECT id FROM customers WHERE id = ${customer.id} FOR UPDATE`;
+      }
+      if (crmCustomerIds.length > 0) {
+        const [contacts, complaints, withdrawals] = await Promise.all([
+          tx.customer.findMany({
+            where: { id: { in: crmCustomerIds } },
+            select: { id: true, restaurantId: true, phone: true, emailNormalized: true },
+          }),
+          // tenant-scoping: global — effacement d'un sujet sur tous ses restaurants.
+          tx.marketingSuppression.findMany({
+            where: { customerId: { in: crmCustomerIds }, reason: 'COMPLAINED' },
+            select: { customerId: true, channel: true, createdAt: true },
+          }),
+          // tenant-scoping: global — effacement d'un sujet sur tous ses restaurants.
+          tx.marketingPermission.findMany({
+            where: { customerId: { in: crmCustomerIds }, status: 'OPTED_OUT' },
+            select: { customerId: true, channel: true, withdrawnAt: true },
+          }),
+        ]);
+        for (const contact of contacts) {
+          const oppositions = [
+            ...complaints
+              .filter((item) => item.customerId === contact.id)
+              .map((item) => ({
+                channel: item.channel,
+                reason: 'COMPLAINT' as const,
+                occurredAt: item.createdAt,
+              })),
+            ...withdrawals
+              .filter((item) => item.customerId === contact.id)
+              .map((item) => ({
+                channel: item.channel,
+                reason: 'MANUAL' as const,
+                occurredAt: item.withdrawnAt ?? erasedAt,
+              })),
+          ];
+          for (const opposition of oppositions) {
+            if (!opposition.channel) throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+            const address =
+              opposition.channel === 'EMAIL' ? contact.emailNormalized : contact.phone;
+            if (
+              await isMarketingOptedOut(
+                { restaurantId: contact.restaurantId, channel: opposition.channel, address },
+                tx,
+              )
+            )
+              continue;
+            const outcome = await registerMarketingOptOut(
+              {
+                restaurantId: contact.restaurantId,
+                channel: opposition.channel,
+                address,
+                reason: opposition.reason,
+                source: 'RGPD_ERASURE',
+                occurredAt: opposition.occurredAt,
+              },
+              tx,
+            );
+            if (
+              outcome !== 'REGISTERED' &&
+              (outcome !== 'SKIPPED_NO_ADDRESS' || opposition.reason === 'COMPLAINT')
+            ) {
+              throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+            }
+          }
+        }
+      }
       const reservationWhere = crmCustomerIds.length
         ? { OR: [{ customerPhone: args.subject }, { customerId: { in: crmCustomerIds } }] }
         : { customerPhone: args.subject };
-      const result = await tx.reservation.updateMany({
-        where: reservationWhere,
-        data: {
-          customerName: 'ANON',
-          customerPhone: null,
-          customerId: null,
-          specialRequests: null,
-        },
-      });
 
       // Keep aggregate timeline/metrics rows for auditability, but remove every
       // direct identity and preference before archiving the customer profile.
@@ -172,6 +237,36 @@ export class ErasureService {
         eventOrder?: { updateMany: (args: unknown) => Promise<{ count: number }> };
         eventWaitlistEntry?: { updateMany: (args: unknown) => Promise<{ count: number }> };
       };
+      if (txWithCrm.experienceReservation) {
+        const experienceReservationWhere = {
+          OR: [
+            ...(crmCustomerIds.length > 0
+              ? [
+                  { customerId: { in: crmCustomerIds } },
+                  { reservation: { customerId: { in: crmCustomerIds } } },
+                ]
+              : []),
+            { customer: { phone: args.subject } },
+            { reservation: { customerPhone: args.subject } },
+          ],
+        };
+        experienceReservationsDetached = (
+          await txWithCrm.experienceReservation.updateMany({
+            where: experienceReservationWhere,
+            data: { customerId: null, reservationId: null },
+          })
+        ).count;
+      }
+      const result = await tx.reservation.updateMany({
+        where: reservationWhere,
+        data: {
+          customerName: 'ANON',
+          customerPhone: null,
+          customerEmail: null,
+          customerId: null,
+          specialRequests: null,
+        },
+      });
       if (crmCustomerIds.length > 0 && txWithCrm.customer) {
         for (const customer of crmCustomers) {
           await txWithCrm.customer.update({
@@ -179,6 +274,8 @@ export class ErasureService {
             data: {
               phone: `erased:${subjectHash.slice(0, 12)}:${customer.id.slice(-16)}`,
               emailNormalized: null,
+              feedbackEmailOptOutAt: null,
+              feedbackEmailRequestedAt: null,
               birthMonth: null,
               birthDay: null,
               preferredLocale: null,
@@ -275,21 +372,6 @@ export class ErasureService {
           })
         ).count;
       }
-      if (txWithCrm.experienceReservation) {
-        const experienceReservationWhere = {
-          OR: [
-            ...(crmCustomerIds.length > 0 ? [{ customerId: { in: crmCustomerIds } }] : []),
-            { customer: { phone: args.subject } },
-            { reservation: { customerPhone: args.subject } },
-          ],
-        };
-        experienceReservationsDetached = (
-          await txWithCrm.experienceReservation.updateMany({
-            where: experienceReservationWhere,
-            data: { customerId: null, reservationId: null },
-          })
-        ).count;
-      }
       if (crmCustomerIds.length > 0 && txWithCrm.eventOrder) {
         eventOrdersDetached = (
           await txWithCrm.eventOrder.updateMany({
@@ -306,6 +388,58 @@ export class ErasureService {
           })
         ).count;
       }
+      const messageResult = await tx.message.updateMany({
+        where: { customerPhone: args.subject },
+        data: { customerPhone: null, customerName: 'ANON' },
+      });
+      // tenant-scoping: global — effacement RGPD d'un sujet sur tous les restaurants.
+      const callResult = await tx.call.updateMany({
+        where: { callerPhone: args.subject },
+        data: { callerPhone: null },
+      });
+      callsAnonymized = messageResult.count + callResult.count;
+      // Les consentements restent comme preuve, mais ne doivent plus autoriser de marketing si une
+      // fiche est recréée à la même adresse : il faudra un nouvel accord explicite.
+      // tenant-scoping: global — effacement RGPD d'un sujet sur tous les restaurants.
+      await tx.customerConsent.updateMany({
+        where: {
+          OR: [{ subjectHash }, { customerId: { in: crmCustomerIds } }],
+          marketingOptIn: true,
+        },
+        data: { marketingOptIn: false },
+      });
+      consentsRetained = await tx.customerConsent.count({ where: { subjectHash } });
+      await this.audit.record(
+        {
+          event: 'rgpd_erasure',
+          actor: args.actor,
+          metadata: {
+            subjectHashPrefix: subjectHash.slice(0, 8),
+            reason: args.reason,
+            reservationsAnonymized: result.count,
+            callsAnonymized,
+            consentsRetained,
+            crmProfilesAnonymized,
+            crmIdentitiesRemoved,
+            crmPreferencesRemoved,
+            crmTagsRemoved,
+            marketingPermissionsRemoved,
+            marketingPermissionEventsRemoved,
+            marketingSuppressionsRemoved,
+            campaignAudienceMembersRemoved,
+            campaignMessagesRemoved,
+            marketingConversionsRemoved,
+            marketingFrequencyWindowsRemoved,
+            marketingAttributionLinksRemoved,
+            marketingAutomationDispatchesRemoved,
+            experienceReservationsDetached,
+            eventOrdersDetached,
+            eventWaitlistEntriesDetached,
+          },
+        },
+        tx,
+      );
+
       return result.count;
     }, LONG_TRANSACTION_OPTIONS);
     if (reservationsAnonymized > 0) {
@@ -318,65 +452,6 @@ export class ErasureService {
         capacity: 'unchanged',
       });
     }
-
-    // 3. Anonymiser les messages d'appels (Message contient customerPhone/customerName)
-    //    et le numéro d'appelant persisté sur Call.
-    let callsAnonymized = 0;
-    try {
-      const messageResult = await this.prisma.message.updateMany({
-        where: { customerPhone: args.subject },
-        data: { customerPhone: null, customerName: 'ANON' },
-      });
-      callsAnonymized = messageResult.count;
-    } catch (err) {
-      logger.debug({ err }, 'Message table does not have customerPhone field, skipping');
-    }
-    try {
-      // tenant-scoping: global — effacement RGPD multi-établissements : toutes
-      // les lignes portant ce numéro doivent être anonymisées.
-      callsAnonymized += (
-        await this.prisma.call.updateMany({
-          where: { callerPhone: args.subject },
-          data: { callerPhone: null },
-        })
-      ).count;
-    } catch (err) {
-      logger.debug({ err }, 'Call table does not have callerPhone field, skipping');
-    }
-
-    // 4. Conserver les consents (preuve légale) — pas d'anonymisation
-    const consentsRetained = await this.prisma.customerConsent.count({
-      where: { subjectHash },
-    });
-
-    // 5. Audit log
-    await this.audit.record({
-      event: 'rgpd_erasure',
-      actor: args.actor,
-      metadata: {
-        subjectHashPrefix: subjectHash.slice(0, 8),
-        reason: args.reason,
-        reservationsAnonymized,
-        callsAnonymized,
-        consentsRetained,
-        crmProfilesAnonymized,
-        crmIdentitiesRemoved,
-        crmPreferencesRemoved,
-        crmTagsRemoved,
-        marketingPermissionsRemoved,
-        marketingPermissionEventsRemoved,
-        marketingSuppressionsRemoved,
-        campaignAudienceMembersRemoved,
-        campaignMessagesRemoved,
-        marketingConversionsRemoved,
-        marketingFrequencyWindowsRemoved,
-        marketingAttributionLinksRemoved,
-        marketingAutomationDispatchesRemoved,
-        experienceReservationsDetached,
-        eventOrdersDetached,
-        eventWaitlistEntriesDetached,
-      },
-    });
 
     // 6. Analytics event (rgpd_erasure obligatoire).
     // L'audit log reste la preuve légale ; l'event sert à l'observabilité

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { AlertCircle, BarChart3, CheckCircle2, Clock, Phone, Scale } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { ServiceCopilotAccess } from '@/components/ServiceCopilotAccess';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { cn } from '@/lib/utils';
@@ -22,25 +23,10 @@ const priorityRank: Record<ServiceCopilotPriority, number> = {
 };
 
 const containerClasses: Record<ServiceCopilotPriority, string> = {
-  critical: 'border-destructive/25 bg-destructive/[0.04]',
-  high: 'border-destructive/25 bg-destructive/[0.04]',
-  medium: 'border-warning/25 bg-warning/[0.04]',
-  low: 'border-info/25 bg-info/[0.04]',
-};
-
-const iconColorClasses: Record<ServiceCopilotPriority, string> = {
-  critical: 'text-destructive',
-  high: 'text-destructive',
-  medium: 'text-warning',
-  low: 'text-info',
-};
-
-const kindIcon = {
-  'reported-delay': Phone,
-  'late-reservation': Phone,
-  'table-soon-free': Clock,
-  'waiting-list-compatible': AlertCircle,
-  'server-rebalance': Scale,
+  critical: 'border-foreground bg-secondary',
+  high: 'border-foreground bg-secondary',
+  medium: 'border-border bg-card',
+  low: 'border-border bg-card',
 };
 
 function highestPriority(recommendations: ServiceCopilotRecommendation[]): ServiceCopilotPriority {
@@ -97,7 +83,6 @@ function RecommendationCard({
   const [confirmRebalanceOpen, setConfirmRebalanceOpen] = useState(false);
   const [actionPending, setActionPending] = useState(false);
   const [actionError, setActionError] = useState('');
-  const Icon = kindIcon[rec.kind];
   const metric = formatMetric(rec);
   const title = compact ? rec.title.split(' — ')[0] : rec.title;
   const reason = compact && rec.kind === 'late-reservation' ? null : rec.reason;
@@ -134,7 +119,6 @@ function RecommendationCard({
       )}
     >
       <div className={cn('flex items-start', compact ? 'gap-2.5' : 'gap-3')}>
-        <Icon size={compact ? 16 : 18} className="mt-0.5 shrink-0 text-muted-foreground" />
         <div className="flex-1">
           <h3
             className={cn(
@@ -225,7 +209,7 @@ function ServiceCopilotWidgetContent({
   density = 'default',
 }: {
   showCalm?: boolean;
-  density?: 'default' | 'service';
+  density?: 'default' | 'service' | 'overview';
 }) {
   const { get, orgId, post, patch } = useApi();
   const [data, setData] = useState<ServiceCopilotRecommendationsResponse | null>(null);
@@ -308,19 +292,74 @@ function ServiceCopilotWidgetContent({
     return (
       <section
         aria-label="État du Copilot"
-        role="status"
-        className="inline-flex max-w-full items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-muted-foreground"
+        role={density === 'overview' ? 'alert' : 'status'}
+        className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-warning"
       >
-        <AlertCircle size={16} aria-hidden="true" />
-        Recommandations indisponibles
+        {density === 'overview' ? 'Suivi de salle indisponible' : 'Recommandations indisponibles'}
         <button
           type="button"
           onClick={() => setRefreshNonce((n) => n + 1)}
-          className="font-semibold text-foreground underline-offset-2 transition-all duration-200 hover:underline"
+          className="min-h-11 rounded-lg px-3 font-medium text-foreground underline-offset-2 transition-all duration-200 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Réessayer
         </button>
       </section>
+    );
+  }
+
+  if (density === 'overview') {
+    const attention = (data?.recommendations ?? []).filter(
+      (rec) => rec.kind === 'reported-delay' || rec.kind === 'late-reservation',
+    );
+    if (attention.length === 0) {
+      return null;
+    }
+    return (
+      <details className="group rounded-xl border border-border px-4">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 py-3 text-sm font-medium text-foreground transition-all duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+          <ChevronDown
+            aria-hidden="true"
+            className="h-4 w-4 shrink-0 transition-all duration-200 group-open:rotate-180"
+          />
+          {attention.length} point{attention.length > 1 ? 's' : ''} à vérifier dans Salle
+        </summary>
+        <ul className="divide-y divide-border border-t border-border pb-3">
+          {attention.slice(0, 3).map((rec) => (
+            <li
+              key={rec.id}
+              className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
+            >
+              <div className="min-w-0">
+                <h3 className="text-sm font-medium text-foreground">
+                  {rec.kind === 'late-reservation'
+                    ? `Arrivée à vérifier${rec.metrics?.customerName ? ` · ${rec.metrics.customerName}` : ''}`
+                    : rec.title}
+                </h3>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {rec.kind === 'late-reservation'
+                    ? `L’arrivée n’est pas enregistrée dans Salle.${typeof rec.metrics?.minutesLate === 'number' ? ` Créneau commencé il y a ${rec.metrics.minutesLate} min.` : ''}`
+                    : rec.reason}
+                </p>
+              </div>
+              {rec.action.href ? (
+                <Button asChild className="min-h-11 shrink-0 self-start sm:self-center">
+                  <a href={rec.action.href} onClick={() => trackTelemetry(rec, 'OPENED')}>
+                    {rec.action.label}
+                  </a>
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+        {attention.length > 3 && (
+          <Link
+            href="/dashboard/floor-plan"
+            className="mt-3 inline-flex min-h-10 items-center text-sm font-medium text-foreground underline-offset-4 transition-all duration-200 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Voir le suivi dans Salle
+          </Link>
+        )}
+      </details>
     );
   }
 
@@ -333,17 +372,7 @@ function ServiceCopilotWidgetContent({
         aria-live="polite"
         className="inline-flex max-w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-success/20 bg-success/[0.04] px-3 py-2.5"
       >
-        <div className="flex min-w-0 items-center gap-2">
-          <CheckCircle2 size={18} className="shrink-0 text-success" />
-          <span className="text-sm font-semibold text-foreground">Copilot opérationnel</span>
-          <span className="truncate text-sm text-muted-foreground">Aucune action à traiter</span>
-        </div>
-        <Link
-          href="/dashboard/copilot/quality"
-          className="inline-flex shrink-0 items-center gap-1.5 text-xs font-bold text-foreground transition-all duration-200 hover:text-primary"
-        >
-          Qualité Copilot <BarChart3 size={14} />
-        </Link>
+        <p className="text-sm text-muted-foreground">Aucune action à traiter</p>
       </section>
     );
   }
@@ -362,7 +391,6 @@ function ServiceCopilotWidgetContent({
     >
       <div className={cn('flex items-center justify-between gap-3', compact ? 'mb-2' : 'mb-3')}>
         <div className="flex items-center gap-3">
-          <AlertCircle size={20} className={cn('shrink-0', iconColorClasses[priority])} />
           <h2
             className={cn(
               'font-bold text-foreground',
@@ -376,7 +404,7 @@ function ServiceCopilotWidgetContent({
           href="/dashboard/copilot/quality"
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-bold text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground"
         >
-          Qualité <BarChart3 size={14} />
+          Qualité
         </Link>
       </div>
       <div
@@ -407,7 +435,7 @@ export default function ServiceCopilotWidget({
   ...props
 }: {
   showCalm?: boolean;
-  density?: 'default' | 'service';
+  density?: 'default' | 'service' | 'overview';
   /** Rendu quand l'accès au copilote n'est pas accordé ; `null` pour ne rien afficher. */
   accessFallback?: ReactNode;
 }) {

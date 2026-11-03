@@ -196,7 +196,6 @@ describe('POST /voice/telnyx — call.initiated', () => {
   const knownCaller = {
     id: 'cust-1',
     name: 'Jean',
-    visitCount: 3,
     isVip: false,
     specialOccasion: null,
     notes: null,
@@ -230,7 +229,6 @@ describe('POST /voice/telnyx — call.initiated', () => {
     mockLookupOrCreate.mockResolvedValue({
       id: 'cust-1',
       name: 'Jean',
-      visitCount: 0,
       isVip: false,
       specialOccasion: null,
       notes: null,
@@ -342,8 +340,85 @@ describe('POST /voice/telnyx — call.initiated', () => {
     });
   });
 
+  it('renvoie une erreur si le décrochage et son secours échouent tous les deux', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    mockCheckMarginHealth.mockResolvedValue(true);
+    mockIsVoicePipelineEnabled.mockResolvedValue(true);
+    mockTelnyxFetch.mockRejectedValueOnce(new Error('network unavailable'));
+    vi.mocked(queues.telnyxWebhooks.add).mockRejectedValueOnce(new Error('queue unavailable'));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeInitiatedPayload(),
+    });
+    expect(res.statusCode).toBe(500);
+  });
+
+  it('demande un rejeu si la recherche du restaurant échoue temporairement', async () => {
+    mockLoadContext.mockRejectedValueOnce(new Error('database unavailable'));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeInitiatedPayload(),
+    });
+    expect(res.statusCode).toBe(500);
+  });
+
+  it('conserve la session active lorsque Telnyx répète le début de l’appel', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    mockCheckMarginHealth.mockResolvedValue(true);
+    mockIsVoicePipelineEnabled.mockResolvedValue(true);
+    const first = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeInitiatedPayload(),
+    });
+    expect(first.statusCode).toBe(200);
+    const original = CallSessionManager.getInstance().get('cc-1')!;
+    original.transcript = 'conversation en cours';
+    vi.mocked(db.call.create).mockRejectedValueOnce(
+      Object.assign(new Error('duplicate'), { code: 'P2002' }),
+    );
+    vi.mocked(db.call.findFirst).mockResolvedValueOnce({
+      outcome: null,
+      durationSec: null,
+    } as never);
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeInitiatedPayload(),
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(vi.mocked(db.call.findFirst)).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { callSid: 'leg-1', restaurantId: 'rest-1' } }),
+    );
+    expect(CallSessionManager.getInstance().get('cc-1')).toBe(original);
+    expect(original.transcript).toBe('conversation en cours');
+  });
+
+  it('réutilise une seule session pour deux notifications simultanées', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    mockCheckMarginHealth.mockResolvedValue(true);
+    mockIsVoicePipelineEnabled.mockResolvedValue(true);
+    const manager = CallSessionManager.getInstance();
+    const create = vi.spyOn(manager, 'create');
+
+    const replies = await Promise.all(
+      [1, 2].map(() =>
+        app.inject({ method: 'POST', url: '/voice/telnyx', payload: makeInitiatedPayload() }),
+      ),
+    );
+
+    expect(replies.map((reply) => reply.statusCode)).toEqual([200, 200]);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(manager.get('cc-1')).toBeDefined();
+    create.mockRestore();
+  });
+
   it('returns 200 and does nothing when loadContext throws (unknown phone number)', async () => {
-    mockLoadContext.mockRejectedValue(new Error('Restaurant not found'));
+    mockLoadContext.mockRejectedValue(
+      Object.assign(new Error('Restaurant not found'), { code: 'P2025' }),
+    );
 
     const res = await app.inject({
       method: 'POST',
@@ -428,7 +503,6 @@ describe('POST /voice/telnyx — call.initiated', () => {
     mockLookupOrCreate.mockResolvedValue({
       id: 'cust-vip',
       name: 'Mme Dupont',
-      visitCount: 12,
       isVip: true,
       specialOccasion: null,
       notes: null,
@@ -462,7 +536,6 @@ describe('POST /voice/telnyx — call.initiated', () => {
     mockLookupOrCreate.mockResolvedValue({
       id: 'cust-vip',
       name: 'Mme Dupont',
-      visitCount: 12,
       isVip: true,
       specialOccasion: null,
       notes: null,
@@ -510,7 +583,6 @@ describe('POST /voice/telnyx — call.initiated', () => {
     mockLookupOrCreate.mockResolvedValue({
       id: 'cust-1',
       name: null,
-      visitCount: 0,
       isVip: false,
       specialOccasion: null,
       notes: null,
@@ -522,6 +594,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
     const dupError = new Error('Unique constraint failed') as Error & { code: string };
     dupError.code = 'P2002';
     vi.mocked(db.call.create).mockRejectedValueOnce(dupError);
+    vi.mocked(db.call.findFirst).mockResolvedValueOnce(undefined as never);
 
     const res = await app.inject({
       method: 'POST',
@@ -878,7 +951,6 @@ describe('POST /voice/telnyx — call.initiated — non-P2002 Prisma error handl
     mockLookupOrCreate.mockResolvedValue({
       id: 'cust-1',
       name: null,
-      visitCount: 0,
       isVip: false,
       specialOccasion: null,
       notes: null,

@@ -72,6 +72,7 @@ vi.mock('@prisma/client', async (importOriginal) => {
       upsert: vi.fn(),
     };
     restaurantAccountMembership = {
+      count: vi.fn().mockResolvedValue(0),
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
@@ -661,6 +662,9 @@ const stripeMocks = vi.hoisted(() => ({
     metadata: {},
     items: { data: [] },
   }),
+  subscriptionList: vi.fn().mockResolvedValue({ data: [], has_more: false }),
+  checkoutSessionList: vi.fn().mockResolvedValue({ data: [], has_more: false }),
+  checkoutSessionExpire: vi.fn().mockResolvedValue({ status: 'expired' }),
   checkoutSessionCreate: vi
     .fn()
     .mockResolvedValue({ id: 'cs_test', url: 'https://checkout.stripe.test/cs_test' }),
@@ -677,6 +681,12 @@ const stripeMocks = vi.hoisted(() => ({
   stripeMocks.subscriptionCreate;
 (globalThis as Record<string, unknown>).__sokarStripeSubscriptionRetrieve =
   stripeMocks.subscriptionRetrieve;
+(globalThis as Record<string, unknown>).__sokarStripeSubscriptionList =
+  stripeMocks.subscriptionList;
+(globalThis as Record<string, unknown>).__sokarStripeCheckoutSessionList =
+  stripeMocks.checkoutSessionList;
+(globalThis as Record<string, unknown>).__sokarStripeCheckoutSessionExpire =
+  stripeMocks.checkoutSessionExpire;
 
 (globalThis as Record<string, unknown>).__sokarStripeRead = {
   customer: stripeMocks.customerRetrieve,
@@ -693,10 +703,13 @@ vi.mock('stripe', () => {
     subscriptions = {
       create: stripeMocks.subscriptionCreate,
       retrieve: stripeMocks.subscriptionRetrieve,
+      list: stripeMocks.subscriptionList,
     };
     checkout = {
       sessions: {
         create: stripeMocks.checkoutSessionCreate,
+        list: stripeMocks.checkoutSessionList,
+        expire: stripeMocks.checkoutSessionExpire,
       },
     };
     billingPortal = {
