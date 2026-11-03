@@ -143,7 +143,9 @@ async function assertCustomerTenant(
 }
 
 function optOutReasonFor(source: string): MarketingOptOutReason {
-  return source === 'UNSUBSCRIBE_LINK' || source === 'UNSUBSCRIBE' ? 'UNSUBSCRIBE' : 'MANUAL';
+  return source === 'UNSUBSCRIBE_LINK' || source === 'UNSUBSCRIBE' || source === 'SMS_STOP'
+    ? 'UNSUBSCRIBE'
+    : 'MANUAL';
 }
 
 /**
