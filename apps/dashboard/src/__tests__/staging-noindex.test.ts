@@ -9,7 +9,7 @@ const config = readFileSync(
 const servers = [...config.matchAll(/^server \{([\s\S]*?)^\}/gm)]
   .map((match) => match[1])
   // Les redirections de l'ancien domaine ne servent aucun contenu à indexer.
-  .filter((server) => !/^    return 30\d /m.test(server));
+  .filter((server) => !/^ +return 30\d /m.test(server));
 const locations = [...config.matchAll(/^    location ([^\n]+) \{([\s\S]*?)^    \}/gm)];
 const noindex = /add_header X-Robots-Tag "noindex, nofollow" always;/;
 
