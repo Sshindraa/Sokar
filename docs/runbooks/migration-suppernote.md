@@ -35,3 +35,7 @@ La fusion déclenche le déploiement : `install-nginx` échoue si le certificat 
 ## `sokar.tech`
 
 Garder le domaine renouvelé et les redirections au moins 12 mois, puis garder le renouvellement : un tiers qui le rachèterait recevrait les liens déjà envoyés et les e-mails adressés aux anciennes adresses.
+
+## PM2 fige d'anciennes valeurs
+
+`pm2 restart` garde les variables enregistrées au dernier démarrage, et elles priment sur `.env`. Après avoir changé `.env`, dans un shell qui n'a pas chargé `.env` : `pm2 delete` des processus concernés, relancer le déploiement, puis vérifier `pm2 jlist`. Constaté en staging le 3 novembre 2026 ; la production doit suivre la même étape.

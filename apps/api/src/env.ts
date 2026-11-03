@@ -75,6 +75,11 @@ const PROD_HOST_ALLOWLIST = [
   // Staging — mêmes contraintes que la prod (NODE_ENV=production).
   'staging.suppernote.com',
   'api-staging.suppernote.com',
+  // Ancien domaine : il redirige encore. Une valeur oubliée ne doit pas bloquer le démarrage.
+  'sokar.tech',
+  'api.sokar.tech',
+  'staging.sokar.tech',
+  'api-staging.sokar.tech',
 ];
 
 const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
