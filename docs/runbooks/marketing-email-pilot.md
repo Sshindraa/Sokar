@@ -168,6 +168,13 @@ Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jo
   l'effacement. Il gagne sur un accord en base (exclusion `OPTED_OUT_REGISTER` dans l'aperçu et au dernier
   contrôle avant envoi, y compris pour les automatisations). Une nouvelle case cochée par la personne le lève
   (le journal garde les deux actes). Sans `MARKETING_OPTOUT_HASH_SECRET`, aucun message n'est envoyé. Les
+  **STOP par SMS** (`sms/sms-marketing-stop.ts`) : un message entier « STOP », « STOP SMS » ou « ARRÊT »
+  (sans casse, accents ni espaces) retire l'accord SMS marketing dans le restaurant du **dernier SMS marketing
+  accepté à ce numéro** (`source` `SMS_STOP`, motif `UNSUBSCRIBE`), puis inscrit le registre. Il ne touche ni
+  aux réservations ni aux consentements transactionnels, et n'envoie aucun SMS. Sans SMS marketing à ce numéro,
+  le message suit le flux de réponse habituel. Un échec du registre répond 503 (Telnyx doit rejouer).
+  Limite : un expéditeur alphanumérique « SOKAR » ne reçoit aucune réponse ; le STOP n'arrive que si
+  l'expéditeur est un numéro. Les filtres STOP propres à Telnyx ne sont pas vérifiés dans ce dépôt.
   retraits antérieurs à la migration se reprennent avec
   `pnpm --filter @sokar/api exec tsx scripts/backfill-marketing-opt-out-register.ts --dry-run` puis `--apply`
   (comptes seulement, jamais d'adresse). Le registre est une donnée personnelle pseudonymisée : il figure
