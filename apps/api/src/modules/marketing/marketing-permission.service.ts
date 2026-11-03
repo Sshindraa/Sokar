@@ -9,6 +9,7 @@ import { db } from '../../shared/db/client';
 import { logger } from '../../shared/logger/pino';
 import {
   clearMarketingOptOut,
+  isMarketingOptedOut,
   registerMarketingOptOut,
   type MarketingOptOutReason,
 } from './marketing-opt-out.service';
@@ -33,6 +34,11 @@ export type MarketingPermissionInput = {
   proofHash?: string | null;
   /** Authenticated team member who recorded a manual entry; absent for the customer's own acts. */
   actorUserId?: string | null;
+  /**
+   * Set only by the person's own gesture (booking box, confirmation link). Without it, an opt-in never
+   * lifts a registered opposition: it is refused with MARKETING_OPPOSITION_REGISTERED.
+   */
+  liftsOpposition?: boolean;
   occurredAt?: Date;
 };
 
@@ -151,6 +157,7 @@ async function syncOptOutRegister(
     status: MarketingPermissionStatus;
     source: string;
     occurredAt: Date;
+    liftsOpposition: boolean;
     contact: { phone?: string | null; emailNormalized?: string | null };
   },
   writer: Pick<Prisma.TransactionClient, 'marketingOptOut'>,
@@ -162,6 +169,7 @@ async function syncOptOutRegister(
     return;
   }
   const address = args.channel === 'EMAIL' ? args.contact.emailNormalized : args.contact.phone;
+  let opposed = false;
   try {
     if (args.status === MarketingPermissionStatus.OPTED_OUT) {
       const outcome = await registerMarketingOptOut(
@@ -179,6 +187,11 @@ async function syncOptOutRegister(
       if (outcome === 'SKIPPED_NO_KEY') {
         throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
       }
+    } else if (!args.liftsOpposition) {
+      opposed = await isMarketingOptedOut(
+        { restaurantId: args.restaurantId, channel: args.channel, address },
+        writer,
+      );
     } else {
       await clearMarketingOptOut(
         {
@@ -200,6 +213,7 @@ async function syncOptOutRegister(
     );
     throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
   }
+  if (opposed) throw new Error('MARKETING_OPPOSITION_REGISTERED');
 }
 
 export async function upsertMarketingPermission(
@@ -281,6 +295,7 @@ export async function upsertMarketingPermission(
           status: input.status,
           source,
           occurredAt,
+          liftsOpposition: input.liftsOpposition === true,
           contact,
         },
         tx,

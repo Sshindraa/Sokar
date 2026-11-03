@@ -3675,3 +3675,7 @@ Constat de l'essai staging (trois refus ont amené un client à 3/3 sans aucun e
 ### 2026-11-03 — E-mail marketing : liens lisibles et pied de page
 
 Après l'essai staging classé en indésirable par Outlook (SPF, DKIM et DMARC réussis, `SCL` 5) : les liens de réservation et de désinscription s'affichent « Réserver une table » et « Se désinscrire », et un pied de page donne le restaurant, son adresse et la raison du message. Effet sur le classement non mesuré : nouvel essai à faire après déploiement sur staging.
+
+### 2026-11-03 — Registre d'opposition : clé par restaurant et levée par la personne seule
+
+Décision de Hamza à la suite de l'analyse de la PR #634. L'empreinte utilise une clé dérivée par restaurant : les anciennes entrées ne sont plus reconnues, aucune n'existe en production au 3 novembre (à revérifier juste avant la fusion, car une entrée écrite entre-temps ne serait plus reconnue). Seul le geste de la personne (case de réservation, lien de confirmation) lève une opposition ; un accord saisi par l'équipe est refusé (`MARKETING_OPPOSITION_REGISTERED`, 409). Le texte public de la PR #634 devra retirer la levée par le restaurant une fois ce changement fusionné. Rien d'activé, envois toujours coupés.

@@ -199,7 +199,7 @@ describe('marketing campaign control plane', () => {
   it('excludes an address found in the opt-out register even with a stored opt-in', async () => {
     vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
     vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([
-      { addressHash: marketingOptOutHash('SMS', '+33601020304') },
+      { addressHash: marketingOptOutHash('restaurant-1', 'SMS', '+33601020304') },
     ] as never);
 
     const preview = await previewMarketingAudience({

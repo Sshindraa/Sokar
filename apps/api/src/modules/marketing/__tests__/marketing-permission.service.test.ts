@@ -18,7 +18,7 @@ vi.mock('../../../shared/db/client', () => ({
     customerConsent: { findMany: vi.fn() },
     marketingPermission: { upsert: vi.fn(), findMany: vi.fn() },
     marketingPermissionEvent: { create: vi.fn() },
-    marketingOptOut: { upsert: vi.fn(), deleteMany: vi.fn() },
+    marketingOptOut: { upsert: vi.fn(), deleteMany: vi.fn(), findMany: vi.fn() },
     customerTimelineEvent: { create: vi.fn(), findUnique: vi.fn() },
   },
 }));
@@ -121,6 +121,7 @@ describe('marketing permission projection', () => {
 
     beforeEach(() => {
       vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+      optOut().findMany.mockResolvedValue([]);
       vi.mocked(db.customer.findFirst).mockResolvedValue(contact as never);
       vi.mocked(db.marketingPermission.upsert).mockResolvedValue({ id: 'permission-1' } as never);
       optOut().upsert.mockResolvedValue({});
@@ -143,7 +144,9 @@ describe('marketing permission projection', () => {
         reason: 'UNSUBSCRIBE',
         source: 'UNSUBSCRIBE_LINK',
       });
-      expect(call.create.addressHash).toBe(marketingOptOutHash('EMAIL', 'alice@example.com'));
+      expect(call.create.addressHash).toBe(
+        marketingOptOutHash('restaurant-1', 'EMAIL', 'alice@example.com'),
+      );
 
       optOut().upsert.mockClear();
       await withdrawMarketingPermission({
@@ -155,7 +158,7 @@ describe('marketing permission projection', () => {
       expect(optOut().upsert.mock.calls[0][0].create).toMatchObject({
         channel: 'SMS',
         reason: 'MANUAL',
-        addressHash: marketingOptOutHash('SMS', '+33601020304'),
+        addressHash: marketingOptOutHash('restaurant-1', 'SMS', '+33601020304'),
       });
     });
 
@@ -168,15 +171,35 @@ describe('marketing permission projection', () => {
         source: 'CONNECT',
         proofVersion: 'marketing-consent-2026-10-22',
         proof: 'texte',
+        liftsOpposition: true,
       });
       expect(optOut().deleteMany).toHaveBeenCalledWith({
         where: {
           restaurantId: 'restaurant-1',
           channel: 'EMAIL',
-          addressHash: marketingOptOutHash('EMAIL', 'alice@example.com'),
+          addressHash: marketingOptOutHash('restaurant-1', 'EMAIL', 'alice@example.com'),
         },
       });
       expect(optOut().upsert).not.toHaveBeenCalled();
+    });
+
+    it('refuses an opt-in recorded by the team when an opposition is registered', async () => {
+      optOut().findMany.mockResolvedValue([
+        { addressHash: marketingOptOutHash('restaurant-1', 'EMAIL', 'alice@example.com') },
+      ]);
+      await expect(
+        upsertMarketingPermission({
+          restaurantId: 'restaurant-1',
+          customerId: 'customer-1',
+          channel: 'EMAIL',
+          status: MarketingPermissionStatus.OPTED_IN,
+          source: 'DASHBOARD_ORAL',
+          proofVersion: 'marketing-consent-2026-10-22',
+          proof: 'texte',
+          actorUserId: 'user-1',
+        }),
+      ).rejects.toThrow('MARKETING_OPPOSITION_REGISTERED');
+      expect(optOut().deleteMany).not.toHaveBeenCalled();
     });
 
     it('reports failure while keeping the existing profile and its proof event when the register fails', async () => {
@@ -217,6 +240,7 @@ describe('marketing permission projection', () => {
           source: 'CONNECT',
           proofVersion: 'marketing-consent-2026-10-22',
           proof: 'texte',
+          liftsOpposition: true,
         }),
       ).rejects.toThrow('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
       expect(db.marketingPermission.upsert).toHaveBeenCalledTimes(1);

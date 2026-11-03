@@ -3,6 +3,7 @@ import { MarketingCampaignStatus, MarketingPermissionStatus } from '@prisma/clie
 import { MARKETING_CONSENT_VERSION } from '@sokar/shared';
 import { closeApp, getApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
+import { marketingOptOutHash } from '../marketing-opt-out.service';
 import { queues } from '../../../shared/queue/queues';
 import { createServiceFillDraft, previewServiceFill } from '../fill-service.service';
 import {
@@ -153,6 +154,36 @@ describe('marketing control plane routes', () => {
     });
     expect(upsert?.create.proofVersion).toMatch(/^marketing-consent-/);
     expect(upsert?.create.proofHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('refuses a consent recorded by the team when an opposition is registered', async () => {
+    const app = await getApp();
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'customer-1',
+      emailNormalized: 'alice@example.com',
+    } as never);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      plan: 'PRO',
+      name: 'Chez Sokar',
+    } as never);
+    vi.mocked(db.marketingPermission.upsert).mockResolvedValue({ id: 'permission-1' } as never);
+    vi.mocked(db.marketingPermissionEvent.create).mockResolvedValue({ id: 'event-1' } as never);
+    vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([
+      { addressHash: marketingOptOutHash('test-rest-1', 'EMAIL', 'alice@example.com') },
+    ] as never);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/crm/customers/customer-1/marketing-permissions/EMAIL/consent',
+      headers: AUTH,
+      payload: { method: 'IN_PERSON' },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: 'MARKETING_OPPOSITION_REGISTERED' });
+    vi.unstubAllEnvs();
+    vi.mocked(db.marketingOptOut.findMany).mockReset();
   });
 
   it('rejects an oral consent without a method, on an unknown channel or without an e-mail', async () => {

@@ -225,7 +225,7 @@ describe('marketing campaign worker', () => {
   it('n’envoie pas à une adresse inscrite au registre d’opposition, même avec un accord en base', async () => {
     const { db, deps, sendSms } = makeDependencies();
     vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);
-    const hash = marketingOptOutHash('SMS', '+33601020304');
+    const hash = marketingOptOutHash('restaurant-1', 'SMS', '+33601020304');
     vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([{ addressHash: hash }] as never);
 
     await expect(processMarketingCampaignJob(makeJob(), deps)).resolves.toMatchObject({
