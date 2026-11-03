@@ -14,6 +14,7 @@ import { loadOptedOutCustomerIds } from '../marketing-opt-out.service';
 import { applyMarketingProviderEvent } from '../marketing-provider.service';
 import { ConsentService } from '../../rgpd/consent.service';
 import { ErasureService } from '../../rgpd/erasure.service';
+import { applyMarketingSmsStop } from '../../sms/sms-marketing-stop';
 
 const url = process.env.MARKETING_OPTOUT_TEST_DATABASE_URL;
 if (url) {
@@ -650,5 +651,83 @@ describe.skipIf(!url)('marketing opt-out on PostgreSQL', () => {
       await db.$executeRawUnsafe('DROP TRIGGER audit_fail_proof ON marketing_permission_events');
       await db.$executeRawUnsafe('DROP FUNCTION audit_fail_proof()');
     }
+  });
+  it('applies an SMS STOP to the restaurant of the last SMS once, leaving other restaurants alone', async () => {
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+    const phone = '+33612345679';
+    const restaurant = await db.restaurant.create({
+      data: {
+        name: 'SMS STOP',
+        managerPhone: '',
+        managerEmail: '',
+        phoneNumber: randomUUID(),
+        openingHours: {},
+      },
+    });
+    const other = await db.restaurant.create({
+      data: {
+        name: 'SMS STOP other',
+        managerPhone: '',
+        managerEmail: '',
+        phoneNumber: randomUUID(),
+        openingHours: {},
+      },
+    });
+    const customer = await db.customer.create({ data: { restaurantId: restaurant.id, phone } });
+    const otherCustomer = await db.customer.create({
+      data: { restaurantId: other.id, phone },
+    });
+    const campaign = await db.marketingCampaign.create({
+      data: {
+        restaurantId: restaurant.id,
+        name: 'SMS test',
+        objective: 'TEST',
+        channel: 'SMS',
+        bodyTemplate: 'test',
+        createdByHash: 'test',
+      },
+    });
+    const member = await db.campaignAudienceMember.create({
+      data: {
+        campaignId: campaign.id,
+        customerId: customer.id,
+        audienceVersion: 1,
+        inclusionReason: 'TEST',
+        capturedAt: new Date(),
+      },
+    });
+    await db.campaignMessage.create({
+      data: {
+        campaignId: campaign.id,
+        customerId: customer.id,
+        audienceMemberId: member.id,
+        channel: 'SMS',
+        status: 'SENT',
+        provider: 'telnyx',
+        providerMessageId: randomUUID(),
+        idempotencyKey: randomUUID(),
+      },
+    });
+
+    await expect(applyMarketingSmsStop(phone)).resolves.toBe(true);
+    // Rejeu du même webhook : aucune nouvelle fiche touchée, aucun doublon.
+    await expect(applyMarketingSmsStop(phone)).resolves.toBe(true);
+
+    const permission = await db.marketingPermission.findUniqueOrThrow({
+      where: { customerId_channel: { customerId: customer.id, channel: 'SMS' } },
+    });
+    expect(permission.status).toBe('OPTED_OUT');
+    expect(permission.source).toBe('SMS_STOP');
+    expect(await db.marketingPermissionEvent.count({ where: { customerId: customer.id } })).toBe(1);
+    expect(await db.marketingPermission.count({ where: { customerId: otherCustomer.id } })).toBe(0);
+    const optOuts = await db.marketingOptOut.findMany({
+      where: { channel: 'SMS', restaurantId: { in: [restaurant.id, other.id] } },
+    });
+    expect(optOuts).toHaveLength(1);
+    expect(optOuts[0]).toMatchObject({
+      restaurantId: restaurant.id,
+      reason: 'UNSUBSCRIBE',
+      source: 'SMS_STOP',
+    });
   });
 });
