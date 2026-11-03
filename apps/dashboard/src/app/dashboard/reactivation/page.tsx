@@ -18,9 +18,18 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge as StatusPill } from '@/components/StatusBadge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, HeartHandshake, Send, X, Clock, Check, Phone } from 'lucide-react';
+import { Check, ChevronDown, MoreHorizontal } from 'lucide-react';
+import { toast } from 'sonner';
+import { formatPhone } from '@/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { formatDate } from '@sokar/shared';
 import { MS_PER_DAY } from '@/constants/ui';
 
@@ -46,13 +55,13 @@ interface ReactivationCampaign {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  if (status === 'PENDING') return <Badge className="bg-warning">En attente</Badge>;
-  if (status === 'SENT') return <Badge className="bg-success">Envoyée</Badge>;
-  if (status === 'DISMISSED') return <Badge variant="secondary">Ignorée</Badge>;
-  if (status === 'MIGRATED') return <Badge variant="secondary">Envoi préparé</Badge>;
-  if (status === 'FAILED') return <Badge variant="destructive">Échec</Badge>;
-  if (status === 'CANCELLED') return <Badge variant="secondary">Annulée</Badge>;
-  return <Badge>{status}</Badge>;
+  if (status === 'PENDING') return <StatusPill level="action">En attente</StatusPill>;
+  if (status === 'SENT') return <StatusPill level="done">Envoyée</StatusPill>;
+  if (status === 'DISMISSED') return <StatusPill level="neutral">Ignorée</StatusPill>;
+  if (status === 'MIGRATED') return <StatusPill level="progress">Envoi préparé</StatusPill>;
+  if (status === 'FAILED') return <StatusPill level="error">Échec</StatusPill>;
+  if (status === 'CANCELLED') return <StatusPill level="error">Annulée</StatusPill>;
+  return <StatusPill level="neutral">{status}</StatusPill>;
 }
 
 function daysSince(dateStr: string | null): string {
@@ -69,12 +78,12 @@ export default function ReactivationPage() {
 
   const [campaigns, setCampaigns] = useState<ReactivationCampaign[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   // Échec du chargement : distinct des erreurs d'action, pour ne jamais afficher « Aucune campagne » à tort.
   const [loadError, setLoadError] = useState('');
   const [lock, setLock] = useState<FeatureLock | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [campaignToDismiss, setCampaignToDismiss] = useState<ReactivationCampaign | null>(null);
   const [campaignToSend, setCampaignToSend] = useState<ReactivationCampaign | null>(null);
   // `false` seulement quand l'API dit explicitement que les envois sont gelés ; inconnu = on laisse essayer.
   const [sendsEnabled, setSendsEnabled] = useState<boolean | null>(null);
@@ -108,7 +117,6 @@ export default function ReactivationPage() {
 
   async function sendCampaign(id: string) {
     setActionLoading(id);
-    setError('');
     setNotice('');
     try {
       const result = await post<{
@@ -136,7 +144,7 @@ export default function ReactivationPage() {
             : ''),
       );
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible d’envoyer la campagne.'));
+      toast.error(getErrorMessage(err, 'Impossible d’envoyer la campagne.'));
     }
     setCampaignToSend(null);
     setActionLoading(null);
@@ -144,13 +152,12 @@ export default function ReactivationPage() {
 
   async function dismissCampaign(id: string) {
     setActionLoading(id);
-    setError('');
     setNotice('');
     try {
       await post(`dashboard/reactivation/${id}/dismiss`);
       setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, status: 'DISMISSED' } : c)));
     } catch (err: unknown) {
-      setError(getErrorMessage(err, "Impossible d'ignorer la campagne"));
+      toast.error(getErrorMessage(err, "Impossible d'ignorer la campagne"));
     }
     setActionLoading(null);
   }
@@ -175,7 +182,6 @@ export default function ReactivationPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
-          <HeartHandshake size={24} className="text-warning" />
           <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Réactivation VIP</h1>
         </div>
         {lock ? (
@@ -190,24 +196,11 @@ export default function ReactivationPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <HeartHandshake size={24} className="text-warning" />
         <div>
           <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Réactivation VIP</h1>
-          <p className="text-sm text-muted-foreground">
-            Vos meilleurs clients qui ne sont plus venus depuis un moment.
-          </p>
         </div>
       </div>
 
-      {error && (
-        <div
-          role="alert"
-          className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-        >
-          <AlertCircle size={16} />
-          {error}
-        </div>
-      )}
       {notice && (
         <div
           role="status"
@@ -219,13 +212,9 @@ export default function ReactivationPage() {
       )}
 
       {pendingCampaigns.length === 0 && pastCampaigns.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-          <HeartHandshake size={40} className="opacity-30" />
-          <p className="text-sm">Aucune campagne de réactivation pour le moment</p>
-          <p className="text-xs text-muted-foreground">
-            Le système scanne vos VIPs dormants chaque lundi. Revenez plus tard.
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          Aucune campagne de réactivation pour le moment
+        </p>
       ) : (
         <>
           {/* Campaigns en attente */}
@@ -233,12 +222,12 @@ export default function ReactivationPage() {
             <div className="space-y-3">
               <h2 className="text-sm font-medium text-muted-foreground">À valider</h2>
               {pendingCampaigns.map((campaign) => (
-                <div key={campaign.id} className="sokar-card border-l-warning p-4">
+                <div key={campaign.id} className="sokar-card p-4">
                   <div className="mb-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Clock size={16} className="text-warning" />
                       <span className="text-sm font-medium">
-                        {campaign.customerCount} VIP{campaign.customerCount > 1 ? 's' : ''} dormant
+                        {campaign.customerCount} client{campaign.customerCount > 1 ? 's' : ''} VIP
+                        inactif
                         {campaign.customerCount > 1 ? 's' : ''}
                       </span>
                       <span className="text-xs text-muted-foreground">
@@ -253,60 +242,68 @@ export default function ReactivationPage() {
                     <StatusBadge status={campaign.status} />
                   </div>
 
-                  {/* Liste des VIPs */}
-                  {isMobile ? (
-                    <div className="space-y-2">
-                      {campaign.customers.map((c) => (
-                        <MobileDataCard
-                          key={c.id}
-                          title={c.name}
-                          subtitle={c.phone || undefined}
-                          badge={
-                            <Badge className="bg-warning/20 text-warning">
-                              {c.visitCount} visites
-                            </Badge>
-                          }
-                          details={[{ label: 'Dernière visite', value: daysSince(c.lastSeenAt) }]}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mb-4 overflow-hidden rounded-lg border border-border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Client</TableHead>
-                            <TableHead>Téléphone</TableHead>
-                            <TableHead>Visites</TableHead>
-                            <TableHead>Dernière visite</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
+                  <details className="group mb-4">
+                    <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium transition-all duration-200 [&::-webkit-details-marker]:hidden">
+                      <ChevronDown
+                        className="h-4 w-4 transition-all duration-200 group-open:rotate-180"
+                        aria-hidden="true"
+                      />{' '}
+                      Clients concernés
+                    </summary>
+                    <div className="mt-3">
+                      {isMobile ? (
+                        <div className="space-y-2">
                           {campaign.customers.map((c) => (
-                            <TableRow key={c.id}>
-                              <TableCell className="font-medium">{c.name}</TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {c.phone ? (
-                                  <span className="flex items-center gap-1">
-                                    <Phone size={12} /> {c.phone}
-                                  </span>
-                                ) : (
-                                  '—'
-                                )}
-                              </TableCell>
-                              <TableCell>{c.visitCount}</TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {daysSince(c.lastSeenAt)}
-                              </TableCell>
-                            </TableRow>
+                            <div key={c.id} className="rounded-xl border border-border bg-card p-4">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="break-words text-sm font-semibold">{c.name}</p>
+                                  {c.phone && (
+                                    <p className="mt-1 break-words text-xs text-muted-foreground">
+                                      {formatPhone(c.phone)}
+                                    </p>
+                                  )}
+                                </div>
+                                <Badge variant="secondary" className="shrink-0 tabular-nums">
+                                  {c.visitCount} visites
+                                </Badge>
+                              </div>
+                              <p className="mt-3 text-xs text-muted-foreground">Dernière visite</p>
+                              <p className="text-sm tabular-nums">{daysSince(c.lastSeenAt)}</p>
+                            </div>
                           ))}
-                        </TableBody>
-                      </Table>
+                        </div>
+                      ) : (
+                        <div className="mb-4 overflow-hidden rounded-lg border border-border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Client</TableHead>
+                                <TableHead>Téléphone</TableHead>
+                                <TableHead>Visites</TableHead>
+                                <TableHead>Dernière visite</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {campaign.customers.map((c) => (
+                                <TableRow key={c.id}>
+                                  <TableCell className="font-medium">{c.name}</TableCell>
+                                  <TableCell className="text-muted-foreground">
+                                    {c.phone ? <span>{formatPhone(c.phone)}</span> : '—'}
+                                  </TableCell>
+                                  <TableCell>{c.visitCount}</TableCell>
+                                  <TableCell className="text-muted-foreground">
+                                    {daysSince(c.lastSeenAt)}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
                     </div>
-                  )}
-
+                  </details>
                   {/* Actions */}
-                  {isMobile ? <div className="mb-4" /> : null}
                   {sendsEnabled === false && (
                     <p className="mb-3 text-xs text-muted-foreground">
                       Les envois SMS ne sont pas encore ouverts sur votre compte : vous pourrez
@@ -316,23 +313,30 @@ export default function ReactivationPage() {
                   <div className="flex gap-2">
                     <Button
                       size="sm"
-                      className="bg-success text-success-foreground transition-all duration-200 hover:opacity-90"
+                      className="transition-all duration-200"
                       onClick={() => setCampaignToSend(campaign)}
                       disabled={actionLoading === campaign.id || sendsEnabled === false}
                     >
-                      <Send size={14} className="mr-1" />
                       Envoyer la campagne
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="transition-all duration-200"
-                      onClick={() => dismissCampaign(campaign.id)}
-                      disabled={actionLoading === campaign.id}
-                    >
-                      <X size={14} className="mr-1" />
-                      Ignorer
-                    </Button>
+                    <DropdownMenu modal={false}>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          className="h-8 w-8 transition-all duration-200"
+                          aria-label={`Autres actions pour la campagne du ${formatDate(campaign.createdAt, 'fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                          disabled={actionLoading === campaign.id}
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => setCampaignToDismiss(campaign)}>
+                          Ignorer
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               ))}
@@ -348,7 +352,7 @@ export default function ReactivationPage() {
                   {pastCampaigns.map((c) => (
                     <MobileDataCard
                       key={c.id}
-                      title={`${c.customerCount} VIPs`}
+                      title={`${c.customerCount} client${c.customerCount > 1 ? 's' : ''} VIP`}
                       subtitle={formatDate(c.createdAt, 'fr-FR', {
                         day: 'numeric',
                         month: 'short',
@@ -369,7 +373,7 @@ export default function ReactivationPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Date</TableHead>
-                        <TableHead>VIPs</TableHead>
+                        <TableHead>Clients VIP</TableHead>
                         <TableHead>SMS envoyés</TableHead>
                         <TableHead>Statut</TableHead>
                       </TableRow>
@@ -387,8 +391,8 @@ export default function ReactivationPage() {
                           <TableCell>{c.customerCount}</TableCell>
                           <TableCell>
                             {c.status === 'SENT' ? (
-                              <span className="flex items-center gap-1 text-success">
-                                <Check size={12} /> {c.sentCount}/{c.customerCount}
+                              <span className="tabular-nums">
+                                {c.sentCount}/{c.customerCount}
                               </span>
                             ) : (
                               '—'
@@ -408,6 +412,18 @@ export default function ReactivationPage() {
         </>
       )}
 
+      <ConfirmDialog
+        open={campaignToDismiss !== null}
+        title="Ignorer cette campagne ?"
+        description="Cette campagne sera retirée des campagnes à valider."
+        confirmLabel="Ignorer la campagne"
+        pending={campaignToDismiss !== null && actionLoading === campaignToDismiss.id}
+        onConfirm={async () => {
+          if (campaignToDismiss) await dismissCampaign(campaignToDismiss.id);
+          setCampaignToDismiss(null);
+        }}
+        onCancel={() => setCampaignToDismiss(null)}
+      />
       <ConfirmDialog
         open={campaignToSend !== null}
         title="Envoyer la campagne de réactivation ?"

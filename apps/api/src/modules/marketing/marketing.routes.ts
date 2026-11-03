@@ -39,21 +39,35 @@ import {
   upsertMarketingPermission,
   withdrawMarketingPermission,
 } from './marketing-permission.service';
-import { recordStaffMarketingConsent } from './marketing-consent.service';
+import {
+  recordConfirmationEmailConsent,
+  recordStaffMarketingConsent,
+  restaurantNameForConsent,
+} from './marketing-consent.service';
 import {
   consumeMarketingUnsubscribeToken,
+  verifyMarketingConsentToken,
   verifyMarketingUnsubscribeToken,
 } from './marketing-unsubscribe.service';
 import {
+  renderConsentDonePage,
+  renderConsentPage,
   renderUnsubscribeConfirmPage,
   renderUnsubscribeDonePage,
   renderUnsubscribeInvalidPage,
+  renderUnsubscribeRetryPage,
 } from './marketing-unsubscribe.page';
 import {
   getMarketingCampaignReport,
   marketingCampaignReportToCsv,
 } from './marketing-report.service';
 import { getMarketingProviderReadiness } from './marketing-provider.service';
+import { createServiceFillDraft, previewServiceFill } from './fill-service.service';
+import {
+  dismissFillSuggestion,
+  invalidateFillSuggestions,
+  listFillSuggestions,
+} from './fill-suggestions.service';
 import { RATE_LIMIT_PUBLIC_TOKEN } from '../../plugins/rate-limit.policy';
 
 /**
@@ -126,6 +140,47 @@ const CampaignUpdateSchema = z
   })
   .refine((body) => Object.keys(body).length > 0, { message: 'at least one field is required' });
 
+const FillServiceSchema = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)), 'date invalide'),
+  service: z.enum(['midi', 'soir']),
+  channel: z.enum(CAMPAIGN_CHANNELS),
+});
+const FillServiceCreateSchema = FillServiceSchema.extend({
+  subject: z.string().trim().min(1).max(200).nullable().optional(),
+  bodyTemplate: z.string().trim().min(1).max(10_000),
+});
+/** Refus d'un remplissage, avec un message lisible ; le code reste stable pour le dashboard. */
+const FILL_SERVICE_CONFLICTS: Record<string, { error: string; message: string }> = {
+  NO_EMPTY_FORECAST: {
+    error: 'FILL_SERVICE_NO_EMPTY_FORECAST',
+    message: 'Aucune place vide probable pour ce service : il devrait se remplir sans message.',
+  },
+  BUDGET_EXHAUSTED: {
+    error: 'FILL_SERVICE_BUDGET_EXHAUSTED',
+    message: 'Le budget d’e-mails du jour est épuisé : choisissez le SMS ou réessayez demain.',
+  },
+  SERVICE_CLOSED: {
+    error: 'FILL_SERVICE_CLOSED',
+    message: 'Le restaurant n’ouvre pas ce service ce jour-là.',
+  },
+  CAPACITY_UNKNOWN: {
+    error: 'FILL_SERVICE_CAPACITY_UNKNOWN',
+    message: 'Le plan de salle n’est pas renseigné : la capacité de ce service est inconnue.',
+  },
+  SERVICE_FULL: {
+    error: 'FILL_SERVICE_FULL',
+    message: 'Ce service est complet : plus aucun créneau pour 2 couverts.',
+  },
+  NO_CANDIDATE: {
+    error: 'FILL_SERVICE_NO_CANDIDATE',
+    message:
+      'Aucun client joignable pour ce service : consentement, opposition ou réservation le jour même.',
+  },
+};
+
 const CampaignIdParamsSchema = z.object({
   id: z.string().trim().min(1).max(128),
 });
@@ -138,7 +193,7 @@ const AutomationTypeParamsSchema = z.object({
 const AutomationUpsertSchema = z.object({
   enabled: z.boolean(),
   channel: z.enum(CAMPAIGN_CHANNELS),
-  config: z.record(z.unknown()),
+  config: z.record(z.string(), z.unknown()),
 });
 const CampaignScheduleBodySchema = z.object({
   scheduledAt: z.coerce.date(),
@@ -165,6 +220,10 @@ const requireCrmAdvanced = [requireOrg(), requireCapability('customers.advanced'
 const requireMarketingCampaigns = [requireOrg(), requireCapability('marketing.campaigns')];
 const requireMarketingAutomations = [requireOrg(), requireCapability('marketing.automations')];
 const requireMarketingAttribution = [requireOrg(), requireCapability('marketing.attribution')];
+
+function isOppositionRegistered(error: unknown): boolean {
+  return error instanceof Error && error.message === 'MARKETING_OPPOSITION_REGISTERED';
+}
 
 function statusForError(error: unknown): number {
   if (!(error instanceof Error)) return 500;
@@ -202,12 +261,24 @@ const CAMPAIGN_CONFLICT_MESSAGES: Record<string, string> = {
   CAMPAIGN_NOT_READY: 'Cette campagne n’est pas encore prête à partir.',
   CAMPAIGN_ALREADY_RUNNING: 'Cette campagne est déjà en cours d’envoi.',
   CAMPAIGN_NOT_DUE: 'Cette campagne n’est pas encore à l’heure de son envoi.',
+  MARKETING_DAILY_BUDGET_EXCEEDED:
+    'Audience trop grande pour aujourd’hui : le budget d’e-mails marketing du jour ne couvre pas cette campagne. Réessayez demain ou choisissez un segment plus petit.',
+};
+
+/** Même refus, formulé pour une programmation : le budget visé est celui du jour prévu. */
+const SCHEDULE_CONFLICT_MESSAGES: Record<string, string> = {
+  ...CAMPAIGN_CONFLICT_MESSAGES,
+  MARKETING_DAILY_BUDGET_EXCEEDED:
+    'Audience trop grande pour ce jour-là : le budget d’e-mails marketing de ce jour ne couvre pas cette campagne. Choisissez un autre jour ou un segment plus petit.',
 };
 
 /** Réponse 409 lisible pour un refus d'état connu ; `null` pour toute autre erreur. */
-function campaignConflict(error: unknown): { error: string; message: string } | null {
+function campaignConflict(
+  error: unknown,
+  messages: Record<string, string> = CAMPAIGN_CONFLICT_MESSAGES,
+): { error: string; message: string } | null {
   if (!(error instanceof Error)) return null;
-  const message = CAMPAIGN_CONFLICT_MESSAGES[error.message];
+  const message = messages[error.message];
   return message ? { error: error.message, message } : null;
 }
 
@@ -291,6 +362,9 @@ export async function marketingRoutes(app: FastifyInstance) {
         });
         return reply.send({ data: permission });
       } catch (error) {
+        if (isOppositionRegistered(error)) {
+          return reply.status(409).send({ error: 'MARKETING_OPPOSITION_REGISTERED' });
+        }
         const status = statusForError(error);
         if (status === 404) return reply.status(status).send({ error: 'CUSTOMER_NOT_FOUND' });
         throw error;
@@ -319,6 +393,9 @@ export async function marketingRoutes(app: FastifyInstance) {
         }
         if (error instanceof Error && error.message === 'CUSTOMER_EMAIL_REQUIRED') {
           return reply.status(409).send({ error: 'CUSTOMER_EMAIL_REQUIRED' });
+        }
+        if (isOppositionRegistered(error)) {
+          return reply.status(409).send({ error: 'MARKETING_OPPOSITION_REGISTERED' });
         }
         throw error;
       }
@@ -431,6 +508,98 @@ export async function marketingRoutes(app: FastifyInstance) {
         if (problem) return reply.status(400).send({ error: 'INVALID_CAMPAIGN', message: problem });
         throw error;
       }
+    },
+  );
+
+  // Remplissage d'un service creux : direction seule (voir role-policy.ts), rien n'est envoyé.
+  app.post(
+    '/marketing/fill-service/preview',
+    { preHandler: requireMarketingCampaigns },
+    async (request, reply) => {
+      const body = FillServiceSchema.parse(request.body);
+      try {
+        const preview = await previewServiceFill({ restaurantId: request.restaurantId!, ...body });
+        return reply.send({ data: preview });
+      } catch (error) {
+        if (statusForError(error) === 413) {
+          return reply.status(413).send({ error: 'AUDIENCE_TOO_LARGE' });
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.post(
+    '/marketing/fill-service',
+    { preHandler: requireMarketingCampaigns },
+    async (request, reply) => {
+      const body = FillServiceCreateSchema.parse(request.body);
+      try {
+        const { plan, campaign } = await createServiceFillDraft({
+          restaurantId: request.restaurantId!,
+          date: body.date,
+          service: body.service,
+          channel: body.channel,
+          name: `Service ${body.service} du ${body.date}`,
+          objective: 'Remplir un service creux',
+          subject: body.subject,
+          bodyTemplate: body.bodyTemplate,
+          createdBy: request.userId ?? undefined,
+        });
+        if (!campaign) {
+          const conflict =
+            FILL_SERVICE_CONFLICTS[
+              plan.status !== 'PLANNED'
+                ? plan.status
+                : plan.budgetExhausted
+                  ? 'BUDGET_EXHAUSTED'
+                  : plan.emptyPlaces === 0
+                    ? 'NO_EMPTY_FORECAST'
+                    : 'NO_CANDIDATE'
+            ];
+          return reply.status(409).send(conflict);
+        }
+        await invalidateFillSuggestions(request.restaurantId!);
+        return reply.status(201).send({
+          data: {
+            id: campaign.id,
+            status: campaign.status,
+            audienceCount: campaign.audienceCount,
+            targetServiceStart: campaign.targetServiceStart,
+            targetServiceEnd: campaign.targetServiceEnd,
+          },
+        });
+      } catch (error) {
+        if (statusForError(error) === 413) {
+          return reply.status(413).send({ error: 'AUDIENCE_TOO_LARGE' });
+        }
+        const problem = marketingContentProblem(error);
+        if (problem) return reply.status(400).send({ error: 'INVALID_CAMPAIGN', message: problem });
+        throw error;
+      }
+    },
+  );
+
+  // Services creux à remplir : lecture seule, sans nom ni téléphone.
+  app.get(
+    '/marketing/fill-suggestions',
+    { preHandler: requireMarketingCampaigns },
+    async (request, reply) =>
+      reply.send({ data: await listFillSuggestions({ restaurantId: request.restaurantId! }) }),
+  );
+
+  app.post(
+    '/marketing/fill-suggestions/dismiss',
+    { preHandler: requireMarketingCampaigns },
+    async (request, reply) => {
+      const body = FillServiceSchema.pick({ date: true, service: true }).parse(request.body);
+      try {
+        await dismissFillSuggestion({ restaurantId: request.restaurantId!, ...body });
+      } catch (error) {
+        request.log.warn({ err: error }, 'fill suggestion dismiss unavailable');
+        return reply.status(503).send({ error: 'DISMISS_UNAVAILABLE' });
+      }
+      return reply.status(204).send();
     },
   );
 
@@ -652,6 +821,8 @@ export async function marketingRoutes(app: FastifyInstance) {
         if (status === 404) return reply.status(status).send({ error: 'CAMPAIGN_NOT_FOUND' });
         if (status === 503)
           return reply.status(status).send({ error: 'MARKETING_QUEUE_ENQUEUE_UNKNOWN' });
+        const conflict = campaignConflict(error, SCHEDULE_CONFLICT_MESSAGES);
+        if (conflict) return reply.status(409).send(conflict);
         throw error;
       }
     },
@@ -693,6 +864,8 @@ export async function marketingRoutes(app: FastifyInstance) {
         if (status === 404) return reply.status(status).send({ error: 'CAMPAIGN_NOT_FOUND' });
         if (status === 503)
           return reply.status(status).send({ error: 'MARKETING_QUEUE_ENQUEUE_UNKNOWN' });
+        const conflict = campaignConflict(error);
+        if (conflict) return reply.status(409).send(conflict);
         throw error;
       }
     },
@@ -800,6 +973,11 @@ export async function marketingRoutes(app: FastifyInstance) {
         if (fromBrowserForm) return sendUnsubscribePage(reply, 404, renderUnsubscribeInvalidPage());
         return reply.status(404).send({ error: 'CUSTOMER_NOT_FOUND' });
       }
+      // Le jeton est signé et sans état : le même lien permet de réessayer.
+      if (error instanceof Error && error.message === 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE') {
+        if (fromBrowserForm) return sendUnsubscribePage(reply, 503, renderUnsubscribeRetryPage());
+        return reply.status(503).send({ error: 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE' });
+      }
       throw error;
     }
   });
@@ -819,6 +997,58 @@ export async function marketingRoutes(app: FastifyInstance) {
       throw error;
     }
     return sendUnsubscribePage(reply, 200, renderUnsubscribeConfirmPage(candidate.data));
+  });
+
+  // Consentement par lien, sur le modèle de la désinscription : le GET n'enregistre rien.
+  // Seul un POST avec la case cochée enregistre l'accord.
+  const sendConsentForm = async (reply: FastifyReply, token: string, notice?: string) => {
+    const { restaurantId } = verifyMarketingConsentToken(token);
+    const restaurantName = await restaurantNameForConsent(restaurantId);
+    if (!restaurantName) return sendUnsubscribePage(reply, 404, renderUnsubscribeInvalidPage());
+    return sendUnsubscribePage(reply, 200, renderConsentPage({ token, restaurantName, notice }));
+  };
+
+  app.get('/marketing/consent', publicTokenRouteOptions, async (request, reply) => {
+    const query = (request.query ?? {}) as { token?: unknown };
+    const candidate = UnsubscribeTokenSchema.safeParse(query.token);
+    if (!candidate.success) return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+    try {
+      return await sendConsentForm(reply, candidate.data);
+    } catch (error) {
+      if (isUnsubscribeTokenError(error)) {
+        return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+      }
+      throw error;
+    }
+  });
+
+  app.post('/marketing/consent', publicTokenRouteOptions, async (request, reply) => {
+    const body = (request.body ?? {}) as { token?: unknown; consent?: unknown };
+    const candidate = UnsubscribeTokenSchema.safeParse(body.token);
+    if (!candidate.success) return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+    try {
+      if (body.consent !== 'on') {
+        return await sendConsentForm(
+          reply,
+          candidate.data,
+          'Aucune case cochée : rien n’a été enregistré.',
+        );
+      }
+      const { restaurantId, customerId, reservationId } = verifyMarketingConsentToken(
+        candidate.data,
+      );
+      const outcome = await recordConfirmationEmailConsent({
+        restaurantId,
+        customerId,
+        reservationId,
+      });
+      return sendUnsubscribePage(reply, 200, renderConsentDonePage(outcome));
+    } catch (error) {
+      if (isUnsubscribeTokenError(error)) {
+        return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+      }
+      throw error;
+    }
   });
 
   app.post(

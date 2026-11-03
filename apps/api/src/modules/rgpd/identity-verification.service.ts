@@ -1,32 +1,7 @@
 /**
- * Identity verification pour les endpoints RGPD sensibles (erase, export).
- *
- * Conformité RGPD Article 12 §6 : "l'identité du demandeur doit être
- * vérifiée de manière proportionnée".
- *
- * Deux canaux supportés :
- *   1. **OTP SMS** via Telnyx (canal principal, friction user normale)
- *   2. **Lien signé par email** via Brevo (canal admin, friction minimale)
- *
- * Stratégie de canal (auto) :
- *   - Si le payload contient un `email` valide → lien signé par email
- *   - Sinon → OTP SMS via le `subject` (téléphone)
- *
- * Limitations MVP :
- *   - Pas d'email client en DB (Customer n'a pas d'email), donc le canal
- *     email est surtout utile pour les admins resto qui demandent pour
- *     un client qui fournit son email.
- *   - Pas de captcha : on rate-limit par IP + téléphone (5 req / 15 min).
- *   - Pas de validation 2FA : c'est un OTP one-shot, pas un facteur durable.
- *
- * Stockage :
- *   - OTP : table `identity_verification_otp` (nouvelle) avec TTL 10 min
- *   - Tokens signés : stateless, JWT-like (HMAC-SHA256) avec payload minimal
- *
- * Sécurité :
- *   - OTP : 6 chiffres, max 5 tentatives, expiration 10 min
- *   - Lien signé : expiration 24h, one-shot (jti tracked)
- *   - Rate-limit : 5 demandes / 15 min par (IP + subject)
+ * Identity verification for RGPD requests: a one-time SMS code proves control
+ * of the phone number before an action token is issued. Legacy email links
+ * are refused because their destination was not bound to the subject.
  */
 
 import type { PrismaClient } from '@prisma/client';
@@ -35,14 +10,12 @@ import type Redis from 'ioredis';
 import { logger } from '../../shared/logger/pino';
 import { sendSms } from '../../shared/telnyx/client';
 import { env } from '../../env';
-import { sendEmail } from '../../shared/email';
 
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
 const OTP_LENGTH = 6;
 const OTP_TTL_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
-const SIGNED_LINK_TTL_HOURS = 24;
 
 const RATE_LIMIT_WINDOW_MIN = 15;
 const RATE_LIMIT_MAX_REQUESTS = 5;
@@ -50,9 +23,9 @@ const RATE_LIMIT_MAX_REQUESTS = 5;
 export type VerificationChannel = 'sms' | 'email';
 
 export type RequestVerificationInput = {
-  subject: string; // téléphone (pour SMS) ou email (pour email)
+  subject: string; // téléphone à vérifier
   intent: 'erase' | 'export';
-  email?: string; // optionnel : si fourni, on privilégie le canal email
+  email?: string; // accepté pour compatibilité ; la preuve reste un SMS
   ip?: string; // IP client pour le rate-limit (SEC-009)
   captchaToken?: string; // Captcha Cloudflare Turnstile (optionnel, validé si configuré)
 };
@@ -77,10 +50,6 @@ type VerificationTokenPayload = {
   intent: string;
   jti: string;
   exp: number;
-};
-
-type SignedLinkPayload = VerificationTokenPayload & {
-  dest: string;
 };
 
 export class IdentityVerificationError extends Error {
@@ -110,6 +79,7 @@ export class IdentityVerificationService {
    * Choisit le canal (SMS ou email) et envoie le code/lien.
    */
   async requestVerification(input: RequestVerificationInput): Promise<RequestVerificationResult> {
+    verificationSecret();
     // 0. Captcha (optionnel, validé seulement si TURNSTILE_SECRET_KEY est configuré)
     const captchaRequired = this.isCaptchaRequired();
     if (captchaRequired) {
@@ -120,8 +90,8 @@ export class IdentityVerificationService {
     const rateLimitRemaining = await this.checkRateLimit(input.subject, input.ip, input.intent);
 
     // 2. Choisir le canal
-    const channel: VerificationChannel = input.email ? 'email' : 'sms';
-    const destination = input.email ?? input.subject;
+    const channel: VerificationChannel = 'sms';
+    const destination = input.subject;
 
     // 3. Générer et stocker
     const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
@@ -154,13 +124,7 @@ export class IdentityVerificationService {
     });
 
     // 4. Envoyer
-    if (channel === 'sms') {
-      await this.sendOtpSms(destination, otp, input.intent);
-    } else {
-      // Pour email : on génère un token signé et on envoie le lien
-      const token = await this.generateSignedToken(input.subject, input.intent, destination);
-      await this.sendSignedLinkEmail(destination, token, input.intent);
-    }
+    await this.sendOtpSms(destination, otp, input.intent);
 
     return {
       channel,
@@ -185,7 +149,7 @@ export class IdentityVerificationService {
       return this.confirmOtp(input);
     }
     if (input.token) {
-      return this.confirmSignedToken(input);
+      throw new IdentityVerificationError('INVALID_CODE', 'SMS verification required');
     }
     throw new IdentityVerificationError('INVALID_CODE', 'Either code or token is required');
   }
@@ -214,47 +178,43 @@ export class IdentityVerificationService {
     const inputHash = hashOtp(input.code!);
     if (inputHash !== record.otpHash) {
       // Incrémente attempts
-      await this.prisma.identityVerificationOtp.update({
-        where: { id: record.id },
-        data: { attempts: record.attempts + 1 },
+      await this.prisma.identityVerificationOtp.updateMany({
+        where: {
+          id: record.id,
+          otpHash: record.otpHash,
+          consumedAt: null,
+          attempts: { lt: OTP_MAX_ATTEMPTS },
+          expiresAt: { gt: new Date() },
+        },
+        data: { attempts: { increment: 1 } },
       });
       throw new IdentityVerificationError('INVALID_CODE', 'Invalid code');
     }
 
     // OK : consomme et génère un verificationToken one-shot
-    await this.prisma.identityVerificationOtp.update({
-      where: { id: record.id },
+    const consumed = await this.prisma.identityVerificationOtp.updateMany({
+      where: {
+        id: record.id,
+        otpHash: inputHash,
+        channel: 'sms',
+        consumedAt: null,
+        attempts: { lt: OTP_MAX_ATTEMPTS },
+        expiresAt: { gt: new Date() },
+      },
       data: { consumedAt: new Date() },
     });
+    if (consumed.count !== 1)
+      throw new IdentityVerificationError('EXPIRED', 'Code already consumed or expired');
     const verificationToken = await this.generateVerificationToken(input.subject, input.intent);
     return { verificationToken };
   }
 
   // ─── Signed link (email) ──────────────────────────────────
 
-  private async confirmSignedToken(
-    input: ConfirmVerificationInput,
-  ): Promise<{ verificationToken: string }> {
-    const payload = await this.verifySignedToken(input.token!);
-    if (payload.sub !== input.subject || payload.intent !== input.intent) {
-      throw new IdentityVerificationError('INVALID_CODE', 'Token mismatch');
-    }
-    await this.consumeTokenJti(payload.jti, payload.sub, payload.intent);
-    const verificationToken = await this.generateVerificationToken(input.subject, input.intent);
-    return { verificationToken };
-  }
-
   async confirmSignedLinkToken(
-    token: string,
+    _token: string,
   ): Promise<{ verificationToken: string; subject: string; intent: string }> {
-    const payload = await this.verifySignedToken(token);
-    await this.consumeTokenJti(payload.jti, payload.sub, payload.intent);
-    const verificationToken = await this.generateVerificationToken(payload.sub, payload.intent);
-    return {
-      verificationToken,
-      subject: payload.sub,
-      intent: payload.intent,
-    };
+    throw new IdentityVerificationError('INVALID_CODE', 'SMS verification required');
   }
 
   // ─── Verification token (one-shot) ────────────────────────
@@ -263,13 +223,16 @@ export class IdentityVerificationService {
   // consommé → INVALID_CODE. Empêche le replay.
 
   async generateVerificationToken(subject: string, intent: string): Promise<string> {
-    const secret =
-      process.env.VERIFICATION_TOKEN_SECRET ??
-      process.env.CLERK_SECRET_KEY ??
-      'dev-secret-32-chars-min-aaa';
+    const secret = verificationSecret();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
     const jti = crypto.randomUUID();
-    const payload = { sub: subject, intent, jti, exp: Math.floor(expiresAt.getTime() / 1000) };
+    const payload = {
+      sub: subject,
+      intent,
+      jti,
+      exp: Math.floor(expiresAt.getTime() / 1000),
+      proof: 'sms',
+    };
     const sig = signHmac(JSON.stringify(payload), secret);
     return Buffer.from(JSON.stringify(payload)).toString('base64url') + '.' + sig;
   }
@@ -291,16 +254,14 @@ export class IdentityVerificationService {
     } catch {
       throw new IdentityVerificationError('INVALID_CODE', 'Malformed token payload');
     }
-    const secret =
-      process.env.VERIFICATION_TOKEN_SECRET ??
-      process.env.CLERK_SECRET_KEY ??
-      'dev-secret-32-chars-min-aaa';
+    const secret = verificationSecret();
     const expectedSig = signHmac(
       JSON.stringify({
         sub: payload.sub,
         intent: payload.intent,
         jti: payload.jti,
         exp: payload.exp,
+        proof: 'sms',
       }),
       secret,
     );
@@ -315,68 +276,6 @@ export class IdentityVerificationService {
     }
     await this.consumeTokenJti(payload.jti, payload.sub, payload.intent);
     return { subject: payload.sub };
-  }
-
-  // ─── Signed link token (email) ─────────────────────────────
-
-  private async generateSignedToken(
-    subject: string,
-    intent: string,
-    destination: string,
-  ): Promise<string> {
-    const secret =
-      process.env.SIGNED_LINK_SECRET ??
-      process.env.CLERK_SECRET_KEY ??
-      'dev-secret-32-chars-min-aaa';
-    const exp = Math.floor((Date.now() + SIGNED_LINK_TTL_HOURS * 60 * 60 * 1000) / 1000);
-    const jti = crypto.randomUUID();
-    const payload = { sub: subject, intent, dest: destination, jti, exp };
-    const sig = signHmac(JSON.stringify(payload), secret);
-    return Buffer.from(JSON.stringify(payload)).toString('base64url') + '.' + sig;
-  }
-
-  private async verifySignedToken(token: string): Promise<{
-    sub: string;
-    intent: string;
-    jti: string;
-  }> {
-    const parts = token.split('.');
-    if (parts.length !== 2) throw new IdentityVerificationError('INVALID_CODE', 'Malformed token');
-    const [b64, sig] = parts;
-    let payload: SignedLinkPayload;
-    try {
-      const parsed: unknown = JSON.parse(Buffer.from(b64, 'base64url').toString('utf8'));
-      if (!isSignedLinkPayload(parsed)) {
-        throw new Error('Invalid payload shape');
-      }
-      payload = parsed;
-    } catch {
-      throw new IdentityVerificationError('INVALID_CODE', 'Malformed token payload');
-    }
-    const secret =
-      process.env.SIGNED_LINK_SECRET ??
-      process.env.CLERK_SECRET_KEY ??
-      'dev-secret-32-chars-min-aaa';
-    const canonical = JSON.stringify({
-      sub: payload.sub,
-      intent: payload.intent,
-      dest: payload.dest,
-      jti: payload.jti,
-      exp: payload.exp,
-    });
-    const expectedSig = signHmac(canonical, secret);
-    if (sig !== expectedSig) {
-      throw new IdentityVerificationError('INVALID_CODE', 'Bad signature');
-    }
-    if (payload.exp * 1000 < Date.now()) {
-      throw new IdentityVerificationError('EXPIRED', 'Token expired');
-    }
-    // Check one-shot
-    const usage = await this.prisma.signedTokenUsage.findUnique({ where: { jti: payload.jti } });
-    if (usage) {
-      throw new IdentityVerificationError('EXPIRED', 'Token already used');
-    }
-    return { sub: payload.sub, intent: payload.intent, jti: payload.jti };
   }
 
   private async consumeTokenJti(jti: string, subject: string, intent: string): Promise<void> {
@@ -458,30 +357,7 @@ export class IdentityVerificationService {
     try {
       await sendSms(phone, message);
     } catch (err) {
-      logger.error({ err, phone, intent }, 'Failed to send OTP SMS');
-      throw err;
-    }
-  }
-
-  private async sendSignedLinkEmail(email: string, token: string, intent: string): Promise<void> {
-    const baseUrl = env.PUBLIC_URL;
-    const link = `${baseUrl}/api/rgpd/confirm-link?token=${encodeURIComponent(token)}`;
-    const subject =
-      intent === 'erase'
-        ? "Sokar — Confirmez votre demande d'effacement"
-        : "Sokar — Confirmez votre demande d'export";
-    const body =
-      intent === 'erase'
-        ? `Cliquez sur le lien pour confirmer l'effacement de vos données : ${link}\n\nLien valide 24h, à usage unique.`
-        : `Cliquez sur le lien pour recevoir l'export de vos données : ${link}\n\nLien valide 24h, à usage unique.`;
-    try {
-      await sendEmail({
-        to: email,
-        subject,
-        html: `<p>${body.replace(/\n/g, '<br>')}</p>`,
-      });
-    } catch (err) {
-      logger.error({ err, email, intent }, 'Failed to send signed link email');
+      logger.error({ err, intent }, 'Failed to send OTP SMS');
       throw err;
     }
   }
@@ -510,13 +386,16 @@ function isVerificationTokenPayload(value: unknown): value is VerificationTokenP
     typeof payload.sub === 'string' &&
     typeof payload.intent === 'string' &&
     typeof payload.jti === 'string' &&
-    typeof payload.exp === 'number'
+    typeof payload.exp === 'number' &&
+    payload.proof === 'sms'
   );
 }
 
-function isSignedLinkPayload(value: unknown): value is SignedLinkPayload {
-  if (!isVerificationTokenPayload(value)) return false;
-  return typeof (value as Record<string, unknown>).dest === 'string';
+function verificationSecret(): string {
+  const secret =
+    process.env.VERIFICATION_TOKEN_SECRET?.trim() || process.env.CLERK_SECRET_KEY?.trim();
+  if (!secret || secret.length < 16) throw new Error('RGPD verification secret is not configured');
+  return secret;
 }
 
 function isPrismaUniqueError(value: unknown): value is { code: 'P2002' } {

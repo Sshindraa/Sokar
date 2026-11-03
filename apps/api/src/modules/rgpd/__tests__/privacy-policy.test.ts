@@ -15,6 +15,13 @@ describe('privacy disclosure compatibility', () => {
     expect(PRIVACY_POLICY_SUMMARY.automaticAnonymizationGuaranteed).toBe(false);
   });
 
+  it('publishes the reservation e-mail with its purpose and retention', () => {
+    expect(PRIVACY_POLICY_TEXT).toContain('- Adresse e-mail saisie pour une réservation en ligne');
+    expect(PRIVACY_POLICY_TEXT).toContain('- Adresse e-mail de la réservation : L’adresse e-mail');
+    expect(PRIVACY_POLICY_TEXT).toContain('sert à gérer cette réservation');
+    expect(PRIVACY_POLICY_TEXT).toContain('jusqu’à son anonymisation');
+  });
+
   it('publishes functional categories without the internal supplier inventory', () => {
     expect(new Set(PRIVACY_PROVIDERS.map((provider) => provider.id)).size).toBe(
       PRIVACY_PROVIDERS.length,

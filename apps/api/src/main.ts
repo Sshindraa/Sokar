@@ -7,7 +7,13 @@ import { setupFastifyErrorHandler } from '@sentry/node';
 import { db } from './shared/db/client';
 import { redisCache } from './shared/redis/client';
 import { queues } from './shared/queue/queues';
-import { logger, newRequestId, REDACT_PATHS, REDACT_CENSOR } from './shared/logger/pino';
+import {
+  logger,
+  newRequestId,
+  REDACT_PATHS,
+  REDACT_CENSOR,
+  safeRequestUrl,
+} from './shared/logger/pino';
 import { telnyxVoiceRoutes } from './modules/voice/telnyx.pipeline';
 import { warmupTelnyxConnection } from './shared/telnyx/http-agent';
 import { initGreetingCache } from './modules/voice/stream/greeting-cache';
@@ -28,6 +34,7 @@ import { reservationRoutes } from './modules/reservations/reservation.routes';
 import { callRoutes } from './modules/calls/call.routes';
 import { voiceReadRoutes } from './modules/voice/voice-read.routes';
 import { dashboardRoutes } from './modules/dashboard/dashboard.routes';
+import { companionRoutes } from './modules/companion/companion.routes';
 import { reactivationRoutes } from './modules/dashboard/reactivation.routes';
 import { authSyncRoutes } from './modules/auth/auth.routes';
 import { testRoutes } from './modules/test/test.routes';
@@ -52,6 +59,7 @@ import { flagsRoutes } from './modules/admin/flags.routes';
 import { onboardingFunnelRoutes } from './modules/admin/onboarding-funnel.routes';
 import { provisioningRoutes } from './modules/admin/provisioning.routes';
 import { restaurantHealthRoutes } from './modules/admin/restaurant-health.routes';
+import { adminCustomerRepairRoutes } from './modules/admin/customer-repair.routes';
 import { posRoutes } from './modules/pos/pos.routes';
 import { reservationPaymentRoutes } from './modules/reservation-payments/reservation-payment.routes';
 import { customerGroupRoutes } from './modules/customer-groups/customer-group.routes';
@@ -103,6 +111,23 @@ export async function buildApp() {
     logger: {
       level: process.env.LOG_LEVEL ?? (isDev ? 'debug' : 'info'),
       base: { service: 'sokar-api', env: process.env.NODE_ENV ?? 'development' },
+      serializers: {
+        req(request: {
+          method?: string;
+          url?: string;
+          hostname?: string;
+          remoteAddress?: string;
+          remotePort?: number;
+        }) {
+          return {
+            method: request.method,
+            url: safeRequestUrl(request.url),
+            hostname: request.hostname,
+            remoteAddress: request.remoteAddress,
+            remotePort: request.remotePort,
+          };
+        },
+      },
       redact: {
         paths: REDACT_PATHS,
         censor: REDACT_CENSOR,
@@ -179,7 +204,7 @@ export async function buildApp() {
     if (error instanceof ZodError) {
       return reply.status(400).send({
         error: 'Validation Error',
-        details: error.errors.map((e) => ({
+        details: error.issues.map((e) => ({
           path: e.path.join('.'),
           message: e.message,
         })),
@@ -237,6 +262,7 @@ export async function buildApp() {
   await app.register(callRoutes);
   await app.register(voiceReadRoutes);
   await app.register(dashboardRoutes);
+  await app.register(companionRoutes);
   await app.register(reactivationRoutes);
   await app.register(authSyncRoutes);
   await app.register(agenticAdminRoutes);
@@ -259,6 +285,7 @@ export async function buildApp() {
   await app.register(onboardingFunnelRoutes);
   await app.register(provisioningRoutes);
   await app.register(restaurantHealthRoutes);
+  await app.register(adminCustomerRepairRoutes);
   await app.register(posRoutes);
   await app.register(reservationPaymentRoutes);
   await app.register(customerGroupRoutes);

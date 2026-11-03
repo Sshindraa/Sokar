@@ -35,7 +35,7 @@ describe('WidgetIntegrationPage', () => {
     apiMocks.get.mockReturnValue(new Promise(() => {})); // pending promise
     const { container } = render(<WidgetIntegrationPage />);
 
-    expect(screen.getByRole('heading', { name: 'Widget / Intégration' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Widget' })).toBeInTheDocument();
     expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
   });
 

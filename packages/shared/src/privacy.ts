@@ -56,6 +56,8 @@ export const PRIVACY_RETENTION = {
   demo: 'Les demandes sans suite sont à supprimer douze mois après le dernier échange, ou après la demande en l’absence d’échange. La revue et la suppression sont manuelles, sans purge automatique.',
   reservations:
     'Les données de réservation et de clientèle sont conservées selon les finalités et les instructions du restaurant. Le délai maximal applicable reste à préciser ; aucune suppression automatique générale n’est garantie.',
+  reservationEmail:
+    'L’adresse e-mail saisie pour une réservation en ligne sert à gérer cette réservation, notamment sa confirmation. Elle est conservée avec la réservation jusqu’à son anonymisation : ce mécanisme est désactivé par défaut, aucune suppression automatique n’est garantie. L’effacement peut être demandé.',
   calls:
     'Les données et transcriptions d’appels sont traitées pour la gestion des appels et des réservations. Leur durée de conservation reste à préciser, indépendamment de celle des enregistrements audio.',
   recordings:
@@ -76,6 +78,11 @@ export const PRIVACY_RETENTION_RULES = [
     id: 'reservations',
     category: 'Réservations et clientèle',
     description: PRIVACY_RETENTION.reservations,
+  },
+  {
+    id: 'reservationEmail',
+    category: 'Adresse e-mail de la réservation',
+    description: PRIVACY_RETENTION.reservationEmail,
   },
   {
     id: 'calls',

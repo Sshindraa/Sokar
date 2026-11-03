@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import ReservationChannels, { demoReservationChannels } from '../ReservationChannels';
 
 describe('ReservationChannels', () => {
-  it('affiche chaque canal avec sa part et le total pris sans l’équipe', () => {
+  it('affiche chaque canal avec sa part', () => {
     render(
       <ReservationChannels
         stats={[
@@ -17,12 +17,13 @@ describe('ReservationChannels', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Réservations par canal' })).toBeInTheDocument();
-    expect(screen.getByText('prises sans votre équipe')).toBeInTheDocument();
-    expect(screen.getByText('9')).toBeInTheDocument();
+    expect(screen.getByText('Assistants IA')).toHaveAccessibleDescription(
+      'ChatGPT, Perplexity et autres agents de réservation.',
+    );
     expect(screen.getByRole('img')).toHaveAccessibleName(
       'Téléphone 60 %, Site et réseaux 20 %, Google 10 %, Équipe 10 %',
     );
-    expect(screen.getByText('Aucune pour l’instant')).toBeInTheDocument();
+    expect(screen.getByText(/Aucune pour l’instant/)).toBeInTheDocument();
   });
 
   it('propose d’ajouter le lien de réservation quand tout passe par le téléphone', () => {

@@ -19,12 +19,10 @@ export function writeDebugLog(msg: string, err?: unknown) {
         ? ` | ERROR: ${redactPii(String(err))}`
         : '';
   const logMsg = `[${timestamp}] ${redactPii(msg)}${errStr}\n`;
-  try {
-    const logPath =
-      process.env.DEBUG_LOG_PATH || path.join(process.cwd(), 'scratch', 'call_debug.log');
-    fs.mkdirSync(path.dirname(logPath), { recursive: true });
-    fs.appendFileSync(logPath, logMsg);
-  } catch (e) {
-    logger.error({ err: e }, 'Failed to write debug log');
-  }
+  const logPath =
+    process.env.DEBUG_LOG_PATH || path.join(process.cwd(), 'scratch', 'call_debug.log');
+  fs.promises
+    .mkdir(path.dirname(logPath), { recursive: true })
+    .then(() => fs.promises.appendFile(logPath, logMsg))
+    .catch((err) => logger.error({ err }, 'Failed to write debug log'));
 }

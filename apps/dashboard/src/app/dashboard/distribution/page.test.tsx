@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toApiError } from '@/lib/api-error';
 import DistributionPage from './page';
+const toast = vi.hoisted(() => Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }));
+vi.mock('sonner', () => ({ toast }));
 
 const apiMocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 
@@ -106,7 +108,7 @@ describe('DistributionPage', () => {
 
   it('charge les connexions et les traces de qualification', async () => {
     render(<DistributionPage />);
-    expect(await screen.findByRole('heading', { name: 'Canaux partenaires' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Distribution' })).toBeInTheDocument();
     expect((await screen.findAllByText('Google Reserve')).length).toBeGreaterThan(0);
     expect(await screen.findByText(/Disponibilités reçues/)).toBeInTheDocument();
     expect(await screen.findByText('Réservation modifiée')).toBeInTheDocument();
@@ -118,7 +120,7 @@ describe('DistributionPage', () => {
 
   it('crée une connexion en conservant la référence opaque', async () => {
     render(<DistributionPage />);
-    await screen.findByRole('heading', { name: 'Canaux partenaires' });
+    await screen.findByRole('heading', { name: 'Distribution' });
     fireEvent.change(screen.getByLabelText('Identifiant chez le partenaire'), {
       target: { value: 'location-1234' },
     });
@@ -136,12 +138,16 @@ describe('DistributionPage', () => {
         }),
       ),
     );
-    expect(await screen.findByText(/Connexion enregistrée\. Aucun partenaire/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        expect.stringMatching(/Connexion enregistrée\. Aucun partenaire/),
+      ),
+    );
   });
 
   it('met un run local en file avec une clé d’idempotence', async () => {
     render(<DistributionPage />);
-    await screen.findByRole('heading', { name: 'Canaux partenaires' });
+    await screen.findByRole('heading', { name: 'Distribution' });
     await clickWhenEnabled(/Lancer une synchronisation/);
     await waitFor(() =>
       expect(apiMocks.post).toHaveBeenCalledWith(
@@ -186,7 +192,7 @@ describe('DistributionPage', () => {
     apiMocks.get.mockImplementation(() => new Promise(() => undefined));
     render(<DistributionPage />);
 
-    await screen.findByRole('heading', { name: 'Canaux partenaires' });
+    await screen.findByRole('heading', { name: 'Distribution' });
     expect(screen.queryByText(/Aucune synchronisation pour cette connexion/)).toBeNull();
     expect(screen.queryByText(/Aucune notification reçue/)).toBeNull();
     expect(screen.queryByText(/Aucun lien associé/)).toBeNull();

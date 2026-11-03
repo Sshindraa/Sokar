@@ -7,29 +7,16 @@ import { SokarLogo } from '@/components/SokarLogo';
 import { useTranslations } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
-  BarChart3,
   CalendarCheck,
-  PhoneCall,
-  Settings,
-  Users,
-  Sparkles,
-  Zap,
-  HeartHandshake,
-  Code,
-  Gift,
   Moon,
   Sun,
   Radio,
   PencilRuler,
-  Megaphone,
-  Star,
-  Award,
-  Ticket,
-  Share2,
   ShieldCheck,
-  X,
   ChevronDown,
   Check,
+  PanelLeftOpen,
+  PanelLeftClose,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -44,98 +31,15 @@ import { OnboardingAccessBoundary } from '@/features/onboarding/onboarding-acces
 import { OnboardingProvider } from '@/features/onboarding/onboarding-provider';
 import { DashboardThemeProvider, useDashboardTheme } from '@/features/theme/dashboard-theme';
 import { useApi } from '@/lib/api';
+import { CompanionPanel } from '@/features/companion/CompanionPanel';
 import { SubscribeFromPricing } from './SubscribeFromPricing';
 import { SiteProvider, SiteSwitcher, useSiteSelection } from '@/features/sites/site-context';
 import { SERVICE_STAFF_HOME, canOpenDashboardPath, isServiceStaff } from '@/features/team/roles';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { CreateOfferDialog } from '@/features/offers/create-offer-dialog';
-
-// Le libellé de chaque item de nav passe par `useTranslations('nav')`. Les
-// icônes et les hrefs ne dépendent pas de la locale, donc ils restent dans
-// un tableau de config hors du composant.
-type NavKey =
-  | 'overview'
-  | 'calls'
-  | 'reservations'
-  | 'floorPlan'
-  | 'customers'
-  | 'marketing'
-  | 'reputation'
-  | 'loyalty'
-  | 'experiences'
-  | 'events'
-  | 'distribution'
-  | 'reactivation'
-  | 'giftCards'
-  | 'agentic'
-  | 'connect'
-  | 'widget'
-  | 'admin';
-
-type NavItem = { href: string; key: NavKey; icon: LucideIcon };
-type NavGroupId = 'service' | 'customers' | 'growth' | 'offers' | 'channels';
-
-type NavGroup = {
-  id: NavGroupId;
-  key: NavGroupId;
-  icon: LucideIcon;
-  items: NavItem[];
-};
-
-const overviewNavItem: NavItem = { href: '/dashboard', key: 'overview', icon: BarChart3 };
-
-const navGroups: NavGroup[] = [
-  {
-    id: 'service',
-    key: 'service',
-    icon: PhoneCall,
-    items: [
-      { href: '/dashboard/reservations', key: 'reservations', icon: CalendarCheck },
-      { href: '/dashboard/calls', key: 'calls', icon: PhoneCall },
-      { href: '/dashboard/floor-plan?view=service-live', key: 'floorPlan', icon: Radio },
-      { href: '/dashboard/agentic', key: 'agentic', icon: Sparkles },
-    ],
-  },
-  {
-    id: 'customers',
-    key: 'customers',
-    icon: Users,
-    items: [
-      { href: '/dashboard/customers', key: 'customers', icon: Users },
-      { href: '/dashboard/loyalty', key: 'loyalty', icon: Award },
-      { href: '/dashboard/reactivation', key: 'reactivation', icon: HeartHandshake },
-    ],
-  },
-  {
-    id: 'growth',
-    key: 'growth',
-    icon: Megaphone,
-    items: [
-      { href: '/dashboard/marketing', key: 'marketing', icon: Megaphone },
-      { href: '/dashboard/reputation', key: 'reputation', icon: Star },
-    ],
-  },
-  {
-    id: 'offers',
-    key: 'offers',
-    icon: Ticket,
-    items: [
-      { href: '/dashboard/experiences', key: 'experiences', icon: CalendarCheck },
-      { href: '/dashboard/events', key: 'events', icon: Ticket },
-      { href: '/dashboard/gift-cards', key: 'giftCards', icon: Gift },
-    ],
-  },
-  {
-    id: 'channels',
-    key: 'channels',
-    icon: Share2,
-    items: [
-      { href: '/dashboard/connect', key: 'connect', icon: Zap },
-      { href: '/dashboard/widget', key: 'widget', icon: Code },
-      { href: '/dashboard/distribution', key: 'distribution', icon: Share2 },
-    ],
-  },
-];
+import { SectionTabs } from '@/components/SectionTabs';
+import { navSections, isNavEntryActive, type NavSectionId } from '@/features/navigation/sections';
 
 function SidebarNavItem({
   href,
@@ -153,51 +57,28 @@ function SidebarNavItem({
   onClick?: () => void;
 }) {
   return (
-    <Link
-      href={href}
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className={cn(
-        'flex h-10 flex-none items-center rounded-xl text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        expanded ? 'w-full justify-start gap-3 px-3' : 'w-10 justify-center',
-        active &&
-          'bg-primary text-primary-foreground shadow-sm hover:bg-primary hover:text-primary-foreground',
-      )}
-    >
-      <Icon size={17} strokeWidth={active ? 2.25 : 1.75} />
-      <span className={cn('truncate text-sm font-medium', !expanded && 'sr-only')}>{label}</span>
-    </Link>
-  );
-}
-
-function OffersPanelNavItem({
-  href,
-  label,
-  active,
-  onClick,
-}: {
-  href: string;
-  label: string;
-  active: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <Link
-      href={href}
-      aria-label={label}
-      aria-current={active ? 'page' : undefined}
-      title={label}
-      onClick={onClick}
-      className={cn(
-        'flex h-9 w-full items-center rounded-lg px-3 text-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        active
-          ? 'bg-primary font-semibold text-primary-foreground hover:bg-primary'
-          : 'font-medium text-muted-foreground hover:bg-accent hover:text-foreground',
-      )}
-    >
-      <span className="truncate">{label}</span>
-    </Link>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link
+          href={href}
+          aria-label={label}
+          aria-current={active ? 'page' : undefined}
+          onClick={onClick}
+          className={cn(
+            'flex h-12 flex-none items-center rounded-xl text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            expanded ? 'w-full justify-start gap-3 px-3' : 'mx-auto w-10 justify-center',
+            active &&
+              'bg-popover font-semibold text-foreground shadow-md hover:bg-popover hover:text-foreground',
+          )}
+        >
+          <Icon size={19} strokeWidth={active ? 2.25 : 1.75} />
+          <span className={cn('truncate text-base font-semibold', !expanded && 'sr-only')}>
+            {label}
+          </span>
+        </Link>
+      </TooltipTrigger>
+      {!expanded ? <TooltipContent side="right">{label}</TooltipContent> : null}
+    </Tooltip>
   );
 }
 
@@ -208,13 +89,15 @@ function SidebarGroupButton({
   active,
   open,
   onClick,
+  compact = false,
 }: {
-  id: NavGroupId;
+  id: NavSectionId;
   label: string;
   icon: LucideIcon;
   active: boolean;
   open: boolean;
   onClick: () => void;
+  compact?: boolean;
 }) {
   return (
     <button
@@ -225,13 +108,20 @@ function SidebarGroupButton({
       title={label}
       onClick={onClick}
       className={cn(
-        'flex h-10 flex-none items-center rounded-xl text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        'w-10 justify-center',
-        active && 'bg-accent text-foreground',
+        'flex h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-base font-semibold text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        compact && 'justify-center px-0',
+        (active || open) && 'text-foreground',
       )}
     >
-      <Icon size={17} strokeWidth={active ? 2.25 : 1.75} />
-      <span className="sr-only">{label}</span>
+      <Icon size={19} aria-hidden="true" />
+      {!compact && <span className="min-w-0 flex-1 truncate">{label}</span>}
+      {!compact && (
+        <ChevronDown
+          size={16}
+          aria-hidden="true"
+          className={cn('transition-transform duration-200', open && 'rotate-180')}
+        />
+      )}
     </button>
   );
 }
@@ -266,64 +156,7 @@ function ThemeToggle() {
   );
 }
 
-function SettingsButton({ active = false }: { active?: boolean }) {
-  const tNav = useTranslations('nav');
-  const { activeSite } = useSiteSelection();
-  // Les réglages sont fermés à l'équipe de service : l'API les refuse, le bouton ne les promet pas.
-  if (isServiceStaff(activeSite?.role)) return null;
-
-  return (
-    <Link
-      href="/dashboard/settings"
-      className={cn(
-        'inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-card/80 text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground',
-        active &&
-          'border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
-      )}
-      title={tNav('settings')}
-      aria-label={tNav('settings')}
-    >
-      <Settings size={16} />
-    </Link>
-  );
-}
-
-function DashboardBrand({ restaurantName }: { restaurantName: string }) {
-  return (
-    <Link
-      href="/dashboard"
-      aria-label={`${restaurantName} HQ`}
-      title={`${restaurantName} HQ`}
-      className="dashboard-brand-link flex shrink-0 items-center justify-center rounded-xl border border-border bg-card/70 transition-all duration-200 hover:border-foreground/20 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <Image
-        src="/sokar-restaurant-mark.png"
-        alt="Sokar"
-        width={44}
-        height={44}
-        className="dashboard-brand-logo h-9 w-9 object-contain"
-      />
-    </Link>
-  );
-}
-
-function isNavItemActive(pathname: string, item: NavItem) {
-  if (item.key === 'giftCards') return pathname.startsWith('/dashboard/gift-card');
-  if (item.key === 'customers') return pathname.startsWith('/dashboard/customers');
-  if (item.key === 'marketing') return pathname.startsWith('/dashboard/marketing');
-  if (item.key === 'loyalty') return pathname.startsWith('/dashboard/loyalty');
-  if (item.key === 'experiences') return pathname.startsWith('/dashboard/experiences');
-  if (item.key === 'events') return pathname.startsWith('/dashboard/events');
-  if (item.key === 'distribution') return pathname.startsWith('/dashboard/distribution');
-  if (item.key === 'floorPlan') return pathname.startsWith('/dashboard/floor-plan');
-  return pathname === item.href;
-}
-
-function isNavGroupActive(pathname: string, group: NavGroup) {
-  return group.items.some((item) => isNavItemActive(pathname, item));
-}
-
-function DashboardModeSwitcher({
+export function DashboardModeSwitcher({
   salleMode,
   compact = false,
   floorPlans = [],
@@ -339,8 +172,13 @@ function DashboardModeSwitcher({
   onSelectFloorPlan?: (floorPlanId: string) => void;
 }) {
   const tNav = useTranslations('nav');
+  const { activeSite } = useSiteSelection();
+  // Le Companion lit les chiffres : l'équipe de service et la lecture seule n'y ont pas accès.
+  const companionAvailable = activeSite?.role !== 'STAFF' && activeSite?.role !== 'READ_ONLY';
   const [companionOpen, setCompanionOpen] = useState(false);
   const [sallePlanOpen, setSallePlanOpen] = useState(false);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const companionDialogId = useId();
   const sallePlanMenuId = useId();
   const switcherRef = useRef<HTMLDivElement>(null);
@@ -374,6 +212,11 @@ function DashboardModeSwitcher({
     };
   }, [companionOpen, sallePlanOpen]);
 
+  // Une ligne de la carte « Ce soir » change de page : le panneau se referme pour laisser le détail visible.
+  useEffect(() => {
+    setCompanionOpen(false);
+  }, [pathname, searchParams]);
+
   const selectFloorPlan = (floorPlanId: string) => {
     onSelectFloorPlan?.(floorPlanId);
     setSallePlanOpen(false);
@@ -400,7 +243,7 @@ function DashboardModeSwitcher({
         <div
           className={cn(
             'dashboard-mode-switcher__item group relative flex min-w-0 items-center justify-center rounded-full font-medium transition-all duration-200',
-            'h-10 flex-1 px-1 text-sm',
+            'h-10 flex-1 px-3 text-sm',
             'bg-primary text-primary-foreground shadow-sm',
           )}
         >
@@ -457,7 +300,7 @@ function DashboardModeSwitcher({
                         <span className="min-w-0 truncate">{plan.name}</span>
                         <span className="flex flex-none items-center gap-2 text-muted-foreground">
                           {plan.tableCount > 0 && (
-                            <span className="text-[11px]">{plan.tableCount} tables</span>
+                            <span className="text-xs">{plan.tableCount} tables</span>
                           )}
                           {active && <Check size={14} className="text-foreground" />}
                         </span>
@@ -481,7 +324,7 @@ function DashboardModeSwitcher({
           Salle
         </Link>
       )}
-      {!compact && (
+      {companionAvailable && (
         <button
           type="button"
           aria-expanded={companionOpen}
@@ -494,14 +337,6 @@ function DashboardModeSwitcher({
           )}
         >
           <span>Companion</span>
-          <span
-            className={cn(
-              'dashboard-mode-switcher__coming-soon rounded-full border border-border/80 bg-background/70 font-semibold uppercase tracking-[0.08em] text-muted-foreground transition-colors group-hover:border-foreground/20 group-hover:text-foreground',
-              'px-1.5 py-0.5 text-[9px]',
-            )}
-          >
-            {tNav('comingSoon')}
-          </span>
         </button>
       )}
     </nav>
@@ -517,87 +352,132 @@ function DashboardModeSwitcher({
       )}
     >
       {modeNav}
-      {companionOpen && (
+      {/* Monté même fermé : une question en cours garde sa réponse, son attente et son erreur. */}
+      {companionAvailable && (
         <div
           id={companionDialogId}
           role="dialog"
-          aria-label={tNav('companionSoon')}
-          className="dashboard-mode-switcher__dialog absolute left-1/2 top-14 w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-border bg-card/95 p-4 shadow-2xl shadow-background/40 backdrop-blur-xl"
+          aria-label="Companion"
+          hidden={!companionOpen}
+          className={cn(
+            'dashboard-mode-switcher__dialog absolute left-1/2 top-14 max-h-[70vh] w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 flex-col rounded-2xl border border-border bg-card/95 p-4 shadow-2xl shadow-background/40 backdrop-blur-xl',
+            companionOpen ? 'flex' : 'hidden',
+          )}
         >
-          <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Sparkles size={17} />
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground">{tNav('companionSoon')}</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                {tNav('companionSoonDescription')}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setCompanionOpen(false)}
-            className="mt-3 w-full rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {tNav('close')}
-          </button>
+          <CompanionPanel />
         </div>
       )}
     </div>
   );
 }
 
-function DashboardSidebar({
+export function DashboardSidebar({
   pathname,
   salleView,
   isSokarOperator,
   onCreateOffer,
+  expanded = true,
+  onExpandedChange,
 }: {
   pathname: string;
   salleView: string;
   isSokarOperator: boolean;
   onCreateOffer: () => void;
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
   const tNav = useTranslations('nav');
   const tOfferChooser = useTranslations('offerChooser');
   const salleMode = pathname.startsWith('/dashboard/floor-plan');
   const { activeSite } = useSiteSelection();
   const serviceStaff = isServiceStaff(activeSite?.role);
-  const [openGroup, setOpenGroup] = useState<NavGroupId | null>(null);
-  const openGroupDefinition = navGroups.find((group) => group.id === openGroup) ?? null;
+  const [openGroup, setOpenGroup] = useState<NavSectionId | null>(null);
+  const groupPanelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const active = navSections.find(
+      (section) =>
+        section.entries.length > 1 &&
+        section.entries.some((entry) => !entry.spaceSwitch && isNavEntryActive(pathname, entry)),
+    );
+    setOpenGroup(active?.id ?? null);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!openGroup) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (
+        groupPanelRef.current?.contains(target) ||
+        target.closest('[aria-controls^="nav-group-"]')
+      )
+        return;
+      setOpenGroup(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenGroup(null);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [openGroup]);
 
   return (
-    <aside className="dashboard-desktop-sidebar fixed bottom-4 left-4 top-4 z-40 w-16 flex-col items-center rounded-[1.4rem] border border-border bg-card/85 p-2 pt-[9px] shadow-2xl shadow-background/40 backdrop-blur-xl">
-      <Link
-        href="/dashboard"
-        aria-label="Sokar"
-        title="Sokar"
-        className="mb-2 flex h-11 w-11 flex-none items-center justify-center rounded-2xl border border-border bg-background/60 transition-all duration-200 hover:border-foreground/20 hover:bg-accent"
+    <aside
+      className={cn(
+        'dashboard-desktop-sidebar fixed bottom-4 left-4 top-4 z-40 flex-col rounded-2xl border border-border bg-card/95 shadow-xl shadow-background/30 backdrop-blur-xl',
+        expanded ? 'p-3' : 'p-2',
+        expanded ? 'w-56' : 'w-16',
+      )}
+    >
+      <div
+        className={cn('mb-3 flex items-center', expanded ? 'justify-between' : 'flex-col gap-2')}
       >
-        <SokarLogo className="h-8 w-8 text-foreground" />
-      </Link>
-
-      <div className="mb-2 h-px w-7 flex-none bg-border" />
-
+        <Link
+          href="/dashboard"
+          aria-label="Sokar"
+          title="Sokar"
+          className={cn(
+            'flex h-11 items-center gap-3 rounded-xl px-2 text-sm font-semibold text-foreground transition-all duration-200 hover:bg-accent',
+            !expanded && 'h-10 w-10 justify-center gap-0 px-0',
+          )}
+        >
+          <SokarLogo className="h-8 w-8 text-foreground" /> {expanded && 'Sokar'}
+        </Link>
+        <button
+          type="button"
+          aria-label={expanded ? 'Replier le menu' : 'Déployer le menu'}
+          aria-expanded={expanded}
+          onClick={() => onExpandedChange?.(!expanded)}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {expanded ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+        </button>
+      </div>
       <nav
         aria-label={salleMode ? 'Navigation Salle' : 'Navigation Copilot'}
-        className="dashboard-nav-scroll flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto py-1"
+        className="dashboard-nav-scroll min-h-0 flex-1 space-y-2 overflow-y-auto"
       >
         {salleMode ? (
           <>
             <SidebarNavItem
               href="/dashboard/floor-plan?view=service-live"
-              label="Live service"
+              label={tNav('live')}
               icon={Radio}
               active={salleView !== 'edit-plan'}
+              expanded={expanded}
             />
             {!serviceStaff && (
               <SidebarNavItem
                 href="/dashboard/floor-plan?view=edit-plan"
-                label="Salle édition"
+                label={tNav('edition')}
                 icon={PencilRuler}
                 active={salleView === 'edit-plan'}
+                expanded={expanded}
               />
             )}
           </>
@@ -608,128 +488,109 @@ function DashboardSidebar({
               label={tNav('reservations')}
               icon={CalendarCheck}
               active={pathname.startsWith('/dashboard/reservations')}
+              expanded={expanded}
             />
             <SidebarNavItem
               href="/dashboard/floor-plan?view=service-live"
               label={tNav('floorPlan')}
               icon={Radio}
               active={false}
+              expanded={expanded}
             />
           </>
         ) : (
-          <>
-            <SidebarNavItem
-              href={overviewNavItem.href}
-              label={tNav(overviewNavItem.key)}
-              icon={overviewNavItem.icon}
-              active={isNavItemActive(pathname, overviewNavItem)}
-              onClick={() => setOpenGroup(null)}
-            />
-            {navGroups.map((group) => {
-              const active = isNavGroupActive(pathname, group);
-              const open = openGroup === group.id;
-
+          navSections.map((section) => {
+            if (section.entries.length === 1) {
+              const [entry] = section.entries;
               return (
-                <div key={group.id} className="flex flex-none flex-col">
-                  <SidebarGroupButton
-                    id={group.id}
-                    label={tNav(group.key)}
-                    icon={group.icon}
-                    active={active}
-                    open={open}
-                    onClick={() => setOpenGroup(open ? null : group.id)}
-                  />
-                </div>
+                <SidebarNavItem
+                  key={section.id}
+                  href={entry.href}
+                  label={tNav(entry.key)}
+                  icon={entry.icon}
+                  active={isNavEntryActive(pathname, entry)}
+                  expanded={expanded}
+                  onClick={() => setOpenGroup(null)}
+                />
               );
-            })}
-          </>
+            }
+            const open = openGroup === section.id;
+            const active = section.entries.some((entry) => isNavEntryActive(pathname, entry));
+            return (
+              <div key={section.id}>
+                <SidebarGroupButton
+                  id={section.id}
+                  label={tNav(section.labelKey)}
+                  icon={section.icon}
+                  active={active}
+                  open={expanded && open}
+                  compact={!expanded}
+                  onClick={() => {
+                    if (!expanded) {
+                      onExpandedChange?.(true);
+                      setOpenGroup(section.id);
+                    } else setOpenGroup(open ? null : section.id);
+                  }}
+                />
+                {expanded && open && (
+                  <div
+                    ref={groupPanelRef}
+                    id={`nav-group-${section.id}`}
+                    className="relative ml-5 space-y-1 py-1 pl-4 before:absolute before:bottom-6 before:left-0 before:top-0 before:border-l before:border-border"
+                  >
+                    {section.entries.map((entry) => (
+                      <Link
+                        key={entry.href}
+                        href={entry.href}
+                        aria-current={isNavEntryActive(pathname, entry) ? 'page' : undefined}
+                        onClick={() => setOpenGroup(null)}
+                        className={cn(
+                          'relative flex min-h-11 items-center rounded-xl px-3 text-sm font-medium text-muted-foreground transition-all duration-200 before:pointer-events-none before:absolute before:-left-4 before:top-0 before:h-1/2 before:w-4 before:rounded-bl-xl before:border-b before:border-l before:border-border hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          isNavEntryActive(pathname, entry) &&
+                            'bg-popover font-semibold text-foreground shadow-md hover:bg-popover',
+                        )}
+                      >
+                        {tNav(entry.key)}
+                      </Link>
+                    ))}
+                    {section.id === 'offers' && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-9 w-full rounded-lg"
+                        onClick={() => {
+                          setOpenGroup(null);
+                          onCreateOffer();
+                        }}
+                      >
+                        {tOfferChooser('openButton')}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </nav>
-
-      {openGroupDefinition && !salleMode && (
-        <div
-          id={`nav-group-${openGroupDefinition.id}`}
-          className="absolute left-20 top-16 z-50 w-56 rounded-2xl border border-border bg-background p-2 shadow-2xl shadow-background/50"
-        >
-          <div className="flex items-center justify-between gap-2 border-b border-border px-2 pb-2">
-            <span className="text-sm font-semibold text-foreground">
-              {tNav(openGroupDefinition.key)}
-            </span>
-            {openGroupDefinition.id !== 'offers' && (
-              <button
-                type="button"
-                aria-label={tNav('collapse')}
-                title={tNav('collapse')}
-                onClick={() => setOpenGroup(null)}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <X size={15} />
-              </button>
-            )}
-          </div>
-          <div
-            className={cn(
-              'mt-2',
-              openGroupDefinition.id === 'offers' ? 'space-y-1.5' : 'space-y-1',
-            )}
-          >
-            {openGroupDefinition.items.map((item) =>
-              openGroupDefinition.id === 'offers' ? (
-                <OffersPanelNavItem
-                  key={item.href}
-                  href={item.href}
-                  label={tNav(item.key)}
-                  active={isNavItemActive(pathname, item)}
-                  onClick={() => setOpenGroup(null)}
-                />
-              ) : (
-                <SidebarNavItem
-                  key={item.href}
-                  href={item.href}
-                  label={tNav(item.key)}
-                  icon={item.icon}
-                  active={isNavItemActive(pathname, item)}
-                  expanded
-                  onClick={() => setOpenGroup(null)}
-                />
-              ),
-            )}
-          </div>
-          {openGroupDefinition.id === 'offers' && (
-            <div className="mt-3 border-t border-border pt-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setOpenGroup(null);
-                  onCreateOffer();
-                }}
-                className="h-9 w-full rounded-lg"
-              >
-                {tOfferChooser('openButton')}
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-
       {isSokarOperator && !salleMode && (
-        <div className="mt-2 flex flex-none flex-col items-center border-t border-border pt-2">
-          <SidebarNavItem
-            href="/admin"
-            label={tNav('admin')}
-            icon={ShieldCheck}
-            active={pathname.startsWith('/admin')}
-            onClick={() => setOpenGroup(null)}
-          />
-        </div>
+        <SidebarNavItem
+          href="/admin"
+          label={tNav('admin')}
+          icon={ShieldCheck}
+          active={pathname.startsWith('/admin')}
+          expanded={expanded}
+          onClick={() => setOpenGroup(null)}
+        />
       )}
-
-      <div className="my-2 h-px w-7 flex-none bg-border" />
-      <div className="flex flex-none flex-col items-center gap-1.5">
+      <div
+        className={cn(
+          'mt-3 flex items-center gap-2 border-t border-border pt-3',
+          !expanded && 'flex-col items-center',
+        )}
+      >
         <ThemeToggle />
-        <SettingsButton active={pathname.startsWith('/dashboard/settings')} />
       </div>
     </aside>
   );
@@ -749,10 +610,13 @@ function DashboardShell({ children }: { children: ReactNode }) {
   const [floorPlanRefreshKey, setFloorPlanRefreshKey] = useState(0);
   const [operatorAccess, setOperatorAccess] = useState<boolean | null>(null);
   const [createOfferOpen, setCreateOfferOpen] = useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const { activeSite, accountId } = useSiteSelection();
   // Same rule as the settings page: on a multi-site account, only the owner manages billing.
   const canManageBilling = !accountId || activeSite?.role === 'OWNER';
   const siteRole = activeSite?.role;
+  const showRestaurantSettings = !isServiceStaff(siteRole);
+  const showThemeInHeader = salleMode || isServiceStaff(siteRole);
   const roleBlocked = !canOpenDashboardPath(siteRole, pathname, searchParams.get('view'));
   const isLegacyOperatorPath =
     pathname === '/dashboard/usage' ||
@@ -895,7 +759,12 @@ function DashboardShell({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="dashboard-shell sokar-page relative min-h-screen overflow-hidden">
+    <div
+      className={cn(
+        'dashboard-shell sokar-page relative min-h-screen overflow-hidden',
+        !sidebarExpanded && 'dashboard-shell--sidebar-compact',
+      )}
+    >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(var(--foreground)/0.10),transparent_36%),linear-gradient(hsl(var(--border)/0.18)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.14)_1px,transparent_1px)] bg-[auto,72px_72px,72px_72px] opacity-70" />
       <SubscribeFromPricing />
       <DashboardModeSwitcher
@@ -910,14 +779,20 @@ function DashboardShell({ children }: { children: ReactNode }) {
         salleView={searchParams.get('view') ?? ''}
         isSokarOperator={operatorAccess === true}
         onCreateOffer={() => setCreateOfferOpen(true)}
+        expanded={sidebarExpanded}
+        onExpandedChange={setSidebarExpanded}
       />
       <CreateOfferDialog open={createOfferOpen} onOpenChange={setCreateOfferOpen} />
-      <div className="dashboard-desktop-only fixed left-24 top-6 z-50 h-12 max-w-[calc(50vw-18rem)] items-center gap-3">
+      <div
+        className={cn(
+          'dashboard-desktop-only fixed top-6 z-50 h-12 items-center gap-3',
+          sidebarExpanded ? 'left-64 max-w-[calc(50vw-22rem)]' : 'left-24 max-w-[calc(50vw-18rem)]',
+        )}
+      >
         <SiteSwitcher />
       </div>
       <div className="dashboard-desktop-only fixed right-8 top-6 z-50 h-12 items-center gap-2">
-        <DashboardBrand restaurantName={restaurantName} />
-        <AccountMenu />
+        <AccountMenu showSettings={showRestaurantSettings} />
       </div>
       <div
         className={cn(
@@ -934,7 +809,6 @@ function DashboardShell({ children }: { children: ReactNode }) {
         */}
         <div className="dashboard-flow-header mb-3 gap-2 sm:mb-4">
           <div className="dashboard-flow-header__brand flex min-w-0 items-center gap-2">
-            <DashboardBrand restaurantName={restaurantName} />
             <SiteSwitcher className="hidden w-[9rem] max-w-[20vw] md:flex" />
           </div>
           <DashboardModeSwitcher
@@ -947,9 +821,8 @@ function DashboardShell({ children }: { children: ReactNode }) {
           />
           <div className="dashboard-flow-header__actions ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
             <TrialChip canManageBilling={canManageBilling} />
-            <ThemeToggle />
-            <SettingsButton active={pathname.startsWith('/dashboard/settings')} />
-            <AccountMenu />
+            {showThemeInHeader && <ThemeToggle />}
+            <AccountMenu showSettings={showRestaurantSettings} />
           </div>
         </div>
         <main
@@ -983,6 +856,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
           ) : (
             <>
               <BillingNotice canManageBilling={canManageBilling} />
+              <SectionTabs />
               {children}
             </>
           )}

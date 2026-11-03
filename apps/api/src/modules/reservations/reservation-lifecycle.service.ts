@@ -23,6 +23,7 @@ import { TableAllocationService } from '../floor-plan/table-allocation.service.j
 import { transitionProjection } from '../../shared/reservations/reservation-state.js';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
 import { enqueueReservationConfirmation } from '../../shared/outbox/reservation-confirmation';
+import { enqueue } from '../../shared/outbox/outbox.service';
 
 export class ReservationNotFoundError extends Error {
   constructor(public readonly id: string) {
@@ -208,6 +209,25 @@ export class ReservationLifecycleService {
 
     if (!sameState && args.toState === 'CONFIRMED') {
       await enqueueReservationConfirmation(tx, reservation);
+    }
+
+    if (
+      !sameState &&
+      args.toState === 'HONORED' &&
+      reservation.customerEmail &&
+      reservation.customerId &&
+      !reservation.isTest
+    ) {
+      await enqueue(tx, {
+        restaurantId: reservation.restaurantId,
+        topic: 'reputation-feedback-email',
+        aggregateType: 'reservation',
+        aggregateId: reservation.id,
+        eventType: 'reputation.feedback_email.requested',
+        idempotencyKey: `reputation-feedback-email:${reservation.id}`,
+        payload: { reservationId: reservation.id },
+        availableAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
     }
 
     if (!sameState) {

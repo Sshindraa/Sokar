@@ -77,6 +77,8 @@ const mergeCustomerSelect = {
   restaurantId: true,
   phone: true,
   emailNormalized: true,
+  feedbackEmailOptOutAt: true,
+  feedbackEmailRequestedAt: true,
   birthMonth: true,
   birthDay: true,
   preferredLocale: true,
@@ -1449,6 +1451,14 @@ async function applyMerge(
         target.emailNormalized ??
         sources.find((source) => source.emailNormalized)?.emailNormalized ??
         null,
+      feedbackEmailOptOutAt: maxDate([
+        target.feedbackEmailOptOutAt,
+        ...sources.map((source) => source.feedbackEmailOptOutAt),
+      ]),
+      feedbackEmailRequestedAt: maxDate([
+        target.feedbackEmailRequestedAt,
+        ...sources.map((source) => source.feedbackEmailRequestedAt),
+      ]),
       birthMonth:
         target.birthMonth ??
         sources.find((source) => source.birthMonth !== null)?.birthMonth ??

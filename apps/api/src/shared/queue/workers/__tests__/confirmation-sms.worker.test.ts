@@ -170,6 +170,31 @@ describe('confirmation-sms.worker', () => {
     );
   });
 
+  it('isole un refus et continue les rappels suivants', async () => {
+    const { deps, db } = makeDependencies();
+    const other = { ...reservation, id: 'res-other' };
+    db.reservation.findMany.mockResolvedValue([reservation, other]);
+    db.reservation.findUnique.mockResolvedValueOnce(reservation).mockResolvedValueOnce(other);
+    const add = vi.fn().mockResolvedValue(undefined);
+    deps.reminderQueue = { add } as never;
+    vi.mocked(sendReminder)
+      .mockResolvedValueOnce({ channel: 'whatsapp', success: false, outcome: 'failure_certain' })
+      .mockResolvedValueOnce({ channel: 'whatsapp', success: true });
+    await processConfirmationSmsJob(
+      { data: { kind: 'scan' } } as Job<ConfirmationSmsJobData>,
+      deps,
+    );
+    expect(sendReminder).toHaveBeenCalledTimes(2);
+    expect(add).toHaveBeenCalledWith(
+      'send-reminder',
+      { kind: 'send', reservationId: reservation.id },
+      expect.objectContaining({ jobId: expect.any(String) }),
+    );
+    expect(db.reservation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: other.id } }),
+    );
+  });
+
   it.each([
     { channel: 'PHONE' },
     { customerPhone: null },

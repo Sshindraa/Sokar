@@ -44,6 +44,26 @@ describe('transactional reservation confirmation intent', () => {
     await enqueueReservationConfirmation(transaction(), { ...reservation, customerPhone: null });
     expect(enqueue).not.toHaveBeenCalled();
   });
+  it('queues both confirmation intents for ADMIN and respects the SMS setting', async () => {
+    await enqueueReservationConfirmation(transaction(), {
+      ...reservation,
+      channel: 'ADMIN',
+      customerEmail: 'client@example.com',
+    });
+    expect(vi.mocked(enqueue).mock.calls.map(([, event]) => event.topic)).toEqual([
+      'reservation-confirmation-email',
+      'reservation-confirmation',
+    ]);
+    vi.mocked(enqueue).mockClear();
+    await enqueueReservationConfirmation(transaction(false), {
+      ...reservation,
+      channel: 'ADMIN',
+      customerEmail: 'client@example.com',
+    });
+    expect(vi.mocked(enqueue).mock.calls.map(([, event]) => event.topic)).toEqual([
+      'reservation-confirmation-email',
+    ]);
+  });
 
   it.each(['MCP', 'PHONE'])(
     'does not change the existing notification contract of %s',
@@ -57,5 +77,41 @@ describe('transactional reservation confirmation intent', () => {
     await expect(enqueueReservationConfirmation(transaction(), reservation)).rejects.toThrow(
       'outbox unavailable',
     );
+  });
+});
+
+describe('confirmation e-mail intent', () => {
+  beforeEach(() => vi.clearAllMocks());
+  const tx = {} as Prisma.TransactionClient;
+  const web = {
+    channel: 'WEB',
+    id: 'res-1',
+    restaurantId: 'rest-1',
+    state: 'CONFIRMED',
+    customerPhone: null,
+    customerEmail: 'client@example.com',
+  };
+
+  it('queues an ID-only e-mail intent for a web booking with an address, whatever the SMS setting', async () => {
+    await enqueueReservationConfirmation(tx, web);
+    expect(enqueue).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        topic: 'reservation-confirmation-email',
+        idempotencyKey: 'reservation-confirmation-email:res-1',
+        payload: { reservationId: 'res-1' },
+      }),
+    );
+    expect(JSON.stringify(vi.mocked(enqueue).mock.calls)).not.toContain('client@example.com');
+  });
+
+  it.each([
+    ['a test booking', { isTest: true }],
+    ['a booking without address', { customerEmail: null }],
+    ['a booking not yet confirmed', { state: 'PENDING' }],
+    ['a booking made by voice', { channel: 'PHONE' }],
+  ])('queues no e-mail intent for %s', async (_label, overrides) => {
+    await enqueueReservationConfirmation(tx, { ...web, ...overrides });
+    expect(enqueue).not.toHaveBeenCalled();
   });
 });

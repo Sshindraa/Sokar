@@ -190,7 +190,21 @@ comme dernière visite. Recherche commune avec CRM Pro : nom, email, numéro sai
 française. Tri : dernier contact. Filtres : `isVip` (toutes les formules) ; `lifecycle` et
 `minHonored365d` (visites honorées sur 365 j) exigent `customers.advanced` (offre Pro, 403
 `CAPABILITY_NOT_INCLUDED` sinon ; offre Essential = CRM de base) et portent sur les 5 000 premiers
-clients. Pagination `limit`/`offset`, `total` = résultats filtrés.
+clients. Pagination `limit`/`offset`, `total` = résultats filtrés. `sort` : `recent` (défaut,
+dernier contact), `visits365d` ou `lastVisit` (décroissant, calculés, `customers.advanced`).
+
+### GET /customers/segment-counts
+
+Effectifs des onglets de la liste (`customers.advanced`) : `{ data: { all, vip, new, active,
+regular, at_risk, dormant } }`, avec la même `search` et le même périmètre que la liste. `all` et
+`vip` sont exacts ; les statuts portent sur les 5 000 premiers clients.
+
+### Admin : recalcul des chiffres d'un client
+
+`GET /admin/restaurants/:restaurantId/customers/:customerId/projection-repair-preview` et
+`POST …/projection-repair` (en-tête `Idempotency-Key`), opérateurs Sokar uniquement
+(`requireSokarOperator`). Même calcul que `/crm/customers/:id/projection-repair*`, conservées
+côté restaurant pour compatibilité mais sans écran ; l'outil vit dans l'admin « Santé du restaurant ».
 
 ### PATCH /customers/:id
 
@@ -274,7 +288,7 @@ Module : `apps/api/src/modules/loyalty/`
 
 La capability `reputation.loyalty` est incluse dans Pro/Multi-site et refusée par Essential. Toutes
 les routes utilisent l'établissement actif de `requireOrg`, les rôles Owner/Manager/Staff selon
-l'opération et `LOYALTY_ENABLED=false` dans les environnements suivis. Aucun provider, point,
+l'opération. Aucun provider, point,
 paiement ou POS n'est appelé.
 
 | Méthode | Route                                 | Description                                                                                  |
@@ -423,6 +437,20 @@ ROI consolidé (revenue recovered vs coût Telnyx).
 ### GET /analytics/latency
 
 Latences p50/p95/p99 STT/LLM/TTS.
+
+---
+
+## Companion
+
+Module : `apps/api/src/modules/companion/`
+
+### POST /companion/chat
+
+Assistant du dashboard (OWNER, MANAGER, ORG_MEMBER ; STAFF et READ_ONLY : 403). Corps : `messages` (1 à 20, le dernier de l'utilisateur, 4000 caractères max). Réponse JSON : `reply`, `sources` (`tool`, `href`), `responseId` (UUID de cette réponse). 503 sans clé OpenRouter, 429 au-delà de 100 messages par jour, 502 si OpenRouter échoue.
+
+### POST /companion/feedback
+
+Avis sur une réponse (OWNER, MANAGER, ORG_MEMBER ; STAFF et READ_ONLY : 403). Corps strict : `responseId` (UUID renvoyé par `/companion/chat`) et `rating` (`up` ou `down`). Aucun texte libre. Réponse 204, sans corps ; 400 si un champ manque, est inconnu ou invalide. L'avis n'est écrit que dans les logs (`companion feedback`).
 
 ---
 

@@ -385,6 +385,31 @@ describe('reconciliation.worker notification outcomes', () => {
     expect(await getNotificationClaim(store, key)).toMatchObject({ status: 'in_progress' });
   });
 
+  it('répare la trace d’une confirmation acceptée sans appeler le fournisseur', async () => {
+    const { store, values } = makeClaimStore();
+    const key = buildNotificationClaimKey('reservation-confirmation-email', 'res-1');
+    const claim = await acquireNotificationClaim(store, key, {
+      provider: 'resend',
+      channel: 'email',
+    });
+    await recordNotificationResult(store, key, claim.token!, 'success', {
+      provider: 'resend',
+      channel: 'email',
+    });
+    const record = JSON.parse(values.get(key)!);
+    record.updatedAt = new Date(Date.now() - 16 * 60 * 1000).toISOString();
+    values.set(key, JSON.stringify(record));
+    const repairNotification = vi.fn().mockResolvedValue('repaired');
+    const lookup = vi.fn();
+    const { queue } = makeQueue();
+    await processReconciliationJob(
+      { id: 'sweep', name: 'sms', data: { kind: 'sms' } } as unknown as Job<ReconciliationJobData>,
+      makeDependencies(store, lookup, queue, { repairNotification }),
+    );
+    expect(repairNotification).toHaveBeenCalledWith(key, expect.any(Date));
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
   it('conserve unknown si la queue de réconciliation est indisponible', async () => {
     const { store, values } = makeClaimStore();
     const key = buildNotificationClaimKey('reservation-confirmation-sms', 'res-queue-down');
@@ -598,6 +623,37 @@ describe('reconciliation.worker voice finalization sweep', () => {
         data: expect.objectContaining({ outcome: 'NO_ACTION', intent: 'RESERVATION' }),
       }),
     );
+  });
+
+  it('parcourt plus de 200 candidats même si les premiers restent éligibles', async () => {
+    const rows = Array.from({ length: 205 }, (_, i) =>
+      makeCallRow({
+        id: `call-${i}`,
+        callSid: `leg-${i}`,
+        outcome: 'NO_ACTION',
+        intent: 'RESERVATION',
+      }),
+    );
+    const db = makeVoiceDb(rows);
+    db.call.findMany.mockResolvedValueOnce(
+      rows.slice(0, 200).map((row) => ({ callSid: row.callSid })),
+    );
+    db.call.findMany.mockResolvedValueOnce(
+      rows.slice(200).map((row) => ({ callSid: row.callSid })),
+    );
+    const enqueueRecovery = vi.fn().mockResolvedValue(undefined);
+    await processReconciliationJob(
+      {
+        name: 'voice-finalization',
+        data: { kind: 'voice-finalization' },
+      } as unknown as Job<ReconciliationJobData>,
+      { ...makeVoiceDeps(db), enqueueRecovery },
+    );
+    expect(db.call.findMany).toHaveBeenCalledTimes(2);
+    expect(db.call.findMany.mock.calls[1][0]).toEqual(
+      expect.objectContaining({ cursor: { callSid: 'leg-199' }, skip: 1 }),
+    );
+    expect(enqueueRecovery).toHaveBeenCalledTimes(205);
   });
 
   it('ne réécrit rien quand l’appel est déjà complet', async () => {

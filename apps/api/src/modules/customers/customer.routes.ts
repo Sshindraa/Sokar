@@ -22,9 +22,17 @@ import {
   redactSensitiveCustomerFields,
 } from './customer-privacy';
 import { findCustomerForPhone } from './customer.service';
-import { filterCustomerIdsByVisits, withCustomerLifecycles } from './customer-lifecycle';
-import { requireCapability } from '../entitlements/entitlement.guard';
+import { buildCustomersCsv } from './customer-export';
 import {
+  countCustomersByLifecycle,
+  filterCustomerIdsByVisits,
+  withCustomerLifecycles,
+  loadCustomerVisitStats,
+} from './customer-lifecycle';
+import { requireCapability } from '../entitlements/entitlement.guard';
+import { evaluateCapability } from '../entitlements/entitlement.service';
+import {
+  buildServiceCard,
   loadReservationServiceCards,
   SERVICE_CARD_MAX_RESERVATIONS,
 } from './customer-service-card';
@@ -76,14 +84,89 @@ export function buildCustomerSearchFilter(search: string): Prisma.CustomerWhereI
 }
 
 const COMPUTED_FILTER_SCAN_LIMIT = 5_000;
+const EXPORT_LIMIT = 10_000;
 
 export async function customerRoutes(app: FastifyInstance) {
+  app.get(
+    '/customers/suggestions',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const query = z
+        .object({
+          search: z.string().trim().min(1).max(100),
+          limit: z.coerce.number().int().min(1).max(5).default(5),
+        })
+        .parse(req.query);
+      const restaurantId = req.restaurantId!;
+      const customers = await db.customer.findMany({
+        where: {
+          restaurantId,
+          archivedAt: null,
+          mergedIntoId: null,
+          OR: buildCustomerSearchFilter(query.search),
+        },
+        select: { id: true, name: true, phone: true, emailNormalized: true },
+        orderBy: [{ lastSeenAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
+        take: query.limit,
+      });
+      const ids = customers.map((customer) => customer.id);
+      if (!ids.length) return reply.send({ data: [] });
+      const { allowed: isPro } = await evaluateCapability(restaurantId, 'customers.advanced');
+      const now = new Date();
+      const [stats, preferences] = await Promise.all([
+        isPro ? loadCustomerVisitStats(restaurantId, ids, now) : Promise.resolve(new Map()),
+        db.customerPreference.findMany({
+          where: {
+            restaurantId,
+            customerId: { in: ids },
+            key: { in: ['dietary_restrictions', 'accessibility_needs'] },
+          },
+          select: {
+            customerId: true,
+            key: true,
+            value: true,
+            source: true,
+            confirmedAt: true,
+            expiresAt: true,
+          },
+        }),
+      ]);
+      return reply.send({
+        data: customers.map((customer) => {
+          const visits = stats.get(customer.id);
+          const card = buildServiceCard({
+            reservationId: '',
+            reservationDate: now,
+            specialRequests: null,
+            customer: { id: customer.id, birthMonth: null, birthDay: null, specialOccasion: null },
+            visitDates: visits?.visitDates ?? [],
+            noShows365d: visits?.noShows365d ?? 0,
+            preferences: preferences
+              .filter((preference) => preference.customerId === customer.id)
+              .map((preference) => ({ ...preference, source: String(preference.source) })),
+            timezone: 'Europe/Paris',
+            now,
+          });
+          return {
+            id: customer.id,
+            name: customer.name,
+            phone: customer.phone,
+            email: customer.emailNormalized,
+            visitCount: isPro ? (visits?.visitDates.length ?? 0) : null,
+            lastVisitAt: isPro ? (visits?.visitDates.at(-1) ?? null) : null,
+            badges: card.badges,
+          };
+        }),
+      });
+    },
+  );
   app.get(
     '/customers',
     { preHandler: requireOrg(), config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const query = CustomerQuerySchema.parse(req.query);
       const restaurantId = req.restaurantId;
+      const computedSort = query.sort === 'recent' ? undefined : query.sort;
       // Profils archivés exclus : un client effacé au titre du RGPD (nom « ANON », téléphone « erased:… »)
       // et un profil source déjà fusionné ne sont plus des clients. Le CRM et la segmentation
       // appliquent déjà la même règle ; le total suit puisqu'il partage ce `where`.
@@ -104,7 +187,11 @@ export async function customerRoutes(app: FastifyInstance) {
 
       let customers;
       let total: number;
-      if (query.lifecycle !== undefined || query.minHonored365d !== undefined) {
+      if (
+        query.lifecycle !== undefined ||
+        query.minHonored365d !== undefined ||
+        computedSort !== undefined
+      ) {
         // Statut et visites viennent des réservations : fonction de CRM Pro (offre Essential = CRM de base).
         await requireCapability('customers.advanced')(req, reply);
         if (reply.sent) return reply;
@@ -118,7 +205,7 @@ export async function customerRoutes(app: FastifyInstance) {
         const matching = await filterCustomerIdsByVisits(
           restaurantId!,
           candidates.map((candidate) => candidate.id),
-          query,
+          { ...query, sort: computedSort },
           new Date(),
         );
         total = matching.length;
@@ -153,6 +240,81 @@ export async function customerRoutes(app: FastifyInstance) {
         total,
         limit: query.limit,
         offset: query.offset,
+      });
+    },
+  );
+
+  /** Customers per list segment (all, VIP, each lifecycle status), with the list's search. */
+  app.get(
+    '/customers/segment-counts',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      await requireCapability('customers.advanced')(req, reply);
+      if (reply.sent) return reply;
+      const { search } = CustomerQuerySchema.parse(req.query);
+      const restaurantId = req.restaurantId!;
+      // Même périmètre que la liste : sans profils archivés ni fusionnés.
+      const where: Prisma.CustomerWhereInput = {
+        restaurantId,
+        archivedAt: null,
+        mergedIntoId: null,
+      };
+      if (search) where.OR = buildCustomerSearchFilter(search);
+      const [all, vip, candidates] = await Promise.all([
+        db.customer.count({ where: { ...where, restaurantId } }),
+        db.customer.count({ where: { ...where, restaurantId, isVip: true } }),
+        // shortcut: les statuts portent sur les 5 000 premiers clients, comme le filtre de la liste.
+        db.customer.findMany({
+          where: { ...where, restaurantId },
+          orderBy: [{ lastSeenAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
+          select: { id: true },
+          take: COMPUTED_FILTER_SCAN_LIMIT,
+        }),
+      ]);
+      const lifecycle = await countCustomersByLifecycle(
+        restaurantId,
+        candidates.map((candidate) => candidate.id),
+        new Date(),
+      );
+      return reply.send({ data: { all, vip, ...lifecycle } });
+    },
+  );
+
+  /** Whole customer file as CSV, for the owner only: backup and portability, on every plan. */
+  app.get(
+    '/customers/export',
+    {
+      preHandler: [
+        requireOrg(),
+        requireCapability('customers.basic'),
+        async (req, reply) => {
+          if (req.siteRole === 'OWNER') return;
+          return reply.status(403).send({
+            error: 'CUSTOMER_EXPORT_OWNER_REQUIRED',
+            message: 'Seul le propriétaire du site peut exporter le fichier clients.',
+          });
+        },
+      ],
+      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      const restaurantId = req.restaurantId!;
+      // shortcut: 10 000 clients maximum par export, à relever (ou paginer) si un site les dépasse.
+      const customers = await db.customer.findMany({
+        where: { restaurantId, archivedAt: null, mergedIntoId: null },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: EXPORT_LIMIT + 1,
+      });
+      // Un CSV partiel ferait croire à une sauvegarde complète : on refuse plutôt que de tronquer.
+      if (customers.length > EXPORT_LIMIT) {
+        return reply.status(422).send({
+          error: 'CUSTOMER_EXPORT_TOO_LARGE',
+          message: `Le fichier dépasse ${EXPORT_LIMIT} clients : l'export complet n'est pas disponible.`,
+        });
+      }
+      const withVisits = await withCustomerLifecycles(restaurantId, customers);
+      return reply.send({
+        data: { csv: buildCustomersCsv(withVisits), count: withVisits.length },
       });
     },
   );

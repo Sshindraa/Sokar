@@ -11,7 +11,7 @@ import {
 } from '@sokar/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '@/lib/api';
@@ -102,6 +102,16 @@ export function MarketingConsentCard({
     setActionError('');
   }
 
+  function consentErrorMessage(err: unknown): string {
+    if (err instanceof ApiError && err.code === 'CUSTOMER_EMAIL_REQUIRED') {
+      return 'Ajoutez d’abord une adresse e-mail à cette fiche.';
+    }
+    if (err instanceof ApiError && err.code === 'MARKETING_OPPOSITION_REGISTERED') {
+      return 'Cette personne s’est désinscrite : seul son propre accord, donné en ligne, peut lever cette opposition.';
+    }
+    return getErrorMessage(err, 'Impossible d’enregistrer l’accord.');
+  }
+
   async function record(channel: MarketingConsentChannel): Promise<void> {
     if (busy || !confirmed) return;
     setBusy(true);
@@ -116,11 +126,7 @@ export function MarketingConsentCard({
       await load();
       onChanged?.();
     } catch (err: unknown) {
-      setActionError(
-        err instanceof ApiError && err.code === 'CUSTOMER_EMAIL_REQUIRED'
-          ? 'Ajoutez d’abord une adresse e-mail à cette fiche.'
-          : getErrorMessage(err, 'Impossible d’enregistrer l’accord.'),
-      );
+      setActionError(consentErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -148,11 +154,6 @@ export function MarketingConsentCard({
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Consentement marketing</CardTitle>
-        <CardDescription>
-          Accord de ce client pour recevoir les offres et actualités, canal par canal. Une
-          réservation ne vaut jamais accord. Le client se désinscrit lui-même avec le lien de chaque
-          message.
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {rows === null && !loadError ? (

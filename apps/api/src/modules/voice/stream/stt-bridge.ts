@@ -10,8 +10,7 @@ import { isRepeatOfLastProcessedTurn } from './transcript-dedupe';
 import { checkFastBargeIn } from './fast-barge-in';
 import { clearBackchannelCandidate, handleCallerBackchannel } from './caller-backchannel';
 import { logVoiceDebugText } from './debug-dialogue';
-import * as fs from 'fs';
-import * as path from 'path';
+import { writeDebugLog } from './debug-log';
 import type { CallSession, SttEvent, SttFinalTrigger, SttWord } from './types';
 import { CallSessionManager } from './manager';
 import { speculateStructuredTurn } from './structured-turn/engine';
@@ -259,21 +258,6 @@ export const STT_SPELLING_EOT_GRACE_MS = 650;
 export const STT_AUDIO_BUFFER_MAX = 400;
 
 const MAX_TURN_PARTIALS = 30;
-
-function writeDebugLog(msg: string, err?: unknown): void {
-  const e = err instanceof Error ? err : err ? new Error(String(err)) : undefined;
-  const timestamp = new Date().toISOString();
-  const logMsg =
-    '[' + timestamp + '] ' + msg + (e ? ' | ERROR: ' + e.message + '\n' + e.stack : '') + '\n';
-  try {
-    const logPath =
-      process.env.DEBUG_LOG_PATH || path.join(process.cwd(), 'scratch', 'call_debug.log');
-    fs.mkdirSync(path.dirname(logPath), { recursive: true });
-    fs.appendFileSync(logPath, logMsg);
-  } catch (writeError) {
-    logger.error({ err: writeError }, 'Failed to write debug log');
-  }
-}
 
 export const DEEPGRAM_ENDPOINTING_MS = 200;
 export const DEEPGRAM_UTTERANCE_END_MS = 1_000;

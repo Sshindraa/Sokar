@@ -15,7 +15,7 @@ import type {
  * d'un type inattendu n'invalide pas tout le lot.
  */
 const responseSchema = z.object({
-  answers: z.record(z.unknown()),
+  answers: z.record(z.string(), z.unknown()),
   usage: z.object({ input_tokens: z.number().int().nonnegative() }).optional(),
 });
 
@@ -28,7 +28,7 @@ const noulAnswerSchema = z.object({
 const choiceAnswerSchema = z.object({
   type: z.literal('choice'),
   choice: z.string(),
-  probabilities: z.record(z.number().min(0).max(1)),
+  probabilities: z.record(z.string(), z.number().min(0).max(1)),
   confidence: z.number().min(0).max(1).optional(),
 });
 

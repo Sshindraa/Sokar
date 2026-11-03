@@ -37,6 +37,10 @@ export interface SendEmailOptions {
   to: string;
   subject: string;
   html: string;
+  /** Expéditeur explicite (marketing) ; absent = `EMAIL_FROM`. */
+  from?: string;
+  /** Adresse de réponse explicite ; `null` = aucun `Reply-To`, absent = `EMAIL_REPLY_TO`. */
+  replyTo?: string | null;
   /** En-têtes supplémentaires, par exemple `List-Unsubscribe` pour un message marketing. */
   headers?: Record<string, string>;
   usage?: MessagingUsageContext;
@@ -150,7 +154,12 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void | Notifica
   if (!isRecipientAllowed(opts.to)) {
     // Refus certain : Resend n'est pas appelé, l'appelant ne relance pas, et l'adresse n'est jamais journalisée.
     logger.warn({ reason: 'recipient_not_allowlisted' }, 'Email refused by test allowlist');
-    return { outcome: 'failure_certain', provider: 'resend', channel: 'email' };
+    return {
+      outcome: 'failure_certain',
+      provider: 'resend',
+      channel: 'email',
+      reason: 'RECIPIENT_NOT_ALLOWLISTED',
+    };
   }
 
   // R1-2 : le SDK Resend n'expose pas de timeout. On borne l'attente côté
@@ -159,8 +168,8 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void | Notifica
   await waitForResendSlot();
   const response = await withTimeout(
     getResend().emails.send({
-      from: emailSender(),
-      replyTo: emailReplyTo(),
+      from: opts.from ?? emailSender(),
+      ...(opts.replyTo === null ? {} : { replyTo: opts.replyTo ?? emailReplyTo() }),
       to: opts.to,
       subject: opts.subject,
       html: opts.html,

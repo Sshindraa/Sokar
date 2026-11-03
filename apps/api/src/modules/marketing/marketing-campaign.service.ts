@@ -6,6 +6,7 @@ import {
   Prisma,
   type MarketingCampaign,
 } from '@prisma/client';
+import { env } from '../../env';
 import { db } from '../../shared/db/client';
 import {
   compileCustomerSegmentWhere,
@@ -23,6 +24,7 @@ import { resolveUsageTariff } from '../usage/usage-tariff.service';
 export const CAMPAIGN_CHANNELS = ['SMS', 'EMAIL', 'WHATSAPP'] as const;
 export const MAX_CAMPAIGN_AUDIENCE = 10_000;
 export const MAX_SENDS_PER_FREQUENCY_WINDOW = 3;
+export const HOLDOUT_INCLUSION_REASON = 'HOLDOUT';
 
 const ALLOWED_TEMPLATE_VARIABLES = new Set([
   'customer.firstName',
@@ -32,7 +34,7 @@ const ALLOWED_TEMPLATE_VARIABLES = new Set([
   'unsubscribeUrl',
 ]);
 
-type CampaignChannelCode = (typeof CAMPAIGN_CHANNELS)[number];
+export type CampaignChannelCode = (typeof CAMPAIGN_CHANNELS)[number];
 
 export type CampaignAudienceMemberDraft = {
   customerId: string;
@@ -172,19 +174,39 @@ export function renderMarketingTemplate(
   });
 }
 
-export function toMarketingHtml(text: string): string {
-  const escaped = text
+function escapeHtml(text: string): string {
+  return text
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+/** Dit qui écrit et pourquoi : un message sans identité ressemble à un envoi anonyme. */
+export function marketingEmailFooter(restaurant: {
+  name: string;
+  formattedAddress?: string | null;
+}): string {
+  const address = restaurant.formattedAddress?.trim();
+  return [
+    `${restaurant.name}${address ? `, ${address}` : ''}`,
+    'Vous recevez ce message car vous avez accepté de recevoir les actualités de ce restaurant par e-mail.',
+  ].join('\n');
+}
+
+/** `linkLabels` remplace le texte affiché de ces adresses : leurs jetons sont illisibles. */
+export function toMarketingHtml(text: string, linkLabels: Record<string, string> = {}): string {
+  const labels = new Map(
+    Object.entries(linkLabels).map(([url, label]) => [escapeHtml(url), escapeHtml(label)]),
+  );
+  const escaped = escapeHtml(text);
   // Les adresses deviennent des liens cliquables : le lien de désinscription et celui de réservation
   // doivent fonctionner même dans un client de messagerie qui ne détecte pas les URL.
   const linked = escaped.replaceAll(/https?:\/\/[^\s<]+/g, (match) => {
     const trailing = /(?:[.,;:!?)]|&quot;|&#39;)+$/.exec(match)?.[0] ?? '';
     const url = trailing ? match.slice(0, -trailing.length) : match;
-    return `<a href="${url}">${url}</a>${trailing}`;
+    return `<a href="${url}">${labels.get(url) ?? url}</a>${trailing}`;
   });
   return linked.replaceAll(/\r?\n/g, '<br>');
 }
@@ -194,9 +216,10 @@ export async function ensureCampaignMessages(
   channel: CampaignChannelCode,
   writer: Pick<Prisma.TransactionClient, 'campaignAudienceMember' | 'campaignMessage'> = db,
 ): Promise<void> {
+  // Le groupe témoin (HOLDOUT) ne reçoit jamais de message : il sert seulement de référence à la mesure.
   const audience =
     (await writer.campaignAudienceMember.findMany({
-      where: { campaignId },
+      where: { campaignId, inclusionReason: { not: HOLDOUT_INCLUSION_REASON } },
       select: { id: true, customerId: true },
       orderBy: { id: 'asc' },
     })) ?? [];
@@ -244,23 +267,27 @@ function incrementReason(target: Record<string, number>, reason: string): void {
   target[reason] = (target[reason] ?? 0) + 1;
 }
 
-async function buildAudience(args: {
+export async function buildAudience(args: {
   restaurantId: string;
   channel: CampaignChannelCode;
   segmentId?: string;
   definition?: unknown;
+  /** Moteur de remplissage : tous les clients du restaurant, sans filtre de segment. */
+  allCustomers?: boolean;
   now?: Date;
   sampleLimit?: number;
 }): Promise<CampaignAudiencePreview> {
   const now = args.now ?? new Date();
   if (Number.isNaN(now.getTime())) throw new Error('now must be a valid date');
   const channel = normalizeChannel(args.channel);
-  const resolved = await resolveSegmentDefinition(args);
+  const segmentWhere = args.allCustomers
+    ? {}
+    : compileCustomerSegmentWhere((await resolveSegmentDefinition(args)).definition, now);
   const where: Prisma.CustomerWhereInput = {
     restaurantId: args.restaurantId,
     archivedAt: null,
     mergedIntoId: null,
-    ...compileCustomerSegmentWhere(resolved.definition, now),
+    ...segmentWhere,
   };
 
   const candidates = ((await db.customer.findMany({
@@ -426,7 +453,11 @@ export async function createMarketingCampaign(args: {
   name: string;
   objective: string;
   channel: CampaignChannelCode;
-  segmentId: string;
+  segmentId?: string;
+  /** Audience déjà calculée (remplissage de service) : remplace le calcul par segment. */
+  members?: CampaignAudienceMemberDraft[];
+  targetServiceStart?: Date | null;
+  targetServiceEnd?: Date | null;
   subject?: string | null;
   bodyTemplate: string;
   scheduledAt?: Date | null;
@@ -440,11 +471,17 @@ export async function createMarketingCampaign(args: {
   if (scheduledAt && Number.isNaN(scheduledAt.getTime()))
     throw new Error('scheduledAt must be valid');
   const content = validateMarketingTemplate(args);
-  const audience = await buildAudience({
-    restaurantId: args.restaurantId,
-    channel: args.channel,
-    segmentId: args.segmentId,
-  });
+  const audience = args.members
+    ? { audienceVersion: 1, members: args.members }
+    : await buildAudience({
+        restaurantId: args.restaurantId,
+        channel: args.channel,
+        segmentId: args.segmentId,
+      });
+  // Le témoin ne part pas : le compteur d'audience ne compte que les destinataires réels.
+  const audienceCount = audience.members.filter(
+    (member) => member.inclusionReason !== HOLDOUT_INCLUSION_REASON,
+  ).length;
   const now = new Date();
   return db.$transaction(async (tx) => {
     const campaign = await tx.marketingCampaign.create({
@@ -460,7 +497,9 @@ export async function createMarketingCampaign(args: {
         scheduledAt,
         timezone,
         audienceVersion: audience.audienceVersion,
-        audienceCount: audience.eligibleCount,
+        audienceCount,
+        targetServiceStart: args.targetServiceStart ?? null,
+        targetServiceEnd: args.targetServiceEnd ?? null,
         createdByHash: args.createdBy ? hashActor(args.createdBy) : hashActor(undefined),
       },
     });
@@ -513,6 +552,42 @@ export async function getMarketingCampaign(args: {
   return db.marketingCampaign.findFirst({
     where: { id: args.campaignId, restaurantId: args.restaurantId },
   });
+}
+
+/** Coût estimé d'un envoi au tarif fournisseur ; `NOT_AVAILABLE` tant que le tarif n'est pas rapproché. */
+export async function estimateCampaignCost(args: {
+  channel: CampaignChannelCode;
+  body: string;
+  audienceCount: number;
+  occurredAt: Date;
+}): Promise<MarketingCampaignPreview['costEstimate']> {
+  const unitsPerMessage = args.channel === 'SMS' ? countSmsSegments(args.body) : 1;
+  const costDimension =
+    args.channel === 'SMS'
+      ? { category: 'SMS_SEGMENTS' as const, provider: 'telnyx', unit: 'segments' }
+      : args.channel === 'EMAIL'
+        ? { category: 'EMAIL_MESSAGES' as const, provider: 'resend', unit: 'messages' }
+        : { category: 'WHATSAPP_MESSAGES' as const, provider: 'telnyx', unit: 'messages' };
+  const tariff = await resolveUsageTariff({
+    ...costDimension,
+    quantity: unitsPerMessage * args.audienceCount,
+    occurredAt: args.occurredAt,
+  });
+  return tariff.costStatus === 'PRICED'
+    ? {
+        amount: tariff.estimatedCostEur,
+        currency: 'EUR' as const,
+        status: 'PRICED' as const,
+        reason: 'PROVIDER_TARIFF_RECONCILED' as const,
+        ...(tariff.tariffId ? { tariffId: tariff.tariffId } : {}),
+        ...(tariff.pricePerUnit ? { pricePerUnit: tariff.pricePerUnit } : {}),
+      }
+    : {
+        amount: null,
+        currency: 'EUR' as const,
+        status: 'NOT_AVAILABLE' as const,
+        reason: 'PROVIDER_TARIFF_NOT_RECONCILED' as const,
+      };
 }
 
 function previewContext(
@@ -589,35 +664,14 @@ export async function previewMarketingCampaign(args: {
   const smsUnits = isSms ? countSmsUnits(body) : null;
   const unitsPerMessage = isSms ? countSmsSegments(body) : 1;
   const encoding = isSms ? smsUnits!.encoding : 'message';
-  const costDimension =
-    campaign.channel === 'SMS'
-      ? { category: 'SMS_SEGMENTS' as const, provider: 'telnyx', unit: 'segments' }
-      : campaign.channel === 'EMAIL'
-        ? { category: 'EMAIL_MESSAGES' as const, provider: 'resend', unit: 'messages' }
-        : { category: 'WHATSAPP_MESSAGES' as const, provider: 'telnyx', unit: 'messages' };
-  const tariff = await resolveUsageTariff({
-    ...costDimension,
-    quantity: unitsPerMessage * campaign.audienceCount,
-    // A scheduled campaign is priced against its execution window. An
-    // unscheduled draft uses the preview instant and is recalculated on send.
+  // A scheduled campaign is priced against its execution window. An
+  // unscheduled draft uses the preview instant and is recalculated on send.
+  const costEstimate = await estimateCampaignCost({
+    channel: campaign.channel as CampaignChannelCode,
+    body,
+    audienceCount: campaign.audienceCount,
     occurredAt: campaign.scheduledAt ?? new Date(),
   });
-  const costEstimate =
-    tariff.costStatus === 'PRICED'
-      ? {
-          amount: tariff.estimatedCostEur,
-          currency: 'EUR' as const,
-          status: 'PRICED' as const,
-          reason: 'PROVIDER_TARIFF_RECONCILED' as const,
-          ...(tariff.tariffId ? { tariffId: tariff.tariffId } : {}),
-          ...(tariff.pricePerUnit ? { pricePerUnit: tariff.pricePerUnit } : {}),
-        }
-      : {
-          amount: null,
-          currency: 'EUR' as const,
-          status: 'NOT_AVAILABLE' as const,
-          reason: 'PROVIDER_TARIFF_NOT_RECONCILED' as const,
-        };
 
   return {
     campaign: {
@@ -784,6 +838,78 @@ export async function updateMarketingCampaign(args: {
   });
 }
 
+/** Code d'erreur d'une campagne mise en pause parce que son service visé est complet. */
+export const TARGET_SERVICE_FULL = 'TARGET_SERVICE_FULL';
+
+/** Jour UTC, comme les plafonds par destinataire. */
+export function dayWindow(now: Date): { start: Date; end: Date } {
+  const start = new Date(now);
+  start.setUTCHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { start, end };
+}
+
+/**
+ * Reste du budget e-mail du jour d'envoi `sendAt` (UTC), lu sous verrou de transaction. Il retire les
+ * e-mails acceptés ce jour-là, les envois en cours ou suspendus, les campagnes programmées pour ce jour
+ * et les automatisations prêtes (elles partent à la même passe). `excludeCampaignId` retire la campagne
+ * qui se contrôle elle-même. Une campagne READY manuelle ne réserve rien.
+ */
+export async function remainingDailyEmailBudget(
+  tx: Prisma.TransactionClient,
+  sendAt: Date,
+  excludeCampaignId?: string,
+): Promise<number> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('marketing_email_daily_budget'))`;
+  return countRemainingDailyEmailBudget(tx, sendAt, excludeCampaignId);
+}
+
+/** Même calcul, sans verrou : pour un chemin de lecture (aperçu, suggestions), jamais pour décider d'un envoi. */
+export function readRemainingDailyEmailBudget(now: Date): Promise<number> {
+  return countRemainingDailyEmailBudget(db, now);
+}
+
+async function countRemainingDailyEmailBudget(
+  tx: Prisma.TransactionClient,
+  sendAt: Date,
+  excludeCampaignId?: string,
+): Promise<number> {
+  const { start, end } = dayWindow(sendAt);
+  const [acceptedOnDay, awaitingSend] = await Promise.all([
+    tx.campaignMessage.count({
+      where: { channel: MarketingChannel.EMAIL, acceptedAt: { gte: start, lt: end } },
+    }),
+    tx.campaignMessage.count({
+      where: {
+        channel: MarketingChannel.EMAIL,
+        campaignId: excludeCampaignId ? { not: excludeCampaignId } : undefined,
+        status: { in: [MarketingMessageStatus.PENDING, MarketingMessageStatus.SENDING] },
+        campaign: {
+          OR: [
+            { status: { in: [MarketingCampaignStatus.SENDING, MarketingCampaignStatus.PAUSED] } },
+            { status: MarketingCampaignStatus.SCHEDULED, scheduledAt: { gte: start, lt: end } },
+            { status: MarketingCampaignStatus.READY, automationDispatches: { some: {} } },
+          ],
+        },
+      },
+    }),
+  ]);
+  return Math.max(env.MARKETING_EMAIL_DAILY_BUDGET - acceptedOnDay - awaitingSend, 0);
+}
+
+/** Refuse un lancement dont l'audience dépasse le reste du budget du jour d'envoi. */
+export async function assertDailyEmailBudget(
+  tx: Prisma.TransactionClient,
+  audienceCount: number,
+  sendAt: Date,
+  excludeCampaignId?: string,
+): Promise<void> {
+  if (audienceCount > (await remainingDailyEmailBudget(tx, sendAt, excludeCampaignId))) {
+    throw new Error('MARKETING_DAILY_BUDGET_EXCEEDED');
+  }
+}
+
 export async function prepareMarketingCampaign(args: {
   restaurantId: string;
   campaignId: string;
@@ -816,9 +942,14 @@ export async function scheduleMarketingCampaign(args: {
   if (campaign.status !== MarketingCampaignStatus.READY) {
     throw new Error('CAMPAIGN_NOT_READY');
   }
-  return db.marketingCampaign.update({
-    where: { id: campaign.id },
-    data: { status: MarketingCampaignStatus.SCHEDULED, scheduledAt, lastErrorCode: null },
+  return db.$transaction(async (tx) => {
+    if (campaign.channel === MarketingChannel.EMAIL) {
+      await assertDailyEmailBudget(tx, campaign.audienceCount, scheduledAt);
+    }
+    return tx.marketingCampaign.update({
+      where: { id: campaign.id },
+      data: { status: MarketingCampaignStatus.SCHEDULED, scheduledAt, lastErrorCode: null },
+    });
   });
 }
 
@@ -846,20 +977,26 @@ export async function startMarketingCampaign(args: {
       throw new Error('CAMPAIGN_NOT_DUE');
     }
   }
-  const claimed = await db.marketingCampaign.updateMany({
-    where: {
-      id: campaign.id,
-      restaurantId: args.restaurantId,
-      status: { in: [MarketingCampaignStatus.READY, MarketingCampaignStatus.SCHEDULED] },
-    },
-    data: {
-      status: MarketingCampaignStatus.SENDING,
-      startedAt: now,
-      completedAt: null,
-      lastErrorCode: null,
-    },
+  // Le lancement repasse le contrôle pour le jour réel d'envoi, sans compter ses propres messages.
+  await db.$transaction(async (tx) => {
+    if (campaign.channel === MarketingChannel.EMAIL) {
+      await assertDailyEmailBudget(tx, campaign.audienceCount, now, campaign.id);
+    }
+    const claimed = await tx.marketingCampaign.updateMany({
+      where: {
+        id: campaign.id,
+        restaurantId: args.restaurantId,
+        status: { in: [MarketingCampaignStatus.READY, MarketingCampaignStatus.SCHEDULED] },
+      },
+      data: {
+        status: MarketingCampaignStatus.SENDING,
+        startedAt: now,
+        completedAt: null,
+        lastErrorCode: null,
+      },
+    });
+    if (claimed.count !== 1) throw new Error('CAMPAIGN_ALREADY_RUNNING');
   });
-  if (claimed.count !== 1) throw new Error('CAMPAIGN_ALREADY_RUNNING');
   const updated = await getMarketingCampaign(args);
   if (!updated) throw new Error('CAMPAIGN_NOT_FOUND');
   return updated;
