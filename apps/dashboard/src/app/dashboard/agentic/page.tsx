@@ -561,7 +561,7 @@ export default function AgenticSettingsPage() {
                   <div className="flex items-center gap-1.5">
                     <label className="text-sm font-medium">Taille maximale (couverts)</label>
                     <InfoTip label="Précision sur la taille maximale">
-                      Réservable automatiquement par téléphone et assistants IA. Au-delà, Sokar
+                      Réservable automatiquement par téléphone et assistants IA. Au-delà, Suppernote
                       confirme le nombre de couverts puis vous passe l’appel, ou prend un message.
                     </InfoTip>
                   </div>

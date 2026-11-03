@@ -228,7 +228,7 @@ describe('demo-request.routes', () => {
       expect(db.demoRequest.findMany).not.toHaveBeenCalled();
     });
 
-    it("refuse la liste à un utilisateur qui n'est pas opérateur Sokar", async () => {
+    it("refuse la liste à un utilisateur qui n'est pas opérateur Suppernote", async () => {
       const app = await getApp();
 
       const res = await app.inject({

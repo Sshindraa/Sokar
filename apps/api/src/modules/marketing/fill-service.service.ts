@@ -487,8 +487,8 @@ export function estimateFillCost(args: {
   const body = renderMarketingTemplate(DEFAULT_FILL_BODY, {
     customer: { firstName: 'Client', name: 'Client' },
     restaurant: { name: args.restaurantName ?? 'Votre restaurant' },
-    reservationLink: 'https://sokar.tech/book/restaurant',
-    unsubscribeUrl: 'https://sokar.tech/marketing/unsubscribe?token=preview',
+    reservationLink: 'https://suppernote.com/book/restaurant',
+    unsubscribeUrl: 'https://suppernote.com/marketing/unsubscribe?token=preview',
   });
   return estimateCampaignCost({
     channel: args.channel,

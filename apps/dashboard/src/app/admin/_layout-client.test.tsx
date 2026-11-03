@@ -69,7 +69,7 @@ describe('AdminAccessGate', () => {
 
   it('continue de refuser un compte connecté qui échoue au contrôle serveur', async () => {
     session.isSignedIn = true;
-    session.get.mockRejectedValue(new Error('Sokar operator access required'));
+    session.get.mockRejectedValue(new Error('Suppernote operator access required'));
     render(content());
 
     await waitFor(() => expect(session.replace).toHaveBeenCalledWith('/dashboard'));

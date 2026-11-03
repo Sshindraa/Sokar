@@ -506,7 +506,9 @@ export function ConnectIdentityStep({ onComplete, onNavigate }: StepProps) {
             Votre lien de réservation
           </label>
           <div className="flex items-center gap-1 rounded-2xl bg-card px-4 focus-within:ring-2 focus-within:ring-ring">
-            <span className="shrink-0 text-xs text-muted-foreground">sokar.tech/restaurant/</span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              suppernote.com/restaurant/
+            </span>
             <Input
               id="connect-slug"
               ref={slugInput}

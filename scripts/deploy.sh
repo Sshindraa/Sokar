@@ -508,8 +508,8 @@ else
         # ── Résultat ─────────────────────────────────────
         log info ""
         log_ok "Staging deploy complete — API + Dashboard + Connect OK"
-        log info "   URLs : https://staging.sokar.tech (dashboard)"
-        log info "          https://api-staging.sokar.tech (API)"
+        log info "   URLs : https://staging.suppernote.com (dashboard)"
+        log info "          https://api-staging.suppernote.com (API)"
         log info "   Rollback : bash scripts/deploy.sh --env staging rollback"
         notify "✅ Sokar staging deploy OK (branch ${BRANCH}, hash $(git rev-parse --short HEAD))"
         # Sauvegarder le hash pour le prochain déploiement incrémental

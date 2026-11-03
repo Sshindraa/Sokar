@@ -23,12 +23,12 @@ case "$ENVIRONMENT" in
     prod)
         ROOT="/opt/sokar"
         VHOST="sokar"
-        CERT_ROOT="/etc/letsencrypt/live/sokar.tech"
+        CERT_ROOT="/etc/letsencrypt/live/suppernote.com"
         ;;
     staging)
         ROOT="/opt/sokar-staging"
         VHOST="sokar-staging"
-        CERT_ROOT="/etc/letsencrypt/live/sokar.tech"
+        CERT_ROOT="/etc/letsencrypt/live/suppernote.com"
         ;;
     *)
         usage

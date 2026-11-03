@@ -1,7 +1,7 @@
 /**
- * Sokar Connect — Page /assistant
+ * Suppernote Connect — Page /assistant
  *
- * Page publique qui explique comment réserver dans les restaurants Sokar
+ * Page publique qui explique comment réserver dans les restaurants Suppernote
  * via un assistant IA (ChatGPT, Claude, Mistral, Perplexity, etc.).
  *
  * 2 audiences :
@@ -20,12 +20,12 @@ export const metadata: Metadata = {
   // Marque ajoutée par le template du layout (cf. restaurant/[slug]).
   title: 'Réserver avec votre assistant IA',
   description:
-    'Les restaurants du réseau Sokar sont trouvables et réservables via ChatGPT, Claude, Mistral et Perplexity. Votre assistant IA trouve le restaurant et vous réserve une table.',
+    'Les restaurants du réseau Suppernote sont trouvables et réservables via ChatGPT, Claude, Mistral et Perplexity. Votre assistant IA trouve le restaurant et vous réserve une table.',
   robots: { index: true, follow: true },
   alternates: { canonical: '/assistant' },
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'https://api.sokar.tech';
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'https://api.suppernote.com';
 
 export default function AssistantPage() {
   return (
@@ -39,7 +39,7 @@ export default function AssistantPage() {
           Réservez avec votre assistant IA
         </h1>
         <p className="text-lg text-muted-foreground">
-          Les restaurants du réseau Sokar sont trouvables et réservables via ChatGPT, Claude,
+          Les restaurants du réseau Suppernote sont trouvables et réservables via ChatGPT, Claude,
           Mistral, Perplexity et tous les assistants IA qui naviguent sur le web.
         </p>
       </div>
@@ -50,7 +50,7 @@ export default function AssistantPage() {
         <div className="space-y-3 text-muted-foreground">
           <p>
             Demandez simplement à votre assistant IA de trouver un restaurant. S&apos;il trouve un
-            restaurant Sokar, il vous donnera un lien pour réserver en ligne, avec le nombre de
+            restaurant Suppernote, il vous donnera un lien pour réserver en ligne, avec le nombre de
             personnes et l&apos;heure déjà pré-remplis.
           </p>
           <p>
@@ -78,11 +78,11 @@ export default function AssistantPage() {
       <section className="mt-10 rounded-lg border border-border bg-muted/30 p-6">
         <h2 className="text-lg font-semibold text-ink">Aucune configuration nécessaire</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Vous n&apos;avez rien à configurer. Les pages restaurants Sokar sont publiques et
+          Vous n&apos;avez rien à configurer. Les pages restaurants Suppernote sont publiques et
           optimisées pour les moteurs de recherche et les assistants IA. L&apos;indexation par
-          Google et les IA prend du temps — plus le réseau compte de restaurants, plus Sokar devient
-          visible. Si votre IA ne trouve pas encore de restaurant Sokar, c&apos;est que le réseau
-          est encore en déploiement.
+          Google et les IA prend du temps — plus le réseau compte de restaurants, plus Suppernote
+          devient visible. Si votre IA ne trouve pas encore de restaurant Suppernote, c&apos;est que
+          le réseau est encore en déploiement.
         </p>
       </section>
 
@@ -92,7 +92,7 @@ export default function AssistantPage() {
           <h2 className="text-xl font-semibold text-ink">Vous utilisez un client MCP ?</h2>
           <p className="text-sm text-muted-foreground">
             Si vous utilisez Claude Desktop, Cursor, ou un autre client qui supporte le Model
-            Context Protocol, vous pouvez connecter Sokar directement. L&apos;IA pourra alors
+            Context Protocol, vous pouvez connecter Suppernote directement. L&apos;IA pourra alors
             rechercher et réserver sans vous rediriger vers une page web.
           </p>
         </div>
@@ -100,7 +100,7 @@ export default function AssistantPage() {
         <div className="rounded-lg border border-border p-6">
           <h3 className="text-lg font-semibold text-ink">Configuration</h3>
           <p className="mt-2 text-sm text-muted-foreground">
-            Ajoutez le serveur MCP Sokar dans votre client :
+            Ajoutez le serveur MCP Suppernote dans votre client :
           </p>
           <pre className="mt-3 overflow-x-auto rounded bg-muted p-3 text-xs text-ink">
             <code>{`{
@@ -182,7 +182,7 @@ export default function AssistantPage() {
           </li>
           <li>• Les connexions OAuth et les clés API MCP sont révocables.</li>
           <li>
-            • Sokar ne partage jamais vos données au-delà de ce qui est nécessaire pour la
+            • Suppernote ne partage jamais vos données au-delà de ce qui est nécessaire pour la
             réservation.
           </li>
         </ul>

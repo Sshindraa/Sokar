@@ -54,7 +54,7 @@ function quota(
 
 /**
  * Convert immutable usage quantities into the legacy customer-facing shape.
- * A null limit means that Sokar applies no customer quota. The API keeps the
+ * A null limit means that Suppernote applies no customer quota. The API keeps the
  * `NOT_CONFIGURED` wire state for compatibility with existing consumers, but
  * the public route also exposes `customerUsagePolicy=UNLIMITED` and never
  * enforces a cap from this projection.

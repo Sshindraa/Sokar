@@ -55,7 +55,7 @@ export const MARKETING_CONSENT_COLLECTION_LABELS: Record<MarketingConsentCollect
 
 /** Stored `source` values, with the label a restaurant team reads in the customer record. */
 export const MARKETING_CONSENT_SOURCE_LABELS: Record<string, string> = {
-  CONNECT: 'Page de réservation Sokar Connect',
+  CONNECT: 'Page de réservation Suppernote Connect',
   BOOK_PAGE: 'Page de réservation du restaurant',
   WIDGET: 'Widget de réservation',
   CONFIRMATION_EMAIL: 'Lien de la confirmation de réservation',

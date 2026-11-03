@@ -35,7 +35,7 @@ export default function Header() {
           className="flex min-w-0 items-center gap-2 rounded-full px-2 transition-all duration-200 hover:opacity-80"
         >
           <SokarLogo className="h-9 w-9 text-foreground" />
-          <span className="text-sm font-semibold text-foreground">Sokar</span>
+          <span className="text-sm font-semibold text-foreground">Suppernote</span>
         </Link>
         <div className="flex items-center gap-1 sm:gap-2">
           <Link

@@ -9,8 +9,8 @@ const isOperatorRoute = createRouteMatcher([
 ]);
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 // Widget public, aussi servi sur les sous-domaines des restaurants : jamais de session Clerk.
-// Sans cela, un restaurateur connecté (cookie Clerk partagé avec *.sokar.tech) serait redirigé
-// vers la poignée de main Clerk, refusée hors de sokar.tech.
+// Sans cela, un restaurateur connecté (cookie Clerk partagé avec *.suppernote.com) serait redirigé
+// vers la poignée de main Clerk, refusée hors de suppernote.com.
 // Même liste que le bloc des sous-domaines dans infra/nginx/sokar.conf.
 const PUBLIC_WIDGET_ROUTE =
   /^\/(?:(?:widget|book)\/[^/]+|api\/proxy\/(?:public\/.+|marketing\/attribution\/click|restaurants\/[^/]+\/(?:public|availability)))$/;

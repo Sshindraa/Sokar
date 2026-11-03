@@ -426,7 +426,7 @@ export default function DistributionPage() {
                               credentialReference: event.target.value,
                             })
                           }
-                          placeholder="Fournie par l’équipe Sokar"
+                          placeholder="Fournie par l’équipe Suppernote"
                         />
                       </div>
                     </div>
@@ -550,7 +550,8 @@ export default function DistributionPage() {
                 <CardTitle className="flex items-center gap-1.5 text-base">
                   Disponibilités reçues
                   <InfoTip label="Précision sur les disponibilités">
-                    Créneaux vus chez le partenaire, à titre indicatif : Sokar reste la référence.
+                    Créneaux vus chez le partenaire, à titre indicatif : Suppernote reste la
+                    référence.
                   </InfoTip>
                 </CardTitle>
               </CardHeader>

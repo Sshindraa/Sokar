@@ -3717,3 +3717,46 @@ Campagne `f94466d2`, même contenu que l'essai Outlook : acceptée par Resend et
 ### 2026-11-03 — Registre marketing : PR 637 livrée
 
 PR #637 fusionnée après CI verte et comptage de 0 entrée du registre en production, commit 93019bba. CI main, staging et smoke tests staging/production verts ; livraison production 41663952307, release 20261103T152924Z, snapshot pre présent. Configuration fichier API : MARKETING_SENDS_ENABLED non activé. PR #634 actualisée avec le texte de levée en ligne, reste en brouillon pour validation juridique ; contrôle avant envoi vert. Limite : la case en ligne ne vérifie pas la possession de l’adresse.
+
+### 2026-11-03 — Sokar devient Suppernote
+
+Décision de Hamza : la marque et le domaine changent (`sokar.tech` → `suppernote.com`). Zone Cloudflare créée, serveurs de noms posés chez IONOS. Branche `feat/marque-suppernote` : textes visibles, valeurs de repli, nginx, déploiement et redirections de l'ancien domaine (308 sur l'API). Les noms internes restent (`@sokar/*`, `/opt/sokar`, `X-Sokar-Site-ID`, `tech.sokar.ios`, « Chez Sokar »). Fusion conditionnée aux préalables de `docs/runbooks/migration-suppernote.md` (certificat, Clerk, e-mails, `.env`). Logo non remplacé.
+
+### 2026-11-03 — Relais Suppernote
+
+Fait : zone Cloudflare `suppernote.com` en Full (strict), certificat d'origine sur le VPS, `staging` et `api-staging` en DNS, branche qualifiée en staging puis staging remis sur `sokar.tech` ; Resend `suppernote.com` vérifié ; Workspace en alias gratuit, Gmail activé, MX/SPF/DMARC Google, réception de `hamza@suppernote.com` confirmée. Clerk lu, non changé.
+Reste : webhooks, app iOS, DNS de production, créneau de bascule, Clerk (`Change domain` coupe la connexion), `.env`, fusion de la PR 640, Search Console, CNAME clients. `news.suppernote.com` refusé par la limite Resend. `www`, `api` et `*` absents de la zone ; `https://suppernote.com` échoue encore au TLS.
+Fichiers : `docs/runbooks/migration-suppernote.md`, `infra/nginx/sokar.conf`, `apps/api/src/env.ts`, `apps/ios/Sokar/SokarApp.swift`.
+Questions : clé Clerk `sk_test` affichée dans une session, à renouveler ; compte Clerk au nom d'Ismail Harrak et offre Student ; domaine principal Workspace ; crédit OpenRouter bas.
+
+### 2026-11-03 — Suppernote : branche à jour, contrôles en lecture seule
+
+PR #640 mise à jour avec `main` (merge `0d2b5186`, sans conflit, poussé). Production lue sans écriture : 3 campagnes marketing, toutes `Chez Sokar`, envoyées le 22/10 (avant `news.sokar.tech`) ; aucun envoi réel, donc remplacer `news.sokar.tech` par `news.suppernote.com` ne casse rien. Clé Stripe de production en `sk_live` ; `reservation_payments` et `stripe_webhook_events` vides : les 3 paiements de test ne sont pas dans notre base, la cause se lit dans le tableau de bord Stripe. Restent à Hamza : renouvellement de la clé Clerk `sk_test`, propriétaire du compte Clerk, retrait de `news.sokar.tech` chez Resend, recharge OpenRouter.
+
+### 2026-11-03 — Suppernote : tests e-mail, Resend et Stripe en attente
+
+Deux e-mails de test envoyés depuis `hello@suppernote.com` vers `privacy@` et `hello@suppernote.com` : « Delivered » dans Resend, reçus selon Hamza. Resend : `news.sokar.tech` toujours en place (limite de 3 domaines), sa suppression n'a pas été faite ; `news.suppernote.com` pas ajouté. Stripe : session non ouverte dans le navigateur intégré, les 3 paiements de test restent à lire. Envois marketing coupés (`false` en staging, absent en production). Alertes `CRITICAL` répétées vers `hamza@sokar.tech` (`openrouter-credit`, `gift-card-finance`, `dead-letter`, `call-recovery`, `confirmation-sms`) : causes non examinées, sauf `openrouter-credit` (crédit à 0,93 $).
+
+### 2026-11-03 — Stripe : cause des paiements de test (bac à sable)
+
+Compte `Sokar sandbox`, mode test, 27 paiements. Les 3 « Incomplet » de 25 € (1er nov., 19:05, 19:08, 19:11) ont été créés sur des comptes connectés jetables : les journaux d'API montrent, à chaque fois, création d'un compte (`/v2/core/accounts`), mise à jour, `account_sessions`, puis `close` quelques minutes après (`acct_1UX49W…` pour celui de 19:11, fermé à 19:12:31). Requêtes en `node`, clé `sk_test`, adresse IPv4 de ce Mac (pas celle du VPS). Cause : scripts de qualification Stripe Connect lancés en local ; les PaymentIntents n'ont jamais été confirmés, d'où « Incomplet », et la fermeture des comptes empêche d'ouvrir leur détail. Aucun lien avec la production : `reservation_payments` et `stripe_webhook_events` y sont vides, aucune ligne en staging pour la période. Limite : le lien entre chaque paiement et son compte repose sur l'horodatage et un identifiant de compte relu à l'écran ; les 10 € remboursés du 30/10 correspondent aux entrées « Stripe test » de ce journal.
+
+### 2026-11-03 — Suppernote : webhooks, étape 3 bloquée par l'ordre
+
+`api.suppernote.com` n'a pas d'enregistrement DNS ; `suppernote.com`, `staging` et `api-staging` répondent 525/526 (le VPS ne sert pas encore ces noms tant que la branche n'est pas déployée). Aucune adresse `api.suppernote.com` ne peut donc être ajoutée chez Stripe, Telnyx ou Meta avant le DNS (étape 5) et la fusion. Risque relevé dans `infra/nginx/sokar.conf` : après la fusion, `api.sokar.tech` répond `308` à tout, webhooks compris ; Stripe, Telnyx et Meta ne suivent pas les redirections, donc les anciennes adresses cessent de fonctionner dès le déploiement (appels entrants compris, `/voice/telnyx`). Meta n'accepte qu'une adresse de rappel (remplacement, pas ajout). Stripe sandbox lu : deux destinations sur `api-staging.sokar.tech/webhooks/stripe` (comptes connectés, 8 événements ; compte, 22 événements, 52 % d'erreur non examinés). Stripe live, Telnyx et Meta non ouverts. Rien modifié.
+
+### 2026-11-03 — Suppernote : relais des webhooks sur l'ancien domaine
+
+Décision de Hamza : `api.sokar.tech` (et `api-staging.sokar.tech`) relaie `/webhooks/`, `/whatsapp/webhook` et `/voice/` à l'API au lieu du 308, car Stripe, Telnyx et Meta ne suivent pas les redirections ; le reste de l'API garde le 308. Changement dans `infra/nginx/sokar.conf` et `sokar-staging.conf`. Syntaxe du bloc de production vérifiée avec `nginx -t` sur le VPS (config temporaire, rien installé) ; bloc staging identique, non testé séparément. Non testé en conditions réelles : un POST signé sur l'ancienne adresse après déploiement. Le relais permet de changer les adresses chez les fournisseurs après la bascule, sans coupure.
+
+### 2026-11-03 — Suppernote : app iOS, état avant la bascule
+
+Le code est déjà passé à `suppernote.com` (URL du tableau de bord, hôtes internes, message d'erreur) dans `apps/ios/Sokar/SokarApp.swift` ; compilation simulateur réussie (Xcode 27.2, sans signature). Constat : `DEVELOPMENT_TEAM` vide, aucune identité de signature sur ce Mac, pas de numéro de version ni de trace de TestFlight ou App Store dans le dépôt ni dans ce journal. Aucune version n'est donc publiée à ma connaissance ; si une build est distribuée à des testeurs, elle charge `sokar.tech/dashboard` (301 vers `suppernote.com`, accepté dans la vue) mais ouvre les liens internes de `suppernote.com` dans Safari. Une build `suppernote.com` ne doit pas être mise en ligne avant la bascule : le site échoue encore au TLS. Non testé : lancement sur simulateur, connexion Clerk dans la vue.
+
+### 2026-11-03 — Suppernote : app iOS jamais publiée, DNS de production préparé
+
+iOS : confirmé par Hamza, l'app n'a jamais été publiée ; rien à publier avant la bascule. DNS : zone `suppernote.com` lue dans Cloudflare ; `@` (A `217.160.0.190`, AAAA `2001:8d8:100f:f000::200`) est le parking IONOS proxifié, ce qui explique le 525 de `https://suppernote.com`. Créés, proxifiés, vers le VPS `57.131.148.179` (IPv4 seulement, comme `staging`) : `api`, `www`, `*`. Pas de AAAA vers le VPS. `www` et les sous-domaines répondent 526 jusqu'au déploiement de la branche (vhosts nginx absents) ; `api` résolu, non joignable par curl local (cache négatif). Restent pour la bascule : remplacer A/AAAA de `@` par le VPS, retirer `autodiscover` et `_domainconnect` (CNAME IONOS importés), ajouter les noms de Clerk non proxifiés (donnés après `Change domain`). Constat : pas d'enregistrement DKIM Google (`google._domainkey`) dans la zone.
+
+### 2026-11-03 — Suppernote : plan de bascule et créneau
+
+Lecture seule : PR #640 mergeable, CI en cours après le dernier push. Production : 84 appels (tous `Chez Sokar`, dernier le 25/10), 3 restaurants avec numéro ; Clerk de production : un utilisateur actif par semaine, domaine principal `sokar.tech` (état « Checking »), espace de travail « Sokar » en offre Student. Plan de bascule et retour arrière ajoutés à `docs/runbooks/migration-suppernote.md`. Rien modifié chez Clerk. Créneau proposé : mercredi 4 novembre, 10 h (Paris), environ 90 min, en présence de Hamza ; fusion seulement sur son accord ce jour-là. Restent à lui : clé Clerk à renouveler, propriétaire du compte Clerk, crédit OpenRouter, retrait de `news.sokar.tech` chez Resend (non bloquant : envois marketing coupés).

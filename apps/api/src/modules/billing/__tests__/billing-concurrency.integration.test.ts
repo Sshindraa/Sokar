@@ -88,7 +88,7 @@ describe.skipIf(!dbUrl)('billing concurrency — real PostgreSQL', () => {
     if (sandboxKey) {
       process.env.STRIPE_SECRET_KEY = sandboxKey;
       stripe = new Stripe(sandboxKey);
-      const product = await stripe.products.create({ name: 'Sokar billing audit test' });
+      const product = await stripe.products.create({ name: 'Suppernote billing audit test' });
       productId = product.id;
       const pro = await stripe.prices.create({
         product: product.id,

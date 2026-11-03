@@ -124,7 +124,9 @@ function AdminShell({ children }: { children: ReactNode }) {
             <SokarLogo className="h-7 w-7 text-foreground" />
           </span>
           <span className="min-w-0">
-            <span className="block truncate text-sm font-black tracking-tight">Sokar Admin</span>
+            <span className="block truncate text-sm font-black tracking-tight">
+              Suppernote Admin
+            </span>
             <span className="block text-xs text-muted-foreground">Opérations internes</span>
           </span>
         </Link>
@@ -167,7 +169,7 @@ function AdminShell({ children }: { children: ReactNode }) {
         <div className="mx-auto flex min-h-16 max-w-[1400px] items-center justify-between gap-4 px-4 py-3 md:px-8">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Sokar · opérations
+              Suppernote · opérations
             </p>
             <h1 className="truncate text-lg font-black tracking-tight sm:text-xl">
               Espace administration

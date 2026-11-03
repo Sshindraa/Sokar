@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — API client.
+ * Suppernote Connect — API client.
  *
  * En T4, on fetch l'API publique Fastify (apps/api) plutôt que d'importer
  * directement @sokar/database. Cf. spec connect-v1.1 §6.6 :

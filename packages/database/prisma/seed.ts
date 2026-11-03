@@ -9,7 +9,7 @@ const prisma = new PrismaClient({
 
 const DEMO_SLUG = 'chez-sokar-demo';
 const DEMO_PHONE = '+33102030405';
-const DEMO_MCP_CLIENT_NAME = 'Sokar demo MCP client';
+const DEMO_MCP_CLIENT_NAME = 'Suppernote demo MCP client';
 
 const openingHours: Prisma.JsonValue = {
   tue: { open: '12:00', close: '22:00' },
@@ -142,7 +142,7 @@ async function main() {
       minLeadTimeMinutes: 30,
       quoteTtlSeconds: 300,
       holdTtlSeconds: 420,
-      // Sokar Connect
+      // Suppernote Connect
       connectPublished: true,
       connectPublishedAt: new Date(),
       connectAgentic: false,
@@ -171,7 +171,7 @@ async function main() {
       minLeadTimeMinutes: 30,
       quoteTtlSeconds: 300,
       holdTtlSeconds: 420,
-      // Sokar Connect
+      // Suppernote Connect
       connectPublished: true,
       connectPublishedAt: new Date(),
       connectAgentic: false,
@@ -234,7 +234,7 @@ async function main() {
 
   console.log(`Demo restaurant seeded: ${restaurant.id} (${DEMO_SLUG})`);
 
-  // ─── Sokar Connect — Seed restos supplémentaires (Lyon + Paris) ────
+  // ─── Suppernote Connect — Seed restos supplémentaires (Lyon + Paris) ────
   // Pour tester les pages locales (/restaurants/lyon, /restaurants/paris)
   // qui requièrent ≥5 restos par ville.
   // connectPublished=true, connectAgentic=false.
@@ -437,7 +437,7 @@ async function main() {
         },
       });
 
-      console.info(`Sokar Connect seed: ${resto.slug} (${r.city}, connectPublished=true)`);
+      console.info(`Suppernote Connect seed: ${resto.slug} (${r.city}, connectPublished=true)`);
     }
 
     // ─── Pilote P1 — 9 restaurants réalistes (villes variées) ──────────
@@ -690,10 +690,10 @@ async function main() {
       console.info(`Pilot P1 seed: ${resto.slug} (${r.city}, connectPublished=true)`);
     }
 
-    console.info('Sokar Connect seed complete — 5 Lyon + 5 Paris + 9 pilot P1');
+    console.info('Suppernote Connect seed complete — 5 Lyon + 5 Paris + 9 pilot P1');
   } else {
     console.info(
-      'Sokar Connect demo listings skipped — base distante ou NODE_ENV=production. ' +
+      'Suppernote Connect demo listings skipped — base distante ou NODE_ENV=production. ' +
         'SEED_DEMO_RESTAURANTS=true force la création (staging uniquement).',
     );
   }

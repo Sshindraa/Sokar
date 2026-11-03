@@ -1,8 +1,8 @@
 /**
  * Route-level tests for the public widget endpoint.
  *
- * GET /public/widget/:slug — utilisé par l'iframe sokar.tech/widget/{slug}.
- * Doit fonctionner pour tous les restos (publiés ou pas sur Sokar Connect),
+ * GET /public/widget/:slug — utilisé par l'iframe suppernote.com/widget/{slug}.
+ * Doit fonctionner pour tous les restos (publiés ou pas sur Suppernote Connect),
  * contrairement à /public/r/:slug qui filtre sur connectPublished.
  */
 import { describe, it, expect, vi, afterAll, beforeEach } from 'vitest';

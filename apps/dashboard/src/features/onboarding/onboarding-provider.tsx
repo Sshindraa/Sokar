@@ -165,12 +165,12 @@ const PREVIEW_STATE: OnboardingState = {
     previewStep(
       'phone',
       'Mise en service des appels',
-      'Numéro Sokar et consignes de renvoi opérateur.',
+      'Numéro Suppernote et consignes de renvoi opérateur.',
       'voice',
       5,
       'pending',
     ),
-    // Sokar Connect group
+    // Suppernote Connect group
     previewStep(
       'connect-identity',
       'Identité publique',

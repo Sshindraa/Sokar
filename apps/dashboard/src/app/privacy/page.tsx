@@ -4,16 +4,16 @@ import { Mail } from 'lucide-react';
 import { PRIVACY_DOCUMENT, PRIVACY_PROVIDERS, PRIVACY_RETENTION } from '@sokar/shared';
 
 export const metadata: Metadata = {
-  title: 'Politique de confidentialité — Sokar',
+  title: 'Politique de confidentialité — Suppernote',
   description:
-    'Comment Sokar collecte, traite et protège les données personnelles, conformément au RGPD.',
+    'Comment Suppernote collecte, traite et protège les données personnelles, conformément au RGPD.',
   robots: { index: false, follow: true },
 };
 
 const LAST_UPDATED = PRIVACY_DOCUMENT.updatedLabel;
 
 const COMPANY = {
-  tradeName: 'Sokar',
+  tradeName: 'Suppernote',
   legalForm: 'Entreprise individuelle (EI)',
   establishmentAddress: '9 rue Vaubecour, 69002 Lyon',
   privacyEmail: PRIVACY_DOCUMENT.contact,
@@ -27,7 +27,7 @@ const DATA_CATEGORIES = [
   {
     category: 'Données de compte',
     examples: 'E-mail, prénom, nom et organisation.',
-    purpose: 'Création et gestion de votre compte Sokar.',
+    purpose: 'Création et gestion de votre compte Suppernote.',
     legalBasis: 'Exécution du contrat (CGU).',
     retention: PRIVACY_RETENTION.accounts,
   },
@@ -160,8 +160,9 @@ export default function PrivacyPage() {
         {/* ── 1. RESPONSABLE DE TRAITEMENT ────────────────── */}
         <Section title="1. Responsable de traitement">
           <p>
-            Sokar est le nom commercial d’une entreprise individuelle. Les informations disponibles
-            sont les suivantes ; l’identification complète du responsable reste à compléter.
+            Suppernote est le nom commercial d’une entreprise individuelle. Les informations
+            disponibles sont les suivantes ; l’identification complète du responsable reste à
+            compléter.
           </p>
           <p className="mt-4">{PRIVACY_DOCUMENT.roles}</p>
           <DefList
@@ -286,7 +287,7 @@ export default function PrivacyPage() {
               className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/90"
             >
               <Mail size={14} />
-              Contacter Sokar
+              Contacter Suppernote
             </a>
           </p>
         </Section>

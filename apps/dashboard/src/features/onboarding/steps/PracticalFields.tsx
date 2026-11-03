@@ -236,8 +236,8 @@ export function PracticalFields({
   return (
     <div className={cn('flex h-full min-h-0 flex-col', gap)}>
       <p className="text-xs leading-5 text-muted-foreground">
-        Répondez aux six questions : ce sont celles que vos clients posent le plus. Sokar n’invente
-        rien et passe la main au gérant pour tout le reste.
+        Répondez aux six questions : ce sont celles que vos clients posent le plus. Suppernote
+        n’invente rien et passe la main au gérant pour tout le reste.
       </p>
       <div className={cn('grid sm:grid-cols-2 lg:grid-cols-3 lg:grid-rows-2 flex-[3]', gap)}>
         <Tile

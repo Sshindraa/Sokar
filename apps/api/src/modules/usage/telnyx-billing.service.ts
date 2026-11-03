@@ -622,7 +622,7 @@ export function telnyxUsageReportToInvoiceRows(
   const mapping =
     TELNYX_USAGE_PRODUCT_MAPPINGS[product as keyof typeof TELNYX_USAGE_PRODUCT_MAPPINGS];
   if (!mapping) {
-    throw invalidInput(`Telnyx product ${product} has no Sokar usage mapping yet`);
+    throw invalidInput(`Telnyx product ${product} has no Suppernote usage mapping yet`);
   }
   const quantityMetric = validateMetric(
     input.quantityMetric ?? mapping.defaultQuantityMetric,

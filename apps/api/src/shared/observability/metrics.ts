@@ -1,5 +1,5 @@
 /**
- * Métriques Prometheus custom pour Sokar.
+ * Métriques Prometheus custom pour Suppernote.
  *
  * Métriques exposées (Phase 6) :
  *   - sokar_agentic_hold_created_total{type,channel}
@@ -953,10 +953,10 @@ export function __resetMetrics(): void {
   voiceCallsTotal.reset();
 }
 
-// ─── Sokar Connect (Phase 1) ────────────────────────────────────────
+// ─── Suppernote Connect (Phase 1) ────────────────────────────────────────
 
 /**
- * Compteur global des events Sokar Connect. Labels limités pour éviter la
+ * Compteur global des events Suppernote Connect. Labels limités pour éviter la
  * cardinalité infinie (cf. spec v1.1 §16.1 — events standardisés).
  * Labels : event (page_view, cta_clicked, availability_requested,
  *                hold_created, hold_expired, reservation_confirmed,
@@ -964,30 +964,30 @@ export function __resetMetrics(): void {
  */
 export const connectEventsTotal = new Counter({
   name: 'sokar_connect_events_total',
-  help: 'Total Sokar Connect events received',
+  help: 'Total Suppernote Connect events received',
   labelNames: ['event', 'source'] as const,
   registers: [getRegistry()],
 });
 
 /**
- * Réservations confirmées via Sokar Connect (par source).
+ * Réservations confirmées via Suppernote Connect (par source).
  * Permet de calculer la conversion par canal SEO/agentic.
  */
 export const connectReservationsConfirmedTotal = new Counter({
   name: 'sokar_connect_reservations_confirmed_total',
-  help: 'Total reservations confirmed via Sokar Connect',
+  help: 'Total reservations confirmed via Suppernote Connect',
   labelNames: ['source', 'city'] as const,
   registers: [getRegistry()],
 });
 
 /**
- * Latence des requêtes sur les routes publiques Sokar Connect.
+ * Latence des requêtes sur les routes publiques Suppernote Connect.
  * Permet de calculer le p95 (cible < 500ms, spec v1.1 §11.2).
  * Labels : route (slug, availability, hold, confirm) × status (2xx, 4xx, 5xx).
  */
 export const connectRequestDuration = new Histogram({
   name: 'sokar_connect_request_duration_ms',
-  help: 'Duration of Sokar Connect public API requests in milliseconds',
+  help: 'Duration of Suppernote Connect public API requests in milliseconds',
   labelNames: ['route', 'status'] as const,
   buckets: [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
   registers: [getRegistry()],
@@ -1097,7 +1097,7 @@ export function recordMcpToolCall(
  */
 export const connectIaBotHitsTotal = new Counter({
   name: 'sokar_connect_ia_bot_hits_total',
-  help: 'Total IA bot hits on Sokar Connect public pages',
+  help: 'Total IA bot hits on Suppernote Connect public pages',
   labelNames: ['bot', 'path_class'] as const,
   registers: [getRegistry()],
 });

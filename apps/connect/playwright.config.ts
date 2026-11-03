@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
 /**
- * Configuration Playwright pour Sokar Connect.
+ * Configuration Playwright pour Suppernote Connect.
  *
  * Tests E2E des flows critiques de Connect (pages publiques) :
  *  - restaurant-page.spec.ts : page restaurant publique (/restaurant/[slug])

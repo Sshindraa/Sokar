@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Tracking helpers.
+ * Suppernote Connect — Tracking helpers.
  *
  * On tracke page_view et cta_clicked via des requêtes fetch asynchrones
  * vers l'API interne (apps/api). L'API pousse ces events dans la queue
