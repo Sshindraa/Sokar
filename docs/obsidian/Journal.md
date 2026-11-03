@@ -3682,6 +3682,7 @@ Après l'essai staging classé en indésirable par Outlook (SPF, DKIM et DMARC r
 ### 2026-11-03 — Registre d'opposition : clé par restaurant et levée par la personne seule
 
 Décision de Hamza à la suite de l'analyse de la PR #634. L'empreinte utilise une clé dérivée par restaurant : les anciennes entrées ne sont plus reconnues, aucune n'existe en production au 3 novembre (à revérifier juste avant la fusion, car une entrée écrite entre-temps ne serait plus reconnue). Seul le geste de la personne (case de réservation, lien de confirmation) lève une opposition ; un accord saisi par l'équipe est refusé (`MARKETING_OPPOSITION_REGISTERED`, 409). Le texte public de la PR #634 devra retirer la levée par le restaurant une fois ce changement fusionné. Rien d'activé, envois toujours coupés.
+
 ### 2026-11-03 — Pilote e-mail : configuration staging
 
 - Dans le compte Resend Sokar, `sokar.tech` et `news.sokar.tech` sont Verified. Création du webhook staging avec seulement `email.sent`, `email.delivered`, `email.bounced`, `email.complained`, `email.failed` et `email.suppressed`; aucune livraison reçue. Le webhook de production n'a pas été modifié.
