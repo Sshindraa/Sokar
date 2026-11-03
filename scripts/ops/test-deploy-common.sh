@@ -172,4 +172,18 @@ test "$(cat "$PM2_CALLS")" = "$(printf 'pm2 stop sokar-dashboard\npm2 start eco.
 NEXT_BUILD_ACTIVATED_DASHBOARD=false NEXT_BUILD_ACTIVATED_CONNECT=false NEED_API=true restart_services >/dev/null
 test "$(cat "$PM2_CALLS")" = "$(printf 'pm2 start eco.js --only sokar-api\npm2 start eco.js --only sokar-workers\npm2 save')"
 
+# Une modification de .env impose aussi le redémarrage sans changement de code.
+mkdir -p "$TMP_ROOT/apps/api"
+printf 'VALUE=before\n' > "$TMP_ROOT/apps/api/.env"
+SOKAR_ROOT="$TMP_ROOT"
+SOKAR_API_ENV_BEFORE="$(api_env_fingerprint "$SOKAR_ROOT/apps/api/.env")"
+NEXT_BUILD_ACTIVATED_DASHBOARD=false NEXT_BUILD_ACTIVATED_CONNECT=false
+: > "$PM2_CALLS"
+NEED_API=false restart_services >/dev/null
+test "$(cat "$PM2_CALLS")" = 'pm2 save'
+printf 'VALUE=after\n' > "$TMP_ROOT/apps/api/.env"
+: > "$PM2_CALLS"
+NEED_API=false restart_services >/dev/null
+test "$(cat "$PM2_CALLS")" = "$(printf 'pm2 start eco.js --only sokar-api\npm2 start eco.js --only sokar-workers\npm2 save')"
+
 echo 'deploy-common release activation/rollback: OK'

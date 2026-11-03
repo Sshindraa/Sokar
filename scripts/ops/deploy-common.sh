@@ -825,6 +825,14 @@ validate_nginx_config() {
     log info "   ✅ Nginx catch-all default_server 443 — OK"
 }
 
+api_env_fingerprint() {
+    if [ -f "$1" ]; then
+        sha256sum "$1" | cut -d ' ' -f 1
+    else
+        printf '%s\n' missing
+    fi
+}
+
 # Redémarrer les services PM2 + Nginx (+ LocalStack en prod)
 restart_services() {
     log info ""
@@ -849,7 +857,7 @@ restart_services() {
     if [ "${NEXT_BUILD_ACTIVATED_CONNECT:-false}" = true ]; then
         TO_START="$TO_START $PM2_CONNECT"
     fi
-    if [ "${NEED_API:-false}" = true ]; then
+    if [ "${NEED_API:-false}" = true ] || { [ -n "${SOKAR_API_ENV_BEFORE:-}" ] && [ "$SOKAR_API_ENV_BEFORE" != "$(api_env_fingerprint "$SOKAR_ROOT/apps/api/.env")" ]; }; then
         TO_START="$TO_START $PM2_API $PM2_WORKERS"
     fi
     local APP

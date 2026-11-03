@@ -100,6 +100,8 @@ jobs:
             printf 'GRAFANA_ADMIN_PASSWORD\t%s\n' "$GRAFANA_ADMIN_PASSWORD" | \
               sudo /usr/local/sbin/sokar-deploy-root configure-grafana prod
             sudo /usr/local/sbin/sokar-deploy-root validate-monitoring prod
+            source scripts/ops/deploy-common.sh
+            api_env_before="$(api_env_fingerprint apps/api/.env)"
             if [ -n "${SENTRY_DSN:-}${ALERT_EMAIL_TO:-}${ALERT_WEBHOOK_URL:-}${ALERT_SMS_TO:-}${RESEND_RATE_LIMIT_REDIS_URL:-}" ]; then
               bash scripts/ops/sync-env.sh alerting prod
             fi
@@ -118,7 +120,7 @@ jobs:
               } | sudo /usr/local/sbin/sokar-deploy-root configure-watchdog prod
             fi
             bash scripts/ops/sync-env.sh stripe-prices prod
-            bash scripts/deploy.sh --env prod --confirm-production
+            SOKAR_API_ENV_BEFORE="$api_env_before" bash scripts/deploy.sh --env prod --confirm-production
             sudo /usr/local/sbin/sokar-deploy-root start-prometheus prod
             sudo /usr/local/sbin/sokar-deploy-root start-grafana prod
 
