@@ -3,19 +3,23 @@ import { emailReplyTo, emailSender } from '../index';
 import { smsSender } from '../../telnyx/client';
 
 describe('emailSender', () => {
-  it('affiche « Sokar » même quand EMAIL_FROM est une adresse nue', () => {
-    expect(emailSender({ EMAIL_FROM: 'noreply@sokar.tech' })).toBe('Sokar <noreply@sokar.tech>');
-    expect(emailSender({ EMAIL_FROM: 'Équipe Sokar <hello@sokar.tech>' })).toBe(
-      'Équipe Sokar <hello@sokar.tech>',
+  it('affiche « Suppernote » même quand EMAIL_FROM est une adresse nue', () => {
+    expect(emailSender({ EMAIL_FROM: 'noreply@suppernote.com' })).toBe(
+      'Suppernote <noreply@suppernote.com>',
     );
-    expect(emailSender({})).toBe('Sokar <noreply@sokar.tech>');
+    expect(emailSender({ EMAIL_FROM: 'Équipe Suppernote <hello@suppernote.com>' })).toBe(
+      'Équipe Suppernote <hello@suppernote.com>',
+    );
+    expect(emailSender({})).toBe('Suppernote <noreply@suppernote.com>');
   });
 });
 
 describe('emailReplyTo', () => {
   it('renvoie les réponses vers une boîte lue', () => {
-    expect(emailReplyTo({})).toBe('hello@sokar.tech');
-    expect(emailReplyTo({ EMAIL_REPLY_TO: 'support@sokar.tech' })).toBe('support@sokar.tech');
+    expect(emailReplyTo({})).toBe('hello@suppernote.com');
+    expect(emailReplyTo({ EMAIL_REPLY_TO: 'support@suppernote.com' })).toBe(
+      'support@suppernote.com',
+    );
   });
 });
 

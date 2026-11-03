@@ -147,7 +147,7 @@ describe('billing details, account isolation and portal flows', () => {
     expect((await getBillingDetails(scope)).hasPaymentMethod).toBe(false);
   });
   it.each(['payment_method', 'subscription_update', 'subscription_cancel'] as const)(
-    'opens the %s flow in French and returns to Sokar',
+    'opens the %s flow in French and returns to Suppernote',
     async (intent) => {
       await createBillingPortalSession({ ...scope, intent, returnTo: 'billing' });
       expect(portal).toHaveBeenCalledWith(

@@ -1,5 +1,5 @@
 /**
- * Health checks for Sokar API.
+ * Health checks for Suppernote API.
  *
  * Six independent checks: db, redis, queues, telnyx, cartesia, elevenlabs.
  * Each check has its own timeout and returns a uniform `CheckResult` shape.

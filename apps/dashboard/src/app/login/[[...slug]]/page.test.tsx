@@ -12,7 +12,7 @@ vi.mock('@clerk/nextjs', () => ({
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace }) }));
 vi.mock('next/image', () => ({ default: () => null }));
 
-describe('connexion Sokar', () => {
+describe('connexion Suppernote', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal('matchMedia', (query: string) => ({

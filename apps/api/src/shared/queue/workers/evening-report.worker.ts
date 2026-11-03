@@ -77,7 +77,7 @@ export const eveningReportWorker = new Worker(
 
     await sendEmail({
       to: restaurant.managerEmail,
-      subject: `📊 Résumé Sokar — ${label}`,
+      subject: `📊 Résumé Suppernote — ${label}`,
       html: buildReportEmail({
         restaurantName: restaurant.name,
         totalCalls: calls.length,

@@ -68,13 +68,13 @@ if (nodeEnv !== 'production') {
 // démarrage plutôt que d'utiliser silencieusement une mauvaise valeur.
 
 const PROD_HOST_ALLOWLIST = [
-  'sokar.tech',
-  'api.sokar.tech',
-  'app.sokar.tech',
-  'widget.sokar.tech',
+  'suppernote.com',
+  'api.suppernote.com',
+  'app.suppernote.com',
+  'widget.suppernote.com',
   // Staging — mêmes contraintes que la prod (NODE_ENV=production).
-  'staging.sokar.tech',
-  'api-staging.sokar.tech',
+  'staging.suppernote.com',
+  'api-staging.suppernote.com',
 ];
 
 const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
@@ -267,7 +267,7 @@ const EnvSchema = z
       .string()
       .refine(isValidCorsOrigins, {
         message:
-          'CORS_ORIGINS must be a comma-separated list of http(s) URLs (e.g. https://sokar.tech,https://www.sokar.tech)',
+          'CORS_ORIGINS must be a comma-separated list of http(s) URLs (e.g. https://suppernote.com,https://www.suppernote.com)',
       })
       .optional(),
     // Reverse proxy IPs (Nginx) — comma-separated, accepte CIDR et IPv6.
@@ -285,7 +285,7 @@ const EnvSchema = z
     // seul Prometheus, sur le même hôte, doit pouvoir le lire.
     METRICS_PORT: z.coerce.number().int().positive().default(4001),
     METRICS_BIND_HOST: z.string().default('127.0.0.1'),
-    // IDs Clerk des opérateurs Sokar autorisés à utiliser les routes globales
+    // IDs Clerk des opérateurs Suppernote autorisés à utiliser les routes globales
     // de provisioning et de santé. CSV, obligatoire dans l'environnement de
     // déploiement avant d'ouvrir l'administration multi-restaurant.
     SOKAR_OPERATOR_USER_IDS: z.string().optional(),
@@ -305,7 +305,7 @@ const EnvSchema = z
     // Clés API critiques — validées au démarrage en production
     TELNYX_API_KEY: z.string().optional(),
     // Application voix Telnyx à laquelle relier les numéros attribués (sans elle, un numéro attribué
-    // dans Sokar ne reçoit aucun appel). Voir docs/runbooks/environment.md.
+    // dans Suppernote ne reçoit aucun appel). Voir docs/runbooks/environment.md.
     TELNYX_CONNECTION_ID: z.string().optional(),
     TELNYX_PUBLIC_KEY: z.string().optional(),
     TELNYX_FROM_NUMBER: z.string().optional(),
@@ -503,7 +503,7 @@ const EnvSchema = z
     },
     {
       message:
-        'En production, CORS_ORIGINS doit être défini explicitement (ex: "https://sokar.tech,https://www.sokar.tech"). Aucun fallback hardcoded.',
+        'En production, CORS_ORIGINS doit être défini explicitement (ex: "https://suppernote.com,https://www.suppernote.com"). Aucun fallback hardcoded.',
       path: ['CORS_ORIGINS'],
     },
   )

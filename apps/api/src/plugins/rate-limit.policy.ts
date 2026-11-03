@@ -1,5 +1,5 @@
 /**
- * Rate-limit policy for Sokar's public surfaces.
+ * Rate-limit policy for Suppernote's public surfaces.
  *
  * `@fastify/rate-limit` applies the global limit (see `rate-limit.ts`) to every
  * route. A route that declares `config.rateLimit` **overrides** the global

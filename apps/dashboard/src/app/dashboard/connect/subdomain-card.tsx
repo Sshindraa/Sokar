@@ -16,11 +16,11 @@ export type Props = {
 // Domaine de base dérivé de NEXT_PUBLIC_SITE_URL (même pattern que widget/page.tsx).
 // TODO: centraliser le base domain dans packages/config quand disponible.
 const PRIMARY_HOST = (() => {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://sokar.tech';
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://suppernote.com';
   try {
     return new URL(siteUrl).host;
   } catch {
-    return 'sokar.tech';
+    return 'suppernote.com';
   }
 })();
 

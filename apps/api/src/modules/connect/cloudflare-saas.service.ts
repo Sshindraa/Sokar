@@ -1,20 +1,20 @@
 /**
- * Sokar Connect P2 — Cloudflare for SaaS Custom Hostnames.
+ * Suppernote Connect P2 — Cloudflare for SaaS Custom Hostnames.
  *
  * Provisionne et gère les custom domains des restaurants via l'API Cloudflare.
- * Le restaurateur configure un CNAME vers sokar.tech, Cloudflare provisionne
+ * Le restaurateur configure un CNAME vers suppernote.com, Cloudflare provisionne
  * automatiquement le SSL (no certbot, no manual certs).
  *
  * Flux :
  *   1. setCustomDomain(domain) → createCustomHostname(domain) → status pending
- *   2. Restaurateur configure CNAME → reserve.chezmario.fr → sokar.tech
+ *   2. Restaurateur configure CNAME → reserve.chezmario.fr → suppernote.com
  *   3. Cloudflare valide le DNS + provisionne SSL → status active
  *   4. Middleware Connect détecte le host → lookup DB → rewrite /restaurant/[slug]
  *
  * Env vars requises :
  *   - CLOUDFLARE_API_TOKEN : API token avec permissions Cloudflare for SaaS
- *   - CLOUDFLARE_ZONE_ID   : Zone ID du domaine sokar.tech
- *   - CLOUDFLARE_SAAS_FALLBACK_ORIGIN : fallback origin (ex: sokar.tech)
+ *   - CLOUDFLARE_ZONE_ID   : Zone ID du domaine suppernote.com
+ *   - CLOUDFLARE_SAAS_FALLBACK_ORIGIN : fallback origin (ex: suppernote.com)
  *
  * Si les env vars ne sont pas set, le service est désactivé (no-op) — utile pour
  * les tests et le dev local.
@@ -47,7 +47,7 @@ export type CloudflareSaaSConfig = {
 function getConfig(): CloudflareSaaSConfig | null {
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
   const zoneId = process.env.CLOUDFLARE_ZONE_ID;
-  const fallbackOrigin = process.env.CLOUDFLARE_SAAS_FALLBACK_ORIGIN ?? 'sokar.tech';
+  const fallbackOrigin = process.env.CLOUDFLARE_SAAS_FALLBACK_ORIGIN ?? 'suppernote.com';
   if (!apiToken || !zoneId) {
     return null;
   }
@@ -58,15 +58,11 @@ export function isCloudflareSaaSEnabled(): boolean {
   return getConfig() !== null;
 }
 
-export function mapStatus(
-  cfStatus: string,
-  sslStatus: string | undefined,
-): CustomHostnameStatus {
+export function mapStatus(cfStatus: string, sslStatus: string | undefined): CustomHostnameStatus {
   // Cloudflare statuses: pending, active, moved, deleted
   // SSL statuses: pending_validation, pending_issuance, provisioning, active, etc.
   if (cfStatus === 'active' && sslStatus === 'active') return 'active';
-  if (cfStatus === 'active' && sslStatus && sslStatus !== 'active')
-    return 'ssl_provisioning';
+  if (cfStatus === 'active' && sslStatus && sslStatus !== 'active') return 'ssl_provisioning';
   if (cfStatus === 'pending') return 'dns_validated';
   if (cfStatus === 'moved' || cfStatus === 'deleted') return 'failed';
   return 'pending';
@@ -92,10 +88,7 @@ async function cfFetch(
   };
   if (!res.ok || !body.success) {
     const errors = body.errors?.map((e: any) => e.message).join(', ') ?? 'unknown';
-    logger.error(
-      { path, status: res.status, errors },
-      '[cloudflare-saas] API error',
-    );
+    logger.error({ path, status: res.status, errors }, '[cloudflare-saas] API error');
     throw new Error(`Cloudflare API error: ${errors}`);
   }
   return body.result;
@@ -103,11 +96,9 @@ async function cfFetch(
 
 /**
  * Crée un Custom Hostname sur Cloudflare for SaaS.
- * Le restaurateur doit ensuite configurer un CNAME vers sokar.tech.
+ * Le restaurateur doit ensuite configurer un CNAME vers suppernote.com.
  */
-export async function createCustomHostname(
-  hostname: string,
-): Promise<CustomHostnameResponse> {
+export async function createCustomHostname(hostname: string): Promise<CustomHostnameResponse> {
   const config = getConfig();
   if (!config) {
     throw new Error('Cloudflare for SaaS is not configured (missing env vars)');
@@ -132,10 +123,7 @@ export async function createCustomHostname(
   );
 
   const status = mapStatus(result.status, result.ssl?.status);
-  logger.info(
-    { hostname, cfId: result.id, status },
-    '[cloudflare-saas] Custom Hostname created',
-  );
+  logger.info({ hostname, cfId: result.id, status }, '[cloudflare-saas] Custom Hostname created');
 
   return {
     id: result.id,
@@ -148,9 +136,7 @@ export async function createCustomHostname(
 /**
  * Récupère le statut d'un Custom Hostname existant.
  */
-export async function getCustomHostname(
-  cfId: string,
-): Promise<CustomHostnameResponse> {
+export async function getCustomHostname(cfId: string): Promise<CustomHostnameResponse> {
   const config = getConfig();
   if (!config) {
     throw new Error('Cloudflare for SaaS is not configured (missing env vars)');
@@ -180,17 +166,13 @@ export async function deleteCustomHostname(cfId: string): Promise<void> {
     throw new Error('Cloudflare for SaaS is not configured (missing env vars)');
   }
 
-  await cfFetch(
-    `/zones/${config.zoneId}/custom_hostnames/${cfId}`,
-    { method: 'DELETE' },
-    config,
-  );
+  await cfFetch(`/zones/${config.zoneId}/custom_hostnames/${cfId}`, { method: 'DELETE' }, config);
 
   logger.info({ cfId }, '[cloudflare-saas] Custom Hostname deleted');
 }
 
 /**
- * Valide qu'un CNAME pointe bien vers sokar.tech (vérification DNS locale).
+ * Valide qu'un CNAME pointe bien vers suppernote.com (vérification DNS locale).
  * Utile pour donner un feedback immédiat au restaurateur avant que Cloudflare
  * ne valide.
  */
@@ -218,26 +200,25 @@ export async function verifyCname(hostname: string): Promise<{
           valid: false,
           target: aOutput.split('\n')[0],
           message:
-            'Le DNS pointe vers une adresse IP (A record) au lieu d’un CNAME. Configurez un CNAME vers sokar.tech.',
+            'Le DNS pointe vers une adresse IP (A record) au lieu d’un CNAME. Configurez un CNAME vers suppernote.com.',
         };
       }
       return {
         valid: false,
         target: null,
-        message:
-          'Aucun enregistrement DNS trouvé. Configurez un CNAME vers sokar.tech.',
+        message: 'Aucun enregistrement DNS trouvé. Configurez un CNAME vers suppernote.com.',
       };
     }
 
     const target = output.replace(/\.$/, ''); // remove trailing dot
     const config = getConfig();
-    const expectedTarget = config?.fallbackOrigin ?? 'sokar.tech';
+    const expectedTarget = config?.fallbackOrigin ?? 'suppernote.com';
 
     if (target === expectedTarget || target.endsWith(`.${expectedTarget}`)) {
       return {
         valid: true,
         target,
-        message: 'CNAME correctement configuré vers sokar.tech.',
+        message: 'CNAME correctement configuré vers suppernote.com.',
       };
     }
 

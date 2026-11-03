@@ -45,7 +45,7 @@ const reservationTheme: CSSProperties & Record<`--${string}`, string> = {
   '--reservation-soft': '24 6% 42%',
   '--reservation-muted': '24 5% 64%',
   '--reservation-line': '28 20% 88%',
-  // Accents de réservation alignés sur la palette Sokar : ivoire, taupe et champagne.
+  // Accents de réservation alignés sur la palette Suppernote : ivoire, taupe et champagne.
   // Les états d'erreur restent signalés par le rouge natif du composant.
   '--reservation-accent': '38 8% 48%',
   '--reservation-glow': '38 12% 60%',
@@ -281,7 +281,7 @@ export default function ReservationWidget({
   const testBookingToken = searchParams.get('testBooking');
   const testBooking = testBookingToken !== null;
   const giftCardCode = searchParams.get('giftCardCode')?.trim().slice(0, 100);
-  // Origine explicite du parent, passée par le snippet embed Sokar.
+  // Origine explicite du parent, passée par le snippet embed Suppernote.
   // Priorité sur document.referrer (qui peut être vide avec Referrer-Policy: no-referrer).
   const explicitParentOrigin = searchParams.get('parentOrigin');
 
@@ -2178,7 +2178,7 @@ export default function ReservationWidget({
                 Propulsé par
               </span>
               <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--reservation-muted))]">
-                Sokar
+                Suppernote
               </span>
             </div>
 

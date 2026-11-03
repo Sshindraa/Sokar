@@ -163,7 +163,7 @@ jobs:
               # contrôler, et leur heuristique anti-secret bloquait le
               # déploiement sur les clés factices des tests.
               HUSKY=0 git -c user.name='Sokar staging snapshot' \
-                -c user.email='deploy@sokar.tech' \
+                -c user.email='deploy@suppernote.com' \
                 commit --no-verify -m "chore(staging): snapshot ${SOURCE_SHA}"
             fi
             git status --short
@@ -222,8 +222,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          STAGING_URL="https://staging.sokar.tech"
-          API_STAGING_URL="https://api-staging.sokar.tech"
+          STAGING_URL="https://staging.suppernote.com"
+          API_STAGING_URL="https://api-staging.suppernote.com"
 
           echo "=== Health checks ==="
 
@@ -235,16 +235,16 @@ jobs:
           done
 
 
-          # /health via api-staging.sokar.tech
+          # /health via api-staging.suppernote.com
           HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$API_STAGING_URL/health" || echo "FAIL")
-          echo "api-staging.sokar.tech/health → $HEALTH_STATUS"
+          echo "api-staging.suppernote.com/health → $HEALTH_STATUS"
           [ "$HEALTH_STATUS" = "200" ] || exit 1
 
-          # /livez via api-staging.sokar.tech
+          # /livez via api-staging.suppernote.com
           LIVEZ_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$API_STAGING_URL/livez" || echo "FAIL")
-          echo "api-staging.sokar.tech/livez → $LIVEZ_STATUS"
+          echo "api-staging.suppernote.com/livez → $LIVEZ_STATUS"
           [ "$LIVEZ_STATUS" = "200" ] || exit 1
 
           # La route legacy doit rester protégée et refuser avant toute
@@ -252,26 +252,26 @@ jobs:
           LEGACY_RESERVATION_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 -X POST -H "content-type: application/json" -d '{}' \
             "$API_STAGING_URL/reservations" || echo "FAIL")
-          echo "api-staging.sokar.tech/reservations sans jeton → $LEGACY_RESERVATION_STATUS"
+          echo "api-staging.suppernote.com/reservations sans jeton → $LEGACY_RESERVATION_STATUS"
           [ "$LEGACY_RESERVATION_STATUS" = "401" ] || exit 1
 
           # /dashboard — peut rediriger vers Clerk (302) ou répondre 200.
           # On accepte 200 et 302 comme valides.
           DASH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 -L "$STAGING_URL/dashboard" || echo "FAIL")
-          echo "staging.sokar.tech/dashboard → $DASH_STATUS"
+          echo "staging.suppernote.com/dashboard → $DASH_STATUS"
           [ "$DASH_STATUS" = "200" ] || [ "$DASH_STATUS" = "302" ] || exit 1
 
           # Page d'accueil
           HOME_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$STAGING_URL/" || echo "FAIL")
-          echo "staging.sokar.tech/ → $HOME_STATUS"
+          echo "staging.suppernote.com/ → $HOME_STATUS"
           [ "$HOME_STATUS" = "200" ] || exit 1
 
           # Sokar Connect page
           CONNECT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$STAGING_URL/restaurant/chez-sokar-demo" || echo "FAIL")
-          echo "staging.sokar.tech/restaurant/chez-sokar-demo → $CONNECT_STATUS"
+          echo "staging.suppernote.com/restaurant/chez-sokar-demo → $CONNECT_STATUS"
           [ "$CONNECT_STATUS" = "200" ] || exit 1
 
           echo ""
@@ -294,7 +294,7 @@ jobs:
         if: always() && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
         run: |
           sleep 5
-          curl -fsS https://api-staging.sokar.tech/livez || exit 1
+          curl -fsS https://api-staging.suppernote.com/livez || exit 1
 
       - name: Restore current staging release
         if: always() && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
@@ -350,7 +350,7 @@ jobs:
 
       - name: Run E2E against staging
         env:
-          PLAYWRIGHT_BASE_URL: https://staging.sokar.tech
+          PLAYWRIGHT_BASE_URL: https://staging.suppernote.com
         run: |
           cd apps/dashboard
           # Run only the functional E2E tests (not visual regression) against
@@ -365,8 +365,8 @@ jobs:
 
       - name: Run Connect E2E smoke against staging
         env:
-          PLAYWRIGHT_BASE_URL: https://staging.sokar.tech
-          API_URL: https://api-staging.sokar.tech
+          PLAYWRIGHT_BASE_URL: https://staging.suppernote.com
+          API_URL: https://api-staging.suppernote.com
         run: |
           cd apps/connect
           # La fiche publique est servie par Connect. Le widget de réservation

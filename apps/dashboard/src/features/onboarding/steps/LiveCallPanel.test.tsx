@@ -61,14 +61,14 @@ beforeEach(() => {
 
 async function startCall(props: Partial<Parameters<typeof LiveCallPanel>[0]> = {}) {
   render(<LiveCallPanel {...props} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Appeler Sokar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Appeler Suppernote' }));
   await screen.findByRole('button', { name: 'Raccrocher' });
 }
 
 describe('LiveCallPanel', () => {
   it('propose d’appeler, sans rien démarrer avant le clic', () => {
     render(<LiveCallPanel />);
-    expect(screen.getByRole('button', { name: 'Appeler Sokar' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Appeler Suppernote' })).toBeEnabled();
     expect(mocks.instances).toHaveLength(0);
   });
 
@@ -105,20 +105,20 @@ describe('LiveCallPanel', () => {
     const onUnavailable = vi.fn();
     render(<LiveCallPanel onUnavailable={onUnavailable} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Appeler Sokar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Appeler Suppernote' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/micro est bloqué/);
     expect(mocks.fetch).not.toHaveBeenCalled();
     expect(onUnavailable).not.toHaveBeenCalled();
     expect(session().dispose).toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Rappeler Sokar' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Rappeler Suppernote' })).toBeEnabled();
   });
 
   it('n’appelle pas quand la sauvegarde de la personnalité échoue', async () => {
     const beforeCall = vi.fn().mockRejectedValue(new Error('Enregistrement indisponible'));
     render(<LiveCallPanel beforeCall={beforeCall} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Appeler Sokar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Appeler Suppernote' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Enregistrement indisponible');
     expect(mocks.fetch).not.toHaveBeenCalled();
@@ -134,7 +134,7 @@ describe('LiveCallPanel', () => {
     const onUnavailable = vi.fn();
     render(<LiveCallPanel onUnavailable={onUnavailable} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Appeler Sokar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Appeler Suppernote' }));
 
     await waitFor(() => expect(onUnavailable).toHaveBeenCalledWith('Pas de fournisseur vocal.'));
     expect(mocks.connect).not.toHaveBeenCalled();
@@ -144,7 +144,7 @@ describe('LiveCallPanel', () => {
     mocks.fetch.mockResolvedValue({ ok: false, status: 429, json: async () => ({}) });
     render(<LiveCallPanel />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Appeler Sokar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Appeler Suppernote' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/Trop d’essais rapprochés/);
     expect(mocks.connect).not.toHaveBeenCalled();
@@ -161,7 +161,7 @@ describe('LiveCallPanel', () => {
     });
     render(<LiveCallPanel />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Appeler Sokar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Appeler Suppernote' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/appels d’essai pour aujourd’hui/);
   });
@@ -170,7 +170,7 @@ describe('LiveCallPanel', () => {
     mocks.connect.mockRejectedValue(new LiveCallError('busy', 'busy'));
     render(<LiveCallPanel />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Appeler Sokar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Appeler Suppernote' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/déjà en cours/);
   });
@@ -199,7 +199,7 @@ describe('LiveCallPanel', () => {
     expect(session().hangup).toHaveBeenCalled();
     expect(await screen.findByText('Appel terminé')).toBeInTheDocument();
     expect(onCompleted).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('button', { name: 'Rappeler Sokar' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Rappeler Suppernote' })).toBeEnabled();
   });
 
   it('ne valide pas l’essai si l’assistant n’a jamais parlé', async () => {
@@ -214,7 +214,7 @@ describe('LiveCallPanel', () => {
 
   it('raccroche à la fermeture du composant', async () => {
     const { unmount } = render(<LiveCallPanel />);
-    fireEvent.click(screen.getByRole('button', { name: 'Appeler Sokar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Appeler Suppernote' }));
     await screen.findByRole('button', { name: 'Raccrocher' });
     const current = session();
 

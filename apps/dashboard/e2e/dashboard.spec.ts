@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 /**
- * Garde-fou non-régression du dashboard Sokar.
+ * Garde-fou non-régression du dashboard Suppernote.
  *
  * Contexte : deux incidents client-visibles ont eu lieu en juillet 2026 :
  *  1. Un header analytics chevauchait les widgets à cause d'une règle CSS
@@ -108,7 +108,7 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
     await expect(
       page.getByRole('region', { name: 'Indicateurs clés' }).getByRole('article'),
     ).toHaveCount(4);
-    await expect(page.getByRole('region', { name: 'Activité Sokar' })).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Activité Suppernote' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Analyser l’impact' })).toHaveCount(0);
     if (page.viewportSize()!.width < 640) {
       await page.getByRole('combobox', { name: 'Période d’analyse' }).selectOption('30d');
@@ -142,7 +142,7 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
 
 const isRemoteTarget = Boolean(process.env.PLAYWRIGHT_BASE_URL);
 
-test.describe('Espace administration Sokar — preview local', () => {
+test.describe('Espace administration Suppernote — preview local', () => {
   test.skip(isRemoteTarget, 'Le mock API ne crée pas de session Clerk sur un serveur distant.');
   async function mockOperatorAccess(page: Page, allowed: boolean) {
     await page.route('**/api/proxy/admin/access', async (route) => {
@@ -158,7 +158,7 @@ test.describe('Espace administration Sokar — preview local', () => {
       await route.fulfill({
         status: 403,
         contentType: 'application/json',
-        body: JSON.stringify({ error: 'Sokar operator access required' }),
+        body: JSON.stringify({ error: 'Suppernote operator access required' }),
       });
     });
   }
@@ -225,7 +225,7 @@ test.describe('Espace administration Sokar — preview local', () => {
     await page.waitForURL('**/dashboard', { timeout: 15_000 });
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.getByRole('heading', { name: 'Pilotage' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Admin Sokar' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Admin Suppernote' })).toHaveCount(0);
   });
 });
 

@@ -33,7 +33,7 @@ const suspendedJob = {
 describe('processBillingNotification', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.DASHBOARD_URL = 'https://sokar.tech';
+    process.env.DASHBOARD_URL = 'https://suppernote.com';
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       id: 'rest-1',
       name: 'Le Bistrot',
@@ -56,7 +56,7 @@ describe('processBillingNotification', () => {
     expect(sendEmail).toHaveBeenCalledTimes(1);
     const sent = sendEmail.mock.calls[0][0];
     expect(sent.to).toBe('gerant@example.com');
-    expect(sent.html).toContain('Sokar a décroché 12 appels et pris 5 réservations');
+    expect(sent.html).toContain('Suppernote a décroché 12 appels et pris 5 réservations');
     expect(sent.usage).toEqual(
       expect.objectContaining({ sourceType: 'billing_notification', restaurantId: 'rest-1' }),
     );
@@ -82,7 +82,7 @@ describe('processBillingNotification', () => {
 
     expect(await processBillingNotification(suspendedJob, 'job-2')).toBe('sent');
     expect(sendEmail.mock.calls[0][0].subject).toBe(
-      'Le Bistrot : votre assistant Sokar ne répond plus',
+      'Le Bistrot : votre assistant Suppernote ne répond plus',
     );
   });
 

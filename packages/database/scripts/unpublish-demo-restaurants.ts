@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Unpublishes the Sokar Connect demo listings (`chez-sokar-*`).
+ * Unpublishes the Suppernote Connect demo listings (`chez-sokar-*`).
  *
  * `prisma/seed.ts` creates these listings so local/staging city pages
  * (`/restaurants/:city` requires at least 5 listings per city) have something to

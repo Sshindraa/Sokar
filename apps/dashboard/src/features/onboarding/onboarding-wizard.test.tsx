@@ -366,7 +366,7 @@ it('ne bloque pas les anciens comptes sur la tâche channels', () => {
   expect(visible.currentStep.key).toBe('connect-identity');
 });
 
-it('réserve la finalisation à la dernière étape de Sokar Connect', () => {
+it('réserve la finalisation à la dernière étape de Suppernote Connect', () => {
   mocks.state = getVisibleOnboardingState(createState());
   mocks.state.currentStep = mocks.state.steps.find((step) => step.key === 'connect-activation')!;
   mocks.state.steps = mocks.state.steps.map((step) => ({
@@ -409,10 +409,10 @@ it('termine Connect sans les anciennes tâches adresse et cuisine', () => {
   expect(visible.steps.map((step) => step.key)).not.toContain('connect-location');
 });
 
-it('transmet l’attribution du numéro Sokar à l’écran des canaux', () => {
+it('transmet l’attribution du numéro Suppernote à l’écran des canaux', () => {
   mocks.state = withCompleted(SOCLE);
   render(<OnboardingWizard />);
-  expect(screen.getByText('Numéro Sokar en cours d’attribution')).toBeInTheDocument();
+  expect(screen.getByText('Numéro Suppernote en cours d’attribution')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Configurer : Téléphone' })).toBeEnabled();
 });
 

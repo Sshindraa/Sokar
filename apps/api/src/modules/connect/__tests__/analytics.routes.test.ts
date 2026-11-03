@@ -1,5 +1,5 @@
 /**
- * Tests routes Sokar Connect — T8 (analytics events → queue).
+ * Tests routes Suppernote Connect — T8 (analytics events → queue).
  *
  * Couvre :
  * - POST /public/analytics/events 202 si event valide
@@ -17,7 +17,7 @@ import type { FastifyInstance } from 'fastify';
 
 let app: FastifyInstance;
 
-describe('Sokar Connect — Analytics T8', () => {
+describe('Suppernote Connect — Analytics T8', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     await redisCache.flushall();

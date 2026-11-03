@@ -152,7 +152,7 @@ export function CustomDomainCard({ restaurantId, customDomain, customDomainStatu
   }
 
   function copyCname() {
-    navigator.clipboard.writeText('sokar.tech');
+    navigator.clipboard.writeText('suppernote.com');
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -216,7 +216,7 @@ export function CustomDomainCard({ restaurantId, customDomain, customDomainStatu
                 <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 p-2 font-mono text-xs">
                   <span className="min-w-0 break-all text-muted-foreground">{customDomain}</span>
                   <span className="text-muted-foreground">→</span>
-                  <span className="min-w-0 break-all">sokar.tech</span>
+                  <span className="min-w-0 break-all">suppernote.com</span>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -294,7 +294,7 @@ export function CustomDomainCard({ restaurantId, customDomain, customDomainStatu
       <ConfirmDialog
         open={removeConfirmOpen}
         title="Retirer le domaine personnalisé ?"
-        description={`« ${customDomain ?? ''} » ne mènera plus à votre page de réservation. Vos clients devront utiliser l’adresse Sokar. Vous pourrez le configurer à nouveau plus tard.`}
+        description={`« ${customDomain ?? ''} » ne mènera plus à votre page de réservation. Vos clients devront utiliser l’adresse Suppernote. Vous pourrez le configurer à nouveau plus tard.`}
         confirmLabel="Retirer le domaine"
         variant="destructive"
         pending={removing}

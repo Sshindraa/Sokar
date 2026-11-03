@@ -150,7 +150,9 @@ describe('AdminMarginPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Télécharger le suivi interne/ }));
 
-    expect(await screen.findByText('Cet export est réservé à l’équipe Sokar.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Cet export est réservé à l’équipe Suppernote.'),
+    ).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
 

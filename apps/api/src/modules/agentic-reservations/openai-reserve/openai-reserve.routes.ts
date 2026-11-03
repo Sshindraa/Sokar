@@ -125,7 +125,8 @@ export async function openaiReserveRoutes(app: FastifyInstance): Promise<void> {
         tools: [
           {
             name: TOOL_NAME,
-            description: 'Open the Sokar restaurant reservation widget for the given restaurant.',
+            description:
+              'Open the Suppernote restaurant reservation widget for the given restaurant.',
             input_schema: {
               type: 'object',
               properties: {

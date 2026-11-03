@@ -45,7 +45,7 @@ describe('GiftCardPacksPage', () => {
     expect(mocks.listGiftCardPacks).toHaveBeenCalledTimes(2);
   });
 
-  it('demande une confirmation propre à Sokar avant de supprimer un pack', async () => {
+  it('demande une confirmation propre à Suppernote avant de supprimer un pack', async () => {
     const pack = {
       id: 'pack-1',
       name: 'Dîner pour deux',

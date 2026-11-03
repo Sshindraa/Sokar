@@ -1,6 +1,6 @@
 /**
  * Exemple next-level : conversation multi-tours avec un LLM (Mistral / Gemini / OpenAI)
- * branché sur l'API generic-agent de Sokar.
+ * branché sur l'API generic-agent de Suppernote.
  *
  * Prérequis (un seul suffit) :
  *   MISTRAL_API_KEY=... pnpm exec tsx scripts/agent-conversation.ts
@@ -198,7 +198,7 @@ async function main() {
   const runner = new SokarAgentRunner(client);
 
   log('Provider LLM : ' + llm.provider);
-  log('Sokar base URL : ' + SOKAR_BASE_URL + '\n');
+  log('Suppernote base URL : ' + SOKAR_BASE_URL + '\n');
 
   const userMessage = process.argv.slice(2).join(' ');
   if (userMessage) {
@@ -248,7 +248,7 @@ async function runRepl(runner: SokarAgentRunner, llm: LLMAdapter) {
       try {
         const result = await runner.run({ llm, userMessage, history });
         history = result.history;
-        log('Sokar : ' + result.finalMessage);
+        log('Suppernote : ' + result.finalMessage);
         log(`(outils exécutés : ${result.toolCallsCount})\n`);
       } catch (err) {
         console.error('\nErreur pendant la conversation :', err);

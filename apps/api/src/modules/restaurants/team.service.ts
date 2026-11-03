@@ -8,10 +8,10 @@ import { logger } from '../../shared/logger/pino';
  * Équipe d'un restaurant : invitations et rôles.
  *
  * Les invitations passent par les invitations d'organisation Clerk (e-mail, compte à créer ou à
- * rejoindre). Le rôle Sokar choisi par le propriétaire voyage dans les métadonnées publiques de
+ * rejoindre). Le rôle Suppernote choisi par le propriétaire voyage dans les métadonnées publiques de
  * l'invitation, que seul le serveur peut écrire ; Clerk les recopie sur l'appartenance de
  * l'invité à l'acceptation. Au premier appel de l'invité, on lit ce rôle et on crée sa
- * membership Sokar (`claimInvitedMembership`). Un rôle absent ou inconnu ne donne aucun accès, et
+ * membership Suppernote (`claimInvitedMembership`). Un rôle absent ou inconnu ne donne aucun accès, et
  * `OWNER` ne peut jamais être attribué par invitation.
  */
 export const INVITABLE_ROLES = ['MANAGER', 'STAFF', 'READ_ONLY'] as const;
@@ -363,7 +363,7 @@ export async function transferOwnership(input: {
     } catch {
       logger.warn(
         { accountId: input.accountId },
-        'Former owner remains in Clerk without Sokar access',
+        'Former owner remains in Clerk without Suppernote access',
       );
     }
   }
@@ -408,7 +408,7 @@ const claimMisses = new Map<string, number>();
 
 /**
  * Premier appel d'un invité : il appartient à l'organisation Clerk mais n'a pas encore de
- * membership Sokar. On lit le rôle porté par son invitation et on le rattache. Renvoie `null`
+ * membership Suppernote. On lit le rôle porté par son invitation et on le rattache. Renvoie `null`
  * (et ne rappelle pas Clerk pendant une minute) quand il n'y a rien à rattacher.
  */
 export async function claimInvitedMembership(input: {

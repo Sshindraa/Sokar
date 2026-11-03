@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Routes publiques Fastify.
+ * Suppernote Connect — Routes publiques Fastify.
  *
  * Préfixe : /public/r/:slug
  *
@@ -12,7 +12,7 @@
  * Pas de Clerk sur les routes publiques. La seule exception est la route
  * interne `/api/internal/connect-kpis`, qui exige une identité opérateur :
  * elle passe par le vhost public, donc « interne » ne protège rien.
- * CORS : origines sokar.tech (géré par plugins/cors.ts)
+ * CORS : origines suppernote.com (géré par plugins/cors.ts)
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -1287,7 +1287,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // ─── KPIs pilote P1 (réservés aux opérateurs Sokar) ───────────
+  // ─── KPIs pilote P1 (réservés aux opérateurs Suppernote) ───────────
   // GET /api/internal/connect-kpis : agrège les 4 critères go/no-go P1.
   // Même garde que /api/internal/pilot-kpis : la route est joignable depuis
   // Internet, « interne » ne décrit que son audience.

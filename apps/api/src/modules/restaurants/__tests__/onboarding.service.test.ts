@@ -11,9 +11,9 @@ import {
 } from '../onboarding.service';
 
 const baseEmpty = {
-  name: 'Le Bistrot Sokar',
+  name: 'Le Bistrot Suppernote',
   managerPhone: '+33600000002',
-  managerEmail: 'restaurant@sokar.tech',
+  managerEmail: 'restaurant@suppernote.com',
   openingHours: {},
   personality: null,
   phoneNumber: '+0000000000',
@@ -31,10 +31,10 @@ const answeredPractical = {
 };
 
 const fullRestaurant = {
-  name: 'Le Bistrot Sokar',
+  name: 'Le Bistrot Suppernote',
   phoneE164: '+33600000001',
   managerPhone: '+33600000002',
-  managerEmail: 'restaurant@sokar.tech',
+  managerEmail: 'restaurant@suppernote.com',
   floorStats,
   practicalInfo: answeredPractical,
   exposureSettings: { capacitySpecials: { serviceDurationMinutes: 90 } },
@@ -234,7 +234,7 @@ describe('applyOnboardingTransition', () => {
     }
   });
 
-  it('gère l’onboarding Sokar Connect : complétion et calcul des progrès indépendants', () => {
+  it('gère l’onboarding Suppernote Connect : complétion et calcul des progrès indépendants', () => {
     const emptyState = computeOnboardingState({ ...baseEmpty, phoneE164: '+33600000001' });
     expect(emptyState.voiceOnboardingDone).toBe(false);
     expect(emptyState.connectOnboardingDone).toBe(false);

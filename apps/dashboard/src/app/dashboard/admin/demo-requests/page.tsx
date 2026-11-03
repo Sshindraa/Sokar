@@ -61,7 +61,7 @@ function toDateTimeLocal(value: string) {
 
 /**
  * Suivi opérateur des demandes de démonstration. Les coordonnées ne sont visibles qu'aux
- * opérateurs Sokar : l'API les refuse aux autres comptes.
+ * opérateurs Suppernote : l'API les refuse aux autres comptes.
  */
 export default function DemoRequestsPage() {
   const { get, patch, post } = useApi();
@@ -144,7 +144,7 @@ export default function DemoRequestsPage() {
           Demandes de démonstration
         </h1>
         <p className="text-sm text-muted-foreground">
-          Prospects issus de la vitrine. Les coordonnées sont réservées à l’équipe Sokar.
+          Prospects issus de la vitrine. Les coordonnées sont réservées à l’équipe Suppernote.
         </p>
       </header>
 

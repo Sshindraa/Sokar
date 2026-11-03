@@ -3716,3 +3716,7 @@ Campagne `f94466d2`, même contenu que l'essai Outlook : acceptée par Resend et
 ### 2026-11-03 — Registre marketing : PR 637 livrée
 
 PR #637 fusionnée après CI verte et comptage de 0 entrée du registre en production, commit 93019bba. CI main, staging et smoke tests staging/production verts ; livraison production 41663952307, release 20261103T152924Z, snapshot pre présent. Configuration fichier API : MARKETING_SENDS_ENABLED non activé. PR #634 actualisée avec le texte de levée en ligne, reste en brouillon pour validation juridique ; contrôle avant envoi vert. Limite : la case en ligne ne vérifie pas la possession de l’adresse.
+
+### 2026-11-03 — Sokar devient Suppernote
+
+Décision de Hamza : la marque et le domaine changent (`sokar.tech` → `suppernote.com`). Zone Cloudflare créée, serveurs de noms posés chez IONOS. Branche `feat/marque-suppernote` : textes visibles, valeurs de repli, nginx, déploiement et redirections de l'ancien domaine (308 sur l'API). Les noms internes restent (`@sokar/*`, `/opt/sokar`, `X-Sokar-Site-ID`, `tech.sokar.ios`, « Chez Sokar »). Fusion conditionnée aux préalables de `docs/runbooks/migration-suppernote.md` (certificat, Clerk, e-mails, `.env`). Logo non remplacé.

@@ -206,7 +206,7 @@ describe('SettingsPage', () => {
     expect(screen.queryByText('Enregistré')).not.toBeInTheDocument();
   });
 
-  it('n’appelle plus Sokar « assistant téléphonique » quand l’abonnement est terminé', async () => {
+  it('n’appelle plus Suppernote « assistant téléphonique » quand l’abonnement est terminé', async () => {
     mocks.get.mockImplementation(async (path: string) => {
       if (path === 'restaurants/org_test') return RESTAURANT;
       if (path === 'restaurants/org_test/personality') return PERSONALITY;
@@ -218,7 +218,7 @@ describe('SettingsPage', () => {
     });
     render(<SettingsPage />);
 
-    expect(await screen.findByText(/Sokar ne répond plus aux appels/)).toBeInTheDocument();
+    expect(await screen.findByText(/Suppernote ne répond plus aux appels/)).toBeInTheDocument();
     expect(screen.queryByText(/assistant téléphonique/)).not.toBeInTheDocument();
   });
 

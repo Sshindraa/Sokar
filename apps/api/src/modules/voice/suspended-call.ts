@@ -2,7 +2,7 @@ import { telnyxFetch } from '../../shared/telnyx/http-agent';
 
 /**
  * Appel entrant d'un restaurant dont l'abonnement est terminé. Le restaurant renvoie souvent encore
- * sa ligne vers Sokar : sans réponse, ses clients appelleraient dans le vide. Sokar décroche, lit un
+ * sa ligne vers Suppernote : sans réponse, ses clients appelleraient dans le vide. Suppernote décroche, lit un
  * message court au nom du restaurant, puis raccroche ; aucune session vocale ni écriture métier.
  * Même mécanique que l'appel de test de l'onboarding (`client_state` porté par l'appel).
  */
