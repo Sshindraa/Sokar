@@ -134,3 +134,16 @@ it('annule les reprises au démontage et ne provisionne pas sans connexion', asy
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(synced).not.toHaveBeenCalled();
 });
+
+it('attend le délai Retry-After annoncé par un 429 avant de reprendre', async () => {
+  fetchMock
+    .mockResolvedValueOnce(new Response('{}', { status: 429, headers: { 'Retry-After': '5' } }))
+    .mockResolvedValueOnce({ ok: true });
+  render(<SyncOrganization />);
+  await tick();
+  await tick(4_000);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  await tick(1_000);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(synced).toHaveBeenCalledTimes(1);
+});
