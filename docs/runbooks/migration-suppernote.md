@@ -43,3 +43,9 @@ Garder le domaine renouvelé et les redirections au moins 12 mois, puis garder l
 ## Retour arrière pendant la transition
 
 L'ancien code refuse les adresses `suppernote.com` au démarrage. Revenir à une version antérieure à cette PR impose de restaurer aussi le `.env` d'avant (`*.bak-avant-suppernote-*`), puis `pm2 delete` et redémarrage. Le premier test de retour arrière du workflow staging échoue pour cette raison ; il passe dès que la release précédente contient cette PR.
+
+## Ne pas figer le staging sur le nouveau domaine avant la fusion
+
+Le code de `main` refuse `suppernote.com`. Si le `.env` de staging y passe avant la fusion, tout déploiement de `main` échoue en staging et la production ne reçoit plus rien (constaté le 3 novembre 2026 avec #606). Pour qualifier la branche : changer `.env` et `PUBLIC_API_URL_STAGING`, lancer `deploy-staging.yml` sur la branche, puis tout remettre et relancer `main`. Le passage définitif du staging se fait juste avant la fusion.
+
+Qualifié ainsi le 3 novembre 2026 : déploiement, smoke tests et E2E verts, retour arrière vert sur la branche. Non testés : connexion réelle, webhooks entrants.
