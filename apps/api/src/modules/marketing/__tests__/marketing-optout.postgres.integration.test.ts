@@ -12,6 +12,7 @@ import {
 import { previewMarketingAudience } from '../marketing-campaign.service';
 import { loadOptedOutCustomerIds } from '../marketing-opt-out.service';
 import { applyMarketingProviderEvent } from '../marketing-provider.service';
+import { ConsentService } from '../../rgpd/consent.service';
 import { ErasureService } from '../../rgpd/erasure.service';
 
 const url = process.env.MARKETING_OPTOUT_TEST_DATABASE_URL;
@@ -496,6 +497,61 @@ describe.skipIf(!url)('marketing opt-out on PostgreSQL', () => {
       customers: [replacement],
     });
     expect(result.optedOut.has(replacement.id)).toBe(true);
+  });
+
+  it('requires a new SMS consent for a profile recreated after erasure', async () => {
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+    const tag = randomUUID();
+    const phone = `+336${randomUUID().replace(/\D/g, '').padEnd(8, '0').slice(0, 8)}`;
+    const restaurant = await db.restaurant.create({
+      data: {
+        name: 'Legacy consent test',
+        managerPhone: '',
+        managerEmail: '',
+        phoneNumber: tag,
+        openingHours: {},
+      },
+    });
+    await db.customer.create({ data: { restaurantId: restaurant.id, phone, isVip: true } });
+    const consent = {
+      restaurantId: restaurant.id,
+      subjectHash: ConsentService.hashSubject(phone),
+      channel: 'WEB' as const,
+      context: 'test',
+      reservationProcessing: true,
+      transactionalSms: true,
+      transactionalEmail: false,
+      marketingOptIn: true,
+      privacyPolicyVersion: 'test',
+      consentedAt: new Date(),
+    };
+    await db.customerConsent.create({ data: consent });
+    const eligibleCount = async () =>
+      (
+        await previewMarketingAudience({
+          restaurantId: restaurant.id,
+          channel: 'SMS',
+          definition: {
+            version: 1,
+            operator: 'AND',
+            conditions: [{ field: 'isVip', op: 'EQ', value: true }],
+          },
+        })
+      ).eligibleCount;
+    expect(await eligibleCount()).toBe(1);
+
+    await new ErasureService(db).eraseSubject({ subject: phone, reason: 'TEST', actor: 'test' });
+    await db.customer.create({ data: { restaurantId: restaurant.id, phone, isVip: true } });
+
+    expect(await eligibleCount()).toBe(0);
+    expect(
+      await db.customerConsent.count({
+        where: { restaurantId: restaurant.id, subjectHash: consent.subjectHash },
+      }),
+    ).toBe(1);
+
+    await db.customerConsent.create({ data: consent });
+    expect(await eligibleCount()).toBe(1);
   });
 
   it('keeps withdrawal proof when a register write fails during a concurrent opt-in', async () => {

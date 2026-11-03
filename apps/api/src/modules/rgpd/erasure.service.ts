@@ -398,6 +398,16 @@ export class ErasureService {
         data: { callerPhone: null },
       });
       callsAnonymized = messageResult.count + callResult.count;
+      // Les consentements restent comme preuve, mais ne doivent plus autoriser de marketing si une
+      // fiche est recréée à la même adresse : il faudra un nouvel accord explicite.
+      // tenant-scoping: global — effacement RGPD d'un sujet sur tous les restaurants.
+      await tx.customerConsent.updateMany({
+        where: {
+          OR: [{ subjectHash }, { customerId: { in: crmCustomerIds } }],
+          marketingOptIn: true,
+        },
+        data: { marketingOptIn: false },
+      });
       consentsRetained = await tx.customerConsent.count({ where: { subjectHash } });
       await this.audit.record(
         {

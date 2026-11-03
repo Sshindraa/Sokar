@@ -3663,3 +3663,7 @@ La navigation bureau démarre en barre d’icônes ; le bouton de menu ou une ca
 ### 2026-11-03 — PR 620 : désinscription en erreur, deux fiches, fusion de main
 
 `POST /marketing/unsubscribe` répond 503 quand le registre d’opposition est indisponible (page « réessayer » pour le formulaire, JSON `MARKETING_OPTOUT_REGISTER_UNAVAILABLE` sinon) au lieu d’un 500. Le jeton est signé et sans état : le même lien permet de réessayer, la fiche est déjà bloquée, le nouvel essai réécrit le registre. Test PostgreSQL ajouté : deux fiches de même adresse, désinscription et inscription simultanées, sans défaut constaté (une inscription explicite lève l’opposition du registre par conception). `origin/main` fusionné, `Journal.md` gardé des deux côtés. Point à trancher côté produit : le consentement SMS historique (`CustomerConsent`) survit à l’effacement.
+
+### 2026-11-03 — Effacement : l'ancien accord SMS n'autorise plus le marketing
+
+Décision de Hamza : après un effacement, une fiche recréée au même numéro doit redonner son accord. L'effacement passe `marketingOptIn` à false sur les consentements du sujet ; les lignes restent comme preuve (date, version de politique, contexte), mais la trace de l'accord marketing initial n'y figure plus. Test PostgreSQL : éligible avant, exclu après effacement et recréation, de nouveau éligible après un nouvel accord ; il échoue sans le correctif. PR #620 en brouillon, envois et routes toujours fermés.
