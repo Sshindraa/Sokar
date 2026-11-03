@@ -17,7 +17,7 @@
 | On-call P1         | Hamza                           | Tout incident actif listé dans ce runbook    |
 | Backup on-call     | (à définir si l'équipe grandit) | Quand Hamza indispo                          |
 | Restaurant contact | Base clients Sokar (Dashboard)  | Pour chaque resto individuellement           |
-| DPO                | `dpo@sokar.tech`                | Tout incident PII (cf. §PII leak ci-dessous) |
+| DPO                | `dpo@suppernote.com`            | Tout incident PII (cf. §PII leak ci-dessous) |
 
 ## Canaux d'alerte
 
@@ -97,7 +97,7 @@ Source : `GET /metrics` (scrape Prometheus) ou endpoint interne
 3. Identifier tous les sujets affectés via `POST /api/rgpd/export`
 4. Communication transparente aux restos
 
-**Escalade** : Hamza + DPO (`dpo@sokar.tech`) → CNIL si confirmé.
+**Escalade** : Hamza + DPO (`dpo@suppernote.com`) → CNIL si confirmé.
 
 ---
 
@@ -370,7 +370,7 @@ KEEP_DB=1 bash scripts/database/test-restore-vierge.sh
 
    ```bash
    pm2 start sokar-api
-   curl -fsS https://api.sokar.tech/health
+   curl -fsS https://api.suppernote.com/health
    ```
 
 8. **Post-mortem** : documenter la cause de la perte, le RTO/RPO observé,
