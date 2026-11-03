@@ -3670,3 +3670,7 @@ Le registre d’opposition marketing (empreinte HMAC-SHA256, par restaurant et p
 ### 2026-11-03 — Effacement : l'ancien accord SMS n'autorise plus le marketing
 
 Décision de Hamza : après un effacement, une fiche recréée au même numéro doit redonner son accord. L'effacement passe `marketingOptIn` à false sur les consentements du sujet ; les lignes restent comme preuve (date, version de politique, contexte), mais la trace de l'accord marketing initial n'y figure plus. Test PostgreSQL : éligible avant, exclu après effacement et recréation, de nouveau éligible après un nouvel accord ; il échoue sans le correctif. PR #620 en brouillon, envois et routes toujours fermés.
+
+### 2026-11-03 — Registre d'opposition : analyse juridique et texte de la politique (PR 634)
+
+Note préparatoire IA dans `docs/legal/registre-opposition-marketing.md`, à faire valider par un professionnel du droit. Recommandations : intérêt légitime du restaurant, restaurant responsable et Sokar sous-traitant sous réserve d'une instruction écrite, empreinte personnelle et pseudonymisée, trois ans comme minimum recommandé par la CNIL et non comme obligation légale. Texte public corrigé (politique, API, annexe, runbook) : levée par le restaurant décrite, délai depuis la dernière opposition, droit d'opposition sans motif pour la prospection. Aucun comportement changé. À arbitrer avant un envoi réel : levée d'opposition par le restaurant, clé par restaurant, registre absent de l'export RGPD, nouvelle version de politique, accord de traitement.

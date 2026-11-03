@@ -92,9 +92,10 @@ const DATA_CATEGORIES = [
   {
     category: 'Registre d’opposition marketing',
     examples:
-      'Empreinte HMAC-SHA256 de l’adresse e-mail ou du numéro, canal, motif, source et date.',
+      'Empreinte de l’adresse e-mail ou du numéro (HMAC-SHA256), canal, motif, source et date.',
     purpose: 'Ne pas solliciter de nouveau une personne qui s’est opposée à un message marketing.',
-    legalBasis: 'Base légale à confirmer avant publication.',
+    legalBasis:
+      'Intérêt légitime du restaurant à respecter durablement l’opposition et à pouvoir le démontrer.',
     retention: PRIVACY_RETENTION.optOutRegister,
   },
   {
@@ -125,7 +126,7 @@ const USER_RIGHTS = [
   },
   {
     title: "Droit d'opposition",
-    body: 'Vous pouvez vous opposer au traitement de vos données pour des raisons tenant à votre situation particulière, ou retirer votre consentement à tout moment.',
+    body: 'Vous pouvez vous opposer à la prospection à tout moment, sans donner de motif. Vous pouvez aussi vous opposer à un traitement fondé sur l’intérêt légitime pour des raisons tenant à votre situation particulière, et retirer votre consentement à tout moment.',
   },
   {
     title: 'Droit à la limitation',

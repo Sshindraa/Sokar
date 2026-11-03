@@ -11,7 +11,7 @@ export const PRIVACY_DOCUMENT = {
   reservationProcessing:
     'La prise et la gestion d’une réservation reposent sur l’exécution du contrat avec le restaurant. Les confirmations suivent les choix de communication recueillis lors de la réservation. Le marketing nécessite un consentement distinct : une réservation ne vaut pas inscription à une campagne.',
   optOutRegister:
-    'Lorsque vous vous désinscrivez d’un message marketing ou que vous vous plaignez d’un tel message, Sokar conserve une empreinte cryptographique (HMAC-SHA256) de votre adresse e-mail ou de votre numéro de téléphone, par restaurant et par canal, avec le motif, la source et la date de l’opposition. Cette empreinte n’est pas rattachée à votre fiche client : elle survit à l’effacement de vos données, afin d’éviter de vous solliciter de nouveau. Il s’agit d’une donnée personnelle pseudonymisée. Une nouvelle inscription explicite de votre part lève cette opposition.',
+    'Lorsque vous vous désinscrivez d’un message marketing, que vous retirez votre accord auprès du restaurant ou que notre prestataire d’envoi nous signale votre plainte, Sokar conserve pour le compte de ce restaurant une empreinte de votre adresse e-mail ou de votre numéro de téléphone, calculée avec une clé secrète (HMAC-SHA256), avec le canal, le motif, la source et la date de l’opposition. Cette empreinte n’est pas enregistrée dans votre fiche client et subsiste après l’effacement de vos données. Elle est comparée à vos coordonnées avant un envoi marketing de ce restaurant et sert uniquement à éviter de vous solliciter de nouveau. Il s’agit d’une donnée personnelle pseudonymisée, pas d’une donnée anonyme. Ce traitement repose sur l’intérêt légitime du restaurant à respecter durablement votre opposition et à pouvoir le démontrer. Vous pouvez y accéder et, pour des raisons tenant à votre situation particulière, vous opposer à cette conservation auprès du restaurant ou à privacy@sokar.tech. L’opposition est levée si vous donnez de nouveau votre accord ou si le restaurant enregistre votre nouvel accord.',
   transfers:
     'Selon les fonctionnalités utilisées, certains prestataires peuvent traiter des données hors de l’Espace économique européen. Les pays concernés et les garanties de transfert doivent être précisés dans la documentation applicable au service ; leur vérification est en cours.',
   supplierInformation:
@@ -67,7 +67,7 @@ export const PRIVACY_RETENTION = {
   debugDialogue:
     'Les textes de diagnostic des tests autorisés ont une échéance de quatorze jours. La suppression effective et les copies restent à vérifier.',
   optOutRegister:
-    'L’empreinte du registre d’opposition est conservée trois ans à compter de l’opposition, puis purgée automatiquement.',
+    'L’empreinte du registre d’opposition est conservée trois ans à compter de la dernière opposition, durée minimale recommandée par la CNIL, puis purgée automatiquement. Elle est supprimée plus tôt si l’opposition est levée ou si le restaurant est supprimé du service.',
   billing:
     'Les pièces comptables et justificatifs soumis à cette obligation sont conservés dix ans à compter de la clôture de l’exercice. Cette durée ne s’applique pas à toutes les données de paiement.',
   logs: 'Les journaux techniques servent à la sécurité et au diagnostic des incidents. Leur durée effective de conservation reste à préciser.',

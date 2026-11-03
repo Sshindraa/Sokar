@@ -172,7 +172,10 @@ Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jo
   `pnpm --filter @sokar/api exec tsx scripts/backfill-marketing-opt-out-register.ts --dry-run` puis `--apply`
   (comptes seulement, jamais d'adresse). Le registre est une donnée personnelle pseudonymisée : il figure
   dans la politique (`PRIVACY_DOCUMENT.optOutRegister`) et dans l'annexe client (`privacy-client-annex.md`).
-  Base légale, rôles et durée restent à valider par Hamza.
+  Position recommandée (intérêt légitime du restaurant, Sokar sous-traitant, trois ans comme minimum recommandé
+  par la CNIL et non comme obligation légale) : `docs/legal/registre-opposition-marketing.md`. Analyse préparatoire
+  produite par une IA : à valider par Hamza et un professionnel du droit, comme les points à corriger avant
+  l'envoi réel (levée par le restaurant, clé par restaurant, droit d'accès).
 
 - **Limites acceptées (Hamza, 03/11/2026)** :
   - **Fiches partageant une adresse** : une nouvelle case cochée sur l'une lève l'opposition pour cette

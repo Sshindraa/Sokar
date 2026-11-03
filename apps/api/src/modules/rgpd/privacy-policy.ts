@@ -58,6 +58,7 @@ ${PRIVACY_DOCUMENT.reservationProcessing}
 - Demandes de démonstration : intérêt légitime à répondre aux professionnels intéressés
 - Sécurité du service : intérêt légitime à prévenir les abus et les accès non autorisés
 - Pièces comptables : obligations légales applicables
+- Registre d’opposition marketing : ${PRIVACY_DOCUMENT.optOutRegister}
 
 ## Durée de conservation
 ${PRIVACY_RETENTION_RULES.map((rule) => `- ${rule.category} : ${rule.description}`).join('\n')}
@@ -67,7 +68,7 @@ ${PRIVACY_RETENTION_RULES.map((rule) => `- ${rule.category} : ${rule.description
 - Effacement (Article 17) : POST /api/rgpd/erase
 - Portabilité (Article 20) : export JSON ci-dessus
 - Rectification et limitation : contactez ${PRIVACY_DOCUMENT.contact}
-- Opposition (Article 21) : selon les conditions légales applicables
+- Opposition (Article 21) : à tout moment et sans motif pour la prospection ; pour des raisons tenant à votre situation particulière pour un traitement fondé sur l’intérêt légitime
 - Retrait du consentement marketing : à tout moment, sans effet sur la licéité des traitements antérieurs
 - Réclamation : CNIL (cnil.fr)
 
