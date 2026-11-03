@@ -778,7 +778,7 @@ describe('marketing control plane routes', () => {
       vi.mocked(db.marketingPermissionEvent.create).mockResolvedValue({ id: 'event-1' } as never);
     }
 
-    it('ne confirme pas une désinscription quand le registre échoue', async () => {
+    it('formulaire navigateur : 503 invitant à réessayer, sans confirmer, quand le registre échoue', async () => {
       const app = await getApp();
       const token = await unsubscribeToken();
       mockWithdrawal();
@@ -786,15 +786,32 @@ describe('marketing control plane routes', () => {
       const response = await app.inject({
         method: 'POST',
         url: '/marketing/unsubscribe',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'text/html' },
         payload: `token=${encodeURIComponent(token)}`,
       });
-      expect(response.statusCode).toBe(500);
+      expect(response.statusCode).toBe(503);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.body).toContain('Veuillez réessayer');
+      expect(response.body).not.toContain('Vous êtes désinscrit');
       expect(db.marketingPermission.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           update: expect.objectContaining({ status: MarketingPermissionStatus.OPTED_OUT }),
         }),
       );
+    });
+
+    it('client JSON : 503 MARKETING_OPTOUT_REGISTER_UNAVAILABLE quand le registre échoue', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+      mockWithdrawal();
+      vi.mocked(db.marketingOptOut.upsert).mockRejectedValueOnce(new Error('database unavailable'));
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/unsubscribe',
+        payload: { token },
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({ error: 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE' });
     });
 
     it('un GET affiche une confirmation sans désinscrire (anti-virus, aperçus de lien)', async () => {
