@@ -154,7 +154,12 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void | Notifica
   if (!isRecipientAllowed(opts.to)) {
     // Refus certain : Resend n'est pas appelé, l'appelant ne relance pas, et l'adresse n'est jamais journalisée.
     logger.warn({ reason: 'recipient_not_allowlisted' }, 'Email refused by test allowlist');
-    return { outcome: 'failure_certain', provider: 'resend', channel: 'email' };
+    return {
+      outcome: 'failure_certain',
+      provider: 'resend',
+      channel: 'email',
+      reason: 'RECIPIENT_NOT_ALLOWLISTED',
+    };
   }
 
   // R1-2 : le SDK Resend n'expose pas de timeout. On borne l'attente côté

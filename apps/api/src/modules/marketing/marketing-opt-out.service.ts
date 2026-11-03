@@ -9,7 +9,8 @@ import { normalizeCustomerEmail, normalizeCustomerPhone } from '../customers/cus
  * It keeps only a keyed hash of the address, per restaurant and channel, and is NOT tied to the
  * customer record: erasing a customer must not make a person who objected solicitable again. It is
  * used to exclude, never to send. A plain SHA-256 of an address can be found back by dictionary, hence
- * the HMAC with a server key.
+ * the HMAC with a server key. That key is derived per restaurant, so the same address cannot be
+ * linked between restaurants from the table alone.
  */
 
 /** Recommended minimum for an opposition list (CNIL); confirmed by the restaurant owner on 2026-10-23. */
@@ -39,6 +40,7 @@ function normalizeAddress(channel: MarketingChannel, address: string): string | 
  * cannot be normalized: the caller decides whether that blocks a send or only skips a write.
  */
 export function marketingOptOutHash(
+  restaurantId: string,
   channel: MarketingChannel,
   address: string | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
@@ -47,7 +49,10 @@ export function marketingOptOutHash(
   if (!secret || !address) return null;
   const normalized = normalizeAddress(channel, address);
   if (!normalized) return null;
-  return createHmac('sha256', secret).update(`${channel}:${normalized}`).digest('hex');
+  const restaurantKey = createHmac('sha256', secret)
+    .update(`marketing-opt-out:${restaurantId}`)
+    .digest();
+  return createHmac('sha256', restaurantKey).update(`${channel}:${normalized}`).digest('hex');
 }
 
 export function marketingOptOutRetainUntil(optedOutAt: Date): Date {
@@ -71,7 +76,7 @@ export async function registerMarketingOptOut(
   writer: OptOutWriter = db,
 ): Promise<RegisterOptOutResult> {
   if (!isMarketingOptOutRegisterConfigured()) return 'SKIPPED_NO_KEY';
-  const addressHash = marketingOptOutHash(input.channel, input.address);
+  const addressHash = marketingOptOutHash(input.restaurantId, input.channel, input.address);
   if (!addressHash) return 'SKIPPED_NO_ADDRESS';
   const optedOutAt = input.occurredAt ?? new Date();
   const retainUntil = marketingOptOutRetainUntil(optedOutAt);
@@ -109,7 +114,7 @@ export async function clearMarketingOptOut(
   },
   writer: OptOutWriter = db,
 ): Promise<number> {
-  const addressHash = marketingOptOutHash(input.channel, input.address);
+  const addressHash = marketingOptOutHash(input.restaurantId, input.channel, input.address);
   if (!addressHash) return 0;
   const result = await writer.marketingOptOut.deleteMany({
     where: { restaurantId: input.restaurantId, channel: input.channel, addressHash },
@@ -141,7 +146,7 @@ export async function isMarketingOptedOut(
   input: { restaurantId: string; channel: MarketingChannel; address: string | null | undefined },
   reader: OptOutWriter = db,
 ): Promise<boolean> {
-  const addressHash = marketingOptOutHash(input.channel, input.address);
+  const addressHash = marketingOptOutHash(input.restaurantId, input.channel, input.address);
   if (!addressHash) return false;
   const found = await findRegisteredOptOutHashes(
     {
@@ -182,7 +187,7 @@ export async function loadOptedOutCustomerIds(
   const hashByCustomer = new Map<string, string>();
   for (const customer of input.customers) {
     const address = input.channel === 'EMAIL' ? customer.emailNormalized : customer.phone;
-    const hash = marketingOptOutHash(input.channel, address);
+    const hash = marketingOptOutHash(input.restaurantId, input.channel, address);
     if (hash) hashByCustomer.set(customer.id, hash);
   }
   const registered = await findRegisteredOptOutHashes(

@@ -3,11 +3,13 @@ import {
   MarketingChannel,
   MarketingPermissionStatus,
   type MarketingPermission,
+  type Prisma,
 } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { logger } from '../../shared/logger/pino';
 import {
   clearMarketingOptOut,
+  isMarketingOptedOut,
   registerMarketingOptOut,
   type MarketingOptOutReason,
 } from './marketing-opt-out.service';
@@ -32,6 +34,11 @@ export type MarketingPermissionInput = {
   proofHash?: string | null;
   /** Authenticated team member who recorded a manual entry; absent for the customer's own acts. */
   actorUserId?: string | null;
+  /**
+   * Set only by the person's own gesture (booking box, confirmation link). Without it, an opt-in never
+   * lifts a registered opposition: it is refused with MARKETING_OPPOSITION_REGISTERED.
+   */
+  liftsOpposition?: boolean;
   occurredAt?: Date;
 };
 
@@ -125,8 +132,9 @@ export function resolveMarketingPermission(args: {
 async function assertCustomerTenant(
   customerId: string,
   restaurantId: string,
+  writer: Pick<Prisma.TransactionClient, 'customer'> = db,
 ): Promise<{ phone?: string | null; emailNormalized?: string | null }> {
-  const customer = await db.customer.findFirst({
+  const customer = await writer.customer.findFirst({
     where: { id: customerId, restaurantId, archivedAt: null },
     select: { id: true, phone: true, emailNormalized: true },
   });
@@ -135,22 +143,27 @@ async function assertCustomerTenant(
 }
 
 function optOutReasonFor(source: string): MarketingOptOutReason {
-  return source === 'UNSUBSCRIBE_LINK' || source === 'UNSUBSCRIBE' ? 'UNSUBSCRIBE' : 'MANUAL';
+  return source === 'UNSUBSCRIBE_LINK' || source === 'UNSUBSCRIBE' || source === 'SMS_STOP'
+    ? 'UNSUBSCRIBE'
+    : 'MANUAL';
 }
 
 /**
- * Keeps the opt-out register in step with the permission. It never fails the permission change: a
- * withdrawal is recorded first, and the register is an additional protection (errors are logged
- * without any address).
+ * A withdrawal blocks the current profile first. Report a failure if the independent register
+ * could not be updated, so the caller does not mistake that partial protection for completion.
  */
-async function syncOptOutRegister(args: {
-  restaurantId: string;
-  channel: MarketingChannel;
-  status: MarketingPermissionStatus;
-  source: string;
-  occurredAt: Date;
-  contact: { phone?: string | null; emailNormalized?: string | null };
-}): Promise<void> {
+async function syncOptOutRegister(
+  args: {
+    restaurantId: string;
+    channel: MarketingChannel;
+    status: MarketingPermissionStatus;
+    source: string;
+    occurredAt: Date;
+    liftsOpposition: boolean;
+    contact: { phone?: string | null; emailNormalized?: string | null };
+  },
+  writer: Pick<Prisma.TransactionClient, 'marketingOptOut'>,
+): Promise<void> {
   if (
     args.status !== MarketingPermissionStatus.OPTED_OUT &&
     args.status !== MarketingPermissionStatus.OPTED_IN
@@ -158,28 +171,38 @@ async function syncOptOutRegister(args: {
     return;
   }
   const address = args.channel === 'EMAIL' ? args.contact.emailNormalized : args.contact.phone;
+  let opposed = false;
   try {
     if (args.status === MarketingPermissionStatus.OPTED_OUT) {
-      const outcome = await registerMarketingOptOut({
-        restaurantId: args.restaurantId,
-        channel: args.channel,
-        address,
-        reason: optOutReasonFor(args.source),
-        source: args.source,
-        occurredAt: args.occurredAt,
-      });
+      const outcome = await registerMarketingOptOut(
+        {
+          restaurantId: args.restaurantId,
+          channel: args.channel,
+          address,
+          reason: optOutReasonFor(args.source),
+          source: args.source,
+          occurredAt: args.occurredAt,
+        },
+        writer,
+      );
+      // No address on this channel: nothing to register, the profile is already blocked.
       if (outcome === 'SKIPPED_NO_KEY') {
-        logger.warn(
-          { restaurantId: args.restaurantId, channel: args.channel },
-          '[marketing-opt-out] register key missing: opposition not registered',
-        );
+        throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
       }
+    } else if (!args.liftsOpposition) {
+      opposed = await isMarketingOptedOut(
+        { restaurantId: args.restaurantId, channel: args.channel, address },
+        writer,
+      );
     } else {
-      await clearMarketingOptOut({
-        restaurantId: args.restaurantId,
-        channel: args.channel,
-        address,
-      });
+      await clearMarketingOptOut(
+        {
+          restaurantId: args.restaurantId,
+          channel: args.channel,
+          address,
+        },
+        writer,
+      );
     }
   } catch (error) {
     logger.error(
@@ -190,14 +213,14 @@ async function syncOptOutRegister(args: {
       },
       '[marketing-opt-out] register not updated',
     );
+    throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
   }
+  if (opposed) throw new Error('MARKETING_OPPOSITION_REGISTERED');
 }
 
 export async function upsertMarketingPermission(
   input: MarketingPermissionInput,
 ): Promise<MarketingPermission> {
-  const contact = await assertCustomerTenant(input.customerId, input.restaurantId);
-
   const channel = normalizeChannel(input.channel);
   const source = normalizeText(input.source, 'source', 80);
   const occurredAt = normalizeOccurredAt(input.occurredAt);
@@ -217,7 +240,7 @@ export async function upsertMarketingPermission(
     throw new Error('channel opt-in requires proofVersion and proof');
   }
 
-  const permission = await db.marketingPermission.upsert({
+  const permissionArgs = {
     where: { customerId_channel: { customerId: input.customerId, channel } },
     create: {
       restaurantId: input.restaurantId,
@@ -238,33 +261,57 @@ export async function upsertMarketingPermission(
       consentedAt: input.status === MarketingPermissionStatus.OPTED_IN ? occurredAt : null,
       withdrawnAt: input.status === MarketingPermissionStatus.OPTED_OUT ? occurredAt : null,
     },
-  });
+  };
 
-  await db.marketingPermissionEvent.create({
-    data: {
-      restaurantId: input.restaurantId,
-      customerId: input.customerId,
-      permissionId: permission.id,
-      channel,
-      status: input.status,
-      source,
-      proofVersion,
-      proofHash,
-      proofText,
-      actorUserId,
-      occurredAt,
-    },
-  });
-
-  await syncOptOutRegister({
-    restaurantId: input.restaurantId,
+  const eventData = {
+    customerId: input.customerId,
     channel,
     status: input.status,
     source,
+    proofVersion,
+    proofHash,
+    proofText,
+    actorUserId,
     occurredAt,
-    contact,
-  });
+  };
 
+  let registerFailed = false;
+  const permission = await db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM customers WHERE id = ${input.customerId} AND restaurant_id = ${input.restaurantId} FOR UPDATE`;
+    const contact = await assertCustomerTenant(input.customerId, input.restaurantId, tx);
+    const permission = await tx.marketingPermission.upsert({
+      ...permissionArgs,
+      where: { ...permissionArgs.where, restaurantId: input.restaurantId },
+    });
+    await tx.marketingPermissionEvent.create({
+      data: { ...eventData, restaurantId: input.restaurantId, permissionId: permission.id },
+    });
+
+    // A failed PostgreSQL write must be rolled back before committing the withdrawal and proof.
+    await tx.$executeRaw`SAVEPOINT marketing_register`;
+    try {
+      await syncOptOutRegister(
+        {
+          restaurantId: input.restaurantId,
+          channel,
+          status: input.status,
+          source,
+          occurredAt,
+          liftsOpposition: input.liftsOpposition === true,
+          contact,
+        },
+        tx,
+      );
+    } catch (error) {
+      if (input.status !== MarketingPermissionStatus.OPTED_OUT) throw error;
+      await tx.$executeRaw`ROLLBACK TO SAVEPOINT marketing_register`;
+      registerFailed = true;
+    }
+    await tx.$executeRaw`RELEASE SAVEPOINT marketing_register`;
+
+    return permission;
+  });
+  if (registerFailed) throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
   await appendCustomerTimelineEvent({
     restaurantId: input.restaurantId,
     customerId: input.customerId,

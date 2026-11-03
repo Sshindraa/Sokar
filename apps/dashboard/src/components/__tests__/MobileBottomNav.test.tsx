@@ -37,8 +37,8 @@ vi.mock('next-intl', () => ({
     const map: Record<string, string> = {
       overview: 'Pilotage',
       service: 'Service',
-      live: 'Live',
-      edition: 'Édition',
+      live: 'Service en direct',
+      edition: 'Édition du plan',
       calls: 'Appels',
       reservations: 'Réservations',
       briefing: 'Briefing',
@@ -92,7 +92,7 @@ describe('MobileBottomNav', () => {
     expect(screen.getByRole('link', { name: /Réservations/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Clients/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Plus/i })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Service/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Service en direct' })).not.toBeInTheDocument();
 
     expect(container.querySelector('.dashboard-mobile-nav__svg')).not.toBeInTheDocument();
     expect(
@@ -109,7 +109,7 @@ describe('MobileBottomNav', () => {
     const headings = within(menu)
       .getAllByRole('heading', { level: 3 })
       .map((heading) => heading.textContent);
-    expect(headings).toEqual(['Service', 'Clients', 'Marketing', 'Offres', 'Canaux', 'Réglages']);
+    expect(headings).toEqual(['Service', 'Clients', 'Marketing', 'Offres', 'Canaux']);
     expect(within(menu).getByRole('link', { name: 'Appels' })).toHaveAttribute(
       'href',
       '/dashboard/calls',
@@ -263,13 +263,13 @@ describe('MobileBottomNav', () => {
     pathnameState.value = '/dashboard/floor-plan';
     const { rerender } = render(<MobileBottomNav />);
 
-    const liveLink = screen.getByRole('link', { name: 'Live' });
-    const editionLink = screen.getByRole('link', { name: 'Édition' });
+    const liveLink = screen.getByRole('link', { name: 'Service en direct' });
+    const editionLink = screen.getByRole('link', { name: 'Édition du plan' });
     expect(screen.getByRole('navigation', { name: 'Navigation Salle' })).toBeInTheDocument();
     expect(liveLink).toHaveAttribute('aria-current', 'page');
     expect(editionLink).not.toHaveAttribute('aria-current');
     expect(screen.queryByRole('button', { name: /Plus/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Service/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('link')).toHaveLength(2);
 
     searchParamsState.value = 'view=edit-plan';
     rerender(<MobileBottomNav />);
@@ -333,10 +333,7 @@ describe('MobileBottomNav', () => {
     expect(screen.getByText('Campagnes')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Vue d’ensemble' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Créer une offre' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Réglages/i })).toHaveClass(
-      'col-span-2',
-      'md:col-span-3',
-    );
+    expect(screen.queryByRole('link', { name: /Réglages/i })).not.toBeInTheDocument();
 
     // Close menu
     const closeButtons = screen.getAllByRole('button', { name: /Fermer/i });
@@ -386,7 +383,7 @@ describe('MobileBottomNav', () => {
       render(<MobileBottomNav />);
 
       expect(screen.getByRole('link', { name: /Réservations/ })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /Live/ })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Service en direct' })).toBeInTheDocument();
       expect(screen.queryAllByText('Pilotage')).toHaveLength(0);
       expect(screen.queryAllByText('Clients')).toHaveLength(0);
       expect(screen.queryByRole('button', { name: /Plus/ })).not.toBeInTheDocument();
@@ -398,8 +395,8 @@ describe('MobileBottomNav', () => {
       pathnameState.value = '/dashboard/floor-plan';
       render(<MobileBottomNav />);
 
-      expect(screen.getByRole('link', { name: /Live/ })).toBeInTheDocument();
-      expect(screen.queryAllByText('Édition')).toHaveLength(0);
+      expect(screen.getByRole('link', { name: 'Service en direct' })).toBeInTheDocument();
+      expect(screen.queryAllByText('Édition du plan')).toHaveLength(0);
     });
 
     it('un responsable garde le menu complet', () => {

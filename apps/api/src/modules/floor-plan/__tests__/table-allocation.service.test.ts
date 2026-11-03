@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import type { Table, Reservation, AgenticHold, PrismaClient } from '@prisma/client';
 import { TableAllocationService, TableAllocationError } from '../table-allocation.service.js';
+import { matchesWhere } from '../../../test/prisma-where';
 
 type MockTable = Table & {
   section: { id: string; name: string; position: number } | null;
@@ -42,6 +43,7 @@ function makeMockPrisma(
 
   const prisma = {
     restaurantExposureSettings: { findUnique: async () => null },
+    restaurant: { findUnique: async () => ({ timezone: 'Europe/Paris' }) },
     floorPlan: {
       findFirst: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
@@ -161,6 +163,10 @@ function makeMockPrisma(
       },
     },
     reservation: {
+      findMany: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        return Array.from(reservations.values()).filter((r) => matchesWhere(r, where));
+      },
       findFirst: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
         const restaurantId = where.restaurantId as string | undefined;
@@ -236,6 +242,10 @@ function makeMockPrisma(
       create: async (args: unknown) => args,
     },
     agenticHold: {
+      findMany: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        return Array.from(holds.values()).filter((h) => matchesWhere(h, where));
+      },
       findFirst: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
         const restaurantId = where.restaurantId as string | undefined;
