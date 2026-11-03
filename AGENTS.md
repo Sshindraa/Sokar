@@ -45,7 +45,7 @@ sokar/
 6. Git can be unstable on this Mac when multiple IDEs are open. Before bulk git ops, inspect active git/IDE processes and prefer scoped staging.
 7. Session start: read the **`## TODOs actifs` section only** of `docs/obsidian/Context.md` (`sed -n '/^## TODOs actifs/,/^## Décisions récentes/p' docs/obsidian/Context.md`) plus the **last ~3 entries of `docs/obsidian/Journal.md`** (`tail -3`). Open the rest of `Context.md` only when you need a past decision, and never `cat` a whole vault file: these are append-only logs and reading them in full costs tens of thousands of tokens. The vault is cross-session memory; AGENTS.md is repo-specific, the vault is the running log.
 8. After any significant change (architecture, schema, provider, feature flag, API route, decision, legacy removal), update the vault. Do not wait to be asked. Append a dated entry to `docs/obsidian/Journal.md` (the full log). Touch `docs/obsidian/Context.md` only for a TODO or a current-state change, and only with a decision — **never** an activity entry, which belongs in `Journal.md`. Keep `Context.md` under ~8 Ko; `scripts/quality/check-vault-size.sh` warns at pre-push.
-9. After committing a change on a working branch, run `pnpm pr:submit`: it pushes the branch and creates or reuses its PR. It does not enable auto-merge; merging stays a human decision. Never push directly to `main`.
+9. After committing a change on a working branch, run `pnpm pr:submit`: it pushes the branch and creates or reuses its PR. It enables squash auto-merge: the PR merges by itself once the required checks are green (`PR_NO_AUTO_MERGE=1 pnpm pr:submit` to keep it open for review, e.g. DB migration, payment, auth). Never push directly to `main` (GitHub branch protection refuses it anyway).
 
 ## Token budget
 
@@ -78,7 +78,7 @@ pnpm db:studio  # Prisma Studio
 # Agent
 hermes          # interactive agent
 hermes -z "task" # one-shot task
-pnpm pr:submit  # push branch, create or reuse its PR (no auto-merge)
+pnpm pr:submit  # push branch, create or reuse its PR, squash auto-merge when CI is green
 ```
 
 ## Code conventions
