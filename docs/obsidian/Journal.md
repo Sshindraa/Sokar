@@ -3720,3 +3720,10 @@ PR #637 fusionnée après CI verte et comptage de 0 entrée du registre en produ
 ### 2026-11-03 — Sokar devient Suppernote
 
 Décision de Hamza : la marque et le domaine changent (`sokar.tech` → `suppernote.com`). Zone Cloudflare créée, serveurs de noms posés chez IONOS. Branche `feat/marque-suppernote` : textes visibles, valeurs de repli, nginx, déploiement et redirections de l'ancien domaine (308 sur l'API). Les noms internes restent (`@sokar/*`, `/opt/sokar`, `X-Sokar-Site-ID`, `tech.sokar.ios`, « Chez Sokar »). Fusion conditionnée aux préalables de `docs/runbooks/migration-suppernote.md` (certificat, Clerk, e-mails, `.env`). Logo non remplacé.
+
+### 2026-11-03 — Relais Suppernote
+
+Fait : zone Cloudflare `suppernote.com` en Full (strict), certificat d'origine sur le VPS, `staging` et `api-staging` en DNS, branche qualifiée en staging puis staging remis sur `sokar.tech` ; Resend `suppernote.com` vérifié ; Workspace en alias gratuit, Gmail activé, MX/SPF/DMARC Google, réception de `hamza@suppernote.com` confirmée. Clerk lu, non changé.
+Reste : webhooks, app iOS, DNS de production, créneau de bascule, Clerk (`Change domain` coupe la connexion), `.env`, fusion de la PR 640, Search Console, CNAME clients. `news.suppernote.com` refusé par la limite Resend. `www`, `api` et `*` absents de la zone ; `https://suppernote.com` échoue encore au TLS.
+Fichiers : `docs/runbooks/migration-suppernote.md`, `infra/nginx/sokar.conf`, `apps/api/src/env.ts`, `apps/ios/Sokar/SokarApp.swift`.
+Questions : clé Clerk `sk_test` affichée dans une session, à renouveler ; compte Clerk au nom d'Ismail Harrak et offre Student ; domaine principal Workspace ; crédit OpenRouter bas.
