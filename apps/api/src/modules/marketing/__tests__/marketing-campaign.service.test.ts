@@ -646,5 +646,14 @@ describe('marketing campaign control plane', () => {
     ).toBe(
       'Réservez : <a href="https://sokar.tech/book/chez-sokar?a=1&amp;b=2">https://sokar.tech/book/chez-sokar?a=1&amp;b=2</a>.<br>&lt;script&gt;x&lt;/script&gt; (<a href="https://exemple.test/u?token=abc">https://exemple.test/u?token=abc</a>)',
     );
+
+    expect(
+      toMarketingHtml('Réservez : https://sokar.tech/book?a=1&b=2. Autre : https://ex.test', {
+        'https://sokar.tech/book?a=1&b=2': 'Réserver une table',
+      }),
+    ).toBe(
+      'Réservez : <a href="https://sokar.tech/book?a=1&amp;b=2">Réserver une table</a>. ' +
+        'Autre : <a href="https://ex.test">https://ex.test</a>',
+    );
   });
 });

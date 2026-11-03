@@ -3674,3 +3674,10 @@ Décision de Hamza : après un effacement, une fiche recréée au même numéro 
 ### 2026-11-03 — Registre d'opposition : analyse juridique et texte de la politique (PR 634)
 
 Note préparatoire IA dans `docs/legal/registre-opposition-marketing.md`, à faire valider par un professionnel du droit. Recommandations : intérêt légitime du restaurant, restaurant responsable et Sokar sous-traitant sous réserve d'une instruction écrite, empreinte personnelle et pseudonymisée, trois ans comme minimum recommandé par la CNIL et non comme obligation légale. Texte public corrigé (politique, API, annexe, runbook) : levée par le restaurant décrite, délai depuis la dernière opposition, droit d'opposition sans motif pour la prospection. Aucun comportement changé. À arbitrer avant un envoi réel : levée d'opposition par le restaurant, clé par restaurant, registre absent de l'export RGPD, nouvelle version de politique, accord de traitement.
+### 2026-11-03 — Marketing : un envoi refusé ne consomme plus la limite de fréquence
+
+Constat de l'essai staging (trois refus ont amené un client à 3/3 sans aucun e-mail reçu). Le worker rend le créneau quand le message n'est certainement pas parti : refus de la liste blanche, refus de Resend, pas de contact. Un résultat incertain garde son créneau. Le motif `RECIPIENT_NOT_ALLOWLISTED` remplace `PROVIDER_REFUSED` pour la liste blanche, et une adresse dans une erreur fournisseur est masquée. Aucun schéma ni réglage changé.
+
+### 2026-11-03 — E-mail marketing : liens lisibles et pied de page
+
+Après l'essai staging classé en indésirable par Outlook (SPF, DKIM et DMARC réussis, `SCL` 5) : les liens de réservation et de désinscription s'affichent « Réserver une table » et « Se désinscrire », et un pied de page donne le restaurant, son adresse et la raison du message. Effet sur le classement non mesuré : nouvel essai à faire après déploiement sur staging.
