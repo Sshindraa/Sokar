@@ -3732,3 +3732,7 @@ Questions : clé Clerk `sk_test` affichée dans une session, à renouveler ; com
 ### 2026-11-03 — Suppernote : branche à jour, contrôles en lecture seule
 
 PR #640 mise à jour avec `main` (merge `0d2b5186`, sans conflit, poussé). Production lue sans écriture : 3 campagnes marketing, toutes `Chez Sokar`, envoyées le 22/10 (avant `news.sokar.tech`) ; aucun envoi réel, donc remplacer `news.sokar.tech` par `news.suppernote.com` ne casse rien. Clé Stripe de production en `sk_live` ; `reservation_payments` et `stripe_webhook_events` vides : les 3 paiements de test ne sont pas dans notre base, la cause se lit dans le tableau de bord Stripe. Restent à Hamza : renouvellement de la clé Clerk `sk_test`, propriétaire du compte Clerk, retrait de `news.sokar.tech` chez Resend, recharge OpenRouter.
+
+### 2026-11-03 — Suppernote : tests e-mail, Resend et Stripe en attente
+
+Deux e-mails de test envoyés depuis `hello@suppernote.com` vers `privacy@` et `hello@suppernote.com` : « Delivered » dans Resend, reçus selon Hamza. Resend : `news.sokar.tech` toujours en place (limite de 3 domaines), sa suppression n'a pas été faite ; `news.suppernote.com` pas ajouté. Stripe : session non ouverte dans le navigateur intégré, les 3 paiements de test restent à lire. Envois marketing coupés (`false` en staging, absent en production). Alertes `CRITICAL` répétées vers `hamza@sokar.tech` (`openrouter-credit`, `gift-card-finance`, `dead-letter`, `call-recovery`, `confirmation-sms`) : causes non examinées, sauf `openrouter-credit` (crédit à 0,93 $).
