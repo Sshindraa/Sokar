@@ -306,6 +306,7 @@ describe('marketing campaign worker', () => {
         name: 'Chez Sokar',
         slug: 'chez-sokar',
         managerEmail: 'manager@chez-sokar.test',
+        formattedAddress: '1 rue de Test, 75001 Paris',
       },
     } as never);
     vi.mocked(db.campaignMessage.findMany)
@@ -340,7 +341,10 @@ describe('marketing campaign worker', () => {
       expect.objectContaining({
         to: 'alice@example.com',
         subject: 'Une table vous attend',
-        html: `Bonjour Alice<br>Se désinscrire : <a href="${unsubscribeUrl}">${unsubscribeUrl}</a>`,
+        html:
+          `Bonjour Alice<br>Se désinscrire : <a href="${unsubscribeUrl}">Se désinscrire</a>` +
+          '<br><br>Chez Sokar, 1 rue de Test, 75001 Paris<br>' +
+          'Vous recevez ce message car vous avez accepté de recevoir les actualités de ce restaurant par e-mail.',
         headers: {
           'List-Unsubscribe': `<${unsubscribeUrl}>`,
           'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',

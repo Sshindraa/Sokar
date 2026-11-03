@@ -21,6 +21,7 @@ import {
   remainingDailyEmailBudget,
   TARGET_SERVICE_FULL,
   renderMarketingTemplate,
+  marketingEmailFooter,
   toMarketingHtml,
 } from './marketing-campaign.service';
 import { isTargetServiceFull } from './fill-service.service';
@@ -396,7 +397,12 @@ async function sendOne(
     channel: MarketingChannelCode;
     subject: string | null;
     bodyTemplate: string;
-    restaurant: { name: string; slug: string | null; managerEmail: string };
+    restaurant: {
+      name: string;
+      slug: string | null;
+      managerEmail: string;
+      formattedAddress?: string | null;
+    };
   },
   message: {
     id: string;
@@ -456,7 +462,10 @@ async function sendOne(
         await deps.sendEmail({
           to: message.customer.emailNormalized,
           subject: campaign.subject ?? campaign.restaurant.name,
-          html: toMarketingHtml(rendered),
+          html: toMarketingHtml(`${rendered}\n\n${marketingEmailFooter(campaign.restaurant)}`, {
+            [context.reservationLink]: 'Réserver une table',
+            [context.unsubscribeUrl]: 'Se désinscrire',
+          }),
           from: marketingFromHeader(campaign.restaurant.name, deps.marketingEmailFrom),
           replyTo: normalizeCustomerEmail(campaign.restaurant.managerEmail),
           // Désinscription en un clic (RFC 8058) : Gmail et Outlook affichent un bouton natif.
@@ -506,7 +515,11 @@ export async function processMarketingCampaignJob(
   const now = validNow(dependencies.now());
   const campaign = await dependencies.db.marketingCampaign.findFirst({
     where: { id: job.data.campaignId, restaurantId: job.data.restaurantId },
-    include: { restaurant: { select: { name: true, slug: true, managerEmail: true } } },
+    include: {
+      restaurant: {
+        select: { name: true, slug: true, managerEmail: true, formattedAddress: true },
+      },
+    },
   });
   if (!campaign) return { processed: 0, accepted: 0, failed: 0 };
   if (
@@ -758,7 +771,11 @@ export async function processMarketingCampaignJob(
               dependencies.db,
             ).catch((releaseError) => {
               log.warn(
-                { campaignId: campaign.id, messageId: message.id, err: safeErrorCode(releaseError) },
+                {
+                  campaignId: campaign.id,
+                  messageId: message.id,
+                  err: safeErrorCode(releaseError),
+                },
                 'marketing frequency slot not released',
               );
             });
