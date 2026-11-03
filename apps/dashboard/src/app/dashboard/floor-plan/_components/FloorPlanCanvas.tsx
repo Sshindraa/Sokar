@@ -2,15 +2,7 @@
 
 import { useServiceCopilotAccess } from '@/lib/use-service-copilot-access';
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useApi } from '@/lib/api';
 import {
@@ -38,6 +30,11 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import {
   format,
@@ -253,8 +250,7 @@ export function computeCenterScroll({
 
 /** Marge (coordonnées plan) ajoutée autour des tables au cadrage d'ouverture. */
 export const CONTENT_FIT_PADDING = 48;
-// Live est une vue opérationnelle : une marge plus courte garde les tables
-// lisibles sans conserver une bande vide sous le groupe quand la zone est haute.
+// Les cartes et leurs chaises peuvent dépasser les dimensions métier des tables.
 export const LIVE_CONTENT_FIT_PADDING = 24;
 
 export type ContentBounds = { x: number; y: number; width: number; height: number };
@@ -309,15 +305,7 @@ export function computeContentBounds(
   };
 }
 
-/**
- * Tables réellement visibles en Live. Le mode opérationnel ne doit pas
- * conserver la hauteur complète d'une zone d'édition : la surface défilable
- * commence autour du groupe de tables et s'arrête peu après son contenu.
- *
- * Les zones restent dessinées comme repère visuel, mais elles sont volontairement
- * écrêtées par la scène Live. Ainsi, une grande zone vide sous les tables ne
- * force plus un long défilement ni une carte disproportionnée.
- */
+/** Cadre les tables et les zones visibles avec une marge autour de leur dessin. */
 export function computeLiveContentBounds(
   zones: Array<Pick<FloorPlanZone, 'x' | 'y' | 'width' | 'height' | 'rotation'>>,
   tables: Array<{
@@ -359,34 +347,29 @@ export function computeLiveContentBounds(
   const positionedTables = tables.filter(
     (table) => table.positionX !== null && table.positionY !== null,
   );
-  if (positionedTables.length > 0) {
-    for (const table of positionedTables) {
-      if (table.positionX === null || table.positionY === null) continue;
-      const size = getTableSize(table);
-      includeRotatedRectangle(
-        table.positionX,
-        table.positionY,
-        size.width,
-        size.height,
-        table.rotation ?? 0,
-      );
-    }
-  } else {
-    // Si un plan Live n'a pas encore de table mais possède une zone, garder
-    // cette zone comme surface de secours plutôt que de produire un cadre nul.
-    for (const zone of zones) {
-      includeRotatedRectangle(zone.x, zone.y, zone.width, zone.height, zone.rotation ?? 0);
-    }
+  for (const table of positionedTables) {
+    if (table.positionX === null || table.positionY === null) continue;
+    const size = getTableSize(table);
+    includeRotatedRectangle(
+      table.positionX,
+      table.positionY,
+      size.width,
+      size.height,
+      table.rotation ?? 0,
+    );
+  }
+  for (const zone of zones) {
+    includeRotatedRectangle(zone.x, zone.y, zone.width, zone.height, zone.rotation ?? 0);
   }
 
   if (minX === Number.POSITIVE_INFINITY || canvasWidth <= 0 || canvasHeight <= 0) return null;
-  const x = Math.max(0, minX - LIVE_CONTENT_FIT_PADDING);
-  const y = Math.max(0, minY - LIVE_CONTENT_FIT_PADDING);
+  const x = minX - LIVE_CONTENT_FIT_PADDING;
+  const y = minY - LIVE_CONTENT_FIT_PADDING;
   return {
     x,
     y,
-    width: Math.max(1, Math.min(canvasWidth - x, maxX + LIVE_CONTENT_FIT_PADDING - x)),
-    height: Math.max(1, Math.min(canvasHeight - y, maxY + LIVE_CONTENT_FIT_PADDING - y)),
+    width: Math.max(1, maxX + LIVE_CONTENT_FIT_PADDING - x),
+    height: Math.max(1, maxY + LIVE_CONTENT_FIT_PADDING - y),
   };
 }
 
@@ -723,6 +706,15 @@ const statusMeta: Record<TableStatus, { label: string; icon: LucideIcon }> = {
   late: { label: 'En retard', icon: AlertTriangle },
   occupied: { label: 'Occupée', icon: Users },
   inactive: { label: 'Inactive', icon: Lock },
+};
+
+const statusDotClasses: Record<TableStatus, string> = {
+  free: 'bg-floor-status-free',
+  reserved: 'bg-floor-status-reserved',
+  upcoming: 'bg-floor-status-upcoming',
+  late: 'bg-floor-status-late',
+  occupied: 'bg-floor-status-occupied',
+  inactive: 'bg-floor-table-muted/80',
 };
 
 function getTableStatus(
@@ -1410,6 +1402,7 @@ type TableCardProps = {
   zoom?: number;
   draggableReservation?: boolean;
   isCombinable?: boolean;
+  hideChairs?: boolean;
   editable?: boolean;
   /** Rendu tactile : nom et point d'état seuls, sans libellé ni client. */
   compact?: boolean;
@@ -1431,6 +1424,7 @@ function TableCard({
   zoom = 1,
   draggableReservation,
   isCombinable = false,
+  hideChairs = false,
   editable = true,
   compact = false,
 }: TableCardProps) {
@@ -1444,18 +1438,7 @@ function TableCard({
   // still provide different interactions, but the table itself should remain
   // recognisable when moving between them.
   const liveStatusLabel = status ? statusMeta[status.status].label : null;
-  const liveRailClass =
-    status?.status === 'occupied'
-      ? 'bg-floor-table-accent'
-      : status?.status === 'late'
-        ? 'bg-destructive'
-        : status?.status === 'upcoming'
-          ? 'bg-warning'
-          : status?.status === 'reserved'
-            ? 'bg-brand'
-            : status
-              ? 'bg-floor-table-muted/45'
-              : 'bg-floor-table-accent';
+  const liveRailClass = status ? statusDotClasses[status.status] : 'bg-floor-table-accent';
   const liveStatusTextClass =
     status?.status === 'occupied'
       ? 'text-floor-table-accent'
@@ -1466,20 +1449,9 @@ function TableCard({
           : status?.status === 'reserved'
             ? 'text-brand'
             : status?.status === 'free'
-              ? 'text-floor-table-text/80'
+              ? 'text-floor-table-text'
               : 'text-floor-table-muted';
-  const liveStatusDotClass =
-    status?.status === 'occupied'
-      ? 'bg-floor-table-accent'
-      : status?.status === 'late'
-        ? 'bg-destructive'
-        : status?.status === 'upcoming'
-          ? 'bg-warning'
-          : status?.status === 'reserved'
-            ? 'bg-brand'
-            : status
-              ? 'bg-floor-table-muted/80'
-              : null;
+  const liveStatusDotClass = status ? statusDotClasses[status.status] : null;
   const isRound = table.shape === 'round';
   const cardMinWidth = compact ? COMPACT_TABLE_CARD_MIN_WIDTH : TABLE_CARD_MIN_WIDTH;
   const cardMinHeight = compact ? COMPACT_TABLE_CARD_MIN_HEIGHT : TABLE_CARD_MIN_HEIGHT;
@@ -1487,26 +1459,29 @@ function TableCard({
   // Une table ronde reste un cercle même si une ancienne donnée géométrique
   // est légèrement rectangulaire. On la centre dans son empreinte au lieu de
   // transformer silencieusement les dimensions métier.
-  const roundDiameter = Math.max(Math.min(width, height), compact ? 64 : 72);
+  const roundDiameter = Math.max(Math.min(width, height), editable ? 72 : compact ? 104 : 112);
   const liveBodyWidth = isRound ? roundDiameter : rectBodyWidth;
   const liveBodyHeight = isRound
     ? roundDiameter
     : Math.max(cardMinHeight, Math.round(rectBodyWidth / 2));
   const liveBodyLeft = Math.round((width - liveBodyWidth) / 2);
-  const liveChairWidth = Math.min(36, Math.max(24, Math.round(rectBodyWidth * 0.28)));
+  const chairsPerRow = Math.ceil(table.capacity / 2);
+  const liveChairWidth = Math.min(36, (rectBodyWidth - 8) / (chairsPerRow + 1));
   const liveBodyTop = isRound
     ? Math.round((height - liveBodyHeight) / 2)
     : Math.max(8, Math.round((height - (liveBodyHeight + TABLE_CARD_SEAT_HEIGHT)) / 2));
-  const roundChairSize = compact ? 20 : 24;
+  const roundChairHeight = editable ? 32 : 16;
+  // shortcut: au-delà de huit places, masquer les chaises pour éviter leur chevauchement ; agrandir le plan pour les représenter toutes.
+  const chairCount = !hideChairs && table.capacity <= 8 ? Math.max(0, table.capacity) : 0;
   const roundChairPositions = isRound
-    ? Array.from({ length: Math.min(Math.max(table.capacity, 1), 8) }, (_, index) => {
-        const angle =
-          (index / Math.min(Math.max(table.capacity, 1), 8)) * Math.PI * 2 - Math.PI / 2;
-        const radiusX = liveBodyWidth / 2 + roundChairSize / 2 + 6;
-        const radiusY = liveBodyHeight / 2 + roundChairSize / 2 + 6;
+    ? Array.from({ length: chairCount }, (_, index) => {
+        const angle = (index / chairCount) * Math.PI * 2 - Math.PI / 2;
+        const radiusX = liveBodyWidth / 2;
+        const radiusY = liveBodyHeight / 2;
         return {
-          left: liveBodyLeft + liveBodyWidth / 2 + Math.cos(angle) * radiusX - roundChairSize / 2,
-          top: liveBodyTop + liveBodyHeight / 2 + Math.sin(angle) * radiusY - roundChairSize / 2,
+          left: liveBodyLeft + liveBodyWidth / 2 + Math.cos(angle) * radiusX - liveChairWidth / 2,
+          top: liveBodyTop + liveBodyHeight / 2 + Math.sin(angle) * radiusY - roundChairHeight / 2,
+          rotation: (angle * 180) / Math.PI + 90,
         };
       })
     : [];
@@ -1519,7 +1494,7 @@ function TableCard({
       : status?.status === 'reserved'
         ? 'Réservée'
         : status?.status === 'upcoming'
-          ? 'Arrivée'
+          ? 'Imminente'
           : status?.status === 'late'
             ? 'Retard'
             : status?.status === 'occupied'
@@ -1533,7 +1508,7 @@ function TableCard({
     <div
       ref={dragRef}
       className={cn(
-        'relative box-border min-w-0 min-h-0 select-none outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        'group/table relative box-border min-w-0 min-h-0 select-none outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         'overflow-visible',
         !isOverlay && 'absolute',
         className,
@@ -1550,7 +1525,7 @@ function TableCard({
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       aria-label={title}
-      aria-description={`${displayName} · ${table.capacity} places${status ? ` · ${statusMeta[status.status].label}` : ''}`}
+      aria-description={`${displayName} · ${table.capacity} places${status ? ` · ${statusMeta[status.status].label}` : ''}${isCombinable ? ' · Peut être combinée avec d’autres tables' : ''}`}
       aria-pressed={onClick ? isSelected : undefined}
       onClick={(e) => {
         e.stopPropagation();
@@ -1569,61 +1544,52 @@ function TableCard({
       title={title}
       {...dragProps}
     >
+      {isCombinable ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-9 left-0 z-40 hidden whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md group-hover/table:block group-focus-visible/table:block"
+        >
+          Tables combinables
+        </span>
+      ) : null}
       <>
-        {isRound ? (
-          roundChairPositions.map((chair, index) => (
-            <span
-              key={`round-chair-${index}`}
-              className="absolute z-0 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
-              style={{
-                left: chair.left,
-                top: chair.top,
-                width: roundChairSize,
-                height: roundChairSize,
-              }}
-              aria-hidden="true"
-            />
-          ))
-        ) : (
-          <>
-            <span
-              className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
-              style={{
-                left: liveBodyLeft + liveBodyWidth * 0.25 - liveChairWidth / 2,
-                top: liveBodyTop,
-                width: liveChairWidth,
-              }}
-              aria-hidden="true"
-            />
-            <span
-              className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
-              style={{
-                left: liveBodyLeft + liveBodyWidth * 0.75 - liveChairWidth / 2,
-                top: liveBodyTop,
-                width: liveChairWidth,
-              }}
-              aria-hidden="true"
-            />
-            <span
-              className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
-              style={{
-                left: liveBodyLeft + liveBodyWidth * 0.25 - liveChairWidth / 2,
-                top: liveBodyTop + liveBodyHeight,
-                width: liveChairWidth,
-              }}
-              aria-hidden="true"
-            />
-            <span
-              className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
-              style={{
-                left: liveBodyLeft + liveBodyWidth * 0.75 - liveChairWidth / 2,
-                top: liveBodyTop + liveBodyHeight,
-                width: liveChairWidth,
-              }}
-              aria-hidden="true"
-            />
-          </>
-        )}
+        {isRound
+          ? roundChairPositions.map((chair, index) => (
+              <span
+                key={`round-chair-${index}`}
+                className="absolute z-0 rounded-full border-2 border-floor-table-muted/50 bg-floor-table-chair shadow-sm"
+                style={{
+                  left: chair.left,
+                  top: chair.top,
+                  width: liveChairWidth,
+                  height: roundChairHeight,
+                  transform: `rotate(${chair.rotation}deg)`,
+                }}
+                aria-hidden="true"
+              />
+            ))
+          : Array.from({ length: chairCount }, (_, index) => {
+              const rowCount =
+                index % 2 === 0 ? Math.ceil(chairCount / 2) : Math.floor(chairCount / 2);
+              return (
+                <span
+                  key={`chair-${index}`}
+                  className={cn(
+                    'absolute -translate-y-1/2 rounded-full border-2 border-floor-table-muted/50 bg-floor-table-chair shadow-sm',
+                    editable ? 'z-0 h-8' : 'z-0 h-4',
+                  )}
+                  style={{
+                    left:
+                      liveBodyLeft +
+                      (liveBodyWidth * (Math.floor(index / 2) + 1)) / (rowCount + 1) -
+                      liveChairWidth / 2,
+                    top: liveBodyTop + (index % 2) * liveBodyHeight,
+                    width: liveChairWidth,
+                  }}
+                  aria-hidden="true"
+                />
+              );
+            })}
         <div
           className={cn(
             'absolute z-10 overflow-hidden border border-floor-table-muted/15 bg-floor-table-surface shadow-sm',
@@ -1645,22 +1611,40 @@ function TableCard({
             aria-label={referenceStatusLabel}
             title={referenceStatusLabel}
           />
+          {isCombinable ? (
+            <span
+              className={cn(
+                'absolute z-30 text-floor-table-text',
+                isRound ? 'right-5 top-4' : 'right-4 top-1',
+              )}
+              title="Tables combinables"
+              aria-hidden="true"
+            >
+              <Link2 size={12} />
+            </span>
+          ) : null}
           <div
             className={cn(
-              'absolute inset-0 flex flex-col items-start justify-between text-left',
-              compact ? 'px-2 py-1.5 pr-3' : 'px-3 py-2 pr-5',
+              'absolute inset-0 flex flex-col',
+              isRound
+                ? 'items-center justify-center gap-1 px-3 text-center'
+                : compact
+                  ? 'items-start justify-between px-2 py-1.5 pr-3 text-left'
+                  : 'items-start justify-between px-3 py-2 pr-5 text-left',
             )}
           >
-            <p className="max-w-full truncate pr-2 text-[11px] font-bold leading-none text-floor-table-text">
+            <p className="max-w-full truncate pr-2 text-[13px] font-bold leading-none text-floor-table-text">
               {displayName}
             </p>
-            <p className="max-w-full truncate text-[9px] font-medium leading-none text-floor-table-text/75">
-              {table.capacity} pl.
-            </p>
+            {status ? (
+              <p className="max-w-full truncate text-[11px] font-medium leading-none text-floor-table-text/90">
+                {table.capacity} places
+              </p>
+            ) : null}
             <div className="min-w-0 max-w-full leading-tight">
               <p
                 className={cn(
-                  'flex min-w-0 items-center gap-1 truncate text-[9px] font-medium',
+                  'flex min-w-0 items-center gap-1 truncate text-[11px] font-medium',
                   referenceStatusTextClass,
                 )}
               >
@@ -1671,7 +1655,9 @@ function TableCard({
                   />
                 ) : null}
                 <span className="truncate">
-                  {compact ? compactStatusLabel : referenceStatusLabel}
+                  {compact || status?.status === 'upcoming'
+                    ? compactStatusLabel
+                    : referenceStatusLabel}
                 </span>
               </p>
             </div>
@@ -1685,15 +1671,6 @@ function TableCard({
           ) : null}
         </div>
       </>
-      {isCombinable ? (
-        <span
-          className="absolute bottom-1.5 right-1.5 z-20 inline-flex size-5 items-center justify-center rounded-full border border-primary/40 bg-background/90 text-primary shadow-sm"
-          title="Tables combinables"
-          aria-label="Tables combinables"
-        >
-          <Link2 size={11} />
-        </span>
-      ) : null}
       {isSelected && editable && !isOverlay && onResizeStart ? (
         <div
           className="absolute -bottom-1.5 -right-1.5 z-30 size-3 cursor-nwse-resize rounded-full border-2 border-floor-table-surface bg-floor-table-accent shadow-md"
@@ -1847,6 +1824,7 @@ type DraggableTableProps = {
   draggableReservation?: boolean;
   zoom?: number;
   isCombinable?: boolean;
+  hideChairs?: boolean;
   editable?: boolean;
   /** Carte tactile compacte (téléphone) : nom + point d'état seulement. */
   compact?: boolean;
@@ -1866,6 +1844,7 @@ function DraggableTable({
   draggableReservation,
   zoom = 1,
   isCombinable = false,
+  hideChairs = false,
   editable = true,
   compact = false,
 }: DraggableTableProps) {
@@ -1907,6 +1886,7 @@ function DraggableTable({
       dragProps={draggable ? { ...attributes, ...listeners } : undefined}
       draggableReservation={draggableReservation}
       isCombinable={isCombinable}
+      hideChairs={hideChairs}
       editable={editable}
       compact={compact}
       className={cn(
@@ -2142,24 +2122,24 @@ export function StatsPanel({ reservations, allTables, tableStatuses, liveDate }:
         ) : (
           <div className="space-y-3">
             {forecast.slice(0, 20).map((slot) => (
-              <div key={slot.time} className="flex items-center gap-3">
-                <div className="w-12 text-xs font-medium tabular-nums">{slot.time}</div>
-                <div className="flex-1">
-                  <div className="flex h-5 items-center gap-2">
-                    <div
-                      className="h-2 rounded-full bg-primary transition-all"
-                      style={{ width: `${(slot.covers / maxSlotCovers) * 100}%` }}
-                    />
-                    <span className="text-xs font-medium tabular-nums">{slot.covers} couverts</span>
+              <div key={slot.time} className="flex items-start gap-3">
+                <div className="w-12 shrink-0 text-xs font-medium tabular-nums">{slot.time}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                    <span className="whitespace-nowrap text-xs font-medium tabular-nums">
+                      {slot.covers} couverts
+                    </span>
+                    {slot.newArrivals > 0 ? (
+                      <Badge variant="outline" className="whitespace-nowrap text-[10px]">
+                        {slot.newArrivals} arrivée{slot.newArrivals > 1 ? 's' : ''} à {slot.time}
+                      </Badge>
+                    ) : null}
                   </div>
+                  <div
+                    className="h-2 rounded-full bg-primary transition-all"
+                    style={{ width: `${(slot.covers / maxSlotCovers) * 100}%` }}
+                  />
                 </div>
-                {slot.newArrivals > 0 ? (
-                  <Badge variant="outline" className="text-[10px]">
-                    +{slot.newArrivals}
-                  </Badge>
-                ) : (
-                  <span className="w-8" />
-                )}
               </div>
             ))}
           </div>
@@ -2493,22 +2473,6 @@ function NewWallOverlay({ type, zoom }: { type: PaletteWallType; zoom: number })
   );
 }
 
-function ElapsedSince({ date, prefix }: { date: number; prefix: string }) {
-  const [, forceRender] = useReducer((n: number) => n + 1, 0);
-
-  useEffect(() => {
-    const id = setInterval(() => forceRender(), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  return (
-    <>
-      {prefix}
-      {formatDistanceToNow(date, { locale: fr, addSuffix: true })}
-    </>
-  );
-}
-
 export function FloorPlanCanvas({
   orgId,
   mode = 'design',
@@ -2516,7 +2480,6 @@ export function FloorPlanCanvas({
   initialDelayImpact,
   onInitialDelayApplied,
   onRequestEdit,
-  onRequestWalkIn,
   planOptions,
   onSelectPlan,
 }: {
@@ -2531,7 +2494,6 @@ export function FloorPlanCanvas({
   } | null;
   onInitialDelayApplied?: () => void;
   onRequestEdit?: () => void;
-  onRequestWalkIn?: () => void;
   planOptions?: Array<{ id: string; name: string }>;
   onSelectPlan?: (id: string) => void;
 }) {
@@ -2583,6 +2545,7 @@ export function FloorPlanCanvas({
   // recentrage. Lue via une ref pour que le déplacement d'une table pendant
   // l'édition ne déclenche pas de recadrage automatique.
   const contentBoundsRef = useRef<ContentBounds | null>(null);
+  const tableBoundsRef = useRef<ContentBounds | null>(null);
   // Repère d'édition : masqué par défaut en service pour garder la salle lisible
   // pendant le coup de feu (le bouton et la touche « G » restent disponibles).
   const [gridVisible, setGridVisible] = useState(mode !== 'service');
@@ -2614,6 +2577,8 @@ export function FloorPlanCanvas({
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [loadedLiveDate, setLoadedLiveDate] = useState<string | null>(null);
   const [selectedServiceTableId, setSelectedServiceTableId] = useState<string | null>(null);
+  const [overlayServiceInspector, setOverlayServiceInspector] = useState(true);
+  const [showWalkInHelp, setShowWalkInHelp] = useState(false);
   const [mobileServiceDetailsOpen, setMobileServiceDetailsOpen] = useState(false);
   const [updatingReservationStateId, setUpdatingReservationStateId] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<TableSuggestion[]>([]);
@@ -2811,61 +2776,88 @@ export function FloorPlanCanvas({
    * renvoie l'échelle appliquée ainsi que le défilement qui centre la zone,
    * pour pouvoir enchaîner le cadrage sans attendre le prochain rendu.
    */
-  const fitCanvasToViewport = useCallback(() => {
-    const viewport = canvasViewportRef.current;
-    if (!viewport) return null;
-    const viewportWidth = viewport.clientWidth;
-    const viewportHeight = viewport.clientHeight;
-    if (viewportWidth < 40 || viewportHeight < 40) return null;
-    const fitFloor =
-      live && serviceTab === 'plan' ? TOUCH_FIT_FLOOR : touchCanvasLayout ? TOUCH_FIT_FLOOR : 1;
-    // Plancher du dézoom manuel : cadrer le plan entier.
-    const fullCanvasZoom = computeFitZoom({
-      viewportWidth,
-      viewportHeight,
-      canvasWidth,
-      canvasHeight,
-      minZoom,
-      floor: fitFloor,
-    });
-    const bounds = contentBoundsRef.current;
-    let nextZoom = fullCanvasZoom;
-    if (bounds) {
-      const contentZoom = computeFitZoom({
+  const fitCanvasToViewport = useCallback(
+    (focusTables = false) => {
+      const viewport = canvasViewportRef.current;
+      if (!viewport) return null;
+      const viewportWidth = viewport.clientWidth;
+      const availableHeight =
+        window.innerHeight - viewport.getBoundingClientRect().top - (touchCanvasLayout ? 104 : 16);
+      // shortcut: sous 80 px visibles, laisser défiler la page avant de cadrer le plan.
+      const viewportHeight =
+        live && availableHeight >= 80
+          ? Math.min(viewport.clientHeight, availableHeight)
+          : viewport.clientHeight;
+      if (viewportWidth < 40 || viewportHeight < 40) return null;
+      const fitMinimum = live ? 0.01 : minZoom;
+      const fitFloor = live ? fitMinimum : touchCanvasLayout ? TOUCH_FIT_FLOOR : 1;
+      // Plancher du dézoom manuel : cadrer le plan entier.
+      const fullCanvasZoom = computeFitZoom({
         viewportWidth,
         viewportHeight,
-        canvasWidth: bounds.width,
-        canvasHeight: bounds.height,
+        canvasWidth,
+        canvasHeight,
         minZoom,
         floor: fitFloor,
       });
-      // En Live, le cadre est déjà réduit au groupe de tables : on peut donc
-      // dépasser 100 % pour remplir utilement la fenêtre sans réintroduire la
-      // hauteur vide de la zone d'édition. L'éditeur garde son plafond à 100 %.
-      const fitCeiling = live && serviceTab === 'plan' ? MAX_ZOOM : 1;
-      nextZoom = clampZoom(
-        Math.max(Math.min(contentZoom, fitCeiling), fullCanvasZoom),
-        minZoom,
-        MAX_ZOOM,
-      );
-    }
-    const scroll =
-      live && serviceTab === 'plan' && bounds
-        ? {
-            left: Math.max(0, (bounds.width * nextZoom - viewportWidth) / 2),
-            top: Math.max(0, (bounds.height * nextZoom - viewportHeight) / 2),
-          }
-        : computeFocusScroll({
-            viewportWidth,
-            viewportHeight,
-            region: bounds ?? { x: 0, y: 0, width: canvasWidth, height: canvasHeight },
-            zoom: nextZoom,
-          });
-    zoomRef.current = nextZoom;
-    fitZoomRef.current = fullCanvasZoom;
-    setZoom(nextZoom);
-    return { zoom: nextZoom, scroll };
-  }, [canvasHeight, canvasWidth, live, minZoom, serviceTab, touchCanvasLayout]);
+      const stageBounds = contentBoundsRef.current;
+      let bounds = live && focusTables ? (tableBoundsRef.current ?? stageBounds) : stageBounds;
+      if (live && focusTables && bounds && stageBounds) {
+        const roomZoom = Math.min(
+          viewportWidth / stageBounds.width,
+          viewportHeight / stageBounds.height,
+        );
+        const tableZoom = Math.min(viewportWidth / bounds.width, viewportHeight / bounds.height);
+        // shortcut: seuil empirique de moitié ; ajuster si des plans réels restent illisibles.
+        if (roomZoom >= tableZoom / 2) bounds = stageBounds;
+      }
+      let nextZoom = fullCanvasZoom;
+      if (bounds) {
+        const contentZoom = computeFitZoom({
+          viewportWidth,
+          viewportHeight,
+          canvasWidth: bounds.width,
+          canvasHeight: bounds.height,
+          minZoom: fitMinimum,
+          floor: fitFloor,
+        });
+        // En Live, le cadre est déjà réduit au groupe de tables : on peut donc
+        // dépasser 100 % pour remplir utilement la fenêtre sans réintroduire la
+        // hauteur vide de la zone d'édition. L'éditeur garde son plafond à 100 %.
+        const fitCeiling = live && serviceTab === 'plan' ? MAX_ZOOM : 1;
+        nextZoom = clampZoom(
+          live
+            ? Math.min(contentZoom, fitCeiling)
+            : Math.max(Math.min(contentZoom, fitCeiling), fullCanvasZoom),
+          fitMinimum,
+          MAX_ZOOM,
+        );
+      }
+      const scroll =
+        live && serviceTab === 'plan' && bounds && stageBounds
+          ? {
+              left: Math.max(
+                0,
+                (bounds.x - stageBounds.x + bounds.width / 2) * nextZoom - viewportWidth / 2,
+              ),
+              top: Math.max(
+                0,
+                (bounds.y - stageBounds.y + bounds.height / 2) * nextZoom - viewportHeight / 2,
+              ),
+            }
+          : computeFocusScroll({
+              viewportWidth,
+              viewportHeight,
+              region: bounds ?? { x: 0, y: 0, width: canvasWidth, height: canvasHeight },
+              zoom: nextZoom,
+            });
+      zoomRef.current = nextZoom;
+      fitZoomRef.current = live && !focusTables ? nextZoom : fullCanvasZoom;
+      setZoom(nextZoom);
+      return { zoom: nextZoom, scroll };
+    },
+    [canvasHeight, canvasWidth, live, minZoom, serviceTab, touchCanvasLayout],
+  );
 
   /**
    * Plancher du zoom manuel sur écran tactile : quand le plan tient déjà
@@ -2874,10 +2866,11 @@ export function FloorPlanCanvas({
    * tactile (plan plus grand que la fenêtre), on garde la marge MIN_ZOOM_TOUCH.
    */
   const manualMinZoom = useCallback(() => {
+    if (live) return Math.min(touchCanvasLayout ? MIN_ZOOM_TOUCH : MIN_ZOOM, fitZoomRef.current);
     if (!touchCanvasLayout) return MIN_ZOOM;
     const fit = fitZoomRef.current;
     return fit >= TOUCH_FIT_FLOOR ? fit : MIN_ZOOM_TOUCH;
-  }, [touchCanvasLayout]);
+  }, [live, touchCanvasLayout]);
 
   /** Zoom manuel : il ne doit plus être écrasé par le cadrage automatique. */
   function changeZoom(delta: number) {
@@ -2922,12 +2915,12 @@ export function FloorPlanCanvas({
     userAdjustedZoomRef.current = false;
     let retryFrame: number | null = null;
     const applyInitialFit = () => {
-      const fit = fitCanvasToViewport();
+      const fit = fitCanvasToViewport(live);
       if (!viewport || !fit) {
         // Le premier frame peut précéder la mesure finale du panneau sur
         // Safari. Un second essai suffit sans installer d'observateur durable.
         retryFrame = window.requestAnimationFrame(() => {
-          const retryFit = fitCanvasToViewport();
+          const retryFit = fitCanvasToViewport(live);
           if (!viewport || !retryFit) return;
           viewport.scrollLeft = retryFit.scroll.left;
           viewport.scrollTop = retryFit.scroll.top;
@@ -2935,15 +2928,28 @@ export function FloorPlanCanvas({
         });
         return;
       }
-      viewport.scrollLeft = fit.scroll.left;
-      viewport.scrollTop = fit.scroll.top;
       autoFittedPlanIdRef.current = planId;
+      retryFrame = window.requestAnimationFrame(() => {
+        viewport.scrollLeft = fit.scroll.left;
+        viewport.scrollTop = fit.scroll.top;
+      });
     };
     applyInitialFit();
     return () => {
       if (retryFrame !== null) window.cancelAnimationFrame(retryFrame);
     };
   }, [touchCanvasLayout, live, loading, error, serviceTab, floorPlan?.id, fitCanvasToViewport]);
+
+  useIsomorphicLayoutEffect(() => {
+    if (!live || serviceTab !== 'plan' || overlayServiceInspector || userAdjustedZoomRef.current)
+      return;
+    const viewport = canvasViewportRef.current;
+    const fit = fitCanvasToViewport(true);
+    if (viewport && fit) {
+      viewport.scrollLeft = fit.scroll.left;
+      viewport.scrollTop = fit.scroll.top;
+    }
+  }, [fitCanvasToViewport, live, overlayServiceInspector, selectedServiceTableId, serviceTab]);
 
   // Gestes du plan : pincer pour zoomer, double-tap pour recadrer. Le
   // défilement à un doigt reste natif (voir `touch-action` sur la fenêtre).
@@ -3596,7 +3602,6 @@ export function FloorPlanCanvas({
 
   useEffect(() => {
     if (!orgId || !live) return;
-    loadReservations({ force: true });
 
     let timer: ReturnType<typeof setInterval> | null = null;
     const startPolling = () => {
@@ -3620,8 +3625,10 @@ export function FloorPlanCanvas({
       }
     };
 
-    // Un onglet ouvert en arrière-plan ne lance son intervalle qu'au retour au premier plan.
-    if (!document.hidden) startPolling();
+    if (!document.hidden) {
+      loadReservations({ force: true });
+      startPolling();
+    }
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       pollAbortRef.current?.abort();
@@ -3643,7 +3650,11 @@ export function FloorPlanCanvas({
       ...table,
       sectionName: table.sectionName ?? null,
     }));
-    const combined = [...sectionTables, ...topTables];
+    const sectionTableIds = new Set(sectionTables.map((table) => table.id));
+    const combined = [
+      ...sectionTables,
+      ...topTables.filter((table) => !sectionTableIds.has(table.id)),
+    ];
     const usedNumbers = new Set(
       combined
         .map((table) => Number(table.name.match(/^T0*(\d+)$/i)?.[1] ?? 0))
@@ -3668,6 +3679,70 @@ export function FloorPlanCanvas({
     () => allTables.filter((table) => table.positionX !== null && table.positionY !== null),
     [allTables],
   );
+  const liveTableVisualBounds = useMemo(() => {
+    if (!live) return [];
+    return placedTables.map((table) => {
+      const { width, height, rotation } = getTableSize(table);
+      const round = table.shape === 'round';
+      const bodyWidth = round
+        ? Math.max(Math.min(width, height), compactTableCards ? 104 : 112)
+        : Math.max(width, compactTableCards ? COMPACT_TABLE_CARD_MIN_WIDTH : TABLE_CARD_MIN_WIDTH);
+      const bodyHeight = round
+        ? bodyWidth
+        : Math.max(
+            compactTableCards ? COMPACT_TABLE_CARD_MIN_HEIGHT : TABLE_CARD_MIN_HEIGHT,
+            Math.round(bodyWidth / 2),
+          );
+      const top = round
+        ? Math.round((height - bodyHeight) / 2)
+        : Math.max(8, Math.round((height - (bodyHeight + TABLE_CARD_SEAT_HEIGHT)) / 2));
+      const offsetY = top + bodyHeight / 2 - height / 2;
+      const angle = (rotation * Math.PI) / 180;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const centerX = table.positionX! + width / 2 - offsetY * sin;
+      const centerY = table.positionY! + height / 2 + offsetY * cos;
+      const outerWidth = bodyWidth + (round ? 24 : 0);
+      const outerHeight = bodyHeight + (round ? 24 : 16);
+      const halfWidth = (outerWidth * Math.abs(cos) + outerHeight * Math.abs(sin)) / 2;
+      const halfHeight = (outerWidth * Math.abs(sin) + outerHeight * Math.abs(cos)) / 2;
+      return {
+        id: table.id,
+        left: centerX - halfWidth,
+        right: centerX + halfWidth,
+        top: centerY - halfHeight,
+        bottom: centerY + halfHeight,
+      };
+    });
+  }, [compactTableCards, live, placedTables]);
+  const crowdedTableIds = useMemo(() => {
+    const bounds = liveTableVisualBounds;
+    const crowded = new Set<string>();
+    // shortcut: les rectangles englobants peuvent masquer des chaises proches sans collision ; calculer les formes exactes si nécessaire.
+    for (let i = 0; i < bounds.length; i++) {
+      for (const other of bounds.slice(i + 1)) {
+        const current = bounds[i];
+        if (
+          current.left < other.right &&
+          current.right > other.left &&
+          current.top < other.bottom &&
+          current.bottom > other.top
+        ) {
+          crowded.add(current.id);
+          crowded.add(other.id);
+        }
+      }
+    }
+    return crowded;
+  }, [liveTableVisualBounds]);
+  const tableFocusBounds = useMemo<ContentBounds | null>(() => {
+    if (liveTableVisualBounds.length === 0) return null;
+    const left = Math.min(...liveTableVisualBounds.map((item) => item.left)) - 16;
+    const top = Math.min(...liveTableVisualBounds.map((item) => item.top)) - 16;
+    const right = Math.max(...liveTableVisualBounds.map((item) => item.right)) + 16;
+    const bottom = Math.max(...liveTableVisualBounds.map((item) => item.bottom)) + 16;
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  }, [liveTableVisualBounds]);
   const tablesToPlace = useMemo(
     () => allTables.filter((table) => table.positionX === null || table.positionY === null),
     [allTables],
@@ -3690,17 +3765,25 @@ export function FloorPlanCanvas({
         : zones,
     [live, placedTables, zones],
   );
-  const contentBounds = useMemo(
-    () =>
-      live
-        ? computeLiveContentBounds(liveZones, placedTables, canvasWidth, canvasHeight)
-        : computeContentBounds(placedTables, canvasWidth, canvasHeight),
-    [canvasHeight, canvasWidth, live, liveZones, placedTables],
-  );
+  const contentBounds = useMemo(() => {
+    const bounds = live
+      ? computeLiveContentBounds(liveZones, placedTables, canvasWidth, canvasHeight)
+      : computeContentBounds(placedTables, canvasWidth, canvasHeight);
+    if (!live || !bounds || !tableFocusBounds) return bounds;
+    const x = Math.min(bounds.x, tableFocusBounds.x);
+    const y = Math.min(bounds.y, tableFocusBounds.y);
+    return {
+      x,
+      y,
+      width: Math.max(bounds.x + bounds.width, tableFocusBounds.x + tableFocusBounds.width) - x,
+      height: Math.max(bounds.y + bounds.height, tableFocusBounds.y + tableFocusBounds.height) - y,
+    };
+  }, [canvasHeight, canvasWidth, live, liveZones, placedTables, tableFocusBounds]);
   // Mise à jour pendant le rendu (convention du fichier, cf. zoomRef) : la
   // lecture par ref dans le cadrage évite tout recadrage automatique quand le
   // restaurateur déplace ou redimensionne une table.
   contentBoundsRef.current = contentBounds;
+  tableBoundsRef.current = tableFocusBounds;
   const tableCombinations = useMemo<FloorPlanTableCombination[]>(
     () => floorPlan?.tableCombinations ?? [],
     [floorPlan?.tableCombinations],
@@ -4185,6 +4268,25 @@ export function FloorPlanCanvas({
       return;
     }
     if (live) {
+      const viewport = canvasViewportRef.current;
+      if (viewport) {
+        const view = viewport.getBoundingClientRect();
+        const overlaps =
+          view.width >= 288 &&
+          Array.from(viewport.querySelectorAll('[role="button"][aria-description]')).some(
+            (element) => {
+              const rect = element.getBoundingClientRect();
+              return (
+                rect.right > view.right - 288 &&
+                rect.left < view.right &&
+                rect.bottom > view.top &&
+                rect.top < view.bottom
+              );
+            },
+          );
+        setOverlayServiceInspector(!overlaps);
+      }
+      setShowWalkInHelp(false);
       setSelectedServiceTableId(table.id);
       return;
     }
@@ -6673,16 +6775,44 @@ export function FloorPlanCanvas({
     setMobileServiceDetailsOpen(false);
   }, [selectedServiceTableId]);
 
-  const selectedServiceStatusDotClass =
-    selectedServiceStatus?.status === 'occupied'
-      ? 'bg-floor-table-accent'
-      : selectedServiceStatus?.status === 'late'
-        ? 'bg-destructive'
-        : selectedServiceStatus?.status === 'upcoming'
-          ? 'bg-warning'
-          : selectedServiceStatus?.status === 'reserved'
-            ? 'bg-brand'
-            : 'bg-floor-table-muted/80';
+  const selectedServiceStatusDotClass = statusDotClasses[selectedServiceStatus?.status ?? 'free'];
+
+  const serviceOverview = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1 px-2 text-xs"
+          aria-label="Légende des statuts"
+        >
+          Légende <ChevronDown size={14} aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72 space-y-3 p-3">
+        <div className="grid grid-cols-2 gap-3">
+          {(['free', 'reserved', 'upcoming', 'late', 'occupied'] as TableStatus[]).map((status) => (
+            <div key={status} className="flex items-center gap-2 text-xs text-foreground">
+              <span
+                aria-hidden="true"
+                className={cn('size-2 shrink-0 rounded-full', statusDotClasses[status])}
+              />
+              {statusMeta[status].label}
+            </div>
+          ))}
+        </div>
+        <p className="border-t border-border pt-2 text-xs text-foreground/80">
+          Attendues : tables affectées à une réservation à venir ou en retard. Une arrivée est
+          imminente dans les 30 minutes. Les réservations sans table affectée ne sont pas comptées
+          ici.
+        </p>
+        <p className="flex items-center gap-2 text-xs text-foreground/80">
+          <Link2 size={14} aria-hidden="true" /> Peut être combinée avec d’autres tables
+        </p>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   const mobileServiceInspector =
     live && serviceTab === 'plan' && selectedServiceTable ? (
@@ -6713,6 +6843,11 @@ export function FloorPlanCanvas({
                 ? statusMeta[selectedServiceStatus.status].label
                 : 'Disponible'}
             </p>
+            {combinableTableIds.has(selectedServiceTable.id) ? (
+              <p className="mt-1 text-xs text-foreground">
+                Peut être combinée avec d’autres tables
+              </p>
+            ) : null}
           </div>
           <Button
             type="button"
@@ -7080,32 +7215,10 @@ export function FloorPlanCanvas({
     <aside
       className={cn(
         'order-3 h-auto max-h-72 w-full min-w-0 flex-col overflow-hidden border-t border-border bg-card lg:h-full lg:max-h-none lg:w-72 lg:min-w-72 lg:border-l lg:border-t-0',
-        selectedServiceTable ? 'hidden lg:flex' : 'flex',
+        overlayServiceInspector && 'lg:absolute lg:inset-y-0 lg:right-0 lg:z-40 lg:shadow-xl',
+        selectedServiceTable ? 'hidden lg:flex' : 'hidden',
       )}
     >
-      {/* L'en-tête live n'a de sens que dans la sidebar desktop : sur téléphone,
-          l'inspecteur s'empile sous le plan et répétait une troisième fois le
-          statut déjà porté par le cockpit et le badge. */}
-      <div className="hidden border-b border-border p-4 lg:block">
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-50" />
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
-          </span>
-          <p className="text-sm font-semibold">
-            {lastUpdatedAt ? (
-              <ElapsedSince date={lastUpdatedAt} prefix="Service en direct · mis à jour " />
-            ) : (
-              'Service en direct · connexion…'
-            )}
-          </p>
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {lastUpdatedAt
-            ? 'Le plan se met à jour automatiquement.'
-            : 'Synchronisation du service en cours…'}
-        </p>
-      </div>
       {selectedServiceTable ? (
         <div className="flex-1 space-y-5 overflow-y-auto p-4">
           <div>
@@ -7118,12 +7231,29 @@ export function FloorPlanCanvas({
                   {selectedServiceTable.capacity} places
                   {selectedServiceTable.sectionName ? ` · ${selectedServiceTable.sectionName}` : ''}
                 </p>
+                {combinableTableIds.has(selectedServiceTable.id) ? (
+                  <p className="mt-1 text-xs text-foreground">
+                    Peut être combinée avec d’autres tables
+                  </p>
+                ) : null}
               </div>
-              <Badge variant="outline">
-                {selectedServiceStatus
-                  ? statusMeta[selectedServiceStatus.status].label
-                  : 'Disponible'}
-              </Badge>
+              <div className="flex items-center gap-1">
+                <Badge variant="outline">
+                  {selectedServiceStatus
+                    ? statusMeta[selectedServiceStatus.status].label
+                    : 'Disponible'}
+                </Badge>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="size-8 shrink-0 rounded-full p-0 transition-all duration-200"
+                  aria-label="Fermer la fiche de la table"
+                  onClick={() => setSelectedServiceTableId(null)}
+                >
+                  <X size={16} />
+                </Button>
+              </div>
             </div>
           </div>
           {selectedServiceReservation ? (
@@ -7355,7 +7485,7 @@ export function FloorPlanCanvas({
                 )}
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-border p-4 text-center">
+            <div className="space-y-2 text-left">
               <p className="text-sm font-medium">Table disponible</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 Aucune réservation en cours ou imminente.
@@ -7379,75 +7509,7 @@ export function FloorPlanCanvas({
             </div>
           )}
         </div>
-      ) : (
-        <div className="flex-1 space-y-3 p-4">
-          {/* Vue d'ensemble condensée : une ligne porte la volumétrie, la légende
-              se déplie à la demande. Sur téléphone, deux grandes cartes et un
-              texte d'invite consommaient la hauteur du plan pour peu
-              d'information — le détail d'une table vit dans la feuille qui
-              s'ouvre au toucher. */}
-          <p
-            role="status"
-            aria-label="Vue d’ensemble de la salle"
-            className="text-xs text-muted-foreground"
-          >
-            <span className="font-semibold tabular-nums text-foreground">
-              {[...tableStatuses.values()].filter((item) => item.status === 'occupied').length}
-            </span>{' '}
-            occupées ·{' '}
-            <span className="font-semibold tabular-nums text-foreground">
-              {
-                [...tableStatuses.values()].filter((item) =>
-                  ['reserved', 'upcoming', 'late'].includes(item.status),
-                ).length
-              }
-            </span>{' '}
-            attendues ·{' '}
-            <span className="font-semibold tabular-nums text-foreground">
-              {
-                allTables.filter(
-                  (table) =>
-                    table.isActive && (tableStatuses.get(table.id)?.status ?? 'free') === 'free',
-                ).length
-              }
-            </span>{' '}
-            disponibles
-          </p>
-          <details className="group">
-            <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
-              Légende des statuts
-              <ChevronDown
-                size={14}
-                aria-hidden="true"
-                className="transition-transform duration-200 group-open:rotate-180"
-              />
-            </summary>
-            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border pt-3">
-              {(['free', 'reserved', 'upcoming', 'late', 'occupied'] as TableStatus[]).map(
-                (status) => {
-                  const StatusIcon = statusMeta[status].icon;
-                  return (
-                    <div
-                      key={status}
-                      className="flex items-center gap-2 text-xs text-muted-foreground"
-                    >
-                      <span
-                        className={cn(
-                          'flex size-6 shrink-0 items-center justify-center rounded-md border',
-                          statusClasses[status],
-                        )}
-                      >
-                        <StatusIcon className="size-3.5" aria-hidden="true" />
-                      </span>
-                      <span>{statusMeta[status].label}</span>
-                    </div>
-                  );
-                },
-              )}
-            </div>
-          </details>
-        </div>
-      )}
+      ) : null}
     </aside>
   ) : selectedWall || selectedZone || selectedTables.length > 0 ? (
     <aside
@@ -8031,17 +8093,6 @@ export function FloorPlanCanvas({
   // de jour, ce qui ferait diverger le badge du champ date.
   const serviceIsToday = liveDate === serviceToday;
   const serviceDateLabel = format(parseISO(liveDate), 'd MMM yyyy', { locale: fr });
-  const serviceActiveTables = allTables.filter((table) => table.isActive);
-  const serviceOccupiedTables = [...tableStatuses.values()].filter(
-    (item) => item.status === 'occupied',
-  ).length;
-  const serviceOccupancyRate =
-    serviceActiveTables.length > 0
-      ? Math.round((serviceOccupiedTables / serviceActiveTables.length) * 100)
-      : 0;
-  const serviceCovers = reservations
-    .filter((reservation) => !['CANCELLED', 'NO_SHOW'].includes(reservation.state))
-    .reduce((total, reservation) => total + (reservation.partySize ?? 0), 0);
   // Service vide : sans réservation ni action en attente, le cockpit complet
   // affichait deux bandes de zéros (statut + volumétrie) et un message d'état
   // vide, soit près de la moitié de l'écran d'un téléphone pour ne rien dire.
@@ -8318,180 +8369,193 @@ export function FloorPlanCanvas({
           )}
           {live ? (
             <>
-              {/* Volumétrie du service. Chaque information n'apparaît qu'une fois :
-                  les compteurs d'action (retards, à installer, en service, en attente)
-                  restent portés par le bandeau d'état ci-dessus. Sur téléphone, une
-                  seule ligne porte valeurs et jauge : deux étages de chiffres
-                  consommaient la hauteur utile du plan. */}
-              {compactServiceCockpit ? null : (
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border px-4 py-2 lg:flex-nowrap lg:gap-8">
-                  <div className="flex min-w-0 items-center gap-x-3 text-[11px] text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <Users size={12} className="hidden sm:block" aria-hidden="true" />
-                      <span className="text-sm font-semibold tabular-nums text-foreground">
-                        {serviceCovers}
-                      </span>
-                      couverts
-                    </span>
-                    <span className="h-3 w-px shrink-0 bg-border" aria-hidden="true" />
-                    <span className="inline-flex items-center gap-1">
-                      <Armchair size={12} className="hidden sm:block" aria-hidden="true" />
-                      <span className="text-sm font-semibold tabular-nums text-foreground">
-                        {serviceOccupiedTables}
-                        <span className="text-muted-foreground">/{serviceActiveTables.length}</span>
-                      </span>
-                      <span className="sm:hidden">tables</span>
-                      <span className="hidden sm:inline">tables occupées</span>
-                    </span>
-                    <span className="h-3 w-px shrink-0 bg-border" aria-hidden="true" />
-                    <span className="inline-flex items-center gap-1">
-                      <CalendarDays size={12} className="hidden sm:block" aria-hidden="true" />
-                      <span className="text-sm font-semibold tabular-nums text-foreground">
-                        {reservations.length}
-                      </span>
-                      réservations
-                    </span>
-                  </div>
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <div
-                      role="progressbar"
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={serviceOccupancyRate}
-                      aria-label={`Taux d’occupation de la salle : ${serviceOccupancyRate} %`}
-                      className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-secondary"
-                    >
-                      <div
-                        className="h-full rounded-full bg-foreground/70 transition-all duration-200"
-                        style={{ width: `${serviceOccupancyRate}%` }}
-                      />
-                    </div>
-                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                      {serviceOccupancyRate}&nbsp;%
-                    </span>
-                  </div>
-                </div>
-              )}
-
               {/* Navigation du service : jour et filtre serveur. Les onglets sont
                   placés en tête du cockpit pour remplacer l'ancien bandeau de pouls. */}
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 border-t border-border px-3 py-2 sm:flex-nowrap sm:px-4">
-                <div
-                  title={serviceDateLabel}
-                  className="order-1 flex min-w-0 items-center gap-0.5 rounded-md border border-border bg-background p-0.5 sm:order-none"
-                >
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="hidden h-8 px-1.5 transition-all duration-200 sm:inline-flex"
-                    title="Jour précédent"
-                    aria-label="Jour précédent"
-                    onClick={() => shiftServiceDate(-1)}
+              <div
+                role="region"
+                aria-label="État du service"
+                className="space-y-2 border-t border-border px-3 py-2 sm:px-4"
+              >
+                <div className="flex w-full flex-wrap items-center gap-2">
+                  {serviceIsToday ? (
+                    <span className="text-sm font-semibold">Aujourd’hui</span>
+                  ) : null}
+                  <div
+                    title={serviceDateLabel}
+                    className="flex min-w-0 items-center gap-0.5 rounded-md border border-border bg-background p-0.5"
                   >
-                    <ChevronLeft size={16} />
-                  </Button>
-                  <div className="relative h-8 w-32 min-w-0">
-                    <Input
-                      type="date"
-                      value={liveDate}
-                      aria-label="Date du service"
-                      onChange={(e) => setLiveDate(e.target.value)}
-                      className="floor-plan-service-date-input peer relative z-10 h-8 w-32 border-0 bg-transparent px-1 text-center text-sm text-transparent focus:text-foreground sm:text-foreground"
-                    />
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center truncate px-1 text-sm text-foreground peer-focus:opacity-0 sm:hidden"
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="hidden h-8 px-1.5 transition-all duration-200 sm:inline-flex"
+                      title="Jour précédent"
+                      aria-label="Jour précédent"
+                      onClick={() => shiftServiceDate(-1)}
                     >
-                      {serviceDateLabel}
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="hidden h-8 px-1.5 transition-all duration-200 sm:inline-flex"
-                    title="Jour suivant"
-                    aria-label="Jour suivant"
-                    onClick={() => shiftServiceDate(1)}
-                  >
-                    <ChevronRight size={16} />
-                  </Button>
-                </div>
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    // En direct, l'onglet et la date suffisent à identifier le
-                    // contexte ; le badge n'est donc affiché que pour Archive.
-                    'h-7 gap-1.5 whitespace-nowrap px-2 text-[10px] sm:h-8 sm:px-2.5 sm:text-[11px]',
-                    serviceIsToday ? 'hidden sm:inline-flex' : 'inline-flex',
-                    serviceIsToday
-                      ? 'border-brand/40 text-brand'
-                      : 'border-border text-muted-foreground',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'h-1.5 w-1.5 rounded-full',
-                      serviceIsToday ? 'bg-brand' : 'bg-muted-foreground',
-                    )}
-                    aria-hidden="true"
-                  />
-                  {serviceIsToday ? 'En direct' : 'Archive'}
-                </Badge>
-                {!serviceIsToday ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 transition-all duration-200"
-                    onClick={() => setLiveDate(serviceToday)}
-                  >
-                    Aujourd’hui
-                  </Button>
-                ) : null}
-                {hasServerFilter ? (
-                  <Select
-                    value={selectedServerFilter ?? '_all_'}
-                    onValueChange={(val) => setSelectedServerFilter(val === '_all_' ? null : val)}
-                  >
-                    <SelectTrigger
-                      aria-label="Filtrer par serveur"
-                      title="Filtrer par serveur"
-                      className="order-3 ml-auto h-8 w-9 justify-center gap-1 border-border bg-background px-0 text-xs font-medium sm:order-none sm:w-auto sm:max-w-[11rem] sm:justify-start sm:px-2.5"
-                    >
-                      {selectedServerFilter === '_unassigned_' ? (
-                        <UserX size={13} className="shrink-0 text-muted-foreground" />
-                      ) : (
-                        <UserRound size={13} className="shrink-0 text-primary" />
-                      )}
-                      {/* Sur téléphone le filtre reste une icône : la ligne du jour
-                          doit tenir sans repousser les onglets sur une 3e ligne. */}
-                      <span className="!hidden min-w-0 truncate sm:!inline-flex">
-                        <SelectValue placeholder="Tous les serveurs" />
+                      <ChevronLeft size={16} />
+                    </Button>
+                    <div className="relative h-8 w-32 min-w-0">
+                      <Input
+                        type="date"
+                        value={liveDate}
+                        aria-label="Date du service"
+                        onChange={(e) => setLiveDate(e.target.value)}
+                        className="floor-plan-service-date-input peer relative z-10 h-8 w-32 border-0 bg-transparent px-1 text-center text-sm text-transparent focus:text-foreground sm:text-foreground"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center truncate px-1 text-sm text-foreground peer-focus:opacity-0 sm:hidden"
+                      >
+                        {serviceDateLabel}
                       </span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_all_">Toutes les tables ({allTables.length})</SelectItem>
-                      {unassignedCount > 0 ? (
-                        <SelectItem value="_unassigned_">
-                          <span className="flex items-center gap-1.5">
-                            <UserX size={13} className="shrink-0 text-muted-foreground" />
-                            Non affectées ({unassignedCount})
-                          </span>
-                        </SelectItem>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="hidden h-8 px-1.5 transition-all duration-200 sm:inline-flex"
+                      title="Jour suivant"
+                      aria-label="Jour suivant"
+                      onClick={() => shiftServiceDate(1)}
+                    >
+                      <ChevronRight size={16} />
+                    </Button>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'h-7 gap-1.5 whitespace-nowrap px-2 text-xs sm:h-8 sm:px-2.5',
+                      serviceIsToday
+                        ? 'border-brand/40 text-brand'
+                        : 'border-border text-muted-foreground',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'h-1.5 w-1.5 rounded-full',
+                        serviceIsToday ? 'bg-brand' : 'bg-muted-foreground',
+                      )}
+                      aria-hidden="true"
+                    />
+                    {serviceIsToday ? 'En direct' : 'Archive'}
+                  </Badge>
+                  {!serviceIsToday ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 transition-all duration-200"
+                      onClick={() => setLiveDate(serviceToday)}
+                    >
+                      Aujourd’hui
+                    </Button>
+                  ) : null}
+                  {serviceTab === 'plan' && placedTables.length > 0 ? (
+                    <div role="group" aria-label="Zoom du plan" className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        aria-label="Réduire le plan"
+                        onClick={() => changeZoom(-ZOOM_STEP)}
+                      >
+                        <ZoomOut size={14} />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 transition-all duration-200"
+                        onClick={resetView}
+                      >
+                        <LocateFixed size={14} aria-hidden="true" /> Ajuster le plan
+                      </Button>
+                      <output
+                        aria-label="Niveau de zoom"
+                        className="min-w-10 text-center text-xs tabular-nums text-foreground/80"
+                      >
+                        {Math.round(zoom * 100)} %
+                      </output>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        aria-label="Agrandir le plan"
+                        onClick={() => changeZoom(ZOOM_STEP)}
+                      >
+                        <ZoomIn size={14} />
+                      </Button>
+                    </div>
+                  ) : null}
+                  {serviceIsToday && serviceTab === 'plan' && placedTables.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 gap-1.5 transition-all duration-200"
+                        aria-expanded={showWalkInHelp}
+                        aria-controls={showWalkInHelp ? 'walk-in-help' : undefined}
+                        onClick={() => setShowWalkInHelp((open) => !open)}
+                      >
+                        <Users size={14} aria-hidden="true" />
+                        Choisir une table pour un client
+                      </Button>
+                      {showWalkInHelp ? (
+                        <div id="walk-in-help" role="status" className="text-sm text-foreground">
+                          Sélectionnez une table disponible.
+                        </div>
                       ) : null}
-                      {allServers.map((server) => {
-                        const count = serverTableCounts.get(server) ?? 0;
-                        return (
-                          <SelectItem key={server} value={server}>
-                            {server} ({count} {count > 1 ? 'tables' : 'table'})
+                    </div>
+                  ) : null}
+                  {serviceOverview}
+                  {hasServerFilter ? (
+                    <Select
+                      value={selectedServerFilter ?? '_all_'}
+                      onValueChange={(val) => setSelectedServerFilter(val === '_all_' ? null : val)}
+                    >
+                      <SelectTrigger
+                        aria-label="Filtrer par serveur"
+                        title="Filtrer par serveur"
+                        className="h-8 w-9 justify-center gap-1 border-border bg-background px-0 text-xs font-medium xl:w-auto xl:justify-start xl:px-2.5"
+                      >
+                        {selectedServerFilter === '_unassigned_' ? (
+                          <UserX size={13} className="shrink-0 text-muted-foreground" />
+                        ) : (
+                          <UserRound size={13} className="shrink-0 text-primary" />
+                        )}
+                        {/* Sur téléphone le filtre reste une icône : la ligne du jour
+                          doit tenir sans repousser les onglets sur une 3e ligne. */}
+                        <span className="!hidden min-w-0 truncate xl:!inline-flex">
+                          <SelectValue placeholder="Tous les serveurs" />
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_all_">
+                          Toutes les tables ({allTables.length})
+                        </SelectItem>
+                        {unassignedCount > 0 ? (
+                          <SelectItem value="_unassigned_">
+                            <span className="flex items-center gap-1.5">
+                              <UserX size={13} className="shrink-0 text-muted-foreground" />
+                              Sans serveur affecté ({unassignedCount})
+                            </span>
                           </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                ) : null}
+                        ) : null}
+                        {allServers.map((server) => {
+                          const count = serverTableCounts.get(server) ?? 0;
+                          return (
+                            <SelectItem key={server} value={server}>
+                              {server} ({count} {count > 1 ? 'tables' : 'table'})
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
+                </div>
               </div>
             </>
           ) : null}
@@ -8648,11 +8712,7 @@ export function FloorPlanCanvas({
             'overflow-hidden p-0',
             live
               ? liveViewportBounds
-                ? // Les tables cadrées occupent parfois moins de hauteur que
-                  // l'écran d'un téléphone. Garder une surface utile jusqu'au
-                  // dessus de la navigation tactile évite le vide mort entre
-                  // la légende et la barre fixe.
-                  'h-auto min-h-[calc(100dvh-15rem)] md:min-h-0'
+                ? 'h-[calc(100dvh-15rem)] min-h-[18rem] md:h-[min(600px,calc(100dvh-15rem))] md:min-h-[22rem]'
                 : cn(
                     // Sur téléphone, la surface du plan prend la hauteur restante de
                     // l'écran : un cockpit compact laisse plus de place qu'un
@@ -8689,7 +8749,7 @@ export function FloorPlanCanvas({
               onDragEnd={handleDragEnd}
               onDragCancel={handleDragCancel}
             >
-              <div className="flex h-full min-h-0 flex-col lg:flex-row">
+              <div className="relative flex h-full min-h-0 flex-col lg:flex-row">
                 <div className="order-2 lg:order-1 lg:contents">
                   {!live ? (
                     <FloorPlanPalette
@@ -8710,7 +8770,7 @@ export function FloorPlanCanvas({
                     ref={canvasViewportRef}
                     style={{ touchAction: 'pan-x pan-y' }}
                     className={cn(
-                      'relative min-h-0 w-full flex-1 overflow-auto bg-muted/50',
+                      'relative min-h-0 w-full flex-1 overflow-auto bg-muted/70',
                       livePlanIsEmpty ? 'min-h-0' : 'min-h-[14rem] md:min-h-[22rem]',
                       activeDragData?.kind === 'table' ||
                         activeDragData?.kind === 'wall' ||
@@ -8982,13 +9042,6 @@ export function FloorPlanCanvas({
                           }px, ${GRID_SIZE}px ${GRID_SIZE}px, ${GRID_SIZE}px ${GRID_SIZE}px`,
                         }}
                       >
-                        {!live ? (
-                          <div
-                            className="absolute left-0 top-0 z-20 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background"
-                            title="Origine du plan"
-                            aria-hidden="true"
-                          />
-                        ) : null}
                         {(live ? liveZones : zones).map((zone) => (
                           <ZoneCard
                             key={zone.id}
@@ -9254,6 +9307,7 @@ export function FloorPlanCanvas({
                               onResizeStart={(e) => startTableResize(e, table)}
                               onRotateStart={(e) => startTableRotate(e, table)}
                               isCombinable={combinableTableIds.has(table.id)}
+                              hideChairs={live && crowdedTableIds.has(table.id)}
                               style={{
                                 left: table.positionX ?? 0,
                                 top: table.positionY ?? 0,

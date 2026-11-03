@@ -15,19 +15,19 @@ export const CreateCustomerSchema = z.object({
 });
 
 export const UpdateCustomerSchema = CreateCustomerSchema.partial()
-  .omit({
-    restaurantId: true,
-    phone: true,
-  })
+  .omit({ restaurantId: true, phone: true })
   // `null` clears the email (and its identity), as the PATCH route already expects.
-  .extend({ email: z.string().email().max(320).nullable().optional() });
+  .extend({
+    isVip: z.boolean().optional(),
+    email: z.string().email().max(320).nullable().optional(),
+  });
 
 export const ToggleVipSchema = z.object({
   isVip: z.boolean(),
 });
 
 export const CustomerParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
 });
 
 export const CustomerQuerySchema = z.object({
@@ -47,6 +47,8 @@ export const CustomerQuerySchema = z.object({
   // Statut et visites honorées (365 j) : calculés sur les réservations, réservés à CRM Pro.
   lifecycle: z.enum(['new', 'active', 'regular', 'at_risk', 'dormant']).optional(),
   minHonored365d: z.coerce.number().int().min(0).max(10_000).optional(),
+  // « recent » = dernier contact (défaut) ; les deux autres sont calculés, réservés à CRM Pro.
+  sort: z.enum(['recent', 'visits365d', 'lastVisit']).optional(),
 });
 
 export type CreateCustomerInput = z.infer<typeof CreateCustomerSchema>;

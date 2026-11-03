@@ -251,7 +251,7 @@ function simulationResponse(input: SimulationRequest) {
 }
 
 async function openInlineSimulator(page: Page) {
-  const trigger = page.getByText('Accueillir un walk-in · Simulateur Copilot', { exact: true });
+  const trigger = page.getByText('Simuler un placement · Copilot', { exact: true });
   await expect(trigger).toBeVisible();
   await trigger.click();
   await expect(page.locator('#sim-party-size')).toBeVisible();
@@ -281,7 +281,10 @@ test.describe('/dashboard/floor-plan — navigation et données demo', () => {
       const isTablePatch = requestMethod === 'PATCH' && pathname.includes('/floor-plan/tables/');
       const response = pathname.endsWith('/entitlements')
         ? {
-            restaurantId: process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID || 'e2e-demo-restaurant',
+            restaurantId:
+              route.request().headers()['x-sokar-site-id'] ||
+              process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID ||
+              'e2e-demo-restaurant',
             capabilities: { 'floorPlan.copilot': true },
           }
         : isSimulation
@@ -304,7 +307,19 @@ test.describe('/dashboard/floor-plan — navigation et données demo', () => {
                       ? { recoveries: [] }
                       : pathname.includes('/service-copilot/pulse')
                         ? demoServicePulse
-                        : null;
+                        : // Carte « Ce soir » du Companion, montée même panneau fermé.
+                          pathname.endsWith('/companion/tonight')
+                          ? {
+                              service: 'soir',
+                              date: '2026-10-30',
+                              covers: 0,
+                              usualCovers: null,
+                              specialRequestsCount: 0,
+                              waitlistCount: 0,
+                              watch: [],
+                              attention: [],
+                            }
+                          : null;
 
       await route.fulfill({
         status: response ? 200 : 404,
@@ -323,7 +338,10 @@ test.describe('/dashboard/floor-plan — navigation et données demo', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          restaurantId: process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID || 'e2e-demo-restaurant',
+          restaurantId:
+            route.request().headers()['x-sokar-site-id'] ||
+            process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID ||
+            'e2e-demo-restaurant',
           capabilities: { 'floorPlan.copilot': false },
         }),
       }),

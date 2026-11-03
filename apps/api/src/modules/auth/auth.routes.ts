@@ -3,6 +3,7 @@ import { clerkClient } from '@clerk/fastify';
 import { db } from '../../shared/db/client';
 import { queues } from '../../shared/queue/queues';
 import { requireOrg } from '../../plugins/clerk';
+import { lockAccountMemberships } from '../restaurants/site-context';
 
 export async function authSyncRoutes(app: FastifyInstance) {
   /**
@@ -16,37 +17,67 @@ export async function authSyncRoutes(app: FastifyInstance) {
     // Vérifier si le restaurant existe déjà
     const existing = await db.restaurant.findUnique({ where: { id: orgId } });
     if (existing) {
-      // Le backfill historique ne connaît pas l'utilisateur Clerk qui était
-      // propriétaire. Le premier sync post-backfill crée donc un OWNER
-      // uniquement si le compte ne possède encore aucune membership. Un
-      // membre déjà présent ne peut pas être promu par un simple refresh.
       if (existing.accountId && req.userId) {
         const accountMembership = await db.restaurantAccountMembership.findFirst({
           where: { accountId: existing.accountId },
         });
         if (!accountMembership) {
-          await db.restaurantAccountMembership.create({
-            data: {
-              accountId: existing.accountId,
-              restaurantId: null,
-              clerkUserId: req.userId,
-              role: 'OWNER',
-            },
+          let creator: string | undefined;
+          try {
+            const org = await clerkClient.organizations.getOrganization({
+              organizationId: req.clerkOrganizationId!,
+            });
+            creator = org.createdBy;
+          } catch {
+            return reply.status(503).send({ error: 'OWNER_VERIFICATION_UNAVAILABLE' });
+          }
+          if (!creator || creator !== req.userId)
+            return reply.status(403).send({ error: 'OWNER_VERIFICATION_REQUIRED' });
+          const bootstrapped = await db.$transaction(async (tx) => {
+            await lockAccountMemberships(tx, existing.accountId!);
+            const any = await tx.restaurantAccountMembership.findFirst({
+              where: { accountId: existing.accountId! },
+            });
+            if (any) return true;
+            const transfer = await tx.reservationAuditLog.findFirst({
+              where: {
+                event: 'account_ownership_transferred',
+                metadata: { path: ['accountId'], equals: existing.accountId! },
+              },
+              select: { id: true },
+            });
+            if (transfer) return false;
+            await tx.restaurantAccountMembership.create({
+              data: {
+                accountId: existing.accountId!,
+                restaurantId: null,
+                clerkUserId: req.userId!,
+                role: 'OWNER',
+              },
+            });
+            return true;
           });
+          if (!bootstrapped)
+            return reply.status(403).send({ error: 'OWNER_VERIFICATION_REQUIRED' });
         }
       }
       return reply.send({ synced: true, restaurant: existing });
     }
 
-    // Récupérer les infos de l'organisation Clerk
+    // Le premier propriétaire doit être le créateur vérifié de l'organisation.
     let orgName = 'Mon Restaurant';
     let orgSlug: string | undefined;
     try {
-      const org = await clerkClient.organizations.getOrganization({ organizationId: orgId });
+      const org = await clerkClient.organizations.getOrganization({
+        organizationId: req.clerkOrganizationId ?? orgId,
+      });
+      if (!req.userId || !org.createdBy || org.createdBy !== req.userId) {
+        return reply.status(403).send({ error: 'OWNER_VERIFICATION_REQUIRED' });
+      }
       orgName = org.name || orgName;
       orgSlug = org.slug;
-    } catch (err) {
-      req.log.warn({ err, orgId }, 'Failed to fetch Clerk org details, using defaults');
+    } catch {
+      return reply.status(503).send({ error: 'OWNER_VERIFICATION_UNAVAILABLE' });
     }
 
     // Le compte, son propriétaire initial et le premier établissement doivent
@@ -61,26 +92,21 @@ export async function authSyncRoutes(app: FastifyInstance) {
         create: { clerkOrganizationId: orgId, name: orgName },
         update: { name: orgName },
       });
+      await lockAccountMemberships(tx, account.id);
 
       if (req.userId) {
         const existingMembership = await tx.restaurantAccountMembership.findFirst({
-          where: { accountId: account.id, restaurantId: null, clerkUserId: req.userId },
+          where: { accountId: account.id },
         });
-        if (existingMembership) {
-          await tx.restaurantAccountMembership.update({
-            where: { id: existingMembership.id },
-            data: { role: 'OWNER' },
-          });
-        } else {
-          await tx.restaurantAccountMembership.create({
-            data: {
-              accountId: account.id,
-              restaurantId: null,
-              clerkUserId: req.userId,
-              role: 'OWNER',
-            },
-          });
-        }
+        if (existingMembership) throw new Error('Account already has memberships');
+        await tx.restaurantAccountMembership.create({
+          data: {
+            accountId: account.id,
+            restaurantId: null,
+            clerkUserId: req.userId,
+            role: 'OWNER',
+          },
+        });
       }
 
       // Créer le restaurant dans PostgreSQL

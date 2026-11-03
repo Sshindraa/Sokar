@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@/lib/api-error';
 import AdminHealthPage from './page';
 
-const apiMocks = vi.hoisted(() => ({ get: vi.fn() }));
+const apiMocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 
 vi.mock('@/lib/api', () => ({
-  useApi: () => ({ orgId: 'org_test', get: apiMocks.get }),
+  useApi: () => ({ orgId: 'org_test', get: apiMocks.get, post: apiMocks.post }),
 }));
 
 const restaurantsResponse = {
@@ -77,6 +78,7 @@ const healthResponse = {
 describe('AdminHealthPage', () => {
   beforeEach(() => {
     apiMocks.get.mockReset();
+    apiMocks.post.mockReset();
     apiMocks.get.mockImplementation((path: string) =>
       Promise.resolve(path.includes('/health') ? healthResponse : restaurantsResponse),
     );
@@ -167,5 +169,77 @@ describe('AdminHealthPage', () => {
 
     await waitFor(() => expect(screen.queryByText('Martin Dupont')).toBeNull());
     expect(screen.getByText(/Chargement de la santé/)).toBeInTheDocument();
+  });
+
+  describe('recalcul des chiffres d’un client', () => {
+    const previewPath = 'admin/restaurants/resto-1/customers/cust-42/projection-repair-preview';
+    const repairPath = 'admin/restaurants/resto-1/customers/cust-42/projection-repair';
+
+    function mockPreview(preview: { changed: boolean; reservationCount: number }) {
+      apiMocks.get.mockImplementation((path: string) => {
+        if (path.endsWith('/projection-repair-preview')) {
+          return Promise.resolve({ data: { ...preview, current: null, expected: {} } });
+        }
+        return Promise.resolve(path.includes('/health') ? healthResponse : restaurantsResponse);
+      });
+    }
+
+    async function enterCustomerId() {
+      fireEvent.change(await screen.findByLabelText('ID du client'), {
+        target: { value: 'cust-42' },
+      });
+    }
+
+    it('vérifie le client sur le chemin du restaurant sélectionné', async () => {
+      mockPreview({ changed: false, reservationCount: 3 });
+      render(<AdminHealthPage />);
+
+      await enterCustomerId();
+      fireEvent.click(screen.getByRole('button', { name: 'Vérifier' }));
+
+      expect(await screen.findByText('Chiffres à jour (3 réservations).')).toBeInTheDocument();
+      expect(apiMocks.get).toHaveBeenCalledWith(previewPath);
+      expect(screen.queryByRole('button', { name: 'Recalculer' })).toBeNull();
+    });
+
+    it('propose Recalculer seulement quand il y a un écart', async () => {
+      mockPreview({ changed: true, reservationCount: 1 });
+      render(<AdminHealthPage />);
+
+      await enterCustomerId();
+      fireEvent.click(screen.getByRole('button', { name: 'Vérifier' }));
+
+      expect(await screen.findByText('Écart sur 1 réservation.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Recalculer' })).toBeInTheDocument();
+    });
+
+    it('envoie le recalcul avec une clé d’idempotence', async () => {
+      mockPreview({ changed: true, reservationCount: 2 });
+      apiMocks.post.mockResolvedValue({ data: { changed: true, reservationCount: 2 } });
+      render(<AdminHealthPage />);
+
+      await enterCustomerId();
+      fireEvent.click(screen.getByRole('button', { name: 'Vérifier' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Recalculer' }));
+
+      expect(await screen.findByText('Chiffres recalculés.')).toBeInTheDocument();
+      expect(apiMocks.post).toHaveBeenCalledWith(repairPath, undefined, {
+        headers: { 'Idempotency-Key': expect.stringMatching(/^[0-9a-f-]{36}$/) },
+      });
+    });
+
+    it('affiche un message clair quand le client est introuvable', async () => {
+      apiMocks.get.mockImplementation((path: string) =>
+        path.endsWith('/projection-repair-preview')
+          ? Promise.reject(new ApiError('Not found', 404, null))
+          : Promise.resolve(path.includes('/health') ? healthResponse : restaurantsResponse),
+      );
+      render(<AdminHealthPage />);
+
+      await enterCustomerId();
+      fireEvent.click(screen.getByRole('button', { name: 'Vérifier' }));
+
+      expect(await screen.findByText('Client introuvable dans ce restaurant.')).toBeInTheDocument();
+    });
   });
 });

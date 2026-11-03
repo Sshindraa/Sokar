@@ -11,7 +11,10 @@ import {
 import { queues } from '../../shared/queue/queues';
 import { logger } from '../../shared/logger/pino';
 import { CapacityAwareAvailabilityService } from '../floor-plan/availability-capacity-aware.service';
-import { TableAllocationService } from '../floor-plan/table-allocation.service';
+import {
+  TableAllocationService,
+  TableAllocationError,
+} from '../floor-plan/table-allocation.service';
 import { resolveServiceDurationMinutes } from '../floor-plan/floor-plan.types';
 import { isSlotStartPast } from '../../shared/timezone/restaurant-time';
 import {
@@ -28,6 +31,10 @@ import {
   recordMarketingHonoredConversions,
 } from '../marketing/marketing-attribution.service';
 import { ReservationLifecycleService } from './reservation-lifecycle.service.js';
+import {
+  ACTIVE_RESERVATION_STATES,
+  reservationOverlapWhere,
+} from '../../shared/reservations/capacity';
 
 const availability = new CapacityAwareAvailabilityService(db);
 const tableAllocation = new TableAllocationService(db);
@@ -509,7 +516,134 @@ export class ReservationService {
     let stateChanged = false;
     let lifecycleMutation = false;
 
-    if (projectedState) {
+    const requestedPartySize = directUpdateValue(data.partySize);
+    if (typeof requestedPartySize === 'number') {
+      const transition = await db.$transaction(async (tx) => {
+        await tx.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${restaurantId}, 0))`,
+        );
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM reservations WHERE id = ${id} AND restaurant_id = ${restaurantId} FOR UPDATE`,
+        );
+        const current = await tx.reservation.findUniqueOrThrow({ where: { id, restaurantId } });
+        const targetState = projectedState ?? current.state;
+        const additionalData = { ...data };
+        delete additionalData.status;
+        delete additionalData.state;
+        if (
+          requestedPartySize !== current.partySize &&
+          ACTIVE_RESERVATION_STATES.includes(
+            current.state as (typeof ACTIVE_RESERVATION_STATES)[number],
+          ) &&
+          ACTIVE_RESERVATION_STATES.includes(
+            targetState as (typeof ACTIVE_RESERVATION_STATES)[number],
+          )
+        ) {
+          const settings = await tx.restaurantExposureSettings.findUnique({
+            where: { restaurantId },
+            select: { capacitySpecials: true },
+          });
+          const duration = resolveServiceDurationMinutes(settings?.capacitySpecials);
+          const startsAt = asUpdateDate(data.startsAt) ?? current.startsAt ?? current.reservedAt;
+          const endsAt =
+            asUpdateDate(data.endsAt) ??
+            current.endsAt ??
+            new Date(startsAt.getTime() + duration * 60_000);
+          if (targetState === 'SEATED') {
+            const now = new Date();
+            if (!current.tableId || endsAt <= now)
+              throw Object.assign(new Error('SLOT_NOT_AVAILABLE'), { statusCode: 409 });
+            try {
+              await tableAllocation.assertTableAvailableForSeating(
+                {
+                  restaurantId,
+                  tableId: current.tableId,
+                  partySize: requestedPartySize,
+                  startsAt: now,
+                  endsAt,
+                  excludeReservationId: id,
+                },
+                tx,
+              );
+            } catch (error) {
+              if (error instanceof TableAllocationError)
+                throw Object.assign(new Error('SLOT_NOT_AVAILABLE'), { statusCode: 409 });
+              throw error;
+            }
+          } else {
+            const hasTables = await tx.table.findFirst({
+              where: { isActive: true, floorPlan: { restaurantId, isActive: true } },
+              select: { id: true },
+            });
+            if (hasTables) {
+              const table = await tableAllocation.allocate(
+                {
+                  restaurantId,
+                  partySize: requestedPartySize,
+                  startsAt,
+                  endsAt,
+                  excludeReservationId: id,
+                },
+                tx,
+              );
+              if (!table) throw Object.assign(new Error('SLOT_NOT_AVAILABLE'), { statusCode: 409 });
+              additionalData.table = { connect: { id: table.id } };
+            } else {
+              const [otherReservation, otherHold] = await Promise.all([
+                tx.reservation.findFirst({
+                  where: {
+                    restaurantId,
+                    isTest: false,
+                    id: { not: id },
+                    state: { in: [...ACTIVE_RESERVATION_STATES] },
+                    OR: reservationOverlapWhere(startsAt, endsAt, duration),
+                  },
+                  select: { id: true },
+                }),
+                tx.agenticHold.findFirst({
+                  where: {
+                    restaurantId,
+                    type: 'HOLD',
+                    status: 'ACTIVE',
+                    expiresAt: { gt: new Date() },
+                    slotStart: { lt: endsAt },
+                    slotEnd: { gt: startsAt },
+                  },
+                  select: { id: true },
+                }),
+              ]);
+              if (otherReservation || otherHold)
+                throw Object.assign(new Error('SLOT_NOT_AVAILABLE'), { statusCode: 409 });
+            }
+          }
+        }
+        return lifecycle.transitionInTransaction(tx, {
+          reservationId: id,
+          restaurantId,
+          toState: targetState,
+          actor,
+          additionalData,
+          metadata: { source: 'legacy_reservation_update' },
+          changedFields: changedReservationQualityFields(
+            current,
+            data,
+            reservation.restaurant.timezone,
+          ),
+          operation: targetState === 'CANCELLED' ? 'cancel' : 'update',
+          observationSource: 'legacy_service',
+          allowAlreadyInTarget: true,
+          snapshot: current,
+        });
+      });
+      await lifecycle.finalizeTransition(
+        { reservationId: id, restaurantId, toState: transition.toState, actor },
+        transition,
+      );
+      await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
+      updated = transition.reservation;
+      stateChanged = transition.fromState !== transition.toState;
+      lifecycleMutation = transition.mutated;
+    } else if (projectedState) {
       const additionalData = { ...data };
       // The lifecycle gateway owns both columns. Other fields still travel in
       // the same transaction so dashboard edits remain atomic with a status
@@ -777,16 +911,31 @@ export class ReservationService {
       return reservation;
     }
 
-    const startsAt = reservation.startsAt ?? reservation.reservedAt;
     const serviceDurationMinutes = resolveServiceDurationMinutes(
       reservation.restaurant.exposureSettings?.capacitySpecials,
     );
-    const endsAt =
-      reservation.endsAt ?? new Date(startsAt.getTime() + serviceDurationMinutes * 60_000);
 
     const updated = await db.$transaction(async (tx) => {
+      await tableAllocation.lockRestaurantCapacity(tx, restaurantId);
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM reservations WHERE id = ${id} AND restaurant_id = ${restaurantId} FOR UPDATE`,
+      );
+      const current = await tx.reservation.findUniqueOrThrow({
+        where: { id, restaurantId },
+        include: { table: { select: { name: true } } },
+      });
+      if (current.tableId) return current;
+      const currentStartsAt = current.startsAt ?? current.reservedAt;
+      const currentEndsAt =
+        current.endsAt ?? new Date(currentStartsAt.getTime() + serviceDurationMinutes * 60_000);
       const table = await tableAllocation.allocate(
-        { restaurantId, partySize: reservation.partySize, startsAt, endsAt },
+        {
+          restaurantId,
+          partySize: current.partySize,
+          startsAt: currentStartsAt,
+          endsAt: currentEndsAt,
+          excludeReservationId: id,
+        },
         tx,
       );
 
@@ -798,7 +947,7 @@ export class ReservationService {
 
       const updated = await tx.reservation.update({
         where: { id },
-        data: { tableId: table.id, startsAt, endsAt },
+        data: { tableId: table.id, startsAt: currentStartsAt, endsAt: currentEndsAt },
         include: { table: { select: { name: true } } },
       });
       await tx.reservationAuditLog.create({
@@ -837,7 +986,7 @@ export class ReservationService {
       end.setHours(23, 59, 59, 999);
       where.reservedAt = { gte: start, lte: end };
     }
-    return db.reservation.findMany({
+    const reservations = await db.reservation.findMany({
       where: {
         ...where,
         // Le DELETE legacy est désormais une clôture terminale. L'événement
@@ -846,8 +995,19 @@ export class ReservationService {
         auditLog: { none: { event: 'reservation_deleted' } },
       },
       orderBy: { reservedAt: 'asc' },
-      include: { table: { select: { name: true } } },
+      include: {
+        table: { select: { name: true } },
+        auditLog: {
+          where: { event: 'reservation_created', metadata: { path: ['overbooked'], equals: true } },
+          select: { id: true },
+          take: 1,
+        },
+      },
     });
+    return reservations.map(({ auditLog, ...reservation }) => ({
+      ...reservation,
+      overbooked: auditLog.length > 0,
+    }));
   }
 
   /**

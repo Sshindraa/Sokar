@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toApiError } from '@/lib/api-error';
 import ReactivationPage from './page';
+import { Toaster } from '@/components/ui/sonner';
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -85,14 +86,19 @@ describe('ReactivationPage', () => {
 
   it('traduit le refus de l’API au lieu d’afficher un code', async () => {
     apiMocks.post.mockRejectedValue(toApiError(409, { error: 'REACTIVATION_AUTOMATION_ACTIVE' }));
-    render(<ReactivationPage />);
+    render(
+      <>
+        <ReactivationPage />
+        <Toaster />
+      </>,
+    );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Envoyer la campagne' }));
     fireEvent.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirmer l’envoi' }),
     );
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('déjà active dans Marketing');
+    expect(await screen.findByText(/déjà active dans Marketing/)).toBeInTheDocument();
     expect(screen.queryByText(/REACTIVATION_AUTOMATION_ACTIVE/)).toBeNull();
   });
 
@@ -106,7 +112,7 @@ describe('ReactivationPage', () => {
 
     mockLoad();
     fireEvent.click(screen.getByRole('button', { name: /réessayer/i }));
-    expect(await screen.findByText(/VIPs? dormants?/)).toBeInTheDocument();
+    expect(await screen.findByText(/clients? VIP inactifs?/)).toBeInTheDocument();
   });
 
   it('dit calmement que la réactivation n’est pas dans la formule', async () => {

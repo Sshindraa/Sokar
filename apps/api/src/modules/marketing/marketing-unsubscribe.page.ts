@@ -1,3 +1,4 @@
+import { buildMarketingConsentLabel } from '@sokar/shared';
 import type { MarketingChannelCode } from './marketing-permission.service';
 
 const CHANNEL_LABEL: Record<MarketingChannelCode, string> = {
@@ -65,5 +66,40 @@ export function renderUnsubscribeInvalidPage(): string {
     'Lien invalide',
     `<h1>Ce lien n’est plus valide</h1>
 <p>Il a expiré ou il est incomplet. Répondez au message reçu ou contactez directement le restaurant : votre demande sera traitée.</p>`,
+  );
+}
+
+/** Case non cochée : rien n'est enregistré tant que le client ne la coche pas et ne valide pas. */
+export function renderConsentPage(args: {
+  token: string;
+  restaurantName: string;
+  notice?: string;
+}): string {
+  return page(
+    'Recevoir les offres',
+    `<h1>Recevoir les offres par e-mail</h1>
+${args.notice ? `<p>${escapeHtml(args.notice)}</p>` : ''}
+<form method="post">
+<input type="hidden" name="token" value="${escapeHtml(args.token)}">
+<p><label><input type="checkbox" name="consent" value="on"> ${escapeHtml(buildMarketingConsentLabel('EMAIL', args.restaurantName))}</label></p>
+<button type="submit">Valider</button>
+</form>`,
+  );
+}
+
+export function renderConsentDonePage(
+  outcome: 'RECORDED' | 'ALREADY_GRANTED' | 'NOT_RECORDED',
+): string {
+  if (outcome === 'NOT_RECORDED') {
+    return page(
+      'Rien n’a été enregistré',
+      `<h1>Rien n’a été enregistré</h1>
+<p>Votre accord n’a pas pu être pris en compte. Votre réservation n’est pas concernée.</p>`,
+    );
+  }
+  return page(
+    'Accord enregistré',
+    `<h1>${outcome === 'RECORDED' ? 'Merci' : 'Vous êtes déjà inscrit'}</h1>
+<p>Vous recevrez les offres et actualités de ce restaurant par e-mail. Vous pouvez vous désinscrire à tout moment depuis le lien présent dans chaque message. Votre réservation n’est pas concernée.</p>`,
   );
 }

@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { CallSession, CallState, ChatMessage, LlmRequestKind } from './types';
 import { voiceConfig } from '../../../env';
 import { validateToolArgs } from '../tool-schemas';
@@ -423,6 +423,7 @@ function withRequestTimeout(sessionSignal?: AbortSignal): AbortSignal {
 }
 
 export class CallSessionManager {
+  // shortcut: sessions are lost on restart; use shared recovery before enabling multiple API processes.
   private readonly sessions = new Map<string, CallSession>();
 
   private static instance: CallSessionManager;
@@ -475,6 +476,7 @@ export class CallSessionManager {
 
     const session: CallSession = {
       callControlId: opts.callControlId,
+      ...(opts.demo ? {} : { streamToken: randomBytes(32).toString('base64url') }),
       callSessionId: opts.callSessionId,
       callLegId: opts.callLegId,
       from: opts.from,
@@ -539,6 +541,13 @@ export class CallSessionManager {
       conversation: createConversationState(),
     };
     this.sessions.set(sessionIdKey(opts.callControlId), session);
+    if (!opts.demo) {
+      session.streamStartTimer = setTimeout(() => {
+        if (this.get(opts.callControlId) === session && !session.telnyxWs)
+          this.delete(opts.callControlId);
+      }, 10 * 60_000);
+      session.streamStartTimer.unref?.();
+    }
     // Capacité locale (R1-3) : la jauge suit le nombre de sessions tenues par
     // ce process, pour alerter avant la saturation CPU mesurée à ~100 sessions.
     voiceActiveSessionsGauge.set(this.sessions.size);
@@ -560,6 +569,8 @@ export class CallSessionManager {
   }
 
   cleanup(session: CallSession): void {
+    if (session.streamStartTimer) clearTimeout(session.streamStartTimer);
+    session.streamStartTimer = null;
     session.ended = true;
     if (session.ending?.timer) clearTimeout(session.ending.timer);
     session.ending?.complete?.();

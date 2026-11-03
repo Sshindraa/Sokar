@@ -122,6 +122,36 @@ async function setJson(key: string, value: unknown, ttlSec: number): Promise<voi
   await redisCache.set(key, JSON.stringify(value), 'EX', String(ttlSec));
 }
 
+const EXCHANGE_TOKEN_SCRIPT = `
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
+if KEYS[3] ~= '' then redis.call('SET', KEYS[3], ARGV[2], 'EX', ARGV[4]) end
+redis.call('DEL', KEYS[1])
+if KEYS[4] ~= '' then redis.call('DEL', KEYS[4]) end
+return 1
+`;
+
+async function exchangeToken(
+  originalKey: string,
+  original: AuthCode | StoredToken,
+  next: StoredToken,
+  previousAccessToken?: string,
+): Promise<boolean> {
+  const result = await redisCache.eval(
+    EXCHANGE_TOKEN_SCRIPT,
+    4,
+    originalKey,
+    `sokar:oauth:token:${next.accessToken}`,
+    next.refreshToken ? `sokar:oauth:refresh:${next.refreshToken}` : '',
+    previousAccessToken ? `sokar:oauth:token:${previousAccessToken}` : '',
+    JSON.stringify(original),
+    JSON.stringify(next),
+    String(TTL_TOKEN),
+    String(TTL_REFRESH),
+  );
+  return result === 1;
+}
+
 // ─── Types ─────────────────────────────────────────────
 
 type RegisteredClient = {
@@ -902,9 +932,6 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
-      // Toutes les validations sont passées → supprimer le code (one-time use)
-      await redisCache.del(`sokar:oauth:code:${body.code}`);
-
       // Générer les tokens
       const accessToken = randomUUID();
       const supportsRefreshToken = !tokenClient || tokenClient.grantTypes.includes('refresh_token');
@@ -920,8 +947,11 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         refreshToken,
       };
 
-      await setJson(`sokar:oauth:token:${accessToken}`, tokenData, TTL_TOKEN);
-      await setJson(`sokar:oauth:refresh:${refreshToken}`, tokenData, TTL_REFRESH);
+      if (!(await exchangeToken(`sokar:oauth:code:${body.code}`, authCode, tokenData))) {
+        return reply
+          .status(400)
+          .send({ error: 'invalid_grant', error_description: 'Code already used' });
+      }
 
       logger.info({ clientId, restaurantId: authCode.restaurantId }, 'oauth: access token issued');
 
@@ -967,9 +997,6 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      // Rotation: l'ancien access token et l'ancien refresh token sont révoqués.
-      await deleteStoredTokenPair(oldToken);
-
       // Générer de nouveaux tokens
       const accessToken = randomUUID();
       const refreshToken = randomUUID();
@@ -980,8 +1007,18 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         accessToken,
         refreshToken,
       };
-      await setJson(`sokar:oauth:token:${accessToken}`, tokenData, TTL_TOKEN);
-      await setJson(`sokar:oauth:refresh:${refreshToken}`, tokenData, TTL_REFRESH);
+      if (
+        !(await exchangeToken(
+          `sokar:oauth:refresh:${body.refresh_token}`,
+          oldToken,
+          tokenData,
+          oldToken.accessToken,
+        ))
+      ) {
+        return reply
+          .status(400)
+          .send({ error: 'invalid_grant', error_description: 'Refresh token already used' });
+      }
 
       return reply.send({
         access_token: accessToken,

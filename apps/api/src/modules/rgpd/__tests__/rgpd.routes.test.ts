@@ -62,6 +62,10 @@ function setupPrismaMocks() {
   } as unknown as Awaited<ReturnType<typeof db.reservationAuditLog.create>>);
   vi.mocked(db.$transaction).mockImplementation(async (fn) =>
     (fn as unknown as (tx: unknown) => unknown)({
+      customerConsent: db.customerConsent,
+      call: db.call,
+      reservationAuditLog: db.reservationAuditLog,
+      message: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
       reservation: { updateMany: vi.fn().mockResolvedValue({ count: 3 }) },
     }),
   );
@@ -107,6 +111,31 @@ function setupPrismaMocks() {
       }
     }
     return null;
+  });
+  (
+    vi.mocked(db.identityVerificationOtp.updateMany) as unknown as Mock<
+      (...args: unknown[]) => unknown
+    >
+  ).mockImplementation(async (...args: unknown[]) => {
+    const { where, data } = args[0] as {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    };
+    for (const record of otpStore.values()) {
+      if (
+        record.id !== where.id ||
+        record.otpHash !== where.otpHash ||
+        record.consumedAt ||
+        (record.attempts as number) >= 5 ||
+        (record.expiresAt as Date) <= new Date() ||
+        (where.channel && record.channel !== where.channel)
+      )
+        continue;
+      if (data.consumedAt) record.consumedAt = data.consumedAt;
+      if (data.attempts) record.attempts = (record.attempts as number) + 1;
+      return { count: 1 };
+    }
+    return { count: 0 };
   });
   (
     vi.mocked(db.signedTokenUsage.create) as unknown as Mock<(...args: unknown[]) => unknown>
@@ -227,60 +256,14 @@ describe('RGPD routes (with identity verification)', () => {
   });
 
   describe('GET /api/rgpd/confirm-link', () => {
-    it('confirme un lien email avec token encodé et affiche un verificationToken', async () => {
-      setupPrismaMocks();
+    it('refuse un ancien lien et demande une vérification SMS', async () => {
       const app = await getApp();
-      const requestRes = await app.inject({
-        method: 'POST',
-        url: '/api/rgpd/request-verification',
-        payload: {
-          subject: '+33****0101',
-          intent: 'export',
-          email: 'user@example.com',
-        },
-      });
-      expect(requestRes.statusCode).toBe(200);
-
-      const [opts] = vi.mocked(sendEmail).mock.calls[0];
-      const tokenMatch = opts.html.match(/token=([^"<&]+)/);
-      expect(tokenMatch).toBeDefined();
-
       const res = await app.inject({
         method: 'GET',
-        url: `/api/rgpd/confirm-link?token=${tokenMatch![1]}`,
+        url: '/api/rgpd/confirm-link?token=legacy-token',
       });
-
-      expect(res.statusCode).toBe(200);
-      expect(res.headers['content-type']).toContain('text/html');
-      expect(res.body).toContain('X-Identity-Token');
-      expect(res.body).toContain('+33****0101');
-    });
-
-    it('refuse le replay du même lien email', async () => {
-      setupPrismaMocks();
-      const app = await getApp();
-      const requestRes = await app.inject({
-        method: 'POST',
-        url: '/api/rgpd/request-verification',
-        payload: {
-          subject: '+33****0102',
-          intent: 'export',
-          email: 'user@example.com',
-        },
-      });
-      expect(requestRes.statusCode).toBe(200);
-
-      const [opts] = vi.mocked(sendEmail).mock.calls[0];
-      const tokenMatch = opts.html.match(/token=([^"<&]+)/);
-      expect(tokenMatch).toBeDefined();
-      const url = `/api/rgpd/confirm-link?token=${tokenMatch![1]}`;
-
-      const first = await app.inject({ method: 'GET', url });
-      expect(first.statusCode).toBe(200);
-
-      const replay = await app.inject({ method: 'GET', url });
-      expect(replay.statusCode).toBe(400);
-      expect(replay.body).toContain('EXPIRED');
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toContain('SMS verification required');
     });
   });
 
@@ -310,6 +293,20 @@ describe('RGPD routes (with identity verification)', () => {
       const body = res.json();
       expect(body.ok).toBe(true);
       expect(body.anonymized.reservations).toBe(3);
+    });
+
+    it("répond par une erreur si l'effacement échoue", async () => {
+      setupPrismaMocks();
+      vi.mocked(db.call.updateMany).mockRejectedValueOnce(new Error('database unavailable'));
+      const app = await getApp();
+      const token = await getVerifiedToken(app, '+33****0001', 'erase');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/rgpd/erase',
+        headers: { 'x-identity-token': token },
+        payload: { subject: '+33****0001' },
+      });
+      expect(res.statusCode).toBe(500);
     });
 
     it('refuse 403 si subject payload ≠ subject token', async () => {

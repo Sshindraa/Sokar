@@ -1,8 +1,12 @@
 import { db } from '../../shared/db/client';
-import { sendSms } from '../../shared/telnyx/client';
 import { ReservationService } from '../reservations/reservation.service';
 import { logger } from '../../shared/logger/pino';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
+import { redisCache } from '../../shared/redis/client';
+import { queues } from '../../shared/queue/queues';
+import { createHash, randomUUID } from 'node:crypto';
+import { parseReply, type ReplyIntent } from './reply-parser';
+export { parseReply, type ReplyIntent } from './reply-parser';
 
 /**
  * Parser et handler partagés pour les réponses entrantes SMS et WhatsApp.
@@ -11,18 +15,6 @@ import { observeReservationMutation } from '../../shared/observability/reservati
  * S'il répond OUI, on marque comme confirmé (bonus, pas requis).
  * Pas de réponse = normal, la résa reste confirmée.
  */
-
-const POSITIVE_PATTERNS = /\b(oui|ok|confirme?|yes|ouais)\b/i;
-const NEGATIVE_PATTERNS = /\b(non|annul\w*|cancel\w*|no\b)\b/i;
-
-export type ReplyIntent = 'CONFIRMED' | 'CANCELLED' | 'UNKNOWN';
-
-export function parseReply(text: string): ReplyIntent {
-  const trimmed = text.trim();
-  if (POSITIVE_PATTERNS.test(trimmed)) return 'CONFIRMED';
-  if (NEGATIVE_PATTERNS.test(trimmed)) return 'CANCELLED';
-  return 'UNKNOWN';
-}
 
 export interface HandleReplyResult {
   intent: ReplyIntent;
@@ -42,6 +34,32 @@ export async function handleReply(
   from: string,
   text: string,
   channel: 'sms' | 'whatsapp',
+  messageId?: string,
+): Promise<HandleReplyResult> {
+  if (!messageId) throw new Error('Inbound message ID required');
+  const eventKey = `inbound-reply:${createHash('sha256').update(`${channel}:${messageId}`).digest('hex')}`;
+  const lockKey = `${eventKey}:lock`;
+  const lockToken = randomUUID();
+  if (!(await redisCache.set(lockKey, lockToken, 'EX', 300, 'NX'))) {
+    throw new Error('Inbound message is already being processed');
+  }
+  try {
+    return await handleLockedReply(from, text, channel, eventKey);
+  } finally {
+    await redisCache.eval(
+      "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0",
+      1,
+      lockKey,
+      lockToken,
+    );
+  }
+}
+
+async function handleLockedReply(
+  from: string,
+  text: string,
+  channel: 'sms' | 'whatsapp',
+  eventKey: string,
 ): Promise<HandleReplyResult> {
   const intent = parseReply(text);
 
@@ -66,23 +84,43 @@ export async function handleReply(
   tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
   tomorrowEnd.setHours(23, 59, 59, 999);
 
-  const reservation = await db.reservation.findFirst({
+  const saved = await redisCache.get(eventKey);
+  if (saved === 'ignored' || saved === 'done') return { intent, action: 'no_reservation' };
+  const matches = await db.reservation.findMany({
     where: {
+      ...(saved ? { id: saved } : {}),
       customerPhone: from,
       // `status` est une projection lossy de `state` : une réservation en
       // validation manuelle (`state = PENDING`) ou déjà installée
       // (`state = HONORED`) porte encore `status = CONFIRMED`. Exiger les deux
       // colonnes évite d'annuler une réservation qui n'était pas ferme, et
       // aligne ce filtre sur `isConfirmedReservation` (R1-4).
-      status: 'CONFIRMED',
-      state: 'CONFIRMED',
-      confirmationStatus: 'PENDING',
+      ...(saved ? {} : { status: 'CONFIRMED', state: 'CONFIRMED', confirmationStatus: 'PENDING' }),
       reservedAt: { gte: yesterdayStart, lte: tomorrowEnd },
     },
     include: {
       restaurant: { select: { id: true, name: true, managerPhone: true } },
     },
+    take: 2,
   });
+  // A shared sender cannot identify a restaurant; never guess when several match.
+  if (matches.length !== 1) {
+    if (!saved) await redisCache.set(eventKey, 'ignored', 'EX', 7 * 24 * 60 * 60);
+    return { intent, action: 'no_reservation' };
+  }
+  const reservation = matches[0];
+  if (!saved) await redisCache.set(eventKey, reservation.id, 'EX', 7 * 24 * 60 * 60);
+
+  const stillConfirmed = reservation.state === 'CONFIRMED' && reservation.status === 'CONFIRMED';
+  const alreadyCancelled =
+    saved &&
+    reservation.state === 'CANCELLED' &&
+    reservation.status === 'CANCELLED' &&
+    intent === 'CANCELLED';
+  if (!stillConfirmed && !alreadyCancelled) {
+    await redisCache.set(eventKey, 'done', 'EX', 7 * 24 * 60 * 60);
+    return { intent, action: 'no_reservation' };
+  }
 
   if (!reservation) {
     logger.info({ hasFrom: Boolean(from), channel }, 'inbound reply: no pending reservation found');
@@ -90,13 +128,21 @@ export async function handleReply(
   }
 
   if (intent === 'CONFIRMED') {
-    await db.reservation.update({
-      where: { id: reservation.id },
+    const changed = await db.reservation.updateMany({
+      where: {
+        id: reservation.id,
+        restaurantId: reservation.restaurantId,
+        status: 'CONFIRMED',
+        state: 'CONFIRMED',
+        confirmationStatus: 'PENDING',
+      },
       data: {
         confirmationStatus: 'CONFIRMED',
         confirmedAt: new Date(),
       },
     });
+    await redisCache.set(eventKey, 'done', 'EX', 7 * 24 * 60 * 60);
+    if (changed.count === 0) return { intent, action: 'no_reservation' };
     observeReservationMutation({
       source: 'direct',
       operation: 'confirmation_reply',
@@ -116,9 +162,11 @@ export async function handleReply(
 
   // intent === 'CANCELLED'
   try {
-    await ReservationService.update(reservation.id, reservation.restaurantId, {
-      status: 'CANCELLED',
-    });
+    if (reservation.status !== 'CANCELLED' || reservation.state !== 'CANCELLED') {
+      await ReservationService.update(reservation.id, reservation.restaurantId, {
+        status: 'CANCELLED',
+      });
+    }
     await db.reservation.update({
       where: { id: reservation.id },
       data: {
@@ -126,6 +174,19 @@ export async function handleReply(
         confirmedAt: new Date(),
       },
     });
+    // SMS au gérant : table libérée
+    if (reservation.restaurant.managerPhone) {
+      await queues.smsManager.add(
+        'reply-cancellation',
+        {
+          restaurantId: reservation.restaurant.id,
+          reservationId: reservation.id,
+          channel,
+        },
+        { jobId: `inbound_reply_${createHash('sha256').update(eventKey).digest('hex')}` },
+      );
+    }
+
     observeReservationMutation({
       source: 'direct',
       operation: 'cancel',
@@ -133,32 +194,11 @@ export async function handleReply(
       state: 'CANCELLED',
       idempotency: 'not_applicable',
       audit: 'written',
-      notification: reservation.restaurant.managerPhone ? 'direct' : 'not_sent',
+      notification: reservation.restaurant.managerPhone ? 'queued' : 'not_sent',
       capacity: 'released',
     });
 
-    // SMS au gérant : table libérée
-    if (reservation.restaurant.managerPhone) {
-      const dateStr = reservation.reservedAt.toLocaleDateString('fr-FR', {
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-      });
-      const timeStr = reservation.reservedAt.toLocaleTimeString('fr-FR', {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-      await sendSms(
-        reservation.restaurant.managerPhone,
-        `✅ Table libérée : ${reservation.customerName} a annulé sa résa de ${dateStr} ${timeStr} (${reservation.partySize} pers.) via ${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}.`,
-        {
-          restaurantId: reservation.restaurant.id,
-          sourceType: 'reservation_cancelled_reply',
-          sourceId: reservation.id,
-          metadata: { messageType: 'reservation_cancelled_reply', inboundChannel: channel },
-        },
-      );
-    }
+    await redisCache.set(eventKey, 'done', 'EX', 7 * 24 * 60 * 60);
 
     logger.info(
       { reservationId: reservation.id, hasFrom: Boolean(from), channel },
@@ -171,6 +211,6 @@ export async function handleReply(
       { err: message, reservationId: reservation.id, channel },
       'failed to cancel reservation via reply',
     );
-    return { intent, reservationId: reservation.id };
+    throw err;
   }
 }

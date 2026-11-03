@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { Prisma } from '@prisma/client';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { redisCache } from '../../../shared/redis/client';
+import * as entitlements from '../../entitlements/entitlement.service';
 
 describe('customer.routes', () => {
   beforeEach(() => {
@@ -11,6 +12,170 @@ describe('customer.routes', () => {
 
   afterAll(async () => {
     await closeApp();
+  });
+
+  describe('GET /customers/suggestions', () => {
+    const candidates = [
+      {
+        id: 'c1',
+        restaurantId: 'test-rest-1',
+        archivedAt: null,
+        mergedIntoId: null,
+        name: 'Alice',
+        phone: '+33612345678',
+        emailNormalized: 'alice@example.com',
+        notes: 'Note privée du gérant',
+      },
+      {
+        id: 'archived',
+        restaurantId: 'test-rest-1',
+        archivedAt: new Date(),
+        mergedIntoId: null,
+        name: 'Alice',
+        phone: '+33612345678',
+        emailNormalized: null,
+      },
+      {
+        id: 'merged',
+        restaurantId: 'test-rest-1',
+        archivedAt: null,
+        mergedIntoId: 'c1',
+        name: 'Alice',
+        phone: '+33612345678',
+        emailNormalized: null,
+      },
+      {
+        id: 'foreign',
+        restaurantId: 'other',
+        archivedAt: null,
+        mergedIntoId: null,
+        name: 'Alice',
+        phone: '+33612345678',
+        emailNormalized: null,
+      },
+    ];
+    beforeEach(() => {
+      vi.mocked(db.customer.findMany).mockImplementation((async (args: {
+        where?: { restaurantId?: unknown; archivedAt?: unknown; mergedIntoId?: unknown };
+      }) => {
+        const where = args?.where;
+        return candidates.filter(
+          (row) =>
+            row.restaurantId === where?.restaurantId &&
+            row.archivedAt === where?.archivedAt &&
+            row.mergedIntoId === where?.mergedIntoId,
+        ) as never;
+      }) as never);
+      vi.mocked(db.customerPreference.findMany).mockResolvedValue([
+        {
+          customerId: 'c1',
+          key: 'dietary_restrictions',
+          value: 'Allergie aux arachides',
+          source: 'MANUAL',
+          confirmedAt: null,
+          expiresAt: null,
+        },
+        {
+          customerId: 'c1',
+          key: 'accessibility_needs',
+          value: 'Fauteuil',
+          source: 'MANUAL',
+          confirmedAt: null,
+          expiresAt: null,
+        },
+      ] as never);
+      const recent = (days: number) => new Date(Date.now() - days * 86_400_000);
+      vi.mocked(db.reservation.findMany).mockResolvedValue([
+        ...[3, 10, 20, 30, 40].map((days) => ({
+          customerId: 'c1',
+          state: 'HONORED',
+          status: 'CONFIRMED',
+          startsAt: recent(days),
+          reservedAt: recent(days),
+        })),
+        {
+          customerId: 'c1',
+          state: 'NO_SHOW',
+          status: 'NO_SHOW',
+          startsAt: recent(5),
+          reservedAt: recent(5),
+        },
+      ] as never);
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.mocked(db.customer.findMany).mockReset();
+      vi.mocked(db.reservation.findMany).mockReset();
+      vi.mocked(db.customerPreference.findMany).mockReset();
+    });
+    it('renvoie les visites et badges utiles sans les notes, avec filtrage du restaurant et des profils actifs', async () => {
+      vi.spyOn(entitlements, 'evaluateCapability').mockResolvedValue({
+        allowed: true,
+        capability: 'customers.advanced',
+        plan: 'pro',
+      } as never);
+      const response = await (
+        await getApp()
+      ).inject({
+        method: 'GET',
+        url: '/customers/suggestions?search=Alice&limit=5',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(db.customer.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            restaurantId: 'test-rest-1',
+            archivedAt: null,
+            mergedIntoId: null,
+            OR: expect.any(Array),
+          }),
+          select: { id: true, name: true, phone: true, emailNormalized: true },
+        }),
+      );
+      const data = response.json().data;
+      expect(data).toHaveLength(1);
+      expect(data[0]).toMatchObject({
+        id: 'c1',
+        email: 'alice@example.com',
+        visitCount: 5,
+        lastVisitAt: expect.any(String),
+      });
+      expect(data[0].badges.map((badge: { kind: string }) => badge.kind)).toEqual(
+        expect.arrayContaining(['regular', 'allergy', 'accessibility', 'no_show_risk']),
+      );
+      expect(JSON.stringify(data)).not.toContain('Note privée');
+      expect(db.reservation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            restaurantId: 'test-rest-1',
+            customerId: { in: ['c1'] },
+          }),
+        }),
+      );
+    });
+    it('ne révèle pas les visites ni les badges calculés à partir des visites sans CRM Pro', async () => {
+      vi.spyOn(entitlements, 'evaluateCapability').mockResolvedValue({
+        allowed: false,
+        capability: 'customers.advanced',
+        plan: 'essential',
+      } as never);
+      const response = await (
+        await getApp()
+      ).inject({
+        method: 'GET',
+        url: '/customers/suggestions?search=Alice',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(response.statusCode).toBe(200);
+      const item = response.json().data[0];
+      expect(item).toMatchObject({ visitCount: null, lastVisitAt: null });
+      expect(item.badges.map((badge: { kind: string }) => badge.kind)).toEqual([
+        'allergy',
+        'accessibility',
+      ]);
+      expect(db.reservation.findMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('GET /customers', () => {
@@ -335,6 +500,108 @@ describe('customer.routes', () => {
         restaurantId: 'test-rest-1',
         id: { in: ['c3'] },
       });
+    });
+
+    it('trie par visites sur 365 jours ou par dernière visite, en CRM Pro seulement', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        plan: 'PRO',
+        crmSensitiveNoteRoles: null,
+      } as never);
+      const ago = (days: number) => new Date(Date.now() - days * 86_400_000);
+      const honoured = (customerId: string, days: number) => ({
+        customerId,
+        state: 'HONORED',
+        status: 'CONFIRMED',
+        startsAt: ago(days),
+        reservedAt: ago(days + 2),
+      });
+      // c1 : 1 visite il y a 3 j ; c2 : aucune ; c3 : 2 visites, la dernière il y a 40 j.
+      vi.mocked(db.reservation.findMany).mockResolvedValue([
+        honoured('c1', 3),
+        honoured('c3', 40),
+        honoured('c3', 80),
+      ] as never);
+      const page = (ids: string[]) =>
+        ids.map((id) => ({ id, restaurantId: 'test-rest-1', name: id })) as never;
+
+      vi.mocked(db.customer.findMany)
+        .mockResolvedValueOnce([{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }] as never)
+        .mockResolvedValueOnce(page(['c1', 'c2', 'c3']));
+      const byVisits = await app.inject({
+        method: 'GET',
+        url: '/customers?sort=visits365d',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(byVisits.json().data.map((row: { id: string }) => row.id)).toEqual(['c3', 'c1', 'c2']);
+
+      vi.mocked(db.customer.findMany)
+        .mockResolvedValueOnce([{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }] as never)
+        .mockResolvedValueOnce(page(['c1', 'c2', 'c3']));
+      const byLastVisit = await app.inject({
+        method: 'GET',
+        url: '/customers?sort=lastVisit',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(byLastVisit.json().data.map((row: { id: string }) => row.id)).toEqual([
+        'c1',
+        'c3',
+        'c2',
+      ]);
+
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'ESSENTIAL' } as never);
+      const essential = await app.inject({
+        method: 'GET',
+        url: '/customers?sort=lastVisit',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(essential.statusCode).toBe(403);
+    });
+
+    it('compte les clients par segment avec la recherche de la liste, en CRM Pro seulement', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'PRO' } as never);
+      vi.mocked(db.customer.count).mockResolvedValueOnce(3).mockResolvedValueOnce(1);
+      vi.mocked(db.customer.findMany).mockResolvedValueOnce([
+        { id: 'c1' },
+        { id: 'c2' },
+        { id: 'c3' },
+      ] as never);
+      const ago = (days: number) => new Date(Date.now() - days * 86_400_000);
+      vi.mocked(db.reservation.findMany).mockResolvedValue([
+        {
+          customerId: 'c1',
+          state: 'HONORED',
+          status: 'CONFIRMED',
+          startsAt: ago(400),
+          reservedAt: ago(402),
+        },
+      ] as never);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/customers/segment-counts?search=mar',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const { data } = res.json();
+      expect(data).toMatchObject({ all: 3, vip: 1 });
+      expect(data.new + data.active + data.regular + data.at_risk + data.dormant).toBe(3);
+      expect(vi.mocked(db.customer.count).mock.calls[0][0]?.where).toMatchObject({
+        restaurantId: 'test-rest-1',
+        archivedAt: null,
+        mergedIntoId: null,
+        OR: expect.any(Array),
+      });
+
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'ESSENTIAL' } as never);
+      const essential = await app.inject({
+        method: 'GET',
+        url: '/customers/segment-counts',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(essential.statusCode).toBe(403);
     });
 
     it('rejette un phone invalide (regex E.164) avec 400', async () => {
@@ -680,6 +947,59 @@ describe('customer.routes', () => {
       });
 
       expect(res.statusCode).toBe(400);
+    });
+  });
+  describe('GET /customers/export', () => {
+    it('réserve le CSV au propriétaire et le filtre sur le site', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'ESSENTIAL' } as never);
+      vi.mocked(db.customer.findMany).mockResolvedValue([
+        { id: 'c1', name: 'Alice', phone: '+33612345678', emailNormalized: null, isVip: false },
+      ] as never);
+      vi.mocked(db.reservation.findMany).mockResolvedValue([] as never);
+
+      const manager = await app.inject({
+        method: 'GET',
+        url: '/customers/export',
+        headers: { authorization: 'Bearer test', 'x-test-site-role': 'MANAGER' },
+      });
+      expect(manager.statusCode).toBe(403);
+      expect(manager.json().error).toBe('CUSTOMER_EXPORT_OWNER_REQUIRED');
+
+      const owner = await app.inject({
+        method: 'GET',
+        url: '/customers/export',
+        headers: { authorization: 'Bearer test', 'x-test-site-role': 'OWNER' },
+      });
+      expect(owner.statusCode).toBe(200);
+      expect(owner.json().data.count).toBe(1);
+      expect(owner.json().data.csv).toContain('Alice;+33612345678');
+      expect(db.customer.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { restaurantId: 'test-rest-1', archivedAt: null, mergedIntoId: null },
+        }),
+      );
+    });
+    it('refuse un export de plus de 10 000 clients, sans fichier partiel', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'ESSENTIAL' } as never);
+      vi.mocked(db.customer.findMany).mockResolvedValueOnce(
+        Array.from({ length: 10_001 }, (_, index) => ({
+          id: `c${index}`,
+          name: null,
+          phone: '+33600000000',
+          emailNormalized: null,
+          isVip: false,
+        })) as never,
+      );
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/customers/export',
+        headers: { authorization: 'Bearer test', 'x-test-site-role': 'OWNER' },
+      });
+      expect(response.statusCode).toBe(422);
+      expect(response.json()).toMatchObject({ error: 'CUSTOMER_EXPORT_TOO_LARGE' });
     });
   });
 });

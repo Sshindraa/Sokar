@@ -23,3 +23,13 @@ export function isActiveReservationState(
 export function intervalsOverlap(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
   return aStart < bEnd && bStart < aEnd;
 }
+
+export function reservationOverlapWhere(startsAt: Date, endsAt: Date, durationMinutes: number) {
+  const earliest = new Date(startsAt.getTime() - durationMinutes * 60_000);
+  return [
+    { startsAt: { lt: endsAt }, endsAt: { gt: startsAt } },
+    { startsAt: { gt: earliest, lt: endsAt }, endsAt: null },
+    { startsAt: null, reservedAt: { lt: endsAt }, endsAt: { gt: startsAt } },
+    { startsAt: null, reservedAt: { gt: earliest, lt: endsAt }, endsAt: null },
+  ];
+}

@@ -4,7 +4,7 @@ description: Sokar project context for Hermes CLI agents
 
 # Sokar Agent Context
 
-Sokar is a French-first restaurant reservation + call-management SaaS with AI voice.
+Sokar is a French-first restaurant platform: reservations on every channel (phone, web, widget, AI assistants via MCP), service organisation (floor plan, Service Copilot) and customer relationship (CRM, loyalty, gift cards, experiences). The AI voice agent is one feature, not the product definition. Brand: "Le chef de rang numérique de votre restaurant" (`packages/shared/src/brand.ts`); product scope and readiness: `docs/PROJECT_MAP.md#ce-quest-sokar`.
 Keep this file short. Detailed docs are in `docs/runbooks/` and `docs/architecture/`.
 
 ## Stack

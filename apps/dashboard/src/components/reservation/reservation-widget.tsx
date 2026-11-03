@@ -2053,8 +2053,8 @@ export default function ReservationWidget({
                         </label>
                       ))}
                       <p className="text-xs text-[hsl(var(--reservation-soft))]">
-                        Ce choix est indépendant de votre réservation : vous pouvez réserver sans
-                        cocher ces cases.{' '}
+                        Facultatif, sans effet sur votre réservation. Désinscription possible à tout
+                        moment.{' '}
                         <a
                           href="/privacy"
                           target="_blank"

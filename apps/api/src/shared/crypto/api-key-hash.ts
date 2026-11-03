@@ -15,7 +15,10 @@
  * hashes SHA-256 (64 hex chars sans préfixe) pour les clés existantes.
  * Les nouvelles clés sont hashées avec scrypt.
  */
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, scrypt, scryptSync, timingSafeEqual } from 'crypto';
+import { promisify } from 'util';
+
+const scryptAsync = promisify(scrypt);
 
 const SCRYPT_KEYLEN = 64;
 const SCRYPT_SALT_LEN = 16;
@@ -61,6 +64,16 @@ export function verifyApiKeyHash(key: string, stored: string): boolean {
   const b = Buffer.from(stored, 'hex');
   if (a.length !== b.length) return false;
   return timingSafeEqual(a, b);
+}
+
+export async function verifyApiKeyHashAsync(key: string, stored: string): Promise<boolean> {
+  if (!stored.startsWith(SCRYPT_PREFIX)) return verifyApiKeyHash(key, stored);
+  const parts = stored.slice(SCRYPT_PREFIX.length).split(':');
+  if (parts.length !== 2 || !/^[0-9a-f]{32}$/i.test(parts[0]) || !/^[0-9a-f]{128}$/i.test(parts[1]))
+    return false;
+  const expected = Buffer.from(parts[1], 'hex');
+  const derived = (await scryptAsync(key, Buffer.from(parts[0], 'hex'), expected.length)) as Buffer;
+  return timingSafeEqual(derived, expected);
 }
 
 /**

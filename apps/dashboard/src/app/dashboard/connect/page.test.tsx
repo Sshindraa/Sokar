@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { toApiError } from '@/lib/api-error';
 import ConnectDashboardPage from './page';
+const toast = vi.hoisted(() => Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }));
+vi.mock('sonner', () => ({ toast }));
 
 const mocks = vi.hoisted(() => ({
   orgId: 'org_test',
@@ -52,7 +54,7 @@ describe('ConnectDashboardPage', () => {
   it('ne montre pas le lien des KPIs du pilote à un restaurateur', async () => {
     loadSucceeds(false);
     render(<ConnectDashboardPage />);
-    await screen.findByText('Connect inactif');
+    await screen.findByText('Page publique');
     expect(screen.queryByRole('link', { name: /KPIs pilote/ })).not.toBeInTheDocument();
   });
 
@@ -72,11 +74,12 @@ describe('ConnectDashboardPage', () => {
     );
     render(<ConnectDashboardPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /activer connect/i }));
+    fireEvent.click(await screen.findByRole('switch', { name: /activer la page publique/i }));
 
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Choisissez d’abord l’adresse publique de votre page');
-    expect(alert).not.toHaveTextContent('409');
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+    const message = String(toast.error.mock.calls[0][0]);
+    expect(message).toContain('Choisissez d’abord l’adresse publique');
+    expect(message).not.toContain('409');
   });
 
   it('propose de réessayer quand le chargement échoue, avec un message en français', async () => {
@@ -98,7 +101,7 @@ describe('ConnectDashboardPage', () => {
   it('range sous-domaine et domaine personnalisé dans la colonne de gauche, avec l’aperçu à droite', async () => {
     loadSucceeds(false);
     render(<ConnectDashboardPage />);
-    await screen.findByText('Connect inactif');
+    await screen.findByText('Page publique');
 
     const column = screen.getByText('Découverte IA').closest('div.space-y-4');
     expect(column).not.toBeNull();
@@ -132,7 +135,9 @@ describe('ConnectDashboardPage', () => {
     expect(screen.getByRole('button', { name: /lancer le test/i })).toBeDisabled();
     release(null);
 
-    expect(await screen.findByText('Publiez d’abord votre page pour la tester.')).toBeVisible();
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Publiez d’abord votre page pour la tester.'),
+    );
     expect(mocks.post).toHaveBeenCalledWith('restaurant/test-booking-link');
     expect(tab.close).toHaveBeenCalled();
   });
@@ -144,19 +149,16 @@ describe('ConnectDashboardPage', () => {
     mocks.post.mockRejectedValue(toApiError(404, { code: 'TEST_BOOKING_DISABLED' }));
     render(<ConnectDashboardPage />);
     await screen.findByText('Tester ma page comme un client');
-    expect(
-      screen.getByText('Faites le parcours d’un client, jusqu’à la confirmation.'),
-    ).toBeInTheDocument();
     expect(screen.queryByText(/rien n’apparaît/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /lancer le test/i }));
 
-    const notice = await screen.findByRole('status');
-    expect(notice).toHaveTextContent(
-      'Le mode test n’est pas encore disponible : cette réservation sera réelle. Pensez à l’annuler ensuite.',
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(
+        'Le mode test n’est pas encore disponible : cette réservation sera réelle. Pensez à l’annuler ensuite.',
+      ),
     );
-    expect(notice).toHaveClass('text-muted-foreground');
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(toast.error).not.toHaveBeenCalled();
     expect(tab.close).not.toHaveBeenCalled();
   });
 });

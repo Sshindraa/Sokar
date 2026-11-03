@@ -11,7 +11,7 @@ import {
 } from '@sokar/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '@/lib/api';
@@ -148,11 +148,6 @@ export function MarketingConsentCard({
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Consentement marketing</CardTitle>
-        <CardDescription>
-          Accord de ce client pour recevoir les offres et actualités, canal par canal. Une
-          réservation ne vaut jamais accord. Le client se désinscrit lui-même avec le lien de chaque
-          message.
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {rows === null && !loadError ? (

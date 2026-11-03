@@ -8,6 +8,7 @@ import {
   listTeam,
   removeMember,
   revokeInvitation,
+  transferOwnership,
   type TeamErrorCode,
 } from './team.service';
 
@@ -22,10 +23,17 @@ const STATUS_BY_CODE: Record<TeamErrorCode, number> = {
   CANNOT_EDIT_SELF: 403,
   CANNOT_EDIT_OWNER: 403,
   IDENTITY_PROVIDER_UNAVAILABLE: 502,
+  TRANSFER_INVALID: 409,
 };
 
 const InviteBody = z.object({ email: z.string().min(3).max(254), role: z.string().min(1).max(32) });
 const RoleBody = z.object({ role: z.string().min(1).max(32) });
+const TransferBody = z
+  .object({
+    targetUserId: z.string().trim().min(1).max(128),
+    previousOwnerAccess: z.enum(['MANAGER', 'READ_ONLY', 'NONE']),
+  })
+  .strict();
 
 const inviteRateLimit = { max: 20, timeWindow: '1 minute' };
 
@@ -72,6 +80,18 @@ export async function teamRoutes(app: FastifyInstance) {
           currentUserId: owner.userId,
         }),
       );
+    } catch (error) {
+      return sendTeamError(reply, error);
+    }
+  });
+
+  app.post('/team/transfer-ownership', { preHandler: requireOrg() }, async (req, reply) => {
+    const owner = requireOwner(req, reply);
+    if (!owner) return;
+    const body = TransferBody.parse(req.body ?? {});
+    try {
+      await transferOwnership({ ...owner, actingUserId: owner.userId, ...body });
+      return reply.status(204).send();
     } catch (error) {
       return sendTeamError(reply, error);
     }

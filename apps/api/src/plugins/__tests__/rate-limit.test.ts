@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 
 // Simule la session Clerk résolue en onRequest : l'en-tête de test porte l'utilisateur.
 vi.mock('@clerk/fastify', () => ({
@@ -8,7 +8,7 @@ vi.mock('@clerk/fastify', () => ({
   }),
 }));
 
-import { publicReadMax, registerRateLimit } from '../rate-limit';
+import { publicReadMax, rateLimitBucket, registerRateLimit } from '../rate-limit';
 import {
   RATE_LIMIT_GLOBAL_MAX,
   RATE_LIMIT_USER_READ_MAX,
@@ -42,6 +42,7 @@ describe('rate-limit global — budgets par utilisateur', () => {
 
   afterEach(async () => {
     await app.close();
+    vi.unstubAllEnvs();
   });
 
   it('le polling de plusieurs postes ne bloque pas une action du personnel', async () => {
@@ -72,6 +73,24 @@ describe('rate-limit global — budgets par utilisateur', () => {
     const codes = await hit(app, 'GET', RATE_LIMIT_GLOBAL_MAX + 1);
     expect(codes.at(-2)).toBe(200);
     expect(codes.at(-1)).toBe(429);
+  });
+
+  it('accorde une marge de lecture uniquement à la démo locale en développement', () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('DEMO_RESTAURANT_ID', 'demo');
+    const request = (ip: string, method: string) => ({ ip, method, headers: {} }) as FastifyRequest;
+    expect(rateLimitBucket(request('127.0.0.1', 'GET'))).toEqual({
+      key: 'ip:127.0.0.1:preview-read',
+      max: RATE_LIMIT_USER_READ_MAX,
+    });
+    expect(rateLimitBucket(request('::1', 'GET')).max).toBe(RATE_LIMIT_USER_READ_MAX);
+    expect(rateLimitBucket(request('127.0.0.1', 'POST')).max).toBe(RATE_LIMIT_GLOBAL_MAX);
+    expect(rateLimitBucket(request('192.0.2.1', 'GET')).max).toBe(RATE_LIMIT_GLOBAL_MAX);
+    vi.stubEnv('NODE_ENV', 'production');
+    expect(rateLimitBucket(request('127.0.0.1', 'GET')).max).toBe(RATE_LIMIT_GLOBAL_MAX);
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('DEMO_RESTAURANT_ID', '');
+    expect(rateLimitBucket(request('127.0.0.1', 'GET')).max).toBe(RATE_LIMIT_GLOBAL_MAX);
   });
 });
 

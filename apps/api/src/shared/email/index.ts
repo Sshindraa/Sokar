@@ -37,6 +37,10 @@ export interface SendEmailOptions {
   to: string;
   subject: string;
   html: string;
+  /** Expéditeur explicite (marketing) ; absent = `EMAIL_FROM`. */
+  from?: string;
+  /** Adresse de réponse explicite ; `null` = aucun `Reply-To`, absent = `EMAIL_REPLY_TO`. */
+  replyTo?: string | null;
   /** En-têtes supplémentaires, par exemple `List-Unsubscribe` pour un message marketing. */
   headers?: Record<string, string>;
   usage?: MessagingUsageContext;
@@ -159,8 +163,8 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void | Notifica
   await waitForResendSlot();
   const response = await withTimeout(
     getResend().emails.send({
-      from: emailSender(),
-      replyTo: emailReplyTo(),
+      from: opts.from ?? emailSender(),
+      ...(opts.replyTo === null ? {} : { replyTo: opts.replyTo ?? emailReplyTo() }),
       to: opts.to,
       subject: opts.subject,
       html: opts.html,

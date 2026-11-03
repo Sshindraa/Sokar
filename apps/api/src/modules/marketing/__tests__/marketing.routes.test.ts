@@ -1,8 +1,27 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarketingCampaignStatus, MarketingPermissionStatus } from '@prisma/client';
+import { MARKETING_CONSENT_VERSION } from '@sokar/shared';
 import { closeApp, getApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { queues } from '../../../shared/queue/queues';
+import { createServiceFillDraft, previewServiceFill } from '../fill-service.service';
+import {
+  dismissFillSuggestion,
+  invalidateFillSuggestions,
+  listFillSuggestions,
+} from '../fill-suggestions.service';
+
+vi.mock('../fill-service.service', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../fill-service.service')>()),
+  createServiceFillDraft: vi.fn(),
+  previewServiceFill: vi.fn(),
+}));
+
+vi.mock('../fill-suggestions.service', () => ({
+  listFillSuggestions: vi.fn(),
+  dismissFillSuggestion: vi.fn(),
+  invalidateFillSuggestions: vi.fn(),
+}));
 
 const AUTH = { authorization: 'Bearer test' };
 const NOW = new Date('2026-09-14T10:00:00.000Z');
@@ -341,6 +360,59 @@ describe('marketing control plane routes', () => {
       error: 'AUDIENCE_EMPTY',
       message: 'Aucun destinataire n’a donné son consentement : il n’y a rien à préparer.',
     });
+  });
+
+  it('explique en français qu’un envoi au-delà du reste du jour est refusé, sans rien lancer', async () => {
+    process.env.MARKETING_SENDS_ENABLED = 'true';
+    const app = await getApp();
+    vi.mocked(db.marketingCampaign.findFirst).mockResolvedValue({
+      id: 'campaign-1',
+      restaurantId: 'test-rest-1',
+      status: MarketingCampaignStatus.READY,
+      channel: 'EMAIL',
+      audienceCount: 41,
+      scheduledAt: null,
+    } as never);
+    vi.mocked(db.campaignMessage.count).mockResolvedValue(0);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/campaigns/campaign-1/send',
+      headers: AUTH,
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: 'MARKETING_DAILY_BUDGET_EXCEEDED',
+      message: expect.stringContaining('Audience trop grande pour aujourd’hui'),
+    });
+    expect(db.marketingCampaign.updateMany).not.toHaveBeenCalled();
+    expect(queues.marketingCampaign.add).not.toHaveBeenCalled();
+  });
+
+  it('refuse une programmation au-delà du reste du jour d’envoi, sans la enregistrer', async () => {
+    process.env.MARKETING_SENDS_ENABLED = 'true';
+    const app = await getApp();
+    vi.mocked(db.marketingCampaign.findFirst).mockResolvedValue({
+      id: 'campaign-1',
+      restaurantId: 'test-rest-1',
+      status: MarketingCampaignStatus.READY,
+      channel: 'EMAIL',
+      audienceCount: 41,
+      scheduledAt: null,
+    } as never);
+    vi.mocked(db.campaignMessage.count).mockResolvedValue(0);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/campaigns/campaign-1/schedule',
+      headers: AUTH,
+      payload: { scheduledAt: new Date(Date.now() + 86_400_000).toISOString() },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: 'MARKETING_DAILY_BUDGET_EXCEEDED',
+      message: expect.stringContaining('Audience trop grande pour ce jour-là'),
+    });
+    expect(db.marketingCampaign.update).not.toHaveBeenCalled();
+    expect(queues.marketingCampaign.add).not.toHaveBeenCalled();
   });
 
   it('refuse une règle sans lien de désinscription avec un message lisible, pas une erreur 500', async () => {
@@ -799,6 +871,388 @@ describe('marketing control plane routes', () => {
       const missing = await app.inject({ method: 'POST', url: '/marketing/unsubscribe' });
       expect(missing.statusCode).toBe(400);
       expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('consentement depuis la confirmation', () => {
+    const CONSENT_FORM = 'application/x-www-form-urlencoded';
+    const CHECKBOX = '<input type="checkbox" name="consent" value="on">';
+
+    beforeEach(() => {
+      process.env.MARKETING_UNSUBSCRIBE_SECRET = 'u'.repeat(48);
+      process.env.MARKETING_OPTOUT_HASH_SECRET = 'o'.repeat(48);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        name: 'Chez Sokar',
+        plan: 'PRO',
+      } as never);
+      vi.mocked(db.customer.findFirst).mockResolvedValue({
+        id: 'customer-1',
+        emailNormalized: 'client@example.com',
+      } as never);
+      vi.mocked(db.marketingPermission.findFirst).mockResolvedValue(null);
+      vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([]);
+      vi.mocked(db.marketingPermission.upsert).mockResolvedValue({
+        id: 'permission-1',
+        customerId: 'customer-1',
+        channel: 'EMAIL',
+        status: MarketingPermissionStatus.OPTED_IN,
+      } as never);
+    });
+
+    async function consentToken(): Promise<string> {
+      vi.mocked(db.reservation.findFirst).mockResolvedValue({
+        id: 'reservation-1',
+        customerEmail: 'client@example.com',
+      } as never);
+      const { createMarketingConsentToken } = await import('../marketing-unsubscribe.service');
+      return createMarketingConsentToken({
+        restaurantId: 'test-rest-1',
+        customerId: 'customer-1',
+        reservationId: 'reservation-1',
+      });
+    }
+
+    function consentPost(token: string, consent: boolean) {
+      return {
+        method: 'POST' as const,
+        url: '/marketing/consent',
+        headers: { 'content-type': CONSENT_FORM, accept: 'text/html' },
+        payload: `token=${encodeURIComponent(token)}${consent ? '&consent=on' : ''}`,
+      };
+    }
+
+    it('le GET montre la case non cochée sans rien enregistrer', async () => {
+      const app = await getApp();
+      const token = await consentToken();
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/marketing/consent?token=${token}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain(CHECKBOX);
+      expect(response.body).toContain('les offres et actualités du restaurant Chez Sokar');
+      expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+    });
+
+    it('un POST sans case cochée n’enregistre rien', async () => {
+      const app = await getApp();
+      const token = await consentToken();
+
+      const response = await app.inject(consentPost(token, false));
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain('Aucune case cochée');
+      expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+    });
+
+    it('une case cochée enregistre l’accord une seule fois', async () => {
+      const app = await getApp();
+      const token = await consentToken();
+
+      const first = await app.inject(consentPost(token, true));
+      expect(first.statusCode).toBe(200);
+      expect(first.body).toContain('Merci');
+      expect(db.marketingPermission.upsert).toHaveBeenCalledTimes(1);
+      expect(db.marketingPermission.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            status: MarketingPermissionStatus.OPTED_IN,
+            source: 'CONFIRMATION_EMAIL',
+            proofVersion: MARKETING_CONSENT_VERSION,
+          }),
+        }),
+      );
+
+      // Second envoi (double clic, rechargement) : l'accord existe, rien n'est réécrit.
+      vi.mocked(db.marketingPermission.findFirst).mockResolvedValue({
+        status: MarketingPermissionStatus.OPTED_IN,
+      } as never);
+      const second = await app.inject(consentPost(token, true));
+      expect(second.statusCode).toBe(200);
+      expect(second.body).toContain('déjà inscrit');
+      expect(db.marketingPermission.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuse un jeton expiré ou falsifié, sans rien enregistrer', async () => {
+      const app = await getApp();
+      const token = await consentToken();
+
+      vi.setSystemTime(new Date(NOW.getTime() + 31 * 86_400_000));
+      const expired = await app.inject(consentPost(token, true));
+      expect(expired.statusCode).toBe(400);
+      expect(expired.body).toContain('Ce lien n’est plus valide');
+
+      vi.setSystemTime(NOW);
+      const forged = await app.inject(consentPost(`${token}x`, true));
+      expect(forged.statusCode).toBe(400);
+      expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('remplissage de service (routes)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'PRO' } as never);
+  });
+
+  const SERVICE_BODY = { date: '2026-11-04', service: 'midi', channel: 'SMS' };
+  const DRAFT_BODY = {
+    ...SERVICE_BODY,
+    bodyTemplate: 'Bonjour {{customer.firstName}}, réservez {{reservationLink}} {{unsubscribeUrl}}',
+  };
+
+  it('renvoie l’aperçu du moteur sans rien écrire ni contacter un fournisseur', async () => {
+    const app = await getApp();
+    vi.mocked(previewServiceFill).mockResolvedValue({
+      status: 'PLANNED',
+      full: false,
+      audience: 30,
+      holdout: 3,
+      sends: 27,
+    } as never);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/fill-service/preview',
+      headers: AUTH,
+      payload: SERVICE_BODY,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ data: { status: 'PLANNED', holdout: 3 } });
+    expect(previewServiceFill).toHaveBeenCalledWith({
+      restaurantId: 'test-rest-1',
+      ...SERVICE_BODY,
+    });
+    expect(createServiceFillDraft).not.toHaveBeenCalled();
+    expect(queues.marketingCampaign.add).not.toHaveBeenCalled();
+  });
+
+  it('refuse une date ou un service invalides', async () => {
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/fill-service/preview',
+      headers: AUTH,
+      payload: { ...SERVICE_BODY, service: 'nuit' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(previewServiceFill).not.toHaveBeenCalled();
+  });
+
+  it('crée le brouillon et renvoie son id, sans envoi', async () => {
+    const app = await getApp();
+    vi.mocked(createServiceFillDraft).mockResolvedValue({
+      plan: { status: 'PLANNED' },
+      campaign: {
+        id: 'campaign-fill-1',
+        status: MarketingCampaignStatus.DRAFT,
+        audienceCount: 27,
+        targetServiceStart: new Date('2026-11-03T23:00:00.000Z'),
+        targetServiceEnd: new Date('2026-11-04T15:00:00.000Z'),
+      },
+    } as never);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/fill-service',
+      headers: AUTH,
+      payload: DRAFT_BODY,
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toEqual({
+      data: expect.objectContaining({ id: 'campaign-fill-1', audienceCount: 27 }),
+    });
+    expect(queues.marketingCampaign.add).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['SERVICE_CLOSED', 409, 'FILL_SERVICE_CLOSED'],
+    ['SERVICE_FULL', 409, 'FILL_SERVICE_FULL'],
+    ['CAPACITY_UNKNOWN', 409, 'FILL_SERVICE_CAPACITY_UNKNOWN'],
+    ['PLANNED', 409, 'FILL_SERVICE_NO_CANDIDATE'],
+  ])('refuse un service %s sans brouillon (%i)', async (status, code, error) => {
+    const app = await getApp();
+    vi.mocked(createServiceFillDraft).mockResolvedValue({
+      plan: { status },
+      campaign: null,
+    } as never);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/fill-service',
+      headers: AUTH,
+      payload: DRAFT_BODY,
+    });
+
+    expect(response.statusCode).toBe(code);
+    expect(response.json()).toMatchObject({ error });
+  });
+
+  it('budget nul → 409 FILL_SERVICE_BUDGET_EXHAUSTED', async () => {
+    const app = await getApp();
+    vi.mocked(createServiceFillDraft).mockResolvedValue({
+      plan: { status: 'PLANNED', budgetExhausted: true, members: [] },
+      campaign: null,
+    } as never);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/fill-service',
+      headers: AUTH,
+      payload: DRAFT_BODY,
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: 'FILL_SERVICE_BUDGET_EXHAUSTED' });
+  });
+
+  it('prévision à 0 → 409 FILL_SERVICE_NO_EMPTY_FORECAST', async () => {
+    const app = await getApp();
+    vi.mocked(createServiceFillDraft).mockResolvedValue({
+      plan: { status: 'PLANNED', budgetExhausted: false, emptyPlaces: 0, members: [] },
+      campaign: null,
+    } as never);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/fill-service',
+      headers: AUTH,
+      payload: DRAFT_BODY,
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: 'FILL_SERVICE_NO_EMPTY_FORECAST' });
+  });
+
+  it('refuse l’équipe de service et la lecture seule', async () => {
+    const app = await getApp();
+    for (const role of ['STAFF', 'READ_ONLY']) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/fill-service/preview',
+        headers: { ...AUTH, 'x-test-site-role': role, 'x-test-enforce-role-policy': '1' },
+        payload: SERVICE_BODY,
+      });
+      expect(response.statusCode).toBe(403);
+    }
+    expect(previewServiceFill).not.toHaveBeenCalled();
+  });
+
+  describe('suggestions de services creux', () => {
+    const SUGGESTION = {
+      date: '2026-11-04',
+      service: 'soir',
+      capacity: 40,
+      freePlaces: 18,
+      emptyPlaces: 14,
+      forecastSource: 'historique',
+    };
+
+    it('refuse GET et POST sans la capability, 403', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'ESSENTIAL' } as never);
+      const list = await app.inject({
+        method: 'GET',
+        url: '/marketing/fill-suggestions',
+        headers: AUTH,
+      });
+      const dismiss = await app.inject({
+        method: 'POST',
+        url: '/marketing/fill-suggestions/dismiss',
+        headers: AUTH,
+        payload: { date: '2026-11-04', service: 'soir' },
+      });
+      expect(list.statusCode).toBe(403);
+      expect(dismiss.statusCode).toBe(403);
+      expect(listFillSuggestions).not.toHaveBeenCalled();
+      expect(dismissFillSuggestion).not.toHaveBeenCalled();
+    });
+
+    it('la réponse GET ne contient ni nom ni téléphone', async () => {
+      const app = await getApp();
+      vi.mocked(listFillSuggestions).mockResolvedValue([SUGGESTION] as never);
+      const response = await app.inject({
+        method: 'GET',
+        url: '/marketing/fill-suggestions',
+        headers: AUTH,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ data: [SUGGESTION] });
+      expect(listFillSuggestions).toHaveBeenCalledWith({ restaurantId: 'test-rest-1' });
+      expect(response.body).not.toMatch(/name|phone|email|customer/i);
+    });
+
+    it('POST dismiss ignore le service et répond 204', async () => {
+      const app = await getApp();
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/fill-suggestions/dismiss',
+        headers: AUTH,
+        payload: { date: '2026-11-04', service: 'soir' },
+      });
+      expect(response.statusCode).toBe(204);
+      expect(dismissFillSuggestion).toHaveBeenCalledWith({
+        restaurantId: 'test-rest-1',
+        date: '2026-11-04',
+        service: 'soir',
+      });
+    });
+
+    it('POST dismiss : service invalide → 400', async () => {
+      const app = await getApp();
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/fill-suggestions/dismiss',
+        headers: AUTH,
+        payload: { date: '2026-11-04', service: 'nuit' },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(dismissFillSuggestion).not.toHaveBeenCalled();
+    });
+
+    it('POST dismiss : Redis en panne → 503 DISMISS_UNAVAILABLE', async () => {
+      const app = await getApp();
+      vi.mocked(dismissFillSuggestion).mockRejectedValue(new Error('down'));
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/fill-suggestions/dismiss',
+        headers: AUTH,
+        payload: { date: '2026-11-04', service: 'soir' },
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({ error: 'DISMISS_UNAVAILABLE' });
+    });
+
+    it('POST /marketing/fill-service réussi appelle invalidateFillSuggestions', async () => {
+      const app = await getApp();
+      vi.mocked(createServiceFillDraft).mockResolvedValue({
+        plan: { status: 'PLANNED' },
+        campaign: {
+          id: 'campaign-fill-2',
+          status: MarketingCampaignStatus.DRAFT,
+          audienceCount: 12,
+          targetServiceStart: new Date('2026-11-04T15:00:00.000Z'),
+          targetServiceEnd: new Date('2026-11-05T00:00:00.000Z'),
+        },
+      } as never);
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/fill-service',
+        headers: AUTH,
+        payload: {
+          date: '2026-11-04',
+          service: 'soir',
+          channel: 'SMS',
+          bodyTemplate: 'Bonjour {{reservationLink}} {{unsubscribeUrl}}',
+        },
+      });
+      expect(response.statusCode).toBe(201);
+      expect(invalidateFillSuggestions).toHaveBeenCalledWith('test-rest-1');
     });
   });
 });

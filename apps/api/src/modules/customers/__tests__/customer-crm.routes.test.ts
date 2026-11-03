@@ -214,6 +214,61 @@ describe('customer CRM routes', () => {
     );
   });
 
+  it('ouvre en Essential une fiche simple et les préférences, sans valeur ni tags ni doublons', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'ESSENTIAL' } as never);
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'customer-1',
+      restaurantId: 'test-rest-1',
+      phone: '+33612345678',
+      notes: 'Table au calme',
+      restaurant: { crmSensitiveNoteRoles: null },
+      identities: [],
+      metricSnapshot: { honored365d: 4, actualLifetimeSpend: 820 },
+      preferences: [{ id: 'preference-1', key: 'dietary_restrictions', value: ['noix'] }],
+      tagAssignments: [{ tag: { id: 'tag-1', label: 'Gros panier' } }],
+      timelineEvents: [{ id: 'timeline-1', summaryCode: 'call.received' }],
+    } as never);
+
+    const profile = await app.inject({
+      method: 'GET',
+      url: '/crm/customers/customer-1',
+      headers: { authorization: 'Bearer test', 'x-test-site-role': 'OWNER' },
+    });
+    expect(profile.statusCode).toBe(200);
+    const data = profile.json().data;
+    expect(data).toMatchObject({
+      crmAccess: 'basic',
+      notes: 'Table au calme',
+      preferences: [{ key: 'dietary_restrictions', value: ['noix'] }],
+      timeline: [{ id: 'timeline-1' }],
+    });
+    for (const proField of ['metrics', 'metricSnapshot', 'tags', 'tagAssignments', 'lifecycle']) {
+      expect(data).not.toHaveProperty(proField);
+    }
+
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: 'test-rest-1' } as never);
+    vi.mocked(db.customerPreference.upsert).mockResolvedValue({
+      id: 'preference-1',
+      key: 'dietary_restrictions',
+    } as never);
+    vi.mocked(db.customerTimelineEvent.create).mockResolvedValue({ id: 'timeline-2' } as never);
+    const saved = await app.inject({
+      method: 'PUT',
+      url: '/crm/customers/customer-1/preferences/dietary_restrictions',
+      headers: { authorization: 'Bearer test', 'x-test-site-role': 'MANAGER' },
+      payload: { value: ['noix'], confidence: 1 },
+    });
+    expect(saved.statusCode).toBe(200);
+
+    const tag = await app.inject({
+      method: 'GET',
+      url: '/crm/tags',
+      headers: { authorization: 'Bearer test', 'x-test-site-role': 'OWNER' },
+    });
+    expect(tag.statusCode).toBe(403);
+  });
+
   it('masque les notes et les métadonnées de chronologie pour un rôle non autorisé', async () => {
     const app = await getApp();
     vi.mocked(db.customer.findFirst).mockResolvedValue({

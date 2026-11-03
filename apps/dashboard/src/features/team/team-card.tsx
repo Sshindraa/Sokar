@@ -43,7 +43,7 @@ const selectClass =
  */
 export function TeamCard() {
   const { get, post, patch, del } = useApi();
-  const { activeSite, status } = useSiteSelection();
+  const { activeSite, status, refresh } = useSiteSelection();
   const isOwner = activeSite?.role === 'OWNER';
 
   const [team, setTeam] = useState<Team | null>(null);
@@ -54,6 +54,8 @@ export function TeamCard() {
   const [inviting, setInviting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [transferTo, setTransferTo] = useState<string | null>(null);
+  const [previousAccess, setPreviousAccess] = useState<'MANAGER' | 'READ_ONLY' | 'NONE'>('MANAGER');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -221,6 +223,70 @@ export function TeamCard() {
                               onClick={() => setConfirmRemove(member.userId)}
                             >
                               Retirer
+                            </Button>
+                          )}
+                          {transferTo === member.userId ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <label htmlFor={`transfer-${member.userId}`} className="text-xs">
+                                Votre accès après transfert
+                              </label>
+                              <select
+                                id={`transfer-${member.userId}`}
+                                value={previousAccess}
+                                onChange={(event) =>
+                                  setPreviousAccess(event.target.value as typeof previousAccess)
+                                }
+                                className={selectClass}
+                                disabled={busy}
+                              >
+                                <option value="MANAGER">Responsable</option>
+                                <option value="READ_ONLY">Lecture seule</option>
+                                <option value="NONE">Aucun accès</option>
+                              </select>
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => {
+                                  setBusyId(member.userId);
+                                  setError(null);
+                                  void post('team/transfer-ownership', {
+                                    targetUserId: member.userId,
+                                    previousOwnerAccess: previousAccess,
+                                  })
+                                    .then(() => {
+                                      setMessage(`La propriété a été transférée à ${member.name}.`);
+                                      refresh();
+                                    })
+                                    .catch((reason: unknown) =>
+                                      setError(
+                                        getErrorMessage(reason, 'Le transfert n’a pas abouti.'),
+                                      ),
+                                    )
+                                    .finally(() => setBusyId(null));
+                                }}
+                              >
+                                Confirmer le transfert à {member.name}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={busy}
+                                onClick={() => setTransferTo(null)}
+                              >
+                                Annuler
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => setTransferTo(member.userId)}
+                            >
+                              Transférer la propriété
                             </Button>
                           )}
                         </>

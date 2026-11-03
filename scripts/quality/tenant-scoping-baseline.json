@@ -1,5 +1,6 @@
 {
   "note": "Baseline du garde-fou de scoping tenant (R0-6). Compte les appels Prisma non scopés par fichier et par modèle.méthode. La faire baisser quand la dette est payée ; ne jamais l’augmenter sans justification en revue.",
+  "reputationEmailException": "Désinscription publique : lookup par hash unique du token pour déterminer le restaurant, puis toutes les opérations client sont filtrées par restaurantId.",
   "files": {
     "apps/api/src/modules/admin/provisioning.routes.ts": {
       "Restaurant.findMany": 1
@@ -242,6 +243,9 @@
     },
     "apps/api/src/modules/pos/pos-sync.service.ts": {
       "PosConnection.update": 1
+    },
+    "apps/api/src/modules/reputation/reputation-email.service.ts": {
+      "ReputationFeedbackRequest.findUnique": 1
     },
     "apps/api/src/modules/reputation/reputation.service.ts": {
       "ReputationFeedbackRequest.findUnique": 5,

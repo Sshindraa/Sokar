@@ -34,6 +34,7 @@ const VALID_BODY = {
   data: {
     event_type: 'message.received',
     payload: {
+      id: 'message-1',
       from: { phone_number: '+336****5678' },
       text: 'OUI',
     },
@@ -60,7 +61,29 @@ describe('POST /sms/telnyx/inbound', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.payload)).toEqual({ result: 'ok' });
-    expect(mockHandleReply).toHaveBeenCalledWith('+336****5678', 'OUI', 'sms');
+    expect(mockHandleReply).toHaveBeenCalledWith('+336****5678', 'OUI', 'sms', 'message-1');
+  });
+
+  it('ne traite pas un message sans identifiant fiable', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sms/telnyx/inbound',
+      payload: {
+        data: { event_type: 'message.received', payload: { from: 'sender', text: 'NON' } },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(mockHandleReply).not.toHaveBeenCalled();
+  });
+
+  it('renvoie une erreur si le traitement doit être retenté', async () => {
+    mockHandleReply.mockRejectedValueOnce(new Error('database unavailable'));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sms/telnyx/inbound',
+      payload: VALID_BODY,
+    });
+    expect(res.statusCode).toBeGreaterThanOrEqual(500);
   });
 
   it('accuse réception des événements de statut sans dispatcher de réponse client', async () => {
@@ -140,11 +163,11 @@ describe('POST /sms/telnyx/inbound', () => {
       payload: {
         data: {
           event_type: 'message.received',
-          payload: { from: '+336****1234', text: 'NON' },
+          payload: { id: 'message-2', from: '+336****1234', text: 'NON' },
         },
       },
     });
     expect(res.statusCode).toBe(200);
-    expect(mockHandleReply).toHaveBeenCalledWith('+336****1234', 'NON', 'sms');
+    expect(mockHandleReply).toHaveBeenCalledWith('+336****1234', 'NON', 'sms', 'message-2');
   });
 });

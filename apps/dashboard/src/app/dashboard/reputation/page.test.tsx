@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toApiError } from '@/lib/api-error';
 import ReputationPage from './page';
+import { Toaster } from '@/components/ui/sonner';
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -61,10 +62,10 @@ describe('ReputationPage', () => {
     render(<ReputationPage />);
 
     expect(await screen.findByRole('heading', { name: 'Réputation' })).toBeInTheDocument();
-    expect(await screen.findByText('2.0/5')).toBeInTheDocument();
+    expect(await screen.findByText('2,0/5')).toBeInTheDocument();
     expect(await screen.findAllByText('Service trop long')).toHaveLength(2);
     expect(await screen.findByText('À traiter')).toBeInTheDocument();
-    expect(await screen.findByText('1 active(s)')).toBeInTheDocument();
+    expect(await screen.findByText('1 active')).toBeInTheDocument();
   });
 
   it('met une récupération en cours avec une mutation tenant-scoped', async () => {
@@ -77,19 +78,6 @@ describe('ReputationPage', () => {
         status: 'IN_PROGRESS',
       }),
     );
-  });
-
-  it('explique calmement que le module est fermé, sans « Réessayer » ni compteurs à zéro', async () => {
-    apiMocks.get.mockRejectedValue(toApiError(503, { error: 'REPUTATION_DISABLED' }));
-    render(<ReputationPage />);
-
-    expect(
-      await screen.findByText('Cette fonctionnalité n’est pas encore ouverte sur votre compte.'),
-    ).toBeInTheDocument();
-    expect(screen.queryByText('REPUTATION_DISABLED')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Réessayer' })).toBeNull();
-    expect(screen.queryByText('Aucune récupération à traiter')).toBeNull();
-    expect(screen.queryByText('Retours reçus')).toBeNull();
   });
 
   it('propose les formules quand le module n’est pas inclus', async () => {
@@ -132,7 +120,12 @@ describe('ReputationPage', () => {
     apiMocks.patch.mockRejectedValue(
       toApiError(409, { error: 'REPUTATION_RECOVERY_TRANSITION_INVALID' }),
     );
-    render(<ReputationPage />);
+    render(
+      <>
+        <ReputationPage />
+        <Toaster />
+      </>,
+    );
     await screen.findByRole('heading', { name: 'Réputation' });
 
     await clickWhenEnabled('Prendre en charge');

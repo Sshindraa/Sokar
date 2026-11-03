@@ -90,7 +90,9 @@ describe('CustomerDuplicatesPage', () => {
 
   it('prévisualise une paire, exige la résolution puis envoie une clé idempotente', async () => {
     render(<CustomerDuplicatesPage />);
-    expect(await screen.findByText('Deux profils qui se ressemblent')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Téléphone normalisé identique · Nom normalisé identique'),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Garder ce profil' })[0]);
     expect(await screen.findByText('Préférences en conflit')).toBeInTheDocument();
@@ -135,7 +137,9 @@ describe('CustomerDuplicatesPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('momentanément indisponible');
     expect(screen.queryByText('Aperçu de fusion')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /réessayer/i }));
-    expect(await screen.findByText('Deux profils qui se ressemblent')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Téléphone normalisé identique · Nom normalisé identique'),
+    ).toBeInTheDocument();
   });
 
   it('traduit un refus de fusion au lieu d’afficher un code', async () => {
@@ -146,7 +150,7 @@ describe('CustomerDuplicatesPage', () => {
       return Promise.resolve({});
     });
     render(<CustomerDuplicatesPage />);
-    await screen.findByText('Deux profils qui se ressemblent');
+    await screen.findByText('Téléphone normalisé identique · Nom normalisé identique');
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Garder ce profil' })[0]);
 
@@ -165,7 +169,7 @@ describe('CustomerDuplicatesPage', () => {
       .mockReturnValue({ matches: false }) as unknown as typeof window.matchMedia;
     try {
       render(<CustomerDuplicatesPage />);
-      await screen.findByText('Deux profils qui se ressemblent');
+      await screen.findByText('Téléphone normalisé identique · Nom normalisé identique');
 
       fireEvent.click(screen.getAllByRole('button', { name: 'Garder ce profil' })[0]);
 

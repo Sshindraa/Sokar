@@ -5,6 +5,7 @@ export type NotificationRepairStatus = 'repaired' | 'not_required' | 'manual';
 
 export type NotificationRepairReference =
   | { operation: 'outbound_confirmation'; reservationId: string }
+  | { operation: 'email_confirmation'; reservationId: string }
   | { operation: 'reservation_reminder'; reservationId: string }
   | { operation: 'waiting_list_promotion'; entryId: string }
   | { operation: 'call_recovery'; callId: string }
@@ -29,6 +30,8 @@ export function parseNotificationRepairReference(
   switch (operation) {
     case 'reservation-confirmation-sms':
       return { operation: 'outbound_confirmation', reservationId: id };
+    case 'reservation-confirmation-email':
+      return { operation: 'email_confirmation', reservationId: id };
     case 'reservation-reminder-sms':
     case 'reservation-reminder-whatsapp':
       return { operation: 'reservation_reminder', reservationId: id };
@@ -47,6 +50,7 @@ export function parseNotificationRepairReference(
 async function repairOutboundConfirmation(
   db: PrismaClient,
   reservationId: string,
+  channel: 'sms' | 'email' = 'sms',
 ): Promise<NotificationRepairStatus> {
   const reservation = await db.reservation.findUnique({
     where: { id: reservationId },
@@ -54,8 +58,9 @@ async function repairOutboundConfirmation(
   });
   if (!reservation) return 'manual';
 
+  const event = channel === 'sms' ? CONFIRMATION_SMS_SENT_EVENT : 'CONFIRMATION_EMAIL_SENT';
   const existing = await db.reservationAuditLog.findFirst({
-    where: { reservationId, event: CONFIRMATION_SMS_SENT_EVENT },
+    where: { reservationId, event },
     select: { id: true },
   });
   if (existing) return 'not_required';
@@ -64,8 +69,8 @@ async function repairOutboundConfirmation(
     data: {
       reservationId,
       actor: 'system',
-      event: CONFIRMATION_SMS_SENT_EVENT,
-      metadata: { channel: 'sms', repairedFromProvider: true },
+      event,
+      metadata: { channel, repairedFromProvider: true },
     },
   });
   return 'repaired';
@@ -148,6 +153,8 @@ export async function repairNotificationAfterProviderSuccess(
   switch (reference.operation) {
     case 'outbound_confirmation':
       return repairOutboundConfirmation(db, reference.reservationId);
+    case 'email_confirmation':
+      return repairOutboundConfirmation(db, reference.reservationId, 'email');
     case 'reservation_reminder':
       return repairReservationReminder(db, reference.reservationId, now);
     case 'gift_card_reminder':

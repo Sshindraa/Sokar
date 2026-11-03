@@ -58,13 +58,17 @@ backup_db() {
 
   local backup_file="$target_dir/db-backup.sql"
   install -d -m 0755 "$target_dir"
+  local backup_tmp
+  backup_tmp=$(mktemp "$target_dir/.db-backup.XXXXXX")
   echo "   → Backup DB vers $backup_file"
 
-  if pg_dump --clean --if-exists --no-owner --no-privileges "$DATABASE_URL" > "$backup_file"; then
+  if pg_dump --clean --if-exists --no-owner --no-privileges "$DATABASE_URL" > "$backup_tmp"; then
+    mv -f "$backup_tmp" "$backup_file"
     local size
     size=$(wc -c < "$backup_file" | tr -d ' ')
     echo "   ✅ DB backup OK (${size} bytes)"
   else
+    rm -f "$backup_tmp"
     echo "   ❌ pg_dump a échoué" >&2
     return 1
   fi

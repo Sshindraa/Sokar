@@ -22,7 +22,7 @@ import type {
 } from './floor-plan.types';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
 import { CapacityAwareAvailabilityService } from './availability-capacity-aware.service.js';
-import { ACTIVE_RESERVATION_STATES } from '../../shared/reservations/capacity.js';
+import { findUnassignedSeatingConflict } from './unassigned-seating.js';
 
 export class TableAllocationService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -239,6 +239,8 @@ export class TableAllocationService {
             partySize: reservation.partySize,
             startsAt: reservation.startsAt as Date,
             endsAt: reservation.endsAt as Date,
+            excludeReservationId: reservation.id,
+            tableId: newTableId,
           },
           tx,
         )
@@ -323,6 +325,8 @@ export class TableAllocationService {
           partySize: args.partySize,
           startsAt: args.startsAt,
           endsAt: args.endsAt,
+          excludeReservationId: args.excludeReservationId,
+          tableId: args.tableId,
         },
         tx,
       )
@@ -397,7 +401,7 @@ export class TableAllocationService {
       const preferred = await prisma.table.findMany({
         where: {
           sectionId: input.preferredSectionId,
-          floorPlan: { isActive: true },
+          floorPlan: { restaurantId: input.restaurantId, isActive: true },
           ...capacityFilter,
         },
         orderBy: [{ capacity: 'asc' }, { minCapacity: 'asc' }, { name: 'asc' }],
@@ -479,18 +483,29 @@ export class TableAllocationService {
   ): Promise<boolean> {
     const prisma = tx ?? this.prisma;
     const excludeClause = check.excludeReservationId
-      ? Prisma.sql`AND id != ${check.excludeReservationId}`
+      ? Prisma.sql`AND r.id != ${check.excludeReservationId}`
       : Prisma.empty;
     const rows = await prisma.$queryRaw<Array<{ exists: number }>>(
       Prisma.sql`
         SELECT 1 as exists
-        FROM reservations
-        WHERE table_id = ${check.tableId}
-          AND is_test = false
-          AND state IN ('PENDING', 'CONFIRMED', 'SEATED')
-          AND starts_at IS NOT NULL
-          AND ends_at IS NOT NULL
-          AND tsrange(starts_at, ends_at) && tsrange(
+        FROM reservations r
+        LEFT JOIN restaurant_exposure_settings settings ON settings.restaurant_id = r.restaurant_id
+        WHERE r.table_id = ${check.tableId}
+          AND r.is_test = false
+          AND r.state IN ('PENDING', 'CONFIRMED', 'SEATED')
+          AND tsrange(
+            COALESCE(r.starts_at, r.reserved_at),
+            COALESCE(r.ends_at, COALESCE(r.starts_at, r.reserved_at) +
+              INTERVAL '1 minute' * CASE
+                WHEN CASE WHEN jsonb_typeof(settings.capacity_specials->'serviceDurationMinutes') = 'number'
+                  THEN (settings.capacity_specials->>'serviceDurationMinutes')::numeric > 0 ELSE false END
+                  THEN (settings.capacity_specials->>'serviceDurationMinutes')::double precision
+                WHEN CASE WHEN jsonb_typeof(settings.capacity_specials->'defaultServiceDurationMinutes') = 'number'
+                  THEN (settings.capacity_specials->>'defaultServiceDurationMinutes')::numeric > 0 ELSE false END
+                  THEN (settings.capacity_specials->>'defaultServiceDurationMinutes')::double precision
+                ELSE 120
+              END)
+          ) && tsrange(
             CAST(${check.startsAt} AS timestamptz) AT TIME ZONE 'UTC',
             CAST(${check.endsAt} AS timestamptz) AT TIME ZONE 'UTC'
           )
@@ -501,57 +516,29 @@ export class TableAllocationService {
     return rows.length > 0 && Number(rows[0].exists) === 1;
   }
 
+  /**
+   * Conflit de placement pour un groupe sans table fixée : même verdict que la création et la
+   * disponibilité (voir unassigned-seating.ts).
+   */
   private async hasGlobalCapacityConflict(
-    input: AllocateTableInput,
+    input: AllocateTableInput & { tableId?: string | null },
     tx?: Prisma.TransactionClient,
     excludeHoldId?: string,
   ): Promise<boolean> {
-    const prisma = tx ?? this.prisma;
-    const reservation = await prisma.reservation.findFirst({
-      where: {
-        restaurantId: input.restaurantId,
-        tableId: null,
-        ...(input.excludeReservationId ? { id: { not: input.excludeReservationId } } : {}),
-        state: { in: [...ACTIVE_RESERVATION_STATES] },
-        OR: [
-          {
-            startsAt: { lt: input.endsAt },
-            endsAt: { gt: input.startsAt },
-          },
-          {
-            startsAt: { gte: input.startsAt, lt: input.endsAt },
-            endsAt: null,
-          },
-          {
-            startsAt: null,
-            reservedAt: { gte: input.startsAt, lt: input.endsAt },
-          },
-        ],
-      },
-      select: { id: true },
+    const { conflict } = await findUnassignedSeatingConflict(tx ?? this.prisma, {
+      restaurantId: input.restaurantId,
+      partySize: input.partySize,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      tableId: input.tableId ?? null,
+      now: new Date(),
+      excludeReservationId: input.excludeReservationId,
+      excludeHoldId: excludeHoldId ?? null,
     });
-    if (reservation) return true;
-
-    const hold = await prisma.agenticHold.findFirst({
-      where: {
-        restaurantId: input.restaurantId,
-        type: 'HOLD',
-        status: 'ACTIVE',
-        tableId: null,
-        expiresAt: { gt: new Date() },
-        ...(excludeHoldId ? { id: { not: excludeHoldId } } : {}),
-        slotStart: { lt: input.endsAt },
-        slotEnd: { gt: input.startsAt },
-      },
-      select: { id: true },
-    });
-    return Boolean(hold);
+    return conflict;
   }
 
-  private async lockRestaurantCapacity(
-    tx: Prisma.TransactionClient,
-    restaurantId: string,
-  ): Promise<void> {
+  async lockRestaurantCapacity(tx: Prisma.TransactionClient, restaurantId: string): Promise<void> {
     const query = Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${restaurantId}, 0))`;
     // Les doubles Prisma historiques des tests n'exposent que $queryRaw ; le
     // client réel utilise $executeRaw, qui ne tente pas de désérialiser le
@@ -577,7 +564,7 @@ export class TableAllocationService {
         FROM agentic_holds
         WHERE table_id = ${check.tableId}
           AND status = 'ACTIVE'
-          AND expires_at > NOW()
+          AND expires_at > NOW() AT TIME ZONE 'UTC'
           AND slot_start IS NOT NULL
           AND slot_end IS NOT NULL
           AND tsrange(slot_start, slot_end) && tsrange(

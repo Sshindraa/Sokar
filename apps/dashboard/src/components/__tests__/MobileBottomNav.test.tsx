@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import MobileBottomNav from '../MobileBottomNav';
 import { triggerHaptic } from '@/lib/utils';
 
@@ -37,26 +37,30 @@ vi.mock('next-intl', () => ({
     const map: Record<string, string> = {
       overview: 'Pilotage',
       service: 'Service',
-      live: 'Live',
-      edition: 'Édition',
+      live: 'Service en direct',
+      edition: 'Édition du plan',
       calls: 'Appels',
       reservations: 'Réservations',
+      briefing: 'Briefing',
       customers: 'Clients',
       more: 'Plus',
       close: 'Fermer',
       marketing: 'Campagnes',
       reputation: 'Avis',
       loyalty: 'Fidélité',
-      reactivation: 'Relances',
+      reactivation: 'Réactivation',
+      growth: 'Marketing',
+      offers: 'Offres',
+      channels: 'Canaux',
       openButton: 'Créer une offre',
       title: 'Que souhaitez-vous créer ?',
-      experiences: 'Expériences à réserver',
-      events: 'Événements & billets',
+      experiences: 'Expériences',
+      events: 'Événements',
       giftCards: 'Cartes cadeaux',
       connect: 'Connect',
       widget: 'Widget',
-      distribution: 'Partenaires',
-      agentic: 'Agent IA',
+      distribution: 'Distribution',
+      agentic: 'Agents IA',
       settings: 'Réglages',
       themeTooltipLight: 'Passer en mode sombre',
       themeTooltipDark: 'Passer en mode clair',
@@ -88,13 +92,44 @@ describe('MobileBottomNav', () => {
     expect(screen.getByRole('link', { name: /Réservations/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Clients/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Plus/i })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Service/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Service en direct' })).not.toBeInTheDocument();
 
     expect(container.querySelector('.dashboard-mobile-nav__svg')).not.toBeInTheDocument();
     expect(
       container.querySelector('.dashboard-mobile-nav__active-indicator'),
     ).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Pilotage/i })).toHaveClass('is-active');
+  });
+
+  it('range le menu Plus par section, sans répéter la barre du bas', () => {
+    render(<MobileBottomNav />);
+    fireEvent.click(screen.getByRole('button', { name: /Plus/i }));
+
+    const menu = screen.getByRole('dialog', { name: 'Plus' });
+    const headings = within(menu)
+      .getAllByRole('heading', { level: 3 })
+      .map((heading) => heading.textContent);
+    expect(headings).toEqual(['Service', 'Clients', 'Marketing', 'Offres', 'Canaux']);
+    expect(within(menu).getByRole('link', { name: 'Appels' })).toHaveAttribute(
+      'href',
+      '/dashboard/calls',
+    );
+    expect(within(menu).queryByRole('link', { name: 'Réservations' })).not.toBeInTheDocument();
+    expect(within(menu).queryByRole('link', { name: 'Clients' })).not.toBeInTheDocument();
+    expect(
+      within(menu)
+        .queryAllByRole('link')
+        .map((link) => link.getAttribute('href')),
+    ).not.toContain('/dashboard/floor-plan?view=service-live');
+  });
+
+  it('ouvre le briefing du service depuis la barre du bas', () => {
+    render(<MobileBottomNav />);
+
+    expect(screen.getByRole('link', { name: /Briefing/i })).toHaveAttribute(
+      'href',
+      '/dashboard/briefing',
+    );
   });
 
   it('activates overview on /dashboard and triggers haptic feedback', () => {
@@ -113,7 +148,7 @@ describe('MobileBottomNav', () => {
     const items = Array.from(container.querySelectorAll('.dashboard-mobile-nav__item'));
 
     expect(nav).toBeInTheDocument();
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(5);
     if (!nav) throw new Error('Mobile navigation container is missing');
     expect(screen.getByRole('link', { name: /Clients/i })).toHaveAttribute('draggable', 'false');
     expect(screen.getByRole('button', { name: /Plus/i })).toHaveAttribute('draggable', 'false');
@@ -154,16 +189,17 @@ describe('MobileBottomNav', () => {
       clientY: 20,
     });
     expect(liquid?.getAttribute('style')).not.toMatch(/rotate|skew/);
+    // Clients est la 4e entrée, après Briefing : son centre est à x = 245.
     fireEvent.pointerMove(nav, {
       pointerId: 1,
       pointerType: 'touch',
-      clientX: 175,
+      clientX: 245,
       clientY: 20,
     });
     fireEvent.pointerUp(nav, {
       pointerId: 1,
       pointerType: 'touch',
-      clientX: 175,
+      clientX: 245,
       clientY: 20,
     });
 
@@ -227,13 +263,13 @@ describe('MobileBottomNav', () => {
     pathnameState.value = '/dashboard/floor-plan';
     const { rerender } = render(<MobileBottomNav />);
 
-    const liveLink = screen.getByRole('link', { name: 'Live' });
-    const editionLink = screen.getByRole('link', { name: 'Édition' });
+    const liveLink = screen.getByRole('link', { name: 'Service en direct' });
+    const editionLink = screen.getByRole('link', { name: 'Édition du plan' });
     expect(screen.getByRole('navigation', { name: 'Navigation Salle' })).toBeInTheDocument();
     expect(liveLink).toHaveAttribute('aria-current', 'page');
     expect(editionLink).not.toHaveAttribute('aria-current');
     expect(screen.queryByRole('button', { name: /Plus/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Service/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('link')).toHaveLength(2);
 
     searchParamsState.value = 'view=edit-plan';
     rerender(<MobileBottomNav />);
@@ -297,10 +333,7 @@ describe('MobileBottomNav', () => {
     expect(screen.getByText('Campagnes')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Vue d’ensemble' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Créer une offre' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Réglages/i })).toHaveClass(
-      'col-span-2',
-      'md:col-span-3',
-    );
+    expect(screen.queryByRole('link', { name: /Réglages/i })).not.toBeInTheDocument();
 
     // Close menu
     const closeButtons = screen.getAllByRole('button', { name: /Fermer/i });
@@ -350,7 +383,7 @@ describe('MobileBottomNav', () => {
       render(<MobileBottomNav />);
 
       expect(screen.getByRole('link', { name: /Réservations/ })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /Live/ })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Service en direct' })).toBeInTheDocument();
       expect(screen.queryAllByText('Pilotage')).toHaveLength(0);
       expect(screen.queryAllByText('Clients')).toHaveLength(0);
       expect(screen.queryByRole('button', { name: /Plus/ })).not.toBeInTheDocument();
@@ -362,8 +395,8 @@ describe('MobileBottomNav', () => {
       pathnameState.value = '/dashboard/floor-plan';
       render(<MobileBottomNav />);
 
-      expect(screen.getByRole('link', { name: /Live/ })).toBeInTheDocument();
-      expect(screen.queryAllByText('Édition')).toHaveLength(0);
+      expect(screen.getByRole('link', { name: 'Service en direct' })).toBeInTheDocument();
+      expect(screen.queryAllByText('Édition du plan')).toHaveLength(0);
     });
 
     it('un responsable garde le menu complet', () => {
