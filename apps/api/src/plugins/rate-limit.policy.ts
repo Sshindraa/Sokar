@@ -26,6 +26,12 @@
  *   opaque token (marketing click and unsubscribe). The limit blunts token
  *   brute force without blocking a real customer clicking a link twice.
  *
+ * - INTERNAL_READ — 600 req/min per public read route for loopback callers.
+ *   Connect renders pages server-side and calls the API from 127.0.0.1 without
+ *   X-Forwarded-For, so every visitor's cache miss shares one IP. A visitor
+ *   cannot reach this budget through Nginx: `trustProxy` keeps the rightmost
+ *   untrusted address. Applied with `publicReadMax()` (rate-limit.ts).
+ *
  * - PUBLIC_READ — 120 req/min/IP. Public catalog and checkout status reads,
  *   including short-lived payment confirmation polling.
  *
@@ -44,6 +50,8 @@ export const RATE_LIMIT_GLOBAL_MAX = 100;
 export const RATE_LIMIT_USER_READ_MAX = 600;
 
 export const RATE_LIMIT_USER_WRITE_MAX = 120;
+
+export const RATE_LIMIT_INTERNAL_READ_MAX = 600;
 
 export const RATE_LIMIT_PROVIDER_WEBHOOK = {
   max: 600,
