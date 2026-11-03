@@ -381,6 +381,24 @@ describe('EmptySlotsWidget', () => {
       expect(container.textContent).not.toMatch(/mardi|mercredi|nov\./i);
     });
 
+    it.each([
+      ['SENDS_DISABLED', 'Les envois marketing ne sont pas encore activés.'],
+      ['BUDGET_EXHAUSTED', 'Le budget d’e-mails du jour est épuisé.'],
+      ['NO_AUDIENCE', 'Aucun client à contacter pour ce service.'],
+    ])('canPrepare faux, raison %s : affiche la phrase', async (reason, text) => {
+      routeGet({
+        suggestions: {
+          data: [makeSuggestion({ canPrepare: false, prepareBlockedReason: reason })],
+        },
+        emptySlots: makeResponse([]),
+      });
+      renderWidget();
+
+      const sentence = await screen.findByText(text);
+      expect(sentence).toHaveClass('text-xs', 'text-muted-foreground');
+      expect(screen.queryByRole('link', { name: /Préparer/ })).not.toBeInTheDocument();
+    });
+
     it('aucune phrase sans raison (null, absente d’une ancienne entrée) ni quand canPrepare est vrai', async () => {
       const legacy = makeSuggestion({ canPrepare: false });
       delete (legacy as Record<string, unknown>).prepareBlockedReason;
