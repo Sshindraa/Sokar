@@ -142,7 +142,7 @@ export async function callRoutes(app: FastifyInstance) {
         ((current.recordingStorageKey || current.recordingStatus === 'AVAILABLE') &&
           !current.recordingProviderId)
       ) {
-        throw new Error('CALL_RECORDING_REQUIRES_MANUAL_REVIEW');
+        return 'manual_review' as const;
       }
       await tx.call.updateMany({
         where: { id, restaurantId },
@@ -151,6 +151,9 @@ export async function callRoutes(app: FastifyInstance) {
       return current;
     });
     if (!call) return reply.status(404).send({ error: 'Call not found' });
+    if (call === 'manual_review') {
+      return reply.status(409).send({ error: 'CALL_RECORDING_REQUIRES_MANUAL_REVIEW' });
+    }
     if (call.recordingStorageKey) {
       const reports = reportStorageKeys(call.recordingStorageKey);
       await assertRecordingBucketUnversioned();

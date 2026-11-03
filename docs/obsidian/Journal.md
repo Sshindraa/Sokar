@@ -3686,3 +3686,7 @@ Décision de Hamza à la suite de l'analyse de la PR #634. L'empreinte utilise u
 ### 2026-11-03 — Reprise locale de l’effacement RGPD
 
 Branche `fix/rgpd-erasure-reprise` : consommation du jeton dans la transaction d’effacement, coordination des écritures audio et rapports avec la suppression, et tests PostgreSQL dédiés. Le registre d’opposition et la révocation des consentements de main sont conservés. Les appels comportant un enregistrement exigent une revue manuelle ; les réservations d’expérience conservent leurs champs d’identité, point à traiter avant réouverture. Les blocages 503 d’effacement et d’opposition restent en place ; qualification fournisseurs et staging à faire avant toute décision d’ouverture.
+
+### 2026-11-03 — Suppression d’appel : revue manuelle explicite
+
+La suppression d’un appel dont l’enregistrement est en attente ou en échec répond 409 avec `CALL_RECORDING_REQUIRES_MANUAL_REVIEW`, sans suppression automatique. Les blocages 503 RGPD restent inchangés ; validation en staging encore nécessaire.

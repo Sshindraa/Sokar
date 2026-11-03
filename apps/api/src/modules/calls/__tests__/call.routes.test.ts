@@ -185,6 +185,29 @@ describe('call.routes', () => {
       });
     });
 
+    it.each(['PENDING', 'FAILED'] as const)(
+      'demande une revue manuelle pour un enregistrement %s',
+      async (recordingStatus) => {
+        const app = await getApp();
+        vi.mocked(db.call.findUnique).mockResolvedValue({
+          recordingStatus,
+          recordingStorageKey: null,
+          recordingProviderId: null,
+        } as never);
+        const response = await app.inject({
+          method: 'DELETE',
+          url: '/calls/c1',
+          headers: { authorization: 'Bearer test' },
+        });
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toEqual({ error: 'CALL_RECORDING_REQUIRES_MANUAL_REVIEW' });
+        expect(db.call.updateMany).not.toHaveBeenCalled();
+        expect(db.call.delete).not.toHaveBeenCalled();
+        expect(deletePrivateRecording).not.toHaveBeenCalled();
+        expect(deleteTelnyxRecording).not.toHaveBeenCalled();
+      },
+    );
+
     it("supprime aussi l'objet audio privé lorsqu'il existe", async () => {
       const app = await getApp();
       vi.mocked(db.call.findUnique).mockResolvedValue({
