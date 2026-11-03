@@ -32,6 +32,21 @@ La fusion déclenche le déploiement : `install-nginx` échoue si le certificat 
 - Faire changer le CNAME des domaines personnalisés et prévenir les restaurants qui ont un widget.
 - Remplacer le logo : `SokarLogo` et `logo-sokar*` dessinent encore l'ancien.
 
+## Plan de bascule
+
+Activité en production relevée le 3 novembre 2026 : 84 appels au total, tous de `Chez Sokar`, dernier le 25 octobre ; un seul utilisateur Clerk actif par semaine. La coupure de connexion touche donc très peu de monde ; le créneau se choisit surtout pour la présence de Hamza (Clerk, Google Cloud, GitHub).
+
+Avant (T-1 h) : CI de la PR verte ; crédit OpenRouter rechargé ; clé Clerk `sk_test` renouvelée ; sauvegardes `.env` (`*.bak-avant-suppernote-*`) et snapshot de release présents ; `pm2 jlist` relevé.
+
+1. Staging : `.env` et `PUBLIC_API_URL_STAGING`, `pm2 delete`, `deploy-staging.yml` sur la branche, contrôle de `pm2 jlist`, smoke tests.
+2. Clerk : `Change domain` vers `suppernote.com` (instance de production, domaine principal actuel `sokar.tech`). Poser dans Cloudflare, non proxifiés, les enregistrements demandés. Attendre la vérification et les certificats. Mettre à jour la redirection OAuth Google et la clé publique (secret GitHub et `.env`).
+3. Cloudflare : remplacer A et AAAA de `@` (parking IONOS) par le VPS, proxifiés ; retirer les CNAME `autodiscover` et `_domainconnect` importés d'IONOS.
+4. Production : `.env`, `pm2 delete`, fusion de la PR (déclenche le déploiement, reconstruction des `NEXT_PUBLIC_*`), `pm2 jlist`. La fusion se fait sur accord explicite de Hamza au moment du créneau.
+5. Contrôles : redirections `sokar.tech`, `POST api.sokar.tech` hors webhooks (308), POST signé sur chaque ancienne adresse de webhook (relais), désinscription marketing, connexion, appel de test, connecteur MCP.
+6. Fournisseurs : adresses `api.suppernote.com` chez Stripe, Telnyx et Meta (Meta : remplacement).
+
+Retour arrière : restaurer les `.env` d'avant, `pm2 delete`, `scripts/deploy.sh --env prod rollback`. Le DNS de `@` peut rester ; `sokar.tech` continue de servir via les anciens vhosts tant que la release précédente est restaurée. Clerk : le retour au domaine `sokar.tech` n'est pas testé, à vérifier avant le créneau.
+
 ## `sokar.tech`
 
 Garder le domaine renouvelé et les redirections au moins 12 mois, puis garder le renouvellement : un tiers qui le rachèterait recevrait les liens déjà envoyés et les e-mails adressés aux anciennes adresses.
