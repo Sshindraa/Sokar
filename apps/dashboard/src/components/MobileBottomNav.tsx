@@ -29,7 +29,7 @@ import { cn, triggerHaptic } from '@/lib/utils';
 import { CreateOfferDialog } from '@/features/offers/create-offer-dialog';
 import { useSiteSelection } from '@/features/sites/site-context';
 import { isServiceStaff } from '@/features/team/roles';
-import { isNavEntryActive, navSections, settingsSection } from '@/features/navigation/sections';
+import { isNavEntryActive, navSections } from '@/features/navigation/sections';
 
 const copilotNavItems = [
   { href: '/dashboard', key: 'overview' as const, icon: BarChart3 },
@@ -53,7 +53,7 @@ type PrimaryNavItem = (typeof copilotNavItems)[number] | (typeof salleNavItems)[
 
 // Menu Plus : les sections de la barre latérale, sans ce que la barre du bas montre déjà.
 const primaryHrefs = copilotNavItems.map((item) => item.href);
-const moreNavSections = [...navSections, settingsSection]
+const moreNavSections = navSections
   .map((section) => ({
     ...section,
     entries: section.entries.filter(
@@ -130,6 +130,7 @@ export default function MobileBottomNav() {
   const moreActive =
     hasMoreMenu &&
     (moreOpen ||
+      pathname.startsWith('/dashboard/settings') ||
       moreNavSections.some((section) =>
         section.entries.some((entry) => isNavEntryActive(pathname, entry)),
       ));
@@ -494,7 +495,6 @@ export default function MobileBottomNav() {
                     {section.entries.map((entry) => {
                       const Icon = entry.icon;
                       const active = isNavEntryActive(pathname, entry);
-                      const spansMenu = entry.key === 'settings';
 
                       return (
                         <Link
@@ -503,7 +503,6 @@ export default function MobileBottomNav() {
                           onClick={() => setMoreOpen(false)}
                           className={cn(
                             'group flex min-h-10 items-center gap-1.5 rounded-xl border border-border bg-card/35 px-2.5 py-1.5 text-left text-sm font-medium leading-tight text-muted-foreground transition-all duration-200 hover:border-foreground/20 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-2 sm:px-3',
-                            spansMenu && 'col-span-2 md:col-span-3',
                             active && 'border-primary/40 bg-primary/10 text-foreground',
                           )}
                         >

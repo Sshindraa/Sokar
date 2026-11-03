@@ -6,6 +6,7 @@ import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
 import { handleReply } from './reply-handler';
 import { telnyxMessagingEventsTotal } from '../../shared/observability/metrics';
 import { applyMarketingProviderEvent } from '../marketing/marketing-provider.service';
+import { applyMarketingSmsStop, isMarketingStopKeyword } from './sms-marketing-stop';
 
 const TelnyxFromSchema = z.union([z.string(), z.object({ phone_number: z.string() })]);
 
@@ -132,6 +133,19 @@ export async function smsInboundRoutes(app: FastifyInstance) {
     }
 
     req.log.info({ hasFrom: true, textLength: text.length }, 'sms inbound received');
+
+    // STOP d'un SMS marketing : désinscription seulement, jamais de réponse de réservation.
+    if (isMarketingStopKeyword(text)) {
+      try {
+        if (await applyMarketingSmsStop(from)) return reply.send({ result: 'ok' });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE') {
+          req.log.warn('sms stop: opt-out register unavailable, Telnyx should retry');
+          return reply.status(503).send({ error: 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE' });
+        }
+        throw error;
+      }
+    }
 
     await handleReply(from, text, 'sms', data.payload.id);
 

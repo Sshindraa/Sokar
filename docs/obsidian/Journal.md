@@ -3109,6 +3109,14 @@ Production : routes RGPD bloquées en Nginx, workflow Deploy Production suspendu
 
 Vérification d’identité et export rouverts après qualification SMS en staging ; effacement et opposition marketing restent en 503 car leurs correctifs ne sont pas encore livrés. Configuration Nginx restrictive, liens non journalisés ; requêtes de contrôle sur les hôtes et le proxy. Les demandes concernées restent traitées manuellement via privacy@sokar.tech.
 
+### 2026-10-30 — Opposition marketing : échecs visibles
+
+Correctif local : une opposition échoue explicitement si son registre durable ne peut pas être écrit ; la fiche existante reste OPTED_OUT. Test PostgreSQL local : une fiche supprimée puis recréée reste exclue. L'effacement doit préserver les oppositions et coordonner les écritures concurrentes avant toute réouverture. Les corrections ne sont pas déployées.
+
+### 2026-10-30 — Opposition : concurrence locale
+
+La fiche client est verrouillée pendant la mise à jour transactionnelle de son consentement et du registre ; essai PostgreSQL concurrent accord/opposition réussi sur une même fiche. Le traitement des plaintes fournisseur et les scénarios impliquant plusieurs fiches ou un échec du registre restent à coordonner avant livraison. PR #620 en brouillon.
+
 ### 2026-10-30 — Rollback staging : dépendances restaurées
 
 Le test de rollback de Sshindraa/Sokar#577 échouait : l'artefact de la release précédente exige `zod-to-json-schema`, retiré par la PR (passage à Zod 4), donc absent de node_modules après le déploiement. Correctif : chaque snapshot garde le lockfile et les package.json de son commit (`deps/`), et le rollback réinstalle via `pnpm install --frozen-lockfile` avant de redémarrer. Une release sans lockfile est refusée avant d'arrêter les services. Non validé sur le VPS : la prochaine exécution de staging le vérifiera (le pré-build utilise `.latest-hash`).
@@ -3595,3 +3603,82 @@ Décision de Hamza : version 2 de `docs/superpowers/specs/2026-11-02-marketing-i
 ### 2026-11-02 — Marketing : lot « repérer, cibler, mesurer » implémenté (envois toujours coupés)
 
 Ajouts : `GET /marketing/fill-suggestions` et `POST /marketing/fill-suggestions/dismiss` (direction seule, cache et « Ignorer » dans Redis), prévision des places vides probables, paliers clients avec audience plafonnée au budget, témoin à 30 %, rapport avec marge d'erreur, résultat par palier et effet net à 30 jours. `TAUX_REPONSE` retiré. `EmptySlotsWidget` sort du bloc replié de l'accueil. Une visite compte dès qu'une réservation passée est confirmée, en salle ou honorée, car l'équipe ne marque pas toujours « honorée » (décision de Hamza) ; les clients sans aucune visite sur 12 mois ne sont pas contactés. Aucune mesure ne modifie l'audience. `MARKETING_SENDS_ENABLED` inchangé. Spec et plan dans `docs/superpowers/`.
+
+
+### 2026-11-02 — Opposition marketing : repli atomique et qualification
+
+La permission et sa preuve restent dans la transaction verrouillée lorsque le registre échoue ; un point de sauvegarde PostgreSQL isole l'erreur du registre. Testé sur PostgreSQL local migré : erreur SQL du registre avec réinscription concurrente et échec de preuve ; les tests dédiés sont ajoutés à la CI. Le fichier de configuration de production contient une clé de registre valide et désactive les envois ; l'état effectif des processus reste à confirmer. Une plainte fournisseur ignore actuellement le résultat « clé absente » du registre et peut être considérée traitée sans opposition durable ; son rejeu ne répare pas nécessairement la situation. La coordination avec l'effacement et les fiches multiples reste à qualifier ; opposition et envois restent bloqués.
+
+### 2026-11-02 — Plainte fournisseur : échec rejouable
+
+Si le registre d'opposition échoue, si sa clé manque ou si l'adresse n'est plus disponible, la suppression de la fiche est conservée, mais le statut fournisseur et les compteurs ne sont pas validés ; le webhook renvoie une erreur et peut être rejoué. PostgreSQL local : clé absente, adresse manquante, erreur SQL, reprise sans double comptage, puis effacement et recréation après plainte enregistrée. Une plainte non enregistrée suivie d'un effacement reste à traiter : l'effacement peut supprimer la suppression et le message avant le rejeu. La livraison et la réouverture restent bloquées ; qualification simultanée multi-fiches, fournisseur et staging encore nécessaire.
+
+### 2026-11-02 — Effacement et opposition connue : correctif local en revue
+
+Dans la PR #620 en brouillon, une opposition ou plainte connue est préservée dans le registre avant anonymisation ; une clé absente, une plainte sans adresse exploitable ou une erreur d'écriture interrompt la transaction. Effacement et plainte prennent le verrou de la fiche ; essais PostgreSQL : clé absente, erreur SQL, puis plainte concurrente et recréation. Ce changement ajoute un cas d'échec de l'effacement, accepté par Hamza ; le jeton d'identité est déjà consommé à ce stade. Les plaintes arrivant après effacement et les courses entre fiches restent à résoudre ; routes et envois toujours fermés.
+### 2026-11-02 — Plan de salle : compteurs et lisibilité
+
+Correctif local : les tables présentes dans une section et dans la liste générale du plan ne sont comptées et dessinées qu’une fois. En service, les tables rondes et les sélecteurs gagnent en lisibilité et le cadrage conserve une marge autour des chaises, même au bord du plan. Aucune donnée ni API modifiée ; qualification et livraison à suivre via la PR.
+
+### 2026-11-02 — Plan de salle : chaises et vue d’ensemble
+
+Les tables de huit places maximum affichent le nombre réel de chaises ; au-delà, les chaises sont masquées pour éviter un comptage trompeur et la capacité reste affichée. En service, le résumé et la légende restent accessibles pendant la sélection et la fiche se ferme explicitement sur ordinateur comme sur téléphone.
+
+### 2026-11-02 — Service : lisibilité et barre de suivi
+
+La vue service regroupe date, direct ou archive, fraîcheur et compteurs dans une barre ; un bouton recadre le plan et le retour à aujourd’hui reste visible hors du jour courant. Les cartes de table sont plus lisibles et les anciens compteurs sont masqués pendant le chargement d’une autre date. Qualification et livraison via la PR du plan de salle.
+
+### 2026-11-02 — Service : accueil et navigation
+
+L’action « Client sans réservation » guide vers une table libre avant le placement réel ; le simulateur Copilot est identifié comme prévisualisation sans placement. Navigation Salle : libellés explicites, infobulles clavier/souris et état actif accessible ; cibles tactiles contrôlées en formats tablette portrait et paysage.
+
+### 2026-11-02 — Démo locale : limitation des requêtes du plan
+
+La démo non authentifiée partageait le budget anonyme de 100 requêtes/minute/IP ; plusieurs vues locales et leurs actualisations pouvaient provoquer des 429. En développement, les lectures de la démo provenant de la boucle locale utilisent un compteur séparé plafonné à 600/minute ; écritures, trafic réseau, staging et production gardent leurs limites. Un onglet de service initialement masqué attend son affichage pour charger et lancer le polling.
+
+### 2026-11-02 — Service : cadrage et lisibilité du plan
+
+Le cadrage Live inclut les zones occupées en entier ; l’inspecteur s’ouvre à la sélection et la barre garde un résumé unique avec les couverts prévus. Les tables combinables sont expliquées sur la carte et dans la fiche. Les assises sont réduites et masquées quand leurs enveloppes se chevaucheraient, sans modifier la capacité ni les coordonnées enregistrées.
+
+### 2026-11-02 — Service : zoom, fiche stable et légende flottante
+
+La vue s’ouvre cadrée sur les tables tout en conservant la géométrie complète des zones ; « Ajuster le plan » cadre la salle et des commandes règlent le zoom. La fiche reste en surimpression quand elle ne masque aucune table et prend sinon une colonne. La légende flottante reprend les points des statuts et explique les tables attendues ; l’accueil guide vers le choix d’une table sans déplacer le plan.
+
+### 2026-11-02 — Service : cadrage intermédiaire et lisibilité des états
+
+Le cadrage initial tient compte des empreintes visuelles des tables et de leurs assises, de la rotation et de la hauteur disponible ; le zoom est indiqué en pourcentage. L’aide au placement est ancrée au bouton et ne recouvre pas le plan. Une salle de cinq tables et les états simultanés ont été vérifiés avec des données de test ; la fiche conserve une colonne si une table à droite serait masquée.
+
+### 2026-11-02 — Service : correction du cadrage initial
+
+Pour les salles de dimensions comparables à la zone occupée, le cadrage initial montre la salle entière avec une marge réduite. Les salles très étendues restent cadrées sur les tables ; la géométrie enregistrée ne change pas.
+
+### 2026-11-02 — Navigation latérale du tableau de bord
+
+La navigation bureau affiche les rubriques et leurs sous-menus directement dans une barre latérale élargie ; la section active est ouverte à la navigation et un clic extérieur ou Échap la referme. La navigation tactile existante et les restrictions de rôle sont conservées.
+
+### 2026-11-03 — Navigation latérale repliable
+
+La navigation bureau démarre en barre d’icônes ; le bouton de menu ou une catégorie la déplie, et le contenu récupère l’espace lorsqu’elle est repliée. La navigation tactile conserve son fonctionnement.
+
+### 2026-11-03 — PR 620 : désinscription en erreur, deux fiches, fusion de main
+
+`POST /marketing/unsubscribe` répond 503 quand le registre d’opposition est indisponible (page « réessayer » pour le formulaire, JSON `MARKETING_OPTOUT_REGISTER_UNAVAILABLE` sinon) au lieu d’un 500. Le jeton est signé et sans état : le même lien permet de réessayer, la fiche est déjà bloquée, le nouvel essai réécrit le registre. Test PostgreSQL ajouté : deux fiches de même adresse, désinscription et inscription simultanées, sans défaut constaté (une inscription explicite lève l’opposition du registre par conception). `origin/main` fusionné, `Journal.md` gardé des deux côtés. Point à trancher côté produit : le consentement SMS historique (`CustomerConsent`) survit à l’effacement.
+
+### 2026-11-03 — Effacement : l'ancien accord SMS n'autorise plus le marketing
+
+Décision de Hamza : après un effacement, une fiche recréée au même numéro doit redonner son accord. L'effacement passe `marketingOptIn` à false sur les consentements du sujet ; les lignes restent comme preuve (date, version de politique, contexte), mais la trace de l'accord marketing initial n'y figure plus. Test PostgreSQL : éligible avant, exclu après effacement et recréation, de nouveau éligible après un nouvel accord ; il échoue sans le correctif. PR #620 en brouillon, envois et routes toujours fermés.
+
+### 2026-11-03 — STOP par SMS retire le marketing (branche sur PR 620)
+
+Un SMS « STOP » entrant passait dans `handleReply`, qui ne le reconnaît pas (ni OUI ni NON) : aucune désinscription. Le numéro d'expéditeur est partagé, donc il ne désigne pas le restaurant ; on retient celui du dernier `CampaignMessage` SMS accepté (`ACCEPTED`/`SENT`/`DELIVERED`) à ce numéro. Si aucun, le flux habituel continue. Sinon `withdrawMarketingPermission` (source `SMS_STOP`, motif `UNSUBSCRIBE` : `optOutReasonFor` le donnait `MANUAL` avant) sur chaque fiche active de ce restaurant, ou `registerMarketingOptOut` seul si toutes sont déjà retirées (rejeu après échec du registre). Échec du registre : 503, Telnyx doit rejouer. Aucune réservation, aucun SMS, `handleReply` non appelé. Enquête : l'expéditeur SMS marketing est `TELNYX_SMS_FROM` (souvent « SOKAR », alphanumérique, sans réponse possible) ; aucun filtre STOP Telnyx n'est configuré ou documenté dans le dépôt. Tests : unitaires (mots reconnus, aucun message, plusieurs fiches, rejeu, registre indisponible) et un cas PostgreSQL (base jetable `sokar_optout_audit_stopsms`, supprimée). Non vérifié : la configuration Telnyx réelle (profil, STOP automatique, politique de nouvel essai). PR en brouillon vers `codex/marketing-optout-reliability`.
+### 2026-11-03 — Marketing : un envoi refusé ne consomme plus la limite de fréquence
+
+Constat de l'essai staging (trois refus ont amené un client à 3/3 sans aucun e-mail reçu). Le worker rend le créneau quand le message n'est certainement pas parti : refus de la liste blanche, refus de Resend, pas de contact. Un résultat incertain garde son créneau. Le motif `RECIPIENT_NOT_ALLOWLISTED` remplace `PROVIDER_REFUSED` pour la liste blanche, et une adresse dans une erreur fournisseur est masquée. Aucun schéma ni réglage changé.
+
+### 2026-11-03 — E-mail marketing : liens lisibles et pied de page
+
+Après l'essai staging classé en indésirable par Outlook (SPF, DKIM et DMARC réussis, `SCL` 5) : les liens de réservation et de désinscription s'affichent « Réserver une table » et « Se désinscrire », et un pied de page donne le restaurant, son adresse et la raison du message. Effet sur le classement non mesuré : nouvel essai à faire après déploiement sur staging.
+
+### 2026-11-03 — Registre d'opposition : clé par restaurant et levée par la personne seule
+
+Décision de Hamza à la suite de l'analyse de la PR #634. L'empreinte utilise une clé dérivée par restaurant : les anciennes entrées ne sont plus reconnues, aucune n'existe en production au 3 novembre (à revérifier juste avant la fusion, car une entrée écrite entre-temps ne serait plus reconnue). Seul le geste de la personne (case de réservation, lien de confirmation) lève une opposition ; un accord saisi par l'équipe est refusé (`MARKETING_OPPOSITION_REGISTERED`, 409). Le texte public de la PR #634 devra retirer la levée par le restaurant une fois ce changement fusionné. Rien d'activé, envois toujours coupés.

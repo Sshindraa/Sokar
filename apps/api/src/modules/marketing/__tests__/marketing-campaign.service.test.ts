@@ -199,7 +199,7 @@ describe('marketing campaign control plane', () => {
   it('excludes an address found in the opt-out register even with a stored opt-in', async () => {
     vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
     vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([
-      { addressHash: marketingOptOutHash('SMS', '+33601020304') },
+      { addressHash: marketingOptOutHash('restaurant-1', 'SMS', '+33601020304') },
     ] as never);
 
     const preview = await previewMarketingAudience({
@@ -645,6 +645,15 @@ describe('marketing campaign control plane', () => {
       ),
     ).toBe(
       'Réservez : <a href="https://sokar.tech/book/chez-sokar?a=1&amp;b=2">https://sokar.tech/book/chez-sokar?a=1&amp;b=2</a>.<br>&lt;script&gt;x&lt;/script&gt; (<a href="https://exemple.test/u?token=abc">https://exemple.test/u?token=abc</a>)',
+    );
+
+    expect(
+      toMarketingHtml('Réservez : https://sokar.tech/book?a=1&b=2. Autre : https://ex.test', {
+        'https://sokar.tech/book?a=1&b=2': 'Réserver une table',
+      }),
+    ).toBe(
+      'Réservez : <a href="https://sokar.tech/book?a=1&amp;b=2">Réserver une table</a>. ' +
+        'Autre : <a href="https://ex.test">https://ex.test</a>',
     );
   });
 });

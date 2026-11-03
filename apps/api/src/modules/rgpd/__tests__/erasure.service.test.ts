@@ -33,6 +33,7 @@ function makePrisma() {
     customerConsent: {
       findFirst: vi.fn(),
       count: vi.fn().mockResolvedValue(0),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     message: {
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -181,6 +182,12 @@ describe('ErasureService.eraseSubject', () => {
     });
 
     expect(result.consentsRetained).toBe(4);
+    expect(prisma.customerConsent.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ marketingOptIn: true }),
+        data: { marketingOptIn: false },
+      }),
+    );
   });
 
   it("retourne le hash du subject (SHA-256 hex 64 chars) et la date d'effacement", async () => {
@@ -210,6 +217,7 @@ describe('ErasureService.eraseSubject', () => {
       customerConsent: {
         findFirst: vi.fn().mockResolvedValue(null),
         count: vi.fn().mockResolvedValue(0),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       customer: {
         findMany: vi.fn().mockResolvedValue([{ id: 'customer-1', phone: '+33601020304' }]),
@@ -218,9 +226,16 @@ describe('ErasureService.eraseSubject', () => {
       customerIdentity: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       customerPreference: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       customerTagAssignment: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
-      marketingPermission: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      marketingPermission: {
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       marketingPermissionEvent: { deleteMany: vi.fn().mockResolvedValue({ count: 2 }) },
-      marketingSuppression: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      marketingSuppression: {
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      $queryRaw: vi.fn().mockResolvedValue([]),
       campaignAudienceMember: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       campaignMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       marketingConversion: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },

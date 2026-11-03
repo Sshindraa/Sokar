@@ -225,7 +225,7 @@ describe('marketing campaign worker', () => {
   it('n’envoie pas à une adresse inscrite au registre d’opposition, même avec un accord en base', async () => {
     const { db, deps, sendSms } = makeDependencies();
     vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);
-    const hash = marketingOptOutHash('SMS', '+33601020304');
+    const hash = marketingOptOutHash('restaurant-1', 'SMS', '+33601020304');
     vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([{ addressHash: hash }] as never);
 
     await expect(processMarketingCampaignJob(makeJob(), deps)).resolves.toMatchObject({
@@ -306,6 +306,7 @@ describe('marketing campaign worker', () => {
         name: 'Chez Sokar',
         slug: 'chez-sokar',
         managerEmail: 'manager@chez-sokar.test',
+        formattedAddress: '1 rue de Test, 75001 Paris',
       },
     } as never);
     vi.mocked(db.campaignMessage.findMany)
@@ -340,7 +341,10 @@ describe('marketing campaign worker', () => {
       expect.objectContaining({
         to: 'alice@example.com',
         subject: 'Une table vous attend',
-        html: `Bonjour Alice<br>Se désinscrire : <a href="${unsubscribeUrl}">${unsubscribeUrl}</a>`,
+        html:
+          `Bonjour Alice<br>Se désinscrire : <a href="${unsubscribeUrl}">Se désinscrire</a>` +
+          '<br><br>Chez Sokar, 1 rue de Test, 75001 Paris<br>' +
+          'Vous recevez ce message car vous avez accepté de recevoir les actualités de ce restaurant par e-mail.',
         headers: {
           'List-Unsubscribe': `<${unsubscribeUrl}>`,
           'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
@@ -507,6 +511,75 @@ describe('marketing campaign worker', () => {
       }),
     );
     expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  const decrement = { data: { sendCount: { decrement: 1 } } };
+
+  it('rend le créneau de fréquence et garde le motif quand la liste blanche refuse l’envoi', async () => {
+    const { db, deps } = makeDependencies();
+    mockEmailCampaign(db, 'manager@chez-sokar.test');
+    deps.sendEmail = vi.fn().mockResolvedValue({
+      outcome: 'failure_certain',
+      provider: 'resend',
+      channel: 'email',
+      reason: 'RECIPIENT_NOT_ALLOWLISTED',
+    }) as never;
+
+    await processMarketingCampaignJob(makeJob(), deps);
+
+    expect(db.campaignMessage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: MarketingMessageStatus.FAILED,
+          errorCode: 'RECIPIENT_NOT_ALLOWLISTED',
+        }),
+      }),
+    );
+    expect(db.marketingFrequencyWindow.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...decrement,
+        where: expect.objectContaining({
+          restaurantId: 'restaurant-1',
+          customerId: 'customer-1',
+          channel: 'EMAIL',
+        }),
+      }),
+    );
+  });
+
+  it('rend le créneau quand Resend refuse et masque l’adresse dans le code d’erreur', async () => {
+    const { db, deps } = makeDependencies();
+    mockEmailCampaign(db, 'manager@chez-sokar.test');
+    deps.sendEmail = vi
+      .fn()
+      .mockRejectedValue(new Error('Resend API error: invalid to alice@example.com')) as never;
+
+    await processMarketingCampaignJob(makeJob(), deps);
+
+    expect(db.campaignMessage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ errorCode: 'RESEND_API_ERROR:_INVALID_TO_EMAIL' }),
+      }),
+    );
+    expect(db.marketingFrequencyWindow.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining(decrement),
+    );
+  });
+
+  it('garde le créneau quand on ne sait pas si le message est parti', async () => {
+    const { db, deps } = makeDependencies();
+    mockEmailCampaign(db, 'manager@chez-sokar.test');
+    deps.sendEmail = vi.fn().mockResolvedValue({
+      outcome: 'unknown',
+      provider: 'resend',
+      channel: 'email',
+    }) as never;
+
+    await processMarketingCampaignJob(makeJob(), deps);
+
+    expect(db.marketingFrequencyWindow.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining(decrement),
+    );
   });
 
   it('refuse l’envoi e-mail sans MARKETING_EMAIL_FROM, sans jamais se rabattre sur EMAIL_FROM', async () => {

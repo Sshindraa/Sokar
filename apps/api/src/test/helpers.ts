@@ -854,6 +854,7 @@ vi.mock('../shared/db/client', () => {
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     marketingOptOut: {
+      upsert: vi.fn(),
       findMany: vi.fn(),
       deleteMany: vi.fn(),
     },

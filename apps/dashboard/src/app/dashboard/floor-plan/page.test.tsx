@@ -85,6 +85,15 @@ describe('FloorPlanPage — switch desktop', () => {
     );
   });
 
+  it('présente la simulation comme une prévisualisation sans placement', async () => {
+    render(<FloorPlanPage />);
+    expect(await screen.findByText('Simuler un placement · Copilot')).toBeInTheDocument();
+    expect(
+      screen.getByText('Prévisualisation uniquement · aucun client placé'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/walk-in/i)).not.toBeInTheDocument();
+  });
+
   it('permet de réessayer après une panne sans laisser le skeleton affiché', async () => {
     apiMocks.get
       .mockRejectedValueOnce(new Error('Impossible de joindre le serveur API'))
