@@ -174,6 +174,78 @@ describe.skipIf(!url)('marketing opt-out on PostgreSQL', () => {
     expect(result.optedOut).toEqual(new Set([first.id, second.id]));
   });
 
+  it('keeps two profiles sharing an email coherent when one withdraws while the other opts in', async () => {
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+    const definition = {
+      version: 1,
+      operator: 'AND',
+      conditions: [{ field: 'isVip', op: 'EQ', value: true }],
+    };
+    for (let round = 0; round < 8; round++) {
+      const restaurant = await db.restaurant.create({
+        data: {
+          name: 'Shared email race',
+          managerPhone: '',
+          managerEmail: '',
+          phoneNumber: randomUUID(),
+          openingHours: {},
+        },
+      });
+      const email = `shared-${round}@example.test`;
+      const withdrawing = await db.customer.create({
+        data: {
+          restaurantId: restaurant.id,
+          phone: `+3361234600${round}`,
+          emailNormalized: email,
+          isVip: true,
+        },
+      });
+      const optingIn = await db.customer.create({
+        data: {
+          restaurantId: restaurant.id,
+          phone: `+3361234610${round}`,
+          emailNormalized: email,
+          isVip: true,
+        },
+      });
+      // Both orders are valid; what must hold is that no call fails or blocks the other.
+      await Promise.all([
+        withdrawMarketingPermission({
+          restaurantId: restaurant.id,
+          customerId: withdrawing.id,
+          channel: 'EMAIL',
+        }),
+        upsertMarketingPermission({
+          restaurantId: restaurant.id,
+          customerId: optingIn.id,
+          channel: 'EMAIL',
+          status: 'OPTED_IN',
+          source: 'TEST',
+          proofVersion: 'test',
+          proof: 'test',
+        }),
+      ]);
+      const statuses = await db.marketingPermission.findMany({
+        where: { restaurantId: restaurant.id, channel: 'EMAIL' },
+        select: { customerId: true, status: true },
+      });
+      expect(statuses.find((row) => row.customerId === withdrawing.id)?.status).toBe('OPTED_OUT');
+      expect(statuses.find((row) => row.customerId === optingIn.id)?.status).toBe('OPTED_IN');
+      const registered = await db.marketingOptOut.count({
+        where: { restaurantId: restaurant.id, channel: 'EMAIL' },
+      });
+      expect([0, 1]).toContain(registered);
+      const preview = await previewMarketingAudience({
+        restaurantId: restaurant.id,
+        channel: 'EMAIL',
+        definition,
+      });
+      // The withdrawn profile is never selected; the other one is only if its opt-in came last.
+      expect(preview.candidateCount).toBe(2);
+      expect(preview.eligibleCount).toBe(registered === 0 ? 1 : 0);
+    }
+  });
+
   it('keeps a complaint suppressed and retryable when the register fails', async () => {
     const restaurant = await db.restaurant.create({
       data: {
