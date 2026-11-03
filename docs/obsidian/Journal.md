@@ -3659,3 +3659,7 @@ La navigation bureau affiche les rubriques et leurs sous-menus directement dans 
 ### 2026-11-03 — Navigation latérale repliable
 
 La navigation bureau démarre en barre d’icônes ; le bouton de menu ou une catégorie la déplie, et le contenu récupère l’espace lorsqu’elle est repliée. La navigation tactile conserve son fonctionnement.
+
+### 2026-11-03 — PR 620 : désinscription en erreur, deux fiches, fusion de main
+
+`POST /marketing/unsubscribe` répond 503 quand le registre d’opposition est indisponible (page « réessayer » pour le formulaire, JSON `MARKETING_OPTOUT_REGISTER_UNAVAILABLE` sinon) au lieu d’un 500. Le jeton est signé et sans état : le même lien permet de réessayer, la fiche est déjà bloquée, le nouvel essai réécrit le registre. Test PostgreSQL ajouté : deux fiches de même adresse, désinscription et inscription simultanées, sans défaut constaté (une inscription explicite lève l’opposition du registre par conception). `origin/main` fusionné, `Journal.md` gardé des deux côtés. Point à trancher côté produit : le consentement SMS historique (`CustomerConsent`) survit à l’effacement.
