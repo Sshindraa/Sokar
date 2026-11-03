@@ -3,7 +3,7 @@ import { GiftCardTestJourney } from '@/components/gift-cards/gift-card-test-jour
 
 import { GiftCardOperationsPanel } from '@/components/gift-cards/gift-card-operations-panel';
 import { GiftCardCashier } from '@/components/gift-cards/gift-card-cashier';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Euro, Gift, Plus, Save, Search, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -109,8 +109,14 @@ export default function GiftCardsPage() {
     settings.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   }, []);
 
+  // Seule la dernière requête écrit l'état : une réponse plus ancienne (un 403 reçu après
+  // un appel plus récent) ne doit pas remplacer les données chargées.
+  const latestFetchRef = useRef(0);
+
   const fetchAll = useCallback(async () => {
     if (!orgId) return;
+    const requestId = ++latestFetchRef.current;
+    const isLatest = () => requestId === latestFetchRef.current;
     setLoading(true);
     setError('');
     try {
@@ -126,6 +132,7 @@ export default function GiftCardsPage() {
         listGiftCardPacks(),
         get<Restaurant>(`restaurants/${orgId}`),
       ]);
+      if (!isLatest()) return;
       setCards(list.items);
       setTotal(list.total);
       setLoadedOnce(true);
@@ -138,9 +145,9 @@ export default function GiftCardsPage() {
           : 5,
       );
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de charger les cartes cadeaux'));
+      if (isLatest()) setError(getErrorMessage(err, 'Impossible de charger les cartes cadeaux'));
     } finally {
-      setLoading(false);
+      if (isLatest()) setLoading(false);
     }
   }, [
     orgId,
