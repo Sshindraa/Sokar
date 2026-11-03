@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Prisma, ReservationPaymentStatus } from '@prisma/client';
 import { closeApp, getApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
+import { logger } from '../../../shared/logger/pino';
 import { constructWebhookEvent } from '../../gift-cards/stripe.service';
 
 const AUTH = { authorization: 'Bearer test' };
@@ -294,6 +295,7 @@ describe('reservation payment foundation routes', () => {
         lastProviderEventAt: null,
       } as never);
       const app = await getApp();
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
       const response = await app.inject({
         method: 'POST',
         url: '/webhooks/stripe/reservation-payments',
@@ -302,6 +304,11 @@ describe('reservation payment foundation routes', () => {
       });
       expect(response.statusCode).toBe(400);
       expect(response.json().error).toBe(code);
+      expect(warn).toHaveBeenCalledWith(
+        { code, stripeEventId: 'evt_invalid', paymentId: 'payment-1' },
+        'reservation payment webhook rejected',
+      );
+      warn.mockRestore();
       expect(db.reservationPayment.updateMany).not.toHaveBeenCalled();
       expect(db.reservationPaymentEvent.create).not.toHaveBeenCalled();
     },

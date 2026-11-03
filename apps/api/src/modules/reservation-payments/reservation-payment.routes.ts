@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ReservationPaymentStatus, ReservationPaymentType } from '@prisma/client';
 import { db } from '../../shared/db/client';
+import { logger } from '../../shared/logger/pino';
 import { requireOrg, requireSokarOperator } from '../../plugins/clerk';
 import { requireCapability } from '../entitlements/entitlement.guard';
 import { constructWebhookEvent } from '../gift-cards/stripe.service';
@@ -307,6 +308,18 @@ export async function reservationPaymentRoutes(app: FastifyInstance): Promise<vo
         });
         return reply.send({ received: true, ...result });
       } catch (error) {
+        if (
+          error instanceof ReservationPaymentInputError ||
+          error instanceof ReservationPaymentStateError ||
+          error instanceof ReservationPaymentNotFoundError ||
+          error instanceof ReservationPaymentPolicyNotFoundError ||
+          error instanceof ReservationPaymentReservationNotFoundError
+        ) {
+          logger.warn(
+            { code: error.code, stripeEventId: event.id, paymentId: metadata.reservationPaymentId },
+            'reservation payment webhook rejected',
+          );
+        }
         return sendPaymentError(error, reply) ?? Promise.reject(error);
       }
     },
