@@ -20,6 +20,7 @@ describe('Connect privacy disclosure', () => {
     expect(container.textContent).toContain('hors de l’Espace économique européen');
     expect(container.textContent).toContain('liste nominative');
     expect(container.textContent).toContain(PRIVACY_DOCUMENT.reservationProcessing);
+    expect(container.textContent).toContain(PRIVACY_DOCUMENT.optOutRegister);
     expect(container.querySelector('a[href="mailto:privacy@sokar.tech"]')).not.toBeNull();
   });
 });

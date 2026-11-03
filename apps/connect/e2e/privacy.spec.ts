@@ -8,6 +8,7 @@ for (const width of [390, 820, 1440]) {
     await expect(article.getByText('Gestion des comptes', { exact: true })).toBeVisible();
     await expect(article).toContainText('hors de l’Espace économique européen');
     await expect(article).toContainText('sans purge automatique');
+    await expect(article).toContainText('donnée personnelle pseudonymisée');
     await expect(article).not.toContainText(
       /Clerk|Resend|Google Workspace|Cerebras|OpenRouter|Respan|PostgreSQL|Redis/,
     );

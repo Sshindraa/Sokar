@@ -3639,3 +3639,7 @@ La navigation bureau affiche les rubriques et leurs sous-menus directement dans 
 ### 2026-11-03 — Navigation latérale repliable
 
 La navigation bureau démarre en barre d’icônes ; le bouton de menu ou une catégorie la déplie, et le contenu récupère l’espace lorsqu’elle est repliée. La navigation tactile conserve son fonctionnement.
+
+### 2026-11-03 — Registre d’opposition dans la politique et l’annexe client
+
+Le registre d’opposition marketing (empreinte HMAC-SHA256, par restaurant et par canal, motif, source, date, sans lien avec la fiche, conservé trois ans) figure désormais dans la politique de confidentialité (dashboard et Connect, via `PRIVACY_DOCUMENT.optOutRegister` et `PRIVACY_RETENTION_RULES`) et dans l’annexe client (`docs/runbooks/privacy-client-annex.md`). Date de révision des pages passée au 3 novembre 2026. Restent ouverts, décision de Hamza : base légale du registre (affichée « à confirmer » sur le dashboard), rôles responsable ou sous-traitant, reprise dans l’accord de traitement. `CURRENT_PRIVACY_POLICY_VERSION` (`v1.1-2026-10-16`) n’a pas été changée : elle sert à versionner les consentements enregistrés.

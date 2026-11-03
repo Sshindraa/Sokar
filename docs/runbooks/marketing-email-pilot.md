@@ -151,7 +151,7 @@ Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jo
   restaurant, la manière de le recueillir est ajoutée à la preuve. Chaque changement ajoute une ligne au
   journal `MarketingPermissionEvent` (aucune adresse ni téléphone dans les journaux applicatifs).
 - **Durées de conservation : trois obligations distinctes.** Le registre d'opposition est conservé **3 ans** (décision de Hamza du 23/10/2026, appliquée par une purge sur le worker de réconciliation). Le fichier de prospection et la preuve ont une durée appliquée depuis le 28/10 (purge marketing du worker de réconciliation, chaque nuit à 3 h 20).
-  La politique de confidentialité (`PRIVACY_RETENTION_RULES`) n'a pas de ligne marketing. Les durées
+  La politique de confidentialité (`PRIVACY_RETENTION_RULES`) n'a de ligne marketing que pour le registre d'opposition. Les durées
   ci-dessous sont des **recommandations de la CNIL à contextualiser, pas une durée universelle ni une
   décision validée** :
 
@@ -170,8 +170,9 @@ Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jo
   (le journal garde les deux actes). Sans `MARKETING_OPTOUT_HASH_SECRET`, aucun message n'est envoyé. Les
   retraits antérieurs à la migration se reprennent avec
   `pnpm --filter @sokar/api exec tsx scripts/backfill-marketing-opt-out-register.ts --dry-run` puis `--apply`
-  (comptes seulement, jamais d'adresse). Le registre est une donnée personnelle pseudonymisée : il doit
-  figurer dans la politique et l'annexe client (**non fait**).
+  (comptes seulement, jamais d'adresse). Le registre est une donnée personnelle pseudonymisée : il figure
+  dans la politique (`PRIVACY_DOCUMENT.optOutRegister`) et dans l'annexe client (`privacy-client-annex.md`).
+  Base légale, rôles et durée restent à valider par Hamza.
 
 - **Preuve : ce qui est conservé** : l'empreinte de `version|canal|phrase` seule ne prouve pas que le
   titulaire de l'adresse a accepté. Chaque ligne du journal `MarketingPermissionEvent` conserve donc

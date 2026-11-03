@@ -41,6 +41,20 @@ qualifiés automatiquement de sous-traitants ultérieurs du restaurant. Qualifie
 les rôles dans l'annexe contractuelle finale. Un fournisseur de modèles en aval
 ne peut pas rester non identifié si ses services traitent les données du client.
 
+## Registre d'opposition marketing
+
+Par restaurant et par canal (e-mail, SMS, WhatsApp), Sokar conserve une empreinte HMAC-SHA256
+de l'adresse e-mail normalisée ou du numéro E.164 de la personne qui se désinscrit ou se plaint
+d'un message marketing, avec le motif (`UNSUBSCRIBE`, `COMPLAINT`, `MANUAL`), la source et la date.
+L'empreinte est stockée dans la base de données de Sokar (hébergement : voir le tableau ci-dessus),
+n'est pas rattachée à la fiche client et survit à l'effacement, pour ne pas solliciter de nouveau
+la personne. Donnée personnelle pseudonymisée. Conservation : trois ans à compter de l'opposition,
+puis purge automatique. Une nouvelle inscription explicite de la personne lève l'opposition.
+
+Points ouverts, à trancher par Hamza avant toute communication contractuelle : base légale du
+registre ; rôle de Sokar et du restaurant pour ce traitement ; reprise dans l'accord de traitement
+des données, avec la procédure d'opposition qui s'y rattache.
+
 ## Informations à fournir au client
 
 - Liste nominative applicable, fonctions, données concernées et pays de traitement.

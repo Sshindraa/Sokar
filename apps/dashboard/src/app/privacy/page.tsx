@@ -90,6 +90,14 @@ const DATA_CATEGORIES = [
     retention: PRIVACY_RETENTION.billing,
   },
   {
+    category: 'Registre d’opposition marketing',
+    examples:
+      'Empreinte HMAC-SHA256 de l’adresse e-mail ou du numéro, canal, motif, source et date.',
+    purpose: 'Ne pas solliciter de nouveau une personne qui s’est opposée à un message marketing.',
+    legalBasis: 'Base légale à confirmer avant publication.',
+    retention: PRIVACY_RETENTION.optOutRegister,
+  },
+  {
     category: 'Logs techniques',
     examples: 'Adresse IP, informations sur le navigateur et événements de sécurité.',
     purpose: 'Sécurité, débogage, détection des abus.',
@@ -192,6 +200,7 @@ export default function PrivacyPage() {
               </div>
             ))}
           </div>
+          <p className="mt-6 text-sm leading-7 text-white/72">{PRIVACY_DOCUMENT.optOutRegister}</p>
           <p className="mt-6 text-sm leading-7 text-white/72">{PRIVACY_RETENTION.backups}</p>
         </Section>
 
