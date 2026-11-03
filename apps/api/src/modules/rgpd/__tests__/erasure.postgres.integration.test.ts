@@ -45,7 +45,7 @@ describe.skipIf(!url)('RGPD erasure on PostgreSQL', () => {
     const experience = await db.experience.create({
       data: {
         restaurantId: restaurant.id,
-        key: tag,
+        key: `rgpd-${tag}`,
         name: 'Audit',
         durationMinutes: 60,
         priceCents: 100,
