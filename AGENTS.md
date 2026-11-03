@@ -2,9 +2,9 @@
 description: Sokar project context for Hermes CLI agents
 ---
 
-# Sokar Agent Context
+# Suppernote Agent Context
 
-Sokar is a French-first restaurant platform: reservations on every channel (phone, web, widget, AI assistants via MCP), service organisation (floor plan, Service Copilot) and customer relationship (CRM, loyalty, gift cards, experiences). The AI voice agent is one feature, not the product definition. Brand: "Le chef de rang numérique de votre restaurant" (`packages/shared/src/brand.ts`); product scope and readiness: `docs/PROJECT_MAP.md#ce-quest-sokar`.
+Suppernote (formerly Sokar; internal names like `@sokar/*` and `/opt/sokar` stay) is a French-first restaurant platform: reservations on every channel (phone, web, widget, AI assistants via MCP), service organisation (floor plan, Service Copilot) and customer relationship (CRM, loyalty, gift cards, experiences). The AI voice agent is one feature, not the product definition. Brand: "Le chef de rang numérique de votre restaurant" (`packages/shared/src/brand.ts`); product scope and readiness: `docs/PROJECT_MAP.md#ce-quest-sokar`.
 Keep this file short. Detailed docs are in `docs/runbooks/` and `docs/architecture/`.
 
 ## Stack
@@ -147,7 +147,7 @@ Safe path: `redactPii()`.
 ## Environment
 
 - **Dev:** `.env.local` (root), `packages/database/.env`, per-app `.env`.
-- **Staging:** `https://staging.sokar.tech` / `api-staging.sokar.tech` on VPS `sokar`.
-- **Prod:** `https://sokar.tech` / `api.sokar.tech` on VPS `sokar`.
+- **Staging:** `https://staging.suppernote.com` / `api-staging.suppernote.com` on VPS `sokar`.
+- **Prod:** `https://suppernote.com` / `api.suppernote.com` on VPS `sokar`.
 - One `.env` per app, no `.env.prod`. `NEXT_PUBLIC_*` is baked at build time.
 - See `docs/runbooks/environment.md` for details.

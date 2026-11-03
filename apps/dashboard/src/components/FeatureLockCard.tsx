@@ -33,10 +33,10 @@ export function FeatureLockCard({ lock, feature }: { lock: FeatureLock; feature:
             <p className="mt-3 text-xs text-muted-foreground">
               Une question ? Écrivez-nous à{' '}
               <a
-                href="mailto:hello@sokar.tech"
+                href="mailto:hello@suppernote.com"
                 className="underline underline-offset-4 transition-all duration-200 hover:text-foreground"
               >
-                hello@sokar.tech
+                hello@suppernote.com
               </a>
               .
             </p>

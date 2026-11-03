@@ -134,8 +134,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          PROD_URL="https://sokar.tech"
-          API_PROD_URL="https://api.sokar.tech"
+          PROD_URL="https://suppernote.com"
+          API_PROD_URL="https://api.suppernote.com"
 
           echo "=== Health checks ==="
 
@@ -147,16 +147,16 @@ jobs:
           done
 
 
-          # /health via api.sokar.tech
+          # /health via api.suppernote.com
           HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$API_PROD_URL/health" || echo "FAIL")
-          echo "api.sokar.tech/health → $HEALTH_STATUS"
+          echo "api.suppernote.com/health → $HEALTH_STATUS"
           [ "$HEALTH_STATUS" = "200" ] || exit 1
 
-          # /livez via api.sokar.tech
+          # /livez via api.suppernote.com
           LIVEZ_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$API_PROD_URL/livez" || echo "FAIL")
-          echo "api.sokar.tech/livez → $LIVEZ_STATUS"
+          echo "api.suppernote.com/livez → $LIVEZ_STATUS"
           [ "$LIVEZ_STATUS" = "200" ] || exit 1
 
           # La route legacy doit rester protégée et refuser avant toute
@@ -164,38 +164,38 @@ jobs:
           LEGACY_RESERVATION_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 -X POST -H "content-type: application/json" -d '{}' \
             "$API_PROD_URL/reservations" || echo "FAIL")
-          echo "api.sokar.tech/reservations sans jeton → $LEGACY_RESERVATION_STATUS"
+          echo "api.suppernote.com/reservations sans jeton → $LEGACY_RESERVATION_STATUS"
           [ "$LEGACY_RESERVATION_STATUS" = "401" ] || exit 1
 
           # /dashboard — peut rediriger vers Clerk (302) ou répondre 200.
           # On accepte 200 et 302 comme valides.
           DASH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 -L "$PROD_URL/dashboard" || echo "FAIL")
-          echo "sokar.tech/dashboard → $DASH_STATUS"
+          echo "suppernote.com/dashboard → $DASH_STATUS"
           [ "$DASH_STATUS" = "200" ] || [ "$DASH_STATUS" = "302" ] || exit 1
 
           # Page d'accueil
           HOME_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$PROD_URL/" || echo "FAIL")
-          echo "sokar.tech/ → $HOME_STATUS"
+          echo "suppernote.com/ → $HOME_STATUS"
           [ "$HOME_STATUS" = "200" ] || exit 1
 
           # Sokar Connect page
           CONNECT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$PROD_URL/restaurant/chez-sokar-demo" || echo "FAIL")
-          echo "sokar.tech/restaurant/chez-sokar-demo → $CONNECT_STATUS"
+          echo "suppernote.com/restaurant/chez-sokar-demo → $CONNECT_STATUS"
           [ "$CONNECT_STATUS" = "200" ] || exit 1
 
-          # Subdomain routing — verify *.sokar.tech resolves to the restaurant page
+          # Subdomain routing — verify *.suppernote.com resolves to the restaurant page
           # (not the landing page). Catches Nginx default_server and middleware bugs.
           SUBDOMAIN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            --max-time 10 -H "Host: chez-sokar-demo.sokar.tech" "https://sokar.tech/" || echo "FAIL")
-          echo "chez-sokar-demo.sokar.tech (via Host header) → $SUBDOMAIN_STATUS"
+            --max-time 10 -H "Host: chez-sokar-demo.suppernote.com" "https://suppernote.com/" || echo "FAIL")
+          echo "chez-sokar-demo.suppernote.com (via Host header) → $SUBDOMAIN_STATUS"
           [ "$SUBDOMAIN_STATUS" = "200" ] || exit 1
 
           # Verify content is the restaurant page, not the landing page
           SUBDOMAIN_CONTENT=$(curl -s --max-time 10 \
-            -H "Host: chez-sokar-demo.sokar.tech" "https://sokar.tech/" || echo "")
+            -H "Host: chez-sokar-demo.suppernote.com" "https://suppernote.com/" || echo "")
           # Check for restaurant page title pattern (more stable than body copy).
           # The restaurant page title always contains "Réservation" — the landing page doesn't.
           if echo "$SUBDOMAIN_CONTENT" | grep -q "<title>.*Réservation"; then
@@ -210,12 +210,12 @@ jobs:
           PRICING_CSS=$(printf '%s' "$PRICING_HTML" \
             | grep -oE '/_next/static/css/[^"]+\.css' | head -1 || true)
           if [ -z "$PRICING_CSS" ]; then
-            echo "sokar.tech/pricing → aucune feuille CSS dans le HTML"
+            echo "suppernote.com/pricing → aucune feuille CSS dans le HTML"
             exit 1
           fi
           PRICING_CSS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$PROD_URL$PRICING_CSS" || echo "FAIL")
-          echo "sokar.tech$PRICING_CSS → $PRICING_CSS_STATUS"
+          echo "suppernote.com$PRICING_CSS → $PRICING_CSS_STATUS"
           [ "$PRICING_CSS_STATUS" = "200" ] || exit 1
 
           echo ""

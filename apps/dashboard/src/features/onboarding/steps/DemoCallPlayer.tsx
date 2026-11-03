@@ -167,7 +167,7 @@ export function DemoCallPlayer({
     <div className="overflow-hidden rounded-3xl border border-border bg-background shadow-sm">
       <div className="px-6 py-4 sm:px-8">
         <h3 className="text-xl font-semibold tracking-tight text-foreground">
-          {mode === 'live' ? 'Parlez à Sokar' : 'Écoutez Sokar'}
+          {mode === 'live' ? 'Parlez à Suppernote' : 'Écoutez Suppernote'}
         </h3>
       </div>
       {mode === 'live' ? (
@@ -209,7 +209,9 @@ export function DemoCallPlayer({
                   type="button"
                   onClick={toggleAudioPlayback}
                   aria-label={
-                    playback.isPlaying ? 'Mettre la lecture en pause' : 'Lire la réponse de Sokar'
+                    playback.isPlaying
+                      ? 'Mettre la lecture en pause'
+                      : 'Lire la réponse de Suppernote'
                   }
                   className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-all duration-200 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 >
@@ -222,7 +224,7 @@ export function DemoCallPlayer({
 
                 <div className="min-w-0 flex-1">
                   <div className="mb-1 flex items-center justify-between gap-3 text-xs">
-                    <span className="truncate font-medium">Réponse de Sokar</span>
+                    <span className="truncate font-medium">Réponse de Suppernote</span>
                     <span className="shrink-0 tabular-nums text-muted-foreground">
                       {formatPlaybackTime(playback.currentTime)}
                       <span aria-hidden="true"> / </span>
@@ -314,7 +316,7 @@ export function DemoCallPlayer({
           ) : demo.transcript ? (
             <div className="my-4 rounded-2xl border border-background/15 bg-background/5 p-4 text-left">
               <p className="text-xs font-medium uppercase tracking-wide text-background/60">
-                {demo.fallback ? 'Aperçu écrit · audio indisponible' : 'Réponse de Sokar'}
+                {demo.fallback ? 'Aperçu écrit · audio indisponible' : 'Réponse de Suppernote'}
               </p>
               <p className="mt-1 text-sm italic text-background">
                 &laquo;&nbsp;{demo.transcript}&nbsp;&raquo;
@@ -347,8 +349,8 @@ export function DemoCallPlayer({
             {demo.loading
               ? 'Préparation de votre aperçu…'
               : demo.audioUrl || demo.transcript
-                ? 'Réécouter Sokar'
-                : 'Écouter Sokar'}
+                ? 'Réécouter Suppernote'
+                : 'Écouter Suppernote'}
           </Button>
         </div>
       )}
@@ -411,7 +413,7 @@ export function DemoCallPlayer({
                 }}
                 className="text-xs font-medium text-muted-foreground underline underline-offset-4 transition-all duration-200 hover:text-foreground"
               >
-                Appeler Sokar en direct
+                Appeler Suppernote en direct
               </button>
             )
           )}

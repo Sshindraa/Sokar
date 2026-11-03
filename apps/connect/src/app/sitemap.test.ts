@@ -10,7 +10,7 @@ vi.mock('@/lib/api-client', () => ({
 
 import sitemap, * as route from './sitemap';
 
-const SITE = 'https://sokar.tech';
+const SITE = 'https://suppernote.com';
 
 const publishedRestaurant = {
   slug: 'chez-sokar',

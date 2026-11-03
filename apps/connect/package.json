@@ -2,7 +2,7 @@
   "name": "@sokar/connect",
   "version": "0.1.0",
   "private": true,
-  "description": "Sokar Connect — Agent-Ready Pages (Sokar public pages for AI/SEO indexability)",
+  "description": "Suppernote Connect — Agent-Ready Pages (Suppernote public pages for AI/SEO indexability)",
   "scripts": {
     "dev": "next dev --webpack -p 4002",
     "build": "bash ../../scripts/build/guard-next-build.sh 4002 connect && next build --webpack",

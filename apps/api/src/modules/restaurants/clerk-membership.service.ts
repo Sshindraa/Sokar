@@ -15,11 +15,11 @@ export class ClerkMembershipVerificationError extends Error {
 
 /**
  * Vérifie côté serveur qu'un utilisateur appartient bien à l'organisation
- * Clerk avant de créer une membership de site dans Sokar.
+ * Clerk avant de créer une membership de site dans Suppernote.
  *
  * L'API Clerk filtre déjà la liste par userId : une réponse vide signifie donc
  * que l'identité est inconnue de l'organisation, et non simplement qu'elle n'a
- * pas encore de rôle Sokar.
+ * pas encore de rôle Suppernote.
  */
 export async function assertClerkOrganizationMember(input: {
   organizationId?: string | null;

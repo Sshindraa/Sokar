@@ -15,21 +15,23 @@ describe('e-mail de fin d’essai', () => {
       restaurantName: 'Le Bistrot',
       trialEndsAt,
       recap: busy,
-      dashboardUrl: 'https://sokar.tech/',
+      dashboardUrl: 'https://suppernote.com/',
       now: new Date('2026-10-27T10:00:00.000Z'),
     });
     expect(email.html).toContain('>3</td>');
     expect(email.html).toContain('d’essai restants');
-    expect(email.html).toContain('src="https://sokar.tech/apple-touch-icon.png"');
-    expect(email.html).toContain('Sokar, le chef de rang numérique de votre restaurant');
+    expect(email.html).toContain('src="https://suppernote.com/apple-touch-icon.png"');
+    expect(email.html).toContain('Suppernote, le chef de rang numérique de votre restaurant');
     expect(email.html).toContain('Il répond, il réserve, il organise votre salle.');
     expect(email.html).not.toContain('assistant téléphonique des restaurants');
     expect(email.html).toContain('>52<');
-    expect(email.subject).toBe('Le Bistrot : votre essai Sokar se termine vendredi 30 octobre');
-    expect(email.html).toContain(
-      'Sokar a décroché 47 appels et pris 18 réservations pour vous (52 couverts).',
+    expect(email.subject).toBe(
+      'Le Bistrot : votre essai Suppernote se termine vendredi 30 octobre',
     );
-    expect(email.html).toContain('href="https://sokar.tech/dashboard/settings#settings-plan"');
+    expect(email.html).toContain(
+      'Suppernote a décroché 47 appels et pris 18 réservations pour vous (52 couverts).',
+    );
+    expect(email.html).toContain('href="https://suppernote.com/dashboard/settings#settings-plan"');
     expect(email.html).toContain('Ajouter ma carte');
   });
 
@@ -38,7 +40,7 @@ describe('e-mail de fin d’essai', () => {
       restaurantName: 'Le Bistrot',
       trialEndsAt,
       recap: silent,
-      dashboardUrl: 'https://sokar.tech',
+      dashboardUrl: 'https://suppernote.com',
     });
     expect(email.html).toContain('n’a encore reçu aucun appel');
     expect(email.html).toContain('renvoi de votre ligne');
@@ -49,15 +51,15 @@ describe('e-mail de fin d’essai', () => {
       restaurantName: 'Chez <Léa> & Co',
       trialEndsAt,
       recap: { calls: 1, reservations: 1, covers: 1, phoneReservations: 1 },
-      dashboardUrl: 'https://sokar.tech',
+      dashboardUrl: 'https://suppernote.com',
     });
     expect(email.html).toContain(
-      'Sokar a décroché 1 appel et pris 1 réservation pour vous (1 couvert).',
+      'Suppernote a décroché 1 appel et pris 1 réservation pour vous (1 couvert).',
     );
     expect(email.html).toContain('Chez &lt;Léa&gt; &amp; Co');
     expect(email.html).not.toContain('<Léa>');
     expect(email.html).toContain(
-      '<title>Chez &lt;Léa&gt; &amp; Co : votre essai Sokar se termine vendredi 30 octobre</title>',
+      '<title>Chez &lt;Léa&gt; &amp; Co : votre essai Suppernote se termine vendredi 30 octobre</title>',
     );
   });
 });
@@ -68,13 +70,13 @@ describe('e-mail de service suspendu', () => {
       restaurantName: 'Le Bistrot',
       endedFromTrial: true,
       recap: busy,
-      dashboardUrl: 'https://sokar.tech',
+      dashboardUrl: 'https://suppernote.com',
     });
-    expect(email.subject).toBe('Le Bistrot : votre assistant Sokar ne répond plus');
+    expect(email.subject).toBe('Le Bistrot : votre assistant Suppernote ne répond plus');
     expect(email.html).toContain('Pendant votre essai, voici ce qu’il a fait pour vous');
     expect(email.html).toContain('>47<');
     expect(email.html).toContain('Votre essai gratuit est terminé');
-    expect(email.html).toContain('href="https://sokar.tech/pricing"');
+    expect(email.html).toContain('href="https://suppernote.com/pricing"');
   });
 
   it('parle d’abonnement terminé après une résiliation', () => {
@@ -82,9 +84,9 @@ describe('e-mail de service suspendu', () => {
       restaurantName: 'Le Bistrot',
       endedFromTrial: false,
       recap: silent,
-      dashboardUrl: 'https://sokar.tech',
+      dashboardUrl: 'https://suppernote.com',
     });
-    expect(email.html).toContain('Votre abonnement Sokar est terminé');
+    expect(email.html).toContain('Votre abonnement Suppernote est terminé');
     expect(email.html).not.toContain('Pendant votre');
   });
 });

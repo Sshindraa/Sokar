@@ -157,7 +157,7 @@ export async function createMarketingUnsubscribeToken(args: {
 export function buildMarketingUnsubscribeUrl(token: string): string {
   const base =
     process.env.MARKETING_UNSUBSCRIBE_BASE_URL?.trim() ||
-    `${process.env.API_URL?.trim() || 'https://api.sokar.tech'}/marketing/unsubscribe`;
+    `${process.env.API_URL?.trim() || 'https://api.suppernote.com'}/marketing/unsubscribe`;
   let url: URL;
   try {
     url = new URL(base);
@@ -240,7 +240,7 @@ export function verifyMarketingConsentToken(
 
 /** Lien de la page de consentement, sur l'origine de l'API. */
 export function buildMarketingConsentUrl(token: string): string {
-  const base = (process.env.API_URL?.trim() || 'https://api.sokar.tech').replace(/\/+$/, '');
+  const base = (process.env.API_URL?.trim() || 'https://api.suppernote.com').replace(/\/+$/, '');
   const url = new URL(`${base}/marketing/consent`);
   url.searchParams.set('token', token);
   return url.toString();

@@ -1,5 +1,5 @@
 /**
- * Tests JSON-LD — Sokar Connect T3.
+ * Tests JSON-LD — Suppernote Connect T3.
  *
  * Vérifie :
  * - structure schema.org Restaurant
@@ -35,7 +35,7 @@ const baseRestaurant = {
     { day: 'tuesday', open: '12:00', close: '14:30' },
   ],
   reservationUrl: `${SITE_URL}/book/chez-mario-lyon`,
-  images: { cover: 'https://sokar.tech/img/cover.jpg', gallery: [] },
+  images: { cover: 'https://suppernote.com/img/cover.jpg', gallery: [] },
   acceptsReservations: true,
   publishedAt: '2026-06-24T00:00:00.000Z',
   connectAgentic: false,
@@ -260,16 +260,16 @@ describe('buildPublicRestaurantJsonLd', () => {
       restaurant: {
         ...baseRestaurant,
         images: {
-          cover: 'https://sokar.tech/img/cover.jpg',
-          gallery: ['https://sokar.tech/img/1.jpg', 'https://sokar.tech/img/2.jpg'],
+          cover: 'https://suppernote.com/img/cover.jpg',
+          gallery: ['https://suppernote.com/img/1.jpg', 'https://suppernote.com/img/2.jpg'],
         },
       },
       attributesConfidence: null,
     });
     expect(jsonLd.image).toEqual([
-      'https://sokar.tech/img/cover.jpg',
-      'https://sokar.tech/img/1.jpg',
-      'https://sokar.tech/img/2.jpg',
+      'https://suppernote.com/img/cover.jpg',
+      'https://suppernote.com/img/1.jpg',
+      'https://suppernote.com/img/2.jpg',
     ]);
   });
 });

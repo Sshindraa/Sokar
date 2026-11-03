@@ -45,7 +45,7 @@ describe('personal reservation management', () => {
     vi.clearAllMocks();
     vi.stubEnv('RESERVATION_MANAGEMENT_ENABLED', 'true');
     vi.stubEnv('RESERVATION_MANAGEMENT_SECRET', randomBytes(32).toString('hex'));
-    vi.stubEnv('DASHBOARD_URL', 'https://sokar.tech');
+    vi.stubEnv('DASHBOARD_URL', 'https://suppernote.com');
     vi.mocked(db.reservation.findUnique).mockResolvedValue(row as never);
     vi.mocked(db.reservation.updateMany).mockResolvedValue({ count: 1 });
   });
@@ -106,7 +106,7 @@ describe('personal reservation management', () => {
     vi.stubEnv('RESERVATION_MANAGEMENT_SECRET', '');
     expect(reservationManagementUrl(row)).toBeUndefined();
   });
-  it.each(['https://sokar.tech', 'https://staging.sokar.tech'])(
+  it.each(['https://suppernote.com', 'https://staging.suppernote.com'])(
     'keeps the real link inside one SMS segment at %s',
     (origin) => {
       vi.stubEnv('DASHBOARD_URL', origin);

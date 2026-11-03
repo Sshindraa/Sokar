@@ -89,7 +89,7 @@ export const REDACT_PATHS = [
 ];
 
 /**
- * Base Pino logger for the Sokar API.
+ * Base Pino logger for the Suppernote API.
  *
  * Conventions:
  * - Every log line is a single JSON object in production (PM2 / log shippers

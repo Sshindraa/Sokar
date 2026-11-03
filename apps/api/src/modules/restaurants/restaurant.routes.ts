@@ -5,6 +5,7 @@ import { clerkClient } from '@clerk/fastify';
 import type { Prisma } from '@prisma/client';
 import { normalizePhone } from '@sokar/shared';
 import { requireOrg, requireSokarOperator } from '../../plugins/clerk';
+import { publicReadMax } from '../../plugins/rate-limit';
 import { trackOnboardingEvent, type OnboardingAnalyticsEvent } from '../analytics/events.service';
 import { placeOutboundCall } from '../../shared/telnyx/client';
 import { logger } from '../../shared/logger/pino';
@@ -96,7 +97,7 @@ const ONBOARDING_EVENT_BY_ACTION: Partial<
 
 // Le plan est une projection de Billing et ne peut pas être fourni par le
 // restaurateur, ni à la création ni à la mise à jour. La base applique STARTER
-// par défaut ; Stripe ou un opérateur Sokar fait évoluer cette projection.
+// par défaut ; Stripe ou un opérateur Suppernote fait évoluer cette projection.
 const RestaurantProfileSchema = z.object({
   name: z.string().min(2).max(100),
   managerPhone: z.string().regex(/^\+?[0-9]{10,15}$/),
@@ -112,7 +113,7 @@ const CreateRestaurantSchema = RestaurantProfileSchema;
 const CreateSiteSchema = z.object({
   name: z.string().trim().min(2).max(100),
   // Ligne publique du site (le « Téléphone du site » saisi dans le dashboard), enregistrée dans
-  // `phoneE164`. Ce n'est pas le numéro Sokar : celui-ci est attribué par un opérateur.
+  // `phoneE164`. Ce n'est pas le numéro Suppernote : celui-ci est attribué par un opérateur.
   phoneNumber: z.string().trim().min(5).max(32),
   managerPhone: z.string().trim().max(32).default(''),
   managerEmail: z
@@ -168,7 +169,7 @@ const CapacitySpecialsSchema = z
   })
   .passthrough();
 
-// Le numéro Sokar (`phoneNumber`) aiguille les appels entrants : seul un opérateur Sokar l'attribue
+// Le numéro Suppernote (`phoneNumber`) aiguille les appels entrants : seul un opérateur Suppernote l'attribue
 // (POST /admin/provisioning/:id/assign-phone). Le restaurateur ne peut pas le modifier ici ; un
 // `phoneNumber` envoyé est ignoré.
 const UpdateRestaurantSchema = RestaurantProfileSchema.omit({ phoneNumber: true })
@@ -209,7 +210,7 @@ const UpdateConnectSchema = z.object({
   connectPublished: z.boolean().optional(),
   connectAgentic: z.boolean().optional(),
   capacitySpecials: CapacitySpecialsSchema.optional(),
-  // Sokar Connect P2 — premium subdomain
+  // Suppernote Connect P2 — premium subdomain
   customDomain: z
     .string()
     .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i)
@@ -259,7 +260,7 @@ function onboardingPayload(
       openingHours: restaurant.openingHours,
       personality: restaurant.personality,
       practicalInfo: normalizePracticalInfo(restaurant.practicalInfo),
-      // Sokar Connect
+      // Suppernote Connect
       slug: restaurant.slug,
       description: restaurant.description,
       formattedAddress: restaurant.formattedAddress,
@@ -342,7 +343,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     ) {
       return reply.status(409).send({
         error:
-          "Aucun numéro Sokar attribué. Cette étape sera déverrouillée dès qu'un numéro sera ajouté au restaurant.",
+          "Aucun numéro Suppernote attribué. Cette étape sera déverrouillée dès qu'un numéro sera ajouté au restaurant.",
       });
     }
 
@@ -350,7 +351,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
     if (body.action === 'complete' && body.task === 'floor' && floorStats.tableCount === 0) {
       return reply.status(409).send({
         code: 'NO_TABLES',
-        error: 'Ajoutez au moins une table : sans table, Sokar ne peut proposer aucun créneau.',
+        error:
+          'Ajoutez au moins une table : sans table, Suppernote ne peut proposer aucun créneau.',
       });
     }
     if (
@@ -380,7 +382,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
       return reply.status(409).send({
         code: 'NOT_READY_TO_BOOK',
         error:
-          'Complétez les horaires, les tables et les règles de réservation avant de continuer vers Sokar Connect.',
+          'Complétez les horaires, les tables et les règles de réservation avant de continuer vers Suppernote Connect.',
       });
     }
     if (body.action === 'activate' && !currentState.onboardingDone) {
@@ -482,7 +484,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     return reply.send(onboardingPayload(updated, updatedState));
   };
 
-  // Création directe d'un restaurant avec son numéro : réservée aux opérateurs Sokar. Les
+  // Création directe d'un restaurant avec son numéro : réservée aux opérateurs Suppernote. Les
   // restaurateurs passent par l'inscription (POST /api/auth/sync), qui pose un numéro provisoire.
   app.post('/restaurants', { preHandler: requireSokarOperator() }, async (req, reply) => {
     const body = CreateRestaurantSchema.parse(req.body);
@@ -640,7 +642,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
           isPrimary: false,
           siteStatus: 'ACTIVE',
           name: input.name,
-          // Numéro Sokar provisoire, comme à l'inscription : un opérateur attribue le vrai numéro
+          // Numéro Suppernote provisoire, comme à l'inscription : un opérateur attribue le vrai numéro
           // (provisioning). La ligne saisie par le restaurateur est sa ligne publique.
           phoneNumber: `+000site-${randomUUID()}`,
           phoneE164: normalizePhone(input.phoneNumber),
@@ -927,17 +929,17 @@ export async function restaurantRoutes(app: FastifyInstance) {
     },
   );
 
-  // Public route by slug — used by the embeddable widget (sokar.tech/widget/{slug}).
+  // Public route by slug — used by the embeddable widget (suppernote.com/widget/{slug}).
   // Renvoie les champs nécessaires au rendu de l'iframe + l'id Prisma
   // pour que le widget puisse enchaîner sur les routes /restaurants/{id}/*.
   // Pas d'auth : endpoint public, même politique que /restaurants/:id/public.
   //
-  // Note : on n'utilise PAS /public/r/:slug (déjà déclaré par Sokar Connect) parce
+  // Note : on n'utilise PAS /public/r/:slug (déjà déclaré par Suppernote Connect) parce
   // que ce dernier filtre sur connectPublished. Les métadonnées restent accessibles
   // pour les aperçus/cartes cadeaux ; bookingEnabled annonce la capacité de réserver.
   app.get(
     '/public/widget/:slug',
-    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    { config: { rateLimit: { max: publicReadMax(60), timeWindow: '1 minute' } } },
     async (req, reply) => {
       const { slug } = req.params as { slug: string };
       try {
@@ -951,7 +953,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
             name: true,
             openingHours: true,
             phoneNumber: true,
-            // Champs Sokar Connect utiles pour le rendu
+            // Champs Suppernote Connect utiles pour le rendu
             slug: true,
             city: true,
             cuisineType: true,
@@ -1094,7 +1096,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
       return reply.status(409).send({
         code: 'NO_PHONE_ASSIGNED',
         error:
-          "Aucun numéro Sokar attribué à ce restaurant. L'appel test vérifie que le renvoi arrive jusqu'à ce numéro : l'équipe Sokar doit d'abord vous en attribuer un. Vous pouvez continuer les autres étapes en attendant, et contacter le support si l'attribution tarde.",
+          "Aucun numéro Suppernote attribué à ce restaurant. L'appel test vérifie que le renvoi arrive jusqu'à ce numéro : l'équipe Suppernote doit d'abord vous en attribuer un. Vous pouvez continuer les autres étapes en attendant, et contacter le support si l'attribution tarde.",
       });
     }
 
@@ -1409,7 +1411,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
     if (body.connectAgentic !== undefined) settingsData.connectAgentic = body.connectAgentic;
 
-    // Sokar Connect P2 — premium subdomain
+    // Suppernote Connect P2 — premium subdomain
     if (body.customDomain !== undefined) {
       const newDomain = body.customDomain;
       const existingDomain = currentSettings.customDomain;
@@ -1672,8 +1674,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
   app.patch('/restaurants/:id/connect', { preHandler: requireOrg() }, patchConnect);
   app.patch('/api/restaurants/:id/connect', { preHandler: requireOrg() }, patchConnect);
 
-  // Sokar Connect — GET settings
-  // Returns the restaurant's Sokar Connect configuration (gating flags, slug, page URL).
+  // Suppernote Connect — GET settings
+  // Returns the restaurant's Suppernote Connect configuration (gating flags, slug, page URL).
   const getConnect = async (req: FastifyRequest, reply: FastifyReply) => {
     const restaurantId = req.restaurantId;
 
@@ -1706,7 +1708,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
   app.get('/restaurants/:id/connect', { preHandler: requireOrg() }, getConnect);
   app.get('/api/restaurants/:id/connect', { preHandler: requireOrg() }, getConnect);
 
-  // Sokar Connect — GET score de complétude
+  // Suppernote Connect — GET score de complétude
   // Calcule le score de profil 0-100% + items manquants + copy contextuel.
   const getConnectScore = async (req: FastifyRequest, reply: FastifyReply) => {
     const restaurantId = req.restaurantId;
@@ -1735,7 +1737,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
   app.get('/restaurants/:id/connect/score', { preHandler: requireOrg() }, getConnectScore);
   app.get('/api/restaurants/:id/connect/score', { preHandler: requireOrg() }, getConnectScore);
 
-  // Sokar Connect P2 — premium subdomain verification
+  // Suppernote Connect P2 — premium subdomain verification
   const verifyCustomDomainDns = async (req: FastifyRequest, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
     const restaurantId = req.restaurantId;

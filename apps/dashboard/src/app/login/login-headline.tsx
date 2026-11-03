@@ -41,7 +41,7 @@ export default function LoginHeadline() {
       >
         {LOGIN_HEADLINES[activeIndex]}
       </span>
-      <span className="sokar-login__story-highlight">Sokar s’en occupe pour vous.</span>
+      <span className="sokar-login__story-highlight">Suppernote s’en occupe pour vous.</span>
     </h2>
   );
 }

@@ -13,7 +13,7 @@ declare module 'fastify' {
     restaurantId: string;
     /** Historical alias for the active establishment ID. */
     siteId?: string;
-    /** Internal Sokar account ID when the multi-site backfill is active. */
+    /** Internal Suppernote account ID when the multi-site backfill is active. */
     accountId?: string;
     clerkOrganizationId?: string;
     siteRole?: 'OWNER' | 'MANAGER' | 'STAFF' | 'READ_ONLY' | 'ORG_MEMBER';

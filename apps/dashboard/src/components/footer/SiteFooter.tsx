@@ -13,7 +13,10 @@ const COLUMNS = [
     ],
   },
   { title: 'À propos', links: [{ label: 'Espace partenaire', href: '/login' }] },
-  { title: 'Contact', links: [{ label: 'hello@sokar.tech', href: 'mailto:hello@sokar.tech' }] },
+  {
+    title: 'Contact',
+    links: [{ label: 'hello@suppernote.com', href: 'mailto:hello@suppernote.com' }],
+  },
 ];
 
 const LINK =
@@ -28,7 +31,7 @@ export default function SiteFooter() {
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white">
               <Image src="/logo-nav.png" alt="" width={24} height={24} className="h-6 w-6 invert" />
             </span>
-            <span className="text-3xl font-medium text-white font-display">Sokar</span>
+            <span className="text-3xl font-medium text-white font-display">Suppernote</span>
           </Link>
           <span aria-hidden="true" className="hidden h-8 w-px bg-white/15 sm:block" />
           <p className="max-w-xs text-sm leading-relaxed text-white/60 font-sans">
@@ -63,7 +66,7 @@ export default function SiteFooter() {
       </div>
 
       <div className="mt-16 flex w-full max-w-6xl flex-col items-center justify-between gap-4 border-t border-white/10 pt-6 text-xs text-white/50 font-sans sm:flex-row">
-        <p>Copyright &copy; {new Date().getFullYear()} Sokar. Tous droits réservés.</p>
+        <p>Copyright &copy; {new Date().getFullYear()} Suppernote. Tous droits réservés.</p>
         <div className="flex items-center gap-6">
           <Link href="/privacy" className="transition-all duration-200 hover:text-white">
             Confidentialité

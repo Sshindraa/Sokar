@@ -7,7 +7,7 @@ import { Bot, CalendarCheck, MessageSquare, PhoneCall } from 'lucide-react';
 const storySteps = [
   {
     kicker: 'Assistant vocal restaurant',
-    title: 'Sokar répond à vos appels',
+    title: 'Suppernote répond à vos appels',
     accent: 'meme pendant le service',
   },
   {
@@ -94,7 +94,7 @@ export default function ScrollStoryboardSection() {
       <section className="relative w-full overflow-hidden px-4 py-24 sm:px-6 lg:px-10">
         <div className="mx-auto max-w-6xl p-8 text-center">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-pricing-accent">
-            Experience Sokar
+            Experience Suppernote
           </p>
           <h2 className="mx-auto mt-4 max-w-3xl text-4xl font-black tracking-tight text-white font-display">
             Une interface pour suivre les appels et les réservations.
@@ -147,7 +147,7 @@ export default function ScrollStoryboardSection() {
             style={{ y: cardRowY, opacity: cardRowOpacity }}
           >
             {[
-              { icon: PhoneCall, title: 'Appels entrants', text: 'Sokar prend l’appel' },
+              { icon: PhoneCall, title: 'Appels entrants', text: 'Suppernote prend l’appel' },
               { icon: CalendarCheck, title: 'Tables réservées', text: 'Le planning se met à jour' },
               { icon: MessageSquare, title: 'SMS confirmé', text: 'Le client repart rassuré' },
             ].map(({ icon: Icon, title, text }) => (

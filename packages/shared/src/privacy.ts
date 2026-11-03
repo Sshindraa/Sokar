@@ -2,20 +2,20 @@
 export const PRIVACY_DOCUMENT = {
   revision: '2026-11-03',
   updatedLabel: '3 novembre 2026',
-  contact: 'privacy@sokar.tech',
+  contact: 'privacy@suppernote.com',
   hosting: 'OVHcloud',
   review:
     'Version en cours de finalisation : l’identification du responsable, certaines durées et les garanties de transfert restent à valider avant publication.',
   roles:
-    'Sokar détermine les finalités du traitement des demandes de démonstration, de la gestion de ses comptes et de la sécurité de son service. Pour la gestion des réservations et de la clientèle, le restaurant détermine les finalités et Sokar traite les données sur ses instructions.',
+    'Suppernote détermine les finalités du traitement des demandes de démonstration, de la gestion de ses comptes et de la sécurité de son service. Pour la gestion des réservations et de la clientèle, le restaurant détermine les finalités et Suppernote traite les données sur ses instructions.',
   reservationProcessing:
     'La prise et la gestion d’une réservation reposent sur l’exécution du contrat avec le restaurant. Les confirmations suivent les choix de communication recueillis lors de la réservation. Le marketing nécessite un consentement distinct : une réservation ne vaut pas inscription à une campagne.',
   optOutRegister:
-    'Lorsque vous vous désinscrivez d’un message marketing, que vous retirez votre accord auprès du restaurant ou que notre prestataire d’envoi nous signale votre plainte, Sokar conserve pour le compte de ce restaurant une empreinte de votre adresse e-mail ou de votre numéro de téléphone, calculée avec une clé secrète (HMAC-SHA256), avec le canal, le motif, la source et la date de l’opposition. Cette empreinte n’est pas enregistrée dans votre fiche client et subsiste après l’effacement de vos données. Elle est comparée à vos coordonnées avant un envoi marketing de ce restaurant et sert uniquement à éviter de vous solliciter de nouveau. Il s’agit d’une donnée personnelle pseudonymisée, pas d’une donnée anonyme. Ce traitement repose sur l’intérêt légitime du restaurant à respecter durablement votre opposition et à pouvoir le démontrer. Vous pouvez y accéder et, pour des raisons tenant à votre situation particulière, vous opposer à cette conservation auprès du restaurant ou à privacy@sokar.tech. L’opposition est levée si vous donnez de nouveau votre accord en ligne.',
+    'Lorsque vous vous désinscrivez d’un message marketing, que vous retirez votre accord auprès du restaurant ou que notre prestataire d’envoi nous signale votre plainte, Suppernote conserve pour le compte de ce restaurant une empreinte de votre adresse e-mail ou de votre numéro de téléphone, calculée avec une clé secrète (HMAC-SHA256), avec le canal, le motif, la source et la date de l’opposition. Cette empreinte n’est pas enregistrée dans votre fiche client et subsiste après l’effacement de vos données. Elle est comparée à vos coordonnées avant un envoi marketing de ce restaurant et sert uniquement à éviter de vous solliciter de nouveau. Il s’agit d’une donnée personnelle pseudonymisée, pas d’une donnée anonyme. Ce traitement repose sur l’intérêt légitime du restaurant à respecter durablement votre opposition et à pouvoir le démontrer. Vous pouvez y accéder et, pour des raisons tenant à votre situation particulière, vous opposer à cette conservation auprès du restaurant ou à privacy@suppernote.com. L’opposition est levée si vous donnez de nouveau votre accord en ligne.',
   transfers:
     'Selon les fonctionnalités utilisées, certains prestataires peuvent traiter des données hors de l’Espace économique européen. Les pays concernés et les garanties de transfert doivent être précisés dans la documentation applicable au service ; leur vérification est en cours.',
   supplierInformation:
-    'Pour connaître les prestataires concernés par votre utilisation du service, leurs pays de traitement et les garanties applicables, contactez privacy@sokar.tech. La liste nominative relève de la documentation de traitement des données destinée aux clients restaurateurs.',
+    'Pour connaître les prestataires concernés par votre utilisation du service, leurs pays de traitement et les garanties applicables, contactez privacy@suppernote.com. La liste nominative relève de la documentation de traitement des données destinée aux clients restaurateurs.',
   security:
     'Nous utilisons des connexions chiffrées, des contrôles d’accès et des mesures de surveillance pour protéger les données et limiter les accès non autorisés.',
   cookies:

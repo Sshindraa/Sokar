@@ -111,7 +111,7 @@ donc que le restaurant adopte ces règles par écrit, et que Sokar ne se serve d
   registre des traitements (art. 30(1)) [S10].
 - Sokar : suit les instructions, aide à répondre (art. 28(3)(e)), tient son registre de sous-traitant (art. 30(2)),
   supprime ou restitue en fin de contrat (art. 28(3)(g)) [S10].
-- Une demande reçue à `privacy@sokar.tech` doit être transmise au restaurant.
+- Une demande reçue à `privacy@suppernote.com` doit être transmise au restaurant.
 - **Fin de contrat :** la suppression d'un restaurant supprime ses entrées (`onDelete: Cascade`). Les empreintes
   seules ne servent à rien sans la clé : le restaurant qui part perd sa liste d'opposition. À expliquer dans
   l'accord, et à arbitrer (décision 5).

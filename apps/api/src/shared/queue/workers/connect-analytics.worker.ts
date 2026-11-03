@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Analytics worker.
+ * Suppernote Connect — Analytics worker.
  *
  * Dépile la queue `connect-analytics` (BullMQ) et incrémente les
  * compteurs Prometheus. Pas de DB, pas d'audit log : c'est purement

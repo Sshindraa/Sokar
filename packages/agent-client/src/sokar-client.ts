@@ -43,7 +43,7 @@ export class SokarAgentClient {
   }
 
   /**
-   * Exécute un tool sur l'API Sokar.
+   * Exécute un tool sur l'API Suppernote.
    */
   async executeTool(tool: ToolName, args: Record<string, unknown>): Promise<unknown> {
     const res = await fetch(`${this.baseUrl}/v1/agents`, {

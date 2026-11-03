@@ -1,7 +1,7 @@
 /**
  * @sokar/shared — JSON-LD types and builder for Schema.org Restaurant.
  *
- * Source unique pour le JSON-LD SEO (Sokar Connect + API).
+ * Source unique pour le JSON-LD SEO (Suppernote Connect + API).
  * Cf. spec v1.1 §8.
  *
  * Règles :

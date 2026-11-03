@@ -7,8 +7,8 @@ describe('publicApiUrl', () => {
   });
 
   it('utilise PUBLIC_API_URL sans barre finale', () => {
-    expect(publicApiUrl({ PUBLIC_API_URL: 'https://api-staging.sokar.tech/' })).toBe(
-      'https://api-staging.sokar.tech',
+    expect(publicApiUrl({ PUBLIC_API_URL: 'https://api-staging.suppernote.com/' })).toBe(
+      'https://api-staging.suppernote.com',
     );
   });
 });

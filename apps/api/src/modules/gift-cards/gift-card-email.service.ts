@@ -78,7 +78,7 @@ export async function sendSenderReceipt(
       </table>
       ${data.message ? `<p><em>Message : « ${data.message} »</em></p>` : ''}
       <p>Merci pour votre achat.</p>
-      <p style="color: #64748b; font-size: 12px;">Sokar — Plateforme de réservation pour restaurants</p>
+      <p style="color: #64748b; font-size: 12px;">Suppernote — Plateforme de réservation pour restaurants</p>
     </div>
   `;
 
@@ -118,7 +118,7 @@ export async function sendRecipientGiftCard(
       ${data.pdfUrl ? `<p><a href="${data.pdfUrl}" style="color: #EA580C;">Télécharger la carte cadeau (PDF)</a></p>` : ''}
       ${giftCardBeneficiaryUrl(data.shortCode ?? data.code) ? `<p><a href="${giftCardBeneficiaryUrl(data.shortCode ?? data.code)}">Consulter votre solde et réserver une table</a></p>` : ''}
       <p>La réservation ne débite pas votre carte. Présentez ce code au restaurant pour régler votre addition.</p>
-      <p style="color: #64748b; font-size: 12px;">Sokar — Plateforme de réservation pour restaurants</p>
+      <p style="color: #64748b; font-size: 12px;">Suppernote — Plateforme de réservation pour restaurants</p>
     </div>
   `;
 
@@ -167,7 +167,7 @@ export async function sendRestaurantSaleNotification(input: {
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;"><strong>${input.amount}€</strong></td>
         </tr>
         <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Commission Sokar</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Commission Suppernote</td>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${input.commissionAmount}€</td>
         </tr>
         <tr>
@@ -229,7 +229,7 @@ export async function sendContributionConfirmation(input: {
       « <strong>${input.title}</strong> » pour ${input.recipientName} chez ${input.restaurantName}.</p>
       <p>Le créateur de la cagnotte décidera quand la clôturer. À ce moment, le montant total
       collecté sera transformé en carte cadeau utilisable par ${input.recipientName}.</p>
-      <p style="color: #64748b; font-size: 12px;">Sokar — Plateforme de réservation pour restaurants</p>
+      <p style="color: #64748b; font-size: 12px;">Suppernote — Plateforme de réservation pour restaurants</p>
     </div>
   `;
 
@@ -275,8 +275,8 @@ export async function sendCrowdfundingContributionNotification(input: {
       <p>Bonjour ${input.creatorName},</p>
       <p><strong>${input.contributorName}</strong> vient de contribuer <strong>${input.amount}€</strong>
       à votre cagnotte « <strong>${input.title}</strong> » pour ${input.recipientName}.</p>
-      <p>Vous pouvez clôturer la cagnotte à tout moment depuis votre dashboard Sokar.</p>
-      <p style="color: #64748b; font-size: 12px;">Sokar — Plateforme de réservation pour restaurants</p>
+      <p>Vous pouvez clôturer la cagnotte à tout moment depuis votre dashboard Suppernote.</p>
+      <p style="color: #64748b; font-size: 12px;">Suppernote — Plateforme de réservation pour restaurants</p>
     </div>
   `;
 
@@ -330,7 +330,7 @@ export async function sendCrowdfundingClosed(input: {
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${input.totalCollected}€</td>
         </tr>
         <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Commission Sokar</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Commission Suppernote</td>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${input.commissionAmount}€</td>
         </tr>
         <tr>
@@ -346,7 +346,7 @@ export async function sendCrowdfundingClosed(input: {
       <p><a href="${input.pdfUrl}" style="color: #EA580C;">Télécharger la carte cadeau (PDF)</a></p>
       ${giftCardBeneficiaryUrl(input.shortCode ?? input.code) ? `<p><a href="${giftCardBeneficiaryUrl(input.shortCode ?? input.code)}">Consulter votre solde et réserver une table</a></p>` : ''}
       <p>La réservation ne débite pas votre carte. Présentez ce code au restaurant pour régler votre addition.</p>
-      <p style="color: #64748b; font-size: 12px;">Sokar — Plateforme de réservation pour restaurants</p>
+      <p style="color: #64748b; font-size: 12px;">Suppernote — Plateforme de réservation pour restaurants</p>
     </div>
   `;
 

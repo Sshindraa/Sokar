@@ -12,7 +12,7 @@ const baseRestaurant = {
   id: 'test-rest-1',
   name: 'Le Bistrot',
   managerPhone: '+33612345678',
-  managerEmail: 'restaurant@sokar.tech',
+  managerEmail: 'restaurant@suppernote.com',
   phoneNumber: '+33123456789',
   phoneE164: '+33611112222',
   openingHours: { tue: { open: '12:00', close: '22:00' } },
@@ -35,7 +35,7 @@ describe('restaurant.routes - onboarding', () => {
     await closeApp();
   });
 
-  it('bloque la complétion téléphone tant qu’aucun numéro Sokar n’est attribué', async () => {
+  it('bloque la complétion téléphone tant qu’aucun numéro Suppernote n’est attribué', async () => {
     const app = await getApp();
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
       ...baseRestaurant,
@@ -50,7 +50,7 @@ describe('restaurant.routes - onboarding', () => {
     });
 
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toMatch(/numéro Sokar attribué/i);
+    expect(res.json().error).toMatch(/numéro Suppernote attribué/i);
     expect(db.restaurant.update).not.toHaveBeenCalled();
   });
 
@@ -220,7 +220,7 @@ describe('restaurant.routes - onboarding', () => {
     );
   });
 
-  it('renvoie 409 + code NO_PHONE_ASSIGNED quand test-call est appelé sans numéro Sokar', async () => {
+  it('renvoie 409 + code NO_PHONE_ASSIGNED quand test-call est appelé sans numéro Suppernote', async () => {
     const app = await getApp();
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
       ...baseRestaurant,
@@ -236,7 +236,7 @@ describe('restaurant.routes - onboarding', () => {
 
     expect(res.statusCode).toBe(409);
     expect(res.json().code).toBe('NO_PHONE_ASSIGNED');
-    expect(res.json().error).toMatch(/numéro Sokar attribué/i);
+    expect(res.json().error).toMatch(/numéro Suppernote attribué/i);
     expect(placeOutboundCall).not.toHaveBeenCalled();
   });
 

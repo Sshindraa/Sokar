@@ -65,11 +65,11 @@ function track(kind: string, channel: ChannelResult['channel'], ok: boolean): vo
 
 async function tryEmail(payload: AlertPayload, recipients: string): Promise<ChannelResult> {
   try {
-    const subject = `[Sokar ${payload.severity.toUpperCase()}] ${payload.summary}`;
+    const subject = `[Suppernote ${payload.severity.toUpperCase()}] ${payload.summary}`;
     const html = [
       `<p><strong>${escapeHtml(payload.summary)}</strong></p>`,
       `<pre style="font-family:monospace;white-space:pre-wrap">${escapeHtml(payload.detail)}</pre>`,
-      `<p style="color:#666;font-size:12px">Alerte ${payload.kind} — monitoring Sokar</p>`,
+      `<p style="color:#666;font-size:12px">Alerte ${payload.kind} — monitoring Suppernote</p>`,
     ].join('');
     const result = await sendEmail({ to: recipients, subject, html });
     if (result?.outcome !== 'success') {
@@ -96,7 +96,7 @@ async function tryWebhook(payload: AlertPayload, url: string): Promise<ChannelRe
   try {
     const icon =
       payload.severity === 'critical' ? '🚨' : payload.severity === 'warning' ? '⚠️' : 'ℹ️';
-    const text = `${icon} [Sokar ${payload.severity.toUpperCase()}] ${payload.summary}\n${payload.detail}`;
+    const text = `${icon} [Suppernote ${payload.severity.toUpperCase()}] ${payload.summary}\n${payload.detail}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     try {
@@ -125,7 +125,7 @@ async function tryWebhook(payload: AlertPayload, url: string): Promise<ChannelRe
 async function trySms(payload: AlertPayload, to: string): Promise<ChannelResult> {
   try {
     // SMS : message court, sans le détail complet (coût + lisibilité).
-    const text = `[Sokar ${payload.severity.toUpperCase()}] ${payload.summary}`.slice(0, 300);
+    const text = `[Suppernote ${payload.severity.toUpperCase()}] ${payload.summary}`.slice(0, 300);
     await sendSms(to, text);
     return { channel: 'sms', ok: true };
   } catch (err) {

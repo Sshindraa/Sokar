@@ -344,7 +344,7 @@ async function start() {
       port: Number(process.env.PORT ?? 4000),
       host: process.env.HOST ?? '0.0.0.0',
     });
-    logger.info({ address }, 'Sokar API listening');
+    logger.info({ address }, 'Suppernote API listening');
     // Notifier PM2 que l'API est prête à accepter du trafic (P0 DEP-005).
     if (typeof process.send === 'function') {
       process.send('ready');

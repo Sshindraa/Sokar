@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Réserver — Sokar',
+  title: 'Réserver — Suppernote',
   description: 'Réservez une table en quelques secondes.',
 };
 

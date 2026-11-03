@@ -3,8 +3,8 @@ import Link from 'next/link';
 import { ArrowLeft, ArrowUpRight, Mail } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Mentions légales — Sokar',
-  description: 'Informations sur Sokar, ses contacts et son hébergement.',
+  title: 'Mentions légales — Suppernote',
+  description: 'Informations sur Suppernote, ses contacts et son hébergement.',
   alternates: { canonical: '/legal' },
   robots: { index: false, follow: true },
 };
@@ -31,7 +31,7 @@ export default function LegalPage() {
           Mentions légales
         </h1>
         <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
-          Les informations sur Sokar, son hébergement et les moyens de nous contacter.
+          Les informations sur Suppernote, son hébergement et les moyens de nous contacter.
         </p>
       </div>
       <div className="grid items-start gap-10 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-16">
@@ -45,7 +45,7 @@ export default function LegalPage() {
             </p>
             <div className="grid gap-1 sm:grid-cols-3 lg:grid-cols-1">
               {[
-                { id: 'sokar', label: 'À propos de Sokar' },
+                { id: 'sokar', label: 'À propos de Suppernote' },
                 { id: 'hebergement', label: 'Hébergement' },
                 { id: 'donnees', label: 'Données personnelles' },
               ].map(({ id, label }) => (
@@ -63,10 +63,10 @@ export default function LegalPage() {
             <Mail size={17} className="mb-3 text-muted-foreground" aria-hidden="true" />
             <p className="text-sm font-medium">Nous contacter</p>
             <a
-              href="mailto:hello@sokar.tech"
+              href="mailto:hello@suppernote.com"
               className="mt-2 inline-flex items-center gap-1 text-sm underline underline-offset-4 transition-all duration-200 hover:opacity-70"
             >
-              hello@sokar.tech
+              hello@suppernote.com
               <ArrowUpRight size={13} aria-hidden="true" />
             </a>
           </div>
@@ -91,11 +91,11 @@ export default function LegalPage() {
             className="scroll-mt-8 border-b border-border pb-10"
           >
             <SectionHeading id="sokar-title" number="01">
-              À propos de Sokar
+              À propos de Suppernote
             </SectionHeading>
             <p className="text-muted-foreground">
-              Sokar est le nom commercial du service de gestion des appels et des réservations pour
-              restaurants.
+              Suppernote est le nom commercial du service de gestion des appels et des réservations
+              pour restaurants.
             </p>
             <p className="mt-4 text-muted-foreground">
               Adresse de l’établissement : 9 rue Vaubecour, 69002 Lyon.
@@ -103,10 +103,10 @@ export default function LegalPage() {
             <p className="mt-4 text-muted-foreground">
               Contact général :{' '}
               <a
-                href="mailto:hello@sokar.tech"
+                href="mailto:hello@suppernote.com"
                 className="text-foreground underline underline-offset-4 transition-all duration-200 hover:opacity-70"
               >
-                hello@sokar.tech
+                hello@suppernote.com
               </a>
             </p>
           </section>
@@ -152,10 +152,10 @@ export default function LegalPage() {
             <p className="mt-4 text-muted-foreground">
               Pour une demande concernant vos données :{' '}
               <a
-                href="mailto:privacy@sokar.tech"
+                href="mailto:privacy@suppernote.com"
                 className="text-foreground underline underline-offset-4 transition-all duration-200 hover:opacity-70"
               >
-                privacy@sokar.tech
+                privacy@suppernote.com
               </a>
               .
             </p>

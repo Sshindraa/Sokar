@@ -157,14 +157,14 @@ export async function runWatchtower(
     {
       key: 'workers',
       failing: workersDown,
-      summary: 'Workers Sokar arrêtés : confirmations, rappels et e-mails ne partent plus',
+      summary: 'Workers Suppernote arrêtés : confirmations, rappels et e-mails ne partent plus',
       detail: [
         age === null
           ? 'Aucun battement des workers.'
           : `Dernier battement il y a ${Math.round(age / 1000)} s.`,
         'Vérifier : pm2 status sokar-workers, pm2 logs sokar-workers, puis pm2 restart sokar-workers.',
       ].join('\n'),
-      recovered: 'Workers Sokar rétablis.',
+      recovered: 'Workers Suppernote rétablis.',
     },
     dependencies,
   );
@@ -190,7 +190,7 @@ export async function runWatchtower(
         summary: `Ligne téléphonique hors service : ${line.name}`,
         detail: [
           result.ok ? '' : `Cause : ${result.reason}.`,
-          'Les appels de ce restaurant n’arrivent plus à Sokar. Vérifier le numéro et l’application d’appel dans le portail Telnyx.',
+          'Les appels de ce restaurant n’arrivent plus à Suppernote. Vérifier le numéro et l’application d’appel dans le portail Telnyx.',
         ].join('\n'),
         recovered: `Ligne téléphonique rétablie : ${line.name}.`,
       },

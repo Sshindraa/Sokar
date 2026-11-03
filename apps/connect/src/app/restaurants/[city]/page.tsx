@@ -1,7 +1,7 @@
 /**
- * Sokar Connect — Page ville (T7).
+ * Suppernote Connect — Page ville (T7).
  *
- * URL : /restaurants/[city] (ex. sokar.tech/restaurants/lyon)
+ * URL : /restaurants/[city] (ex. suppernote.com/restaurants/lyon)
  *
  * Si shouldIndex=false (totalInCity < 5), on met noindex mais on garde
  * la page avec un message "pas assez d'inventaire pour l'instant".
@@ -15,7 +15,7 @@ import { fetchCityPage, fetchCities } from '@/lib/api-client';
 import { RestaurantCard } from '@/components/restaurant-card';
 import { trackPageView } from '@/lib/tracking';
 
-const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
+const SITE_URL = process.env.SITE_URL ?? 'https://suppernote.com';
 
 export const revalidate = 300;
 export const dynamicParams = true;
@@ -38,7 +38,7 @@ export async function generateMetadata({
   return {
     // Marque ajoutée par le template du layout (cf. restaurant/[slug]).
     title: `Restaurants réservables à ${data.city}`,
-    description: `Découvrez les restaurants réservables en ligne à ${data.city} via Sokar. Consultez les horaires, adresses et disponibilités avant de réserver votre table.`,
+    description: `Découvrez les restaurants réservables en ligne à ${data.city} via Suppernote. Consultez les horaires, adresses et disponibilités avant de réserver votre table.`,
     alternates: { canonical },
     robots: data.shouldIndex ? { index: true, follow: true } : { index: false, follow: true },
     openGraph: {
@@ -86,7 +86,7 @@ export default async function CityPage({ params }: { params: Promise<{ city: str
         </h1>
         <p className="mt-2 text-muted-foreground">
           {data.totalInCity} restaurant{data.totalInCity > 1 ? 's' : ''} disponible
-          {data.totalInCity > 1 ? 's' : ''} · réservation en ligne via Sokar
+          {data.totalInCity > 1 ? 's' : ''} · réservation en ligne via Suppernote
         </p>
       </header>
 

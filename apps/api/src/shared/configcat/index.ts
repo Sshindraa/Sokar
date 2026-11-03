@@ -201,7 +201,7 @@ export async function isFlagEnabledWithRollout(
 }
 
 /**
- * Liste des flags utilisés dans Sokar.
+ * Liste des flags utilisés dans Suppernote.
  * Ajouter chaque nouveau flag ici + dans le dashboard ConfigCat.
  */
 export const FLAGS = {

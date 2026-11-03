@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Google Places rating sync worker.
+ * Suppernote Connect — Google Places rating sync worker.
  *
  * Dépile la queue `google-places-sync` : pour chaque restaurant avec un
  * googlePlaceId, appelle Google Places Details API et met à jour les champs

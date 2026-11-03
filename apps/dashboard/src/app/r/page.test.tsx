@@ -34,7 +34,7 @@ describe('Ma reservation', () => {
     vi.stubGlobal('fetch', fetch);
     render(
       <ReservationView
-        confirmation={{ reservation: data, managementUrl: `https://sokar.tech/r#${token}` }}
+        confirmation={{ reservation: data, managementUrl: `https://suppernote.com/r#${token}` }}
       />,
     );
     expect(await screen.findByText('Annulée')).toBeInTheDocument();
@@ -44,7 +44,7 @@ describe('Ma reservation', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Connexion interrompue')));
     render(
       <ReservationView
-        confirmation={{ reservation: data, managementUrl: `https://sokar.tech/r#${token}` }}
+        confirmation={{ reservation: data, managementUrl: `https://suppernote.com/r#${token}` }}
       />,
     );
     expect(await screen.findByText('Connexion interrompue')).toBeInTheDocument();

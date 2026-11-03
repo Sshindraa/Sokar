@@ -1,5 +1,5 @@
 /**
- * Reconcile Sokar billing projections with the live Stripe subscriptions.
+ * Reconcile Suppernote billing projections with the live Stripe subscriptions.
  *
  * Repairs records left behind by the same-second webhook race found in the 21/10/2026 audit
  * (a trial ended early stayed `trialing` while Stripe was `active`). See

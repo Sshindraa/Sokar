@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Rate limits per-phone (spec v1.1 §8.3 + §8.6).
+ * Suppernote Connect — Rate limits per-phone (spec v1.1 §8.3 + §8.6).
  *
  * Les rate limits par IP sont gérés par @fastify/rate-limit (config route).
  * Les rate limits par téléphone nécessitent Redis direct (INCR + EXPIRE)

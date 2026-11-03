@@ -14,7 +14,7 @@ import {
 } from '../live-call/live-call-session';
 
 // ─── APPEL EN DIRECT ───────────────────────────────────────────
-// La personne qui configure Sokar l'appelle depuis son navigateur et lui parle comme un client.
+// La personne qui configure Suppernote l'appelle depuis son navigateur et lui parle comme un client.
 // Même pipeline que pour un vrai appel (reconnaissance, dialogue, voix) ; seules les écritures
 // (réservation, message) sont simulées côté serveur.
 
@@ -31,7 +31,7 @@ const EXAMPLE_REQUESTS = [
 
 const END_MESSAGES: Record<LiveCallEndReason, string> = {
   hangup: 'Vous avez raccroché.',
-  agent_hangup: 'Sokar a mis fin à l’appel.',
+  agent_hangup: 'Suppernote a mis fin à l’appel.',
   timeout: 'La durée maximale d’un appel de démonstration est atteinte.',
   start_timeout: 'L’appel n’a pas pu démarrer. Réessayez.',
   network: 'La connexion a été interrompue.',
@@ -210,7 +210,7 @@ export function LiveCallPanel({
         ) : (
           <>
             <Phone size={13} aria-hidden="true" />
-            {phase === 'connecting' ? 'Connexion à Sokar…' : 'Appel en direct'}
+            {phase === 'connecting' ? 'Connexion à Suppernote…' : 'Appel en direct'}
           </>
         )}
       </p>
@@ -221,10 +221,10 @@ export function LiveCallPanel({
       >
         {live
           ? levels.agentSpeaking
-            ? 'Sokar vous répond…'
+            ? 'Suppernote vous répond…'
             : muted
               ? 'Micro coupé'
-              : 'Sokar vous écoute. Parlez normalement.'
+              : 'Suppernote vous écoute. Parlez normalement.'
           : phase === 'ended'
             ? 'Appel terminé'
             : 'Appelez votre assistant et parlez-lui comme un client.'}
@@ -303,8 +303,8 @@ export function LiveCallPanel({
           {phase === 'connecting'
             ? 'Connexion en cours…'
             : phase === 'ended' || phase === 'error'
-              ? 'Rappeler Sokar'
-              : 'Appeler Sokar'}
+              ? 'Rappeler Suppernote'
+              : 'Appeler Suppernote'}
         </Button>
       )}
 

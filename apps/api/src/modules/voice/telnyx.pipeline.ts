@@ -217,7 +217,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
 
         // Ended subscription (trial without a card, cancellation, unpaid): no voice session.
         // The restaurant may still forward its line here, so the caller hears a short message in
-        // the restaurant's name instead of silence, then Sokar hangs up.
+        // the restaurant's name instead of silence, then Suppernote hangs up.
         if (billingSuspended) {
           app.log.warn(
             { restaurantId: ctx.id, callId: payload.call_control_id },
