@@ -180,6 +180,10 @@ Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jo
   (comptes seulement, jamais d'adresse). Le registre est une donnée personnelle pseudonymisée : il doit
   figurer dans la politique et l'annexe client (**non fait**).
 
+- **Protections du registre (03/11/2026)** : la clé d'empreinte est dérivée par restaurant, et seul le geste de
+  la personne (case de réservation, lien de confirmation) lève une opposition. Un accord saisi par l'équipe
+  sur une adresse opposée est refusé (`MARKETING_OPPOSITION_REGISTERED`). Si l'accord passe par une autre adresse,
+  ou une case cochée pour autrui, cette limite ne le détecte pas.
 - **Limites acceptées (Hamza, 03/11/2026)** :
   - **Fiches partageant une adresse** : une nouvelle case cochée sur l'une lève l'opposition pour cette
     adresse dans le restaurant, donc aussi pour une autre fiche déjà inscrite avant le retrait. Il s'agit de la

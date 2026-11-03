@@ -108,6 +108,7 @@ async function grantChannel(args: {
     source: args.source,
     proofVersion: MARKETING_CONSENT_VERSION,
     proof: buildMarketingConsentProof(args.channel, args.restaurantName),
+    liftsOpposition: true,
     occurredAt: args.occurredAt,
   });
   return 'RECORDED';

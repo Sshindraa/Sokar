@@ -102,6 +102,16 @@ export function MarketingConsentCard({
     setActionError('');
   }
 
+  function consentErrorMessage(err: unknown): string {
+    if (err instanceof ApiError && err.code === 'CUSTOMER_EMAIL_REQUIRED') {
+      return 'Ajoutez d’abord une adresse e-mail à cette fiche.';
+    }
+    if (err instanceof ApiError && err.code === 'MARKETING_OPPOSITION_REGISTERED') {
+      return 'Cette personne s’est désinscrite : seul son propre accord, donné en ligne, peut lever cette opposition.';
+    }
+    return getErrorMessage(err, 'Impossible d’enregistrer l’accord.');
+  }
+
   async function record(channel: MarketingConsentChannel): Promise<void> {
     if (busy || !confirmed) return;
     setBusy(true);
@@ -116,11 +126,7 @@ export function MarketingConsentCard({
       await load();
       onChanged?.();
     } catch (err: unknown) {
-      setActionError(
-        err instanceof ApiError && err.code === 'CUSTOMER_EMAIL_REQUIRED'
-          ? 'Ajoutez d’abord une adresse e-mail à cette fiche.'
-          : getErrorMessage(err, 'Impossible d’enregistrer l’accord.'),
-      );
+      setActionError(consentErrorMessage(err));
     } finally {
       setBusy(false);
     }
