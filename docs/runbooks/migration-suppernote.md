@@ -39,3 +39,7 @@ Garder le domaine renouvelé et les redirections au moins 12 mois, puis garder l
 ## PM2 fige d'anciennes valeurs
 
 `pm2 restart` garde les variables enregistrées au dernier démarrage, et elles priment sur `.env`. Après avoir changé `.env`, dans un shell qui n'a pas chargé `.env` : `pm2 delete` des processus concernés, relancer le déploiement, puis vérifier `pm2 jlist`. Constaté en staging le 3 novembre 2026 ; la production doit suivre la même étape.
+
+## Retour arrière pendant la transition
+
+L'ancien code refuse les adresses `suppernote.com` au démarrage. Revenir à une version antérieure à cette PR impose de restaurer aussi le `.env` d'avant (`*.bak-avant-suppernote-*`), puis `pm2 delete` et redémarrage. Le premier test de retour arrière du workflow staging échoue pour cette raison ; il passe dès que la release précédente contient cette PR.
