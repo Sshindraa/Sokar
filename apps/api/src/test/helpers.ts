@@ -946,6 +946,7 @@ vi.mock('../shared/db/client', () => {
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       delete: vi.fn(),
     },
+    voiceDebugTurn: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     call: {
       create: vi.fn(),
       findFirst: vi.fn(),

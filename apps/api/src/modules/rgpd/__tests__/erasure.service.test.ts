@@ -38,7 +38,18 @@ function makePrisma() {
     message: {
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
+    $queryRaw: vi.fn(),
+    voiceDebugTurn: { deleteMany: vi.fn() },
     call: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([
+        {
+          id: 'call-1',
+          recordingStatus: 'NOT_REQUESTED',
+          recordingStorageKey: null,
+          recordingProviderId: null,
+        },
+      ]),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     reservationAuditLog: {
@@ -134,8 +145,17 @@ describe('ErasureService.eraseSubject', () => {
     });
 
     expect(prisma.call.updateMany).toHaveBeenCalledWith({
-      where: { callerPhone: '+336****4444' },
-      data: { callerPhone: null },
+      where: { id: { in: ['call-1'] } },
+      data: {
+        callerPhone: null,
+        transcript: null,
+        recordingStatus: 'DELETED',
+        recordingStorageKey: null,
+        recordingProviderId: null,
+        recordingError: null,
+        recordingContentType: null,
+        recordingSizeBytes: null,
+      },
     });
     expect(result.callsAnonymized).toBe(5);
   });
@@ -223,6 +243,7 @@ describe('ErasureService.eraseSubject', () => {
         findMany: vi.fn().mockResolvedValue([{ id: 'customer-1', phone: '+33601020304' }]),
         update: vi.fn(),
       },
+      $queryRaw: vi.fn(),
       customerIdentity: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       customerPreference: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       customerTagAssignment: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
@@ -235,7 +256,6 @@ describe('ErasureService.eraseSubject', () => {
         findMany: vi.fn().mockResolvedValue([]),
         deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
-      $queryRaw: vi.fn().mockResolvedValue([]),
       campaignAudienceMember: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       campaignMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       marketingConversion: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
@@ -246,7 +266,12 @@ describe('ErasureService.eraseSubject', () => {
       eventOrder: { updateMany: vi.fn().mockResolvedValue({ count: 3 }) },
       eventWaitlistEntry: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       message: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-      call: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      voiceDebugTurn: { deleteMany: vi.fn() },
+      call: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       reservationAuditLog: { create: vi.fn().mockResolvedValue({}) },
       $transaction: vi.fn(),
     } as unknown as PrismaClient;
@@ -289,7 +314,10 @@ describe('ErasureService.eraseSubject', () => {
     ).toBeLessThan(vi.mocked(crmPrisma.customer.update).mock.invocationCallOrder[0]);
     expect(crmPrisma.experienceReservation.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({ OR: expect.any(Array) }),
-      data: { customerId: null, reservationId: null },
+      data: {
+        customerId: null,
+        reservationId: null,
+      },
     });
     expect(crmPrisma.eventOrder.updateMany).toHaveBeenCalledWith({
       where: { customerId: { in: ['customer-1'] } },

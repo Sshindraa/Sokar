@@ -3,7 +3,13 @@ import { z } from 'zod';
 import { db } from '../../shared/db/client';
 import { requireOrg } from '../../plugins/clerk';
 import { Readable } from 'node:stream';
-import { deletePrivateRecording, getPrivateRecording } from '../voice/call-recording.service';
+import {
+  assertRecordingBucketUnversioned,
+  deletePrivateRecording,
+  deleteTelnyxRecording,
+  getPrivateRecording,
+  reportStorageKeys,
+} from '../voice/call-recording.service';
 
 const CallQuerySchema = z.object({
   // restaurantId is injected by requireOrg() from the Clerk orgId — never trust
@@ -124,12 +130,35 @@ export async function callRoutes(app: FastifyInstance) {
   app.delete('/calls/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const restaurantId = req.restaurantId;
-    const call = await db.call.findUnique({
-      where: { id, restaurantId },
-      select: { recordingStorageKey: true },
+    const call = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM calls WHERE id = ${id} AND restaurant_id = ${restaurantId} FOR UPDATE`;
+      const current = await tx.call.findUnique({
+        where: { id, restaurantId },
+        select: { recordingStorageKey: true, recordingStatus: true, recordingProviderId: true },
+      });
+      if (!current) return null;
+      if (
+        ['PENDING', 'FAILED'].includes(current.recordingStatus) ||
+        ((current.recordingStorageKey || current.recordingStatus === 'AVAILABLE') &&
+          !current.recordingProviderId)
+      ) {
+        throw new Error('CALL_RECORDING_REQUIRES_MANUAL_REVIEW');
+      }
+      await tx.call.updateMany({
+        where: { id, restaurantId },
+        data: { recordingStatus: 'DELETED' },
+      });
+      return current;
     });
     if (!call) return reply.status(404).send({ error: 'Call not found' });
-    if (call.recordingStorageKey) await deletePrivateRecording(call.recordingStorageKey);
+    if (call.recordingStorageKey) {
+      const reports = reportStorageKeys(call.recordingStorageKey);
+      await assertRecordingBucketUnversioned();
+      await deletePrivateRecording(call.recordingStorageKey);
+      await deletePrivateRecording(reports.json);
+      await deletePrivateRecording(reports.markdown);
+    }
+    if (call.recordingProviderId) await deleteTelnyxRecording(call.recordingProviderId);
     await db.call.delete({ where: { id, restaurantId } });
     return reply.status(204).send();
   });
