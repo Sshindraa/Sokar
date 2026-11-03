@@ -28,6 +28,10 @@ import { AuditLogService } from '../agentic-reservations/core/audit-log.service'
 import { trackRgpdEvent } from '../analytics/events.service';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
 import { normalizeCustomerPhone } from '../customers/customer-crm.service';
+import {
+  isMarketingOptedOut,
+  registerMarketingOptOut,
+} from '../marketing/marketing-opt-out.service';
 
 export class ErasureSubjectNotFoundError extends Error {
   constructor(message: string) {
@@ -137,6 +141,74 @@ export class ErasureService {
     let callsAnonymized = 0;
     let consentsRetained = 0;
     const reservationsAnonymized = await this.prisma.$transaction(async (tx) => {
+      for (const customer of [...crmCustomers].sort((a, b) => a.id.localeCompare(b.id))) {
+        await tx.$queryRaw`SELECT id FROM customers WHERE id = ${customer.id} FOR UPDATE`;
+      }
+      if (crmCustomerIds.length > 0) {
+        const [contacts, complaints, withdrawals] = await Promise.all([
+          tx.customer.findMany({
+            where: { id: { in: crmCustomerIds } },
+            select: { id: true, restaurantId: true, phone: true, emailNormalized: true },
+          }),
+          // tenant-scoping: global — effacement d'un sujet sur tous ses restaurants.
+          tx.marketingSuppression.findMany({
+            where: { customerId: { in: crmCustomerIds }, reason: 'COMPLAINED' },
+            select: { customerId: true, channel: true, createdAt: true },
+          }),
+          // tenant-scoping: global — effacement d'un sujet sur tous ses restaurants.
+          tx.marketingPermission.findMany({
+            where: { customerId: { in: crmCustomerIds }, status: 'OPTED_OUT' },
+            select: { customerId: true, channel: true, withdrawnAt: true },
+          }),
+        ]);
+        for (const contact of contacts) {
+          const oppositions = [
+            ...complaints
+              .filter((item) => item.customerId === contact.id)
+              .map((item) => ({
+                channel: item.channel,
+                reason: 'COMPLAINT' as const,
+                occurredAt: item.createdAt,
+              })),
+            ...withdrawals
+              .filter((item) => item.customerId === contact.id)
+              .map((item) => ({
+                channel: item.channel,
+                reason: 'MANUAL' as const,
+                occurredAt: item.withdrawnAt ?? erasedAt,
+              })),
+          ];
+          for (const opposition of oppositions) {
+            if (!opposition.channel) throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+            const address =
+              opposition.channel === 'EMAIL' ? contact.emailNormalized : contact.phone;
+            if (
+              await isMarketingOptedOut(
+                { restaurantId: contact.restaurantId, channel: opposition.channel, address },
+                tx,
+              )
+            )
+              continue;
+            const outcome = await registerMarketingOptOut(
+              {
+                restaurantId: contact.restaurantId,
+                channel: opposition.channel,
+                address,
+                reason: opposition.reason,
+                source: 'RGPD_ERASURE',
+                occurredAt: opposition.occurredAt,
+              },
+              tx,
+            );
+            if (
+              outcome !== 'REGISTERED' &&
+              (outcome !== 'SKIPPED_NO_ADDRESS' || opposition.reason === 'COMPLAINT')
+            ) {
+              throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+            }
+          }
+        }
+      }
       const reservationWhere = crmCustomerIds.length
         ? { OR: [{ customerPhone: args.subject }, { customerId: { in: crmCustomerIds } }] }
         : { customerPhone: args.subject };
@@ -326,6 +398,16 @@ export class ErasureService {
         data: { callerPhone: null },
       });
       callsAnonymized = messageResult.count + callResult.count;
+      // Les consentements restent comme preuve, mais ne doivent plus autoriser de marketing si une
+      // fiche est recréée à la même adresse : il faudra un nouvel accord explicite.
+      // tenant-scoping: global — effacement RGPD d'un sujet sur tous les restaurants.
+      await tx.customerConsent.updateMany({
+        where: {
+          OR: [{ subjectHash }, { customerId: { in: crmCustomerIds } }],
+          marketingOptIn: true,
+        },
+        data: { marketingOptIn: false },
+      });
       consentsRetained = await tx.customerConsent.count({ where: { subjectHash } });
       await this.audit.record(
         {

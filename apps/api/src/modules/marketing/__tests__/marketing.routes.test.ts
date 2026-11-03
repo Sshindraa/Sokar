@@ -36,6 +36,9 @@ describe('marketing control plane routes', () => {
     vi.clearAllMocks();
     vi.setSystemTime(NOW);
     process.env.MARKETING_ATTRIBUTION_SECRET = 'a'.repeat(48);
+    process.env.MARKETING_OPTOUT_HASH_SECRET = 'o'.repeat(48);
+    vi.mocked(db.marketingOptOut.upsert).mockResolvedValue({} as never);
+    vi.mocked(db.marketingOptOut.deleteMany).mockResolvedValue({ count: 0 });
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'PRO' } as never);
     vi.mocked(db.customerConsent.findMany).mockResolvedValue([]);
     vi.mocked(db.marketingPermission.findMany).mockResolvedValue([]);
@@ -191,7 +194,10 @@ describe('marketing control plane routes', () => {
 
   it('withdraws a consent from the dashboard under its own source', async () => {
     const app = await getApp();
-    vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'customer-1',
+      phone: '+33612345678',
+    } as never);
     vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: 'test-rest-1' } as never);
     vi.mocked(db.marketingPermission.upsert).mockResolvedValue({ id: 'permission-1' } as never);
     vi.mocked(db.marketingPermissionEvent.create).mockResolvedValue({ id: 'event-1' } as never);
@@ -758,7 +764,10 @@ describe('marketing control plane routes', () => {
     }
 
     function mockWithdrawal() {
-      vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+      vi.mocked(db.customer.findFirst).mockResolvedValue({
+        id: 'customer-1',
+        emailNormalized: 'client@example.test',
+      } as never);
       vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: 'test-rest-1' } as never);
       vi.mocked(db.marketingPermission.upsert).mockResolvedValue({
         id: 'permission-1',
@@ -768,6 +777,42 @@ describe('marketing control plane routes', () => {
       } as never);
       vi.mocked(db.marketingPermissionEvent.create).mockResolvedValue({ id: 'event-1' } as never);
     }
+
+    it('formulaire navigateur : 503 invitant à réessayer, sans confirmer, quand le registre échoue', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+      mockWithdrawal();
+      vi.mocked(db.marketingOptOut.upsert).mockRejectedValueOnce(new Error('database unavailable'));
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/unsubscribe',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'text/html' },
+        payload: `token=${encodeURIComponent(token)}`,
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.body).toContain('Veuillez réessayer');
+      expect(response.body).not.toContain('Vous êtes désinscrit');
+      expect(db.marketingPermission.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ status: MarketingPermissionStatus.OPTED_OUT }),
+        }),
+      );
+    });
+
+    it('client JSON : 503 MARKETING_OPTOUT_REGISTER_UNAVAILABLE quand le registre échoue', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+      mockWithdrawal();
+      vi.mocked(db.marketingOptOut.upsert).mockRejectedValueOnce(new Error('database unavailable'));
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/unsubscribe',
+        payload: { token },
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({ error: 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE' });
+    });
 
     it('un GET affiche une confirmation sans désinscrire (anti-virus, aperçus de lien)', async () => {
       const app = await getApp();

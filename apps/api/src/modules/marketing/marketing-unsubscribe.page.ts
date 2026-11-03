@@ -61,6 +61,15 @@ export function renderUnsubscribeDonePage(channel: MarketingChannelCode): string
   );
 }
 
+/** Échec technique : on ne prétend pas que la désinscription est faite, le même lien reste valable. */
+export function renderUnsubscribeRetryPage(): string {
+  return page(
+    'Désinscription non terminée',
+    `<h1>Votre désinscription n’a pas pu être terminée</h1>
+<p>Un incident technique est survenu. Veuillez réessayer dans quelques instants avec le même lien. Si le problème persiste, répondez au message reçu ou contactez directement le restaurant.</p>`,
+  );
+}
+
 export function renderUnsubscribeInvalidPage(): string {
   return page(
     'Lien invalide',
