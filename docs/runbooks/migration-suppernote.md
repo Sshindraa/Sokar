@@ -25,7 +25,7 @@ La fusion déclenche le déploiement : `install-nginx` échoue si le certificat 
 
 ## Après la bascule
 
-- Vérifier les redirections, dont `POST api.sokar.tech` (308) et les liens de désinscription marketing.
+- Vérifier les redirections (`POST api.sokar.tech/autre-chemin` : 308) et les liens de désinscription marketing. Les webhooks (`/webhooks/`, `/whatsapp/webhook`, `/voice/`) ne sont pas redirigés : `api.sokar.tech` les relaie à l'API, car Stripe, Telnyx et Meta ne suivent pas les redirections. Contrôler un POST signé sur chaque ancienne adresse, puis faire pointer les trois fournisseurs vers `api.suppernote.com` (Meta : remplacement, une seule adresse).
 - Déclarer le changement d'adresse dans Google Search Console.
 - Publier l'app iOS : l'ancienne version traite `suppernote.com` comme un lien externe.
 - Reconnecter les connecteurs MCP : l'adresse de l'émetteur OAuth change.
