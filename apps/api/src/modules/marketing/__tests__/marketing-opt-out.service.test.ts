@@ -30,32 +30,35 @@ describe('marketing opt-out register', () => {
 
   describe('hash', () => {
     it('is a keyed HMAC of the normalized address, stable across spelling', () => {
-      const hash = marketingOptOutHash('EMAIL', ' Alice@Example.com ');
+      const hash = marketingOptOutHash('restaurant-1', 'EMAIL', ' Alice@Example.com ');
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
-      expect(marketingOptOutHash('EMAIL', 'alice@example.com')).toBe(hash);
-      expect(marketingOptOutHash('SMS', '+33 6 01 02 03 04')).toBe(
-        marketingOptOutHash('SMS', '+33601020304'),
+      expect(marketingOptOutHash('restaurant-1', 'EMAIL', 'alice@example.com')).toBe(hash);
+      expect(marketingOptOutHash('restaurant-1', 'SMS', '+33 6 01 02 03 04')).toBe(
+        marketingOptOutHash('restaurant-1', 'SMS', '+33601020304'),
       );
     });
 
     it('depends on the key and on the channel, and never contains the address', () => {
-      const hash = marketingOptOutHash('EMAIL', 'alice@example.com');
+      const hash = marketingOptOutHash('restaurant-1', 'EMAIL', 'alice@example.com');
       vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'z'.repeat(40));
-      expect(marketingOptOutHash('EMAIL', 'alice@example.com')).not.toBe(hash);
-      expect(marketingOptOutHash('SMS', '+33601020304')).not.toBe(
-        marketingOptOutHash('WHATSAPP', '+33601020304'),
+      expect(marketingOptOutHash('restaurant-1', 'EMAIL', 'alice@example.com')).not.toBe(hash);
+      expect(marketingOptOutHash('restaurant-1', 'SMS', '+33601020304')).not.toBe(
+        marketingOptOutHash('restaurant-1', 'WHATSAPP', '+33601020304'),
       );
       expect(hash).not.toContain('alice');
+      expect(marketingOptOutHash('restaurant-2', 'EMAIL', 'alice@example.com')).not.toBe(
+        marketingOptOutHash('restaurant-1', 'EMAIL', 'alice@example.com'),
+      );
     });
 
     it('is null without a long enough key, or without a usable address', () => {
       vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'trop-court');
       expect(isMarketingOptOutRegisterConfigured()).toBe(false);
-      expect(marketingOptOutHash('EMAIL', 'alice@example.com')).toBeNull();
+      expect(marketingOptOutHash('restaurant-1', 'EMAIL', 'alice@example.com')).toBeNull();
       vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', KEY);
       expect(isMarketingOptOutRegisterConfigured()).toBe(true);
-      expect(marketingOptOutHash('EMAIL', 'pas-une-adresse')).toBeNull();
-      expect(marketingOptOutHash('EMAIL', null)).toBeNull();
+      expect(marketingOptOutHash('restaurant-1', 'EMAIL', 'pas-une-adresse')).toBeNull();
+      expect(marketingOptOutHash('restaurant-1', 'EMAIL', null)).toBeNull();
     });
   });
 
@@ -85,7 +88,9 @@ describe('marketing opt-out register', () => {
         source: 'UNSUBSCRIBE_LINK',
         retainUntil: new Date('2029-10-23T10:00:00.000Z'),
       });
-      expect(call.create.addressHash).toBe(marketingOptOutHash('EMAIL', 'alice@example.com'));
+      expect(call.create.addressHash).toBe(
+        marketingOptOutHash('restaurant-1', 'EMAIL', 'alice@example.com'),
+      );
       expect(JSON.stringify(call)).not.toContain('alice@example.com');
     });
 
@@ -109,7 +114,7 @@ describe('marketing opt-out register', () => {
         where: {
           restaurantId: 'restaurant-1',
           channel: 'EMAIL',
-          addressHash: marketingOptOutHash('EMAIL', 'alice@example.com'),
+          addressHash: marketingOptOutHash('restaurant-1', 'EMAIL', 'alice@example.com'),
         },
       });
     });
@@ -117,7 +122,7 @@ describe('marketing opt-out register', () => {
 
   describe('lookup', () => {
     it('finds the registered addresses of a restaurant', async () => {
-      const hash = marketingOptOutHash('EMAIL', 'alice@example.com');
+      const hash = marketingOptOutHash('restaurant-1', 'EMAIL', 'alice@example.com');
       optOut.findMany.mockResolvedValue([{ addressHash: hash }]);
       await expect(
         isMarketingOptedOut(
@@ -134,7 +139,7 @@ describe('marketing opt-out register', () => {
 
     it('maps registered hashes back to customers, with the right address per channel', async () => {
       optOut.findMany.mockResolvedValue([
-        { addressHash: marketingOptOutHash('EMAIL', 'alice@example.com') },
+        { addressHash: marketingOptOutHash('restaurant-1', 'EMAIL', 'alice@example.com') },
       ]);
       const result = await loadOptedOutCustomerIds(
         {

@@ -174,19 +174,39 @@ export function renderMarketingTemplate(
   });
 }
 
-export function toMarketingHtml(text: string): string {
-  const escaped = text
+function escapeHtml(text: string): string {
+  return text
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+/** Dit qui écrit et pourquoi : un message sans identité ressemble à un envoi anonyme. */
+export function marketingEmailFooter(restaurant: {
+  name: string;
+  formattedAddress?: string | null;
+}): string {
+  const address = restaurant.formattedAddress?.trim();
+  return [
+    `${restaurant.name}${address ? `, ${address}` : ''}`,
+    'Vous recevez ce message car vous avez accepté de recevoir les actualités de ce restaurant par e-mail.',
+  ].join('\n');
+}
+
+/** `linkLabels` remplace le texte affiché de ces adresses : leurs jetons sont illisibles. */
+export function toMarketingHtml(text: string, linkLabels: Record<string, string> = {}): string {
+  const labels = new Map(
+    Object.entries(linkLabels).map(([url, label]) => [escapeHtml(url), escapeHtml(label)]),
+  );
+  const escaped = escapeHtml(text);
   // Les adresses deviennent des liens cliquables : le lien de désinscription et celui de réservation
   // doivent fonctionner même dans un client de messagerie qui ne détecte pas les URL.
   const linked = escaped.replaceAll(/https?:\/\/[^\s<]+/g, (match) => {
     const trailing = /(?:[.,;:!?)]|&quot;|&#39;)+$/.exec(match)?.[0] ?? '';
     const url = trailing ? match.slice(0, -trailing.length) : match;
-    return `<a href="${url}">${url}</a>${trailing}`;
+    return `<a href="${url}">${labels.get(url) ?? url}</a>${trailing}`;
   });
   return linked.replaceAll(/\r?\n/g, '<br>');
 }

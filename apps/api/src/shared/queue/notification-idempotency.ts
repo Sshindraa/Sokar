@@ -26,6 +26,8 @@ export interface NotificationSendResult {
   provider: NotificationProvider;
   channel: NotificationChannel;
   providerMessageId?: string;
+  /** Code sans donnée personnelle expliquant un `failure_certain`, repris dans les journaux. */
+  reason?: string;
 }
 
 /** Minimal Redis surface needed by notification claims. */
@@ -465,6 +467,7 @@ export function normalizeNotificationSendResult(
     provider: result.provider ?? provider,
     channel: result.channel ?? channel,
     ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
+    ...(result.reason ? { reason: result.reason } : {}),
   };
 }
 

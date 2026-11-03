@@ -151,7 +151,7 @@ describe('marketing automation engine', () => {
       },
     ] as never);
     vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([
-      { addressHash: marketingOptOutHash('SMS', '+33601020304') },
+      { addressHash: marketingOptOutHash('restaurant-1', 'SMS', '+33601020304') },
     ] as never);
 
     vi.mocked(db.marketingAutomation.update).mockResolvedValue({} as never);
