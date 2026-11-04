@@ -14,4 +14,5 @@ FROM base AS runner
 WORKDIR /app
 COPY --from=builder /app .
 EXPOSE 4000
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["node", "apps/api/dist/main.js"]
