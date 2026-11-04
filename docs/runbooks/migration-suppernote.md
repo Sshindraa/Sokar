@@ -22,7 +22,7 @@ La fusion déclenche le déploiement : `install-nginx` échoue si le certificat 
 2. VPS : certificat `/etc/letsencrypt/live/suppernote.com/` couvrant ces noms ; conserver celui de `sokar.tech`, utilisé par les redirections.
 3. Clerk : domaine `suppernote.com` en staging et en production, enregistrements `clerk` et `accounts`, adresses de redirection OAuth.
 4. E-mails : domaines `suppernote.com` et `news.suppernote.com` vérifiés dans Resend (SPF, DKIM, DMARC) ; alias Google Workspace `privacy@`, `hello@`, `support@`, `dpo@`, `ops@`, `hamza@`.
-5. Webhooks : ajouter les adresses `api.suppernote.com` chez Telnyx, Stripe et Meta sans retirer les anciennes. Mettre à jour les secrets Stripe si un nouveau point d'accès en crée. _(Le relais des anciennes adresses est en place ; le passage des fournisseurs reste à faire, voir plus bas.)_
+5. Webhooks : ajouter les adresses `api.suppernote.com` chez Telnyx, Stripe et Meta sans retirer les anciennes. Mettre à jour les secrets Stripe si un nouveau point d'accès en crée. _(Le relais des anciennes adresses est en place ; Telnyx et Stripe sont basculés, Meta reste à vérifier.)_
 6. `.env` de staging puis de production : `SITE_URL`, `API_URL`, `PUBLIC_API_URL`, `PUBLIC_URL`, `DASHBOARD_URL`, `CORS_ORIGINS`, `OAUTH_ISSUER_URL`, `EMAIL_FROM`, `MARKETING_EMAIL_FROM`, `MARKETING_UNSUBSCRIBE_BASE_URL`, `ALERT_EMAIL_TO`, `DEMO_REQUEST_NOTIFY_TO`, `CLOUDFLARE_SAAS_FALLBACK_ORIGIN`, `NEXT_PUBLIC_API_URL`. Les variables `NEXT_PUBLIC_*` imposent une reconstruction.
 
 ## Après la bascule
@@ -31,7 +31,7 @@ Fait le 3 novembre 2026 : redirections de `sokar.tech` vers `suppernote.com` (30
 
 ## Reste à faire
 
-- Webhooks fournisseurs : contrôler un POST signé sur chaque ancienne adresse, puis faire pointer Stripe, Telnyx et Meta vers `api.suppernote.com` (Meta : remplacement, une seule adresse). Retirer le relais seulement ensuite.
+- Webhooks fournisseurs : Telnyx et Stripe pointent vers `api.suppernote.com` (état communiqué le 4 novembre). Vérifier la configuration Meta et, si nécessaire, remplacer son adresse unique ; contrôler les POST signés sur les anciennes adresses avant de retirer le relais.
 - Déclarer le changement d'adresse dans Google Search Console.
 - Reconnecter les connecteurs MCP : l'adresse de l'émetteur OAuth change.
 - Faire changer le CNAME des domaines personnalisés (cible `suppernote.com`) et prévenir les restaurants qui ont un widget.
@@ -49,7 +49,7 @@ Avant (T-1 h) : CI de la PR verte ; crédit OpenRouter rechargé ; clé Clerk `s
 3. Cloudflare : remplacer A et AAAA de `@` (parking IONOS) par le VPS, proxifiés ; retirer les CNAME `autodiscover` et `_domainconnect` importés d'IONOS.
 4. Production : `.env`, `pm2 delete`, fusion de la PR (déclenche le déploiement, reconstruction des `NEXT_PUBLIC_*`), `pm2 jlist`. La fusion s'est faite sur accord explicite de Hamza.
 5. Contrôles : redirections `sokar.tech`, `POST api.sokar.tech` hors webhooks (308), POST signé sur chaque ancienne adresse de webhook (relais), désinscription marketing, connexion, appel de test, connecteur MCP.
-6. Fournisseurs : adresses `api.suppernote.com` chez Stripe, Telnyx et Meta (Meta : remplacement).
+6. Fournisseurs : adresses `api.suppernote.com` chez Stripe et Telnyx ; configuration Meta à vérifier (remplacement de son adresse unique si nécessaire).
 
 Retour arrière : restaurer les `.env` d'avant, `pm2 delete`, `scripts/deploy.sh --env prod rollback`. Le DNS de `@` peut rester ; `sokar.tech` continue de servir via les anciens vhosts tant que la release précédente est restaurée. Clerk : le retour au domaine `sokar.tech` n'est pas testé, à vérifier avant le créneau.
 
