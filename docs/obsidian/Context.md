@@ -8,7 +8,7 @@
 
 ## TODOs actifs
 
-- [ ] Suppernote : suivre `migration-suppernote.md` ; ne pas fusionner la branche `feat/marque-suppernote` avant les préalables. Logo à remplacer.
+- [ ] Suppernote : migration de domaine livrée ; suivre `migration-suppernote.md` et vérifier l’état des webhooks fournisseurs. Appel vocal réel de bout en bout à faire après recharge OpenRouter ; logo à remplacer.
 
 - [ ] Marketing : avant tout envoi réel, rouvrir l'effacement et l'opposition, et mentionner le ciblage selon l'historique dans la notice client (`privacy-client-annex.md`).
 - [ ] Incident RGPD : vérification SMS et export rouverts en production ; effacement et opposition marketing restent bloqués (503) jusqu’à correction. Correctif SMS livré et qualifié en staging ; examiner les anciens journaux. Les demandes manuelles passent par privacy@sokar.tech.
