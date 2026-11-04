@@ -148,7 +148,7 @@ const SEGMENT_TEMPLATES: SegmentTemplate[] = [
   {
     key: 'vip',
     name: 'VIP manuels',
-    description: 'Clients marqués VIP dans Sokar.',
+    description: 'Clients marqués VIP dans Suppernote.',
     operator: 'AND',
     conditions: [{ field: 'isVip', op: 'EQ', value: 'true' }],
   },

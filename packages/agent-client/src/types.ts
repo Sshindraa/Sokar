@@ -19,7 +19,7 @@ export type ToolName =
 export type ToolListFormat = 'mcp' | 'openai' | 'mistral' | 'gemini';
 
 export type SokarAgentClientConfig = {
-  /** Base URL de l'API Sokar (ex: https://api-staging.sokar.tech) */
+  /** Base URL de l'API Suppernote (ex: https://api-staging.suppernote.com) */
   baseUrl: string;
   /** Clé API Bearer (format sk_sokar_agent_...) */
   apiKey: string;
@@ -90,7 +90,7 @@ export type AgentRunnerResult = {
   toolCallsCount: number;
 };
 
-// ─── Inputs des tools Sokar ──────────────────────────────────────────
+// ─── Inputs des tools Suppernote ──────────────────────────────────────────
 
 export type SearchRestaurantsInput = {
   city: string;

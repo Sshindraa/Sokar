@@ -5,7 +5,7 @@ import {
 
 /**
  * Fuseau utilisé lorsqu'un client MCP envoie une date locale sans timezone.
- * Sokar est actuellement centré sur les restaurants français ; les outils
+ * Suppernote est actuellement centré sur les restaurants français ; les outils
  * acceptent toujours un champ `timezone` explicite pour les autres zones.
  */
 export const DEFAULT_MCP_TIMEZONE = DEFAULT_RESTAURANT_TIMEZONE;

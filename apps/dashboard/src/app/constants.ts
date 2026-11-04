@@ -1,4 +1,4 @@
-// Shared constants for the Sokar landing page
+// Shared constants for the Suppernote landing page
 // Used by both server and client components
 
 import {
@@ -95,22 +95,22 @@ export const PLANS: PricingPlan[] = [
 
 export const FAQS = [
   {
-    question: "Comment fonctionne l'assistant vocal Sokar ?",
+    question: "Comment fonctionne l'assistant vocal Suppernote ?",
     answer:
-      'Vous gardez le numéro de votre restaurant et renvoyez les appels choisis vers votre numéro dédié Sokar. L’assistant consulte les disponibilités du carnet Sokar et enregistre la réservation avec le créneau et le nombre de couverts. Votre équipe la retrouve dans son tableau de bord.',
+      'Vous gardez le numéro de votre restaurant et renvoyez les appels choisis vers votre numéro dédié Suppernote. L’assistant consulte les disponibilités du carnet Suppernote et enregistre la réservation avec le créneau et le nombre de couverts. Votre équipe la retrouve dans son tableau de bord.',
   },
   {
-    question: "Avec quels outils Sokar s'intègre-t-il ?",
+    question: "Avec quels outils Suppernote s'intègre-t-il ?",
     answer:
-      'Les réservations prises par Sokar sont enregistrées dans son carnet, avec les réservations en ligne et celles saisies par votre équipe. Une synchronisation avec Zenchef, TheFork ou votre caisse n’est pas annoncée comme disponible : vérifiez avec nous votre organisation avant activation.',
+      'Les réservations prises par Suppernote sont enregistrées dans son carnet, avec les réservations en ligne et celles saisies par votre équipe. Une synchronisation avec Zenchef, TheFork ou votre caisse n’est pas annoncée comme disponible : vérifiez avec nous votre organisation avant activation.',
   },
   {
-    question: 'Quel type de restaurant peut utiliser Sokar ?',
+    question: 'Quel type de restaurant peut utiliser Suppernote ?',
     answer:
-      'Sokar s’adresse aux restaurants qui prennent des réservations de tables et souhaitent réunir leurs appels, réservations web et saisies en salle dans un même carnet. Nous vérifions avec vous les horaires, services et règles nécessaires à votre établissement. Les commandes à emporter et les réponses garanties sur les allergènes ne font pas partie de ce parcours.',
+      'Suppernote s’adresse aux restaurants qui prennent des réservations de tables et souhaitent réunir leurs appels, réservations web et saisies en salle dans un même carnet. Nous vérifions avec vous les horaires, services et règles nécessaires à votre établissement. Les commandes à emporter et les réponses garanties sur les allergènes ne font pas partie de ce parcours.',
   },
   {
-    question: 'Combien coûte Sokar ?',
+    question: 'Combien coûte Suppernote ?',
     answer: `Essential à ${PLAN_PRICES_EUR.ESSENTIAL} €/mois, Pro à ${PLAN_PRICES_EUR.PRO} €/mois et Multi-restaurant à ${PLAN_PRICES_EUR.PREMIUM} €/mois pour le premier établissement, puis ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} €/mois par établissement supplémentaire (${VAT_MENTION}). Le paiement annuel engage douze mois avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. Consultez les inclusions actuelles sur la page Tarifs.`,
   },
   {
@@ -120,7 +120,7 @@ export const FAQS = [
   {
     question: "Comment se passe l'installation ?",
     answer:
-      'Vous gardez votre numéro. Nous préparons vos horaires, services et règles, puis le renvoi vers Sokar et le numéro de secours pour joindre votre équipe. Un appel de test vérifie la voix, la réservation dans le carnet et le secours avant activation. Vous pouvez désactiver le renvoi depuis votre ligne.',
+      'Vous gardez votre numéro. Nous préparons vos horaires, services et règles, puis le renvoi vers Suppernote et le numéro de secours pour joindre votre équipe. Un appel de test vérifie la voix, la réservation dans le carnet et le secours avant activation. Vous pouvez désactiver le renvoi depuis votre ligne.',
   },
   {
     question: 'Mes données et celles de mes clients sont-elles protégées ?',

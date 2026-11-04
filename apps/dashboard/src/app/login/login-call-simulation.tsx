@@ -5,9 +5,9 @@ import { CalendarCheck, Check, Pause, PhoneCall, Play } from 'lucide-react';
 
 const MESSAGES = [
   { speaker: 'Client', text: 'Bonjour, une table pour quatre ce soir ?' },
-  { speaker: 'Sokar', text: 'Avec plaisir. Je peux vous proposer 20 h. Cela vous convient ?' },
+  { speaker: 'Suppernote', text: 'Avec plaisir. Je peux vous proposer 20 h. Cela vous convient ?' },
   { speaker: 'Client', text: 'Oui, 20 h, c’est parfait.' },
-  { speaker: 'Sokar', text: 'Votre table pour quatre est réservée. À ce soir !' },
+  { speaker: 'Suppernote', text: 'Votre table pour quatre est réservée. À ce soir !' },
 ];
 
 export default function LoginCallSimulation() {
@@ -50,7 +50,7 @@ export default function LoginCallSimulation() {
           <PhoneCall size={16} aria-hidden="true" />
         </span>
         <div className="sokar-login-call__identity">
-          <strong>Assistant Sokar</strong>
+          <strong>Assistant Suppernote</strong>
           <span>{confirmed ? 'Réservation confirmée' : 'Appel en cours'}</span>
         </div>
         <span className="sokar-login-call__badge">Simulation</span>

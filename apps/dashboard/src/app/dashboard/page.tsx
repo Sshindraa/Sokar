@@ -339,7 +339,7 @@ export default function DashboardPage() {
               label="CA estimé"
               value={`${stats.estimatedRevenue.toLocaleString('fr-FR')} €`}
               caption={averageReservationRevenue}
-              description="Somme des montants associés aux réservations : montant confirmé s’il est renseigné, sinon estimation disponible. Les montants inconnus ne contribuent pas au total. Ce chiffre ne mesure ni les encaissements ni le revenu supplémentaire apporté par Sokar."
+              description="Somme des montants associés aux réservations : montant confirmé s’il est renseigné, sinon estimation disponible. Les montants inconnus ne contribuent pas au total. Ce chiffre ne mesure ni les encaissements ni le revenu supplémentaire apporté par Suppernote."
               historyHref={isDemo ? undefined : '/dashboard/reservations'}
             />
             <KpiCard

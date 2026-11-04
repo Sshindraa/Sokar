@@ -21,7 +21,7 @@ export function RestaurantIllustration() {
         <div className="absolute bottom-0 right-0 flex size-24 flex-col items-center justify-center gap-1 rounded-full border-4 border-background bg-primary text-primary-foreground">
           <Globe size={18} aria-hidden="true" />
           <p className="text-center text-[11px] font-medium leading-tight">
-            Sokar
+            Suppernote
             <br />
             Connect
           </p>

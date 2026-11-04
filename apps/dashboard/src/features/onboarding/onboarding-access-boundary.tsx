@@ -68,7 +68,7 @@ export function OnboardingAccessBoundary({
         role="status"
         className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground"
       >
-        Votre espace Sokar est prêt…
+        Votre espace Suppernote est prêt…
       </main>
     );
   }

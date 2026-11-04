@@ -8,9 +8,9 @@
 
 ## URLs
 
-- Dashboard: `https://staging.sokar.tech`
-- API directe: `https://api-staging.sokar.tech`
-- Sokar Connect: `https://staging.sokar.tech/restaurant/chez-sokar-demo`
+- Dashboard: `https://staging.suppernote.com`
+- API directe: `https://api-staging.suppernote.com`
+- Sokar Connect: `https://staging.suppernote.com/restaurant/chez-sokar-demo`
 
 ## Infrastructure (VPS `sokar`, isolated from prod)
 
@@ -39,7 +39,7 @@
 ## Initial setup
 
 - Script: `scripts/ops/setup-staging.sh` — idempotent, prepares directory, clones repo, creates `sokar_staging` DB, copies `.env.staging.example` to `.env`, installs Nginx vhost and validates config.
-- Prerequisites: DNS `staging.sokar.tech` + `api-staging.sokar.tech` pointing to VPS, swap configured (`scripts/ops/setup-swap.sh` if needed).
+- Prerequisites: DNS `staging.suppernote.com` + `api-staging.suppernote.com` pointing to VPS, swap configured (`scripts/ops/setup-swap.sh` if needed).
 - After setup: fill `.env` with staging keys. N'activer que les providers voice nécessaires à la
   campagne prévue, puis vérifier leur health check avant le premier déploiement.
 
@@ -59,5 +59,5 @@ ssh deploy@sokar "pm2 logs sokar-staging-api"        # API logs
 
 ## Notes
 
-- TLS certificate: `/etc/letsencrypt/live/sokar.tech/`, the Cloudflare Origin certificate for `*.sokar.tech` shared with prod (valid until 2041, no renewal). Since 2026-10-22, staging no longer uses the Let's Encrypt certificate `staging.sokar.tech`: certbot renewal had been failing since July, and the certificate expired that day (Cloudflare 526). Both hosts must stay proxied by Cloudflare: an Origin certificate is only trusted through Cloudflare.
+- TLS certificate: `/etc/letsencrypt/live/suppernote.com/`, the Cloudflare Origin certificate for `*.suppernote.com` shared with prod (valid until 2041, no renewal). Since 2026-10-22, staging no longer uses the Let's Encrypt certificate `staging.sokar.tech` (old domain): certbot renewal had been failing since July, and the certificate expired that day (Cloudflare 526). Both hosts must stay proxied by Cloudflare: an Origin certificate is only trusted through Cloudflare.
 - Connect page `/restaurant/[slug]` is rendered dynamically (`force-dynamic`) in staging to avoid `DYNAMIC_SERVER_USAGE` during VPS build. In prod it stays ISR.

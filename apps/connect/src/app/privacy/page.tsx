@@ -1,8 +1,8 @@
 /**
- * Sokar Connect — Politique de confidentialité.
+ * Suppernote Connect — Politique de confidentialité.
  *
  * Rendu par requête pour que les scripts Next reçoivent le nonce CSP courant.
- * RGPD : Sokar est un SaaS B2F (business-to-food) traitant des données
+ * RGPD : Suppernote est un SaaS B2F (business-to-food) traitant des données
  * de réservation pour le compte de restaurants clients.
  */
 
@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: 'Politique de confidentialité',
   description:
-    'Politique de confidentialité de Sokar — traitement des données personnelles pour les demandes de démonstration et les réservations des restaurants.',
+    'Politique de confidentialité de Suppernote — traitement des données personnelles pour les demandes de démonstration et les réservations des restaurants.',
   robots: { index: true, follow: true },
 };
 
@@ -37,7 +37,7 @@ export default function PrivacyPage() {
           href="/"
           className="text-lg font-semibold tracking-tight transition-all duration-200 hover:opacity-70"
         >
-          Sokar<span className="text-muted-foreground">.</span>
+          Suppernote<span className="text-muted-foreground">.</span>
         </Link>
         <Link
           href="/"
@@ -127,10 +127,10 @@ export default function PrivacyPage() {
             <Mail size={17} className="mb-3 text-muted-foreground" aria-hidden="true" />
             <p className="text-sm font-medium">Une question sur vos données ?</p>
             <a
-              href="mailto:privacy@sokar.tech"
+              href="mailto:privacy@suppernote.com"
               className="mt-2 inline-flex items-center gap-1 break-all text-sm underline underline-offset-4 transition-all duration-200 hover:opacity-70"
             >
-              privacy@sokar.tech
+              privacy@suppernote.com
               <ArrowUpRight size={13} aria-hidden="true" />
             </a>
           </div>
@@ -156,24 +156,25 @@ export default function PrivacyPage() {
               </h2>
             </div>
             <p className="text-muted-foreground">
-              Sokar traite les demandes de démonstration pour répondre aux professionnels qui le
-              contactent. Pour ces demandes et leur suivi, Sokar détermine les finalités du
+              Suppernote traite les demandes de démonstration pour répondre aux professionnels qui
+              le contactent. Pour ces demandes et leur suivi, Suppernote détermine les finalités du
               traitement.
             </p>
             <p className="mt-4 text-muted-foreground">{PRIVACY_DOCUMENT.review}</p>
             <p className="mt-4 text-muted-foreground">
               Pour les réservations gérées pour le compte d’un restaurant, le restaurant détermine
-              les finalités de gestion de sa clientèle ; Sokar intervient comme prestataire traitant
-              les données sur ses instructions. Sokar détermine séparément les finalités de ses
-              traitements propres, notamment pour assurer la sécurité de son service.
+              les finalités de gestion de sa clientèle ; Suppernote intervient comme prestataire
+              traitant les données sur ses instructions. Suppernote détermine séparément les
+              finalités de ses traitements propres, notamment pour assurer la sécurité de son
+              service.
             </p>
             <p className="mt-4 text-muted-foreground">
               Pour toute question relative à vos données, vous pouvez nous contacter à{' '}
               <a
-                href="mailto:privacy@sokar.tech"
+                href="mailto:privacy@suppernote.com"
                 className="text-foreground underline transition-all duration-200 hover:text-foreground"
               >
-                privacy@sokar.tech
+                privacy@suppernote.com
               </a>
               .
             </p>
@@ -211,15 +212,15 @@ export default function PrivacyPage() {
               </h3>
               <p className="mt-4 text-muted-foreground">
                 Ces informations servent à répondre à votre demande, préparer la démonstration et en
-                assurer le suivi. Ce traitement repose sur l’intérêt légitime de Sokar à répondre
-                aux professionnels intéressés par son service. Une demande de démonstration ne vaut
-                pas inscription à une newsletter ni accord pour des campagnes marketing.
+                assurer le suivi. Ce traitement repose sur l’intérêt légitime de Suppernote à
+                répondre aux professionnels intéressés par son service. Une demande de démonstration
+                ne vaut pas inscription à une newsletter ni accord pour des campagnes marketing.
               </p>
             </div>
             <div className="mt-6 first:mt-0">
               <h3 className="mb-2 text-sm font-semibold text-foreground">Qui peut y accéder</h3>
               <p className="mt-4 text-muted-foreground">
-                Votre demande est accessible à l’équipe Sokar habilitée à y répondre. Nos
+                Votre demande est accessible à l’équipe Suppernote habilitée à y répondre. Nos
                 prestataires d’hébergement, d’envoi d’e-mails et de messagerie interviennent pour
                 l’enregistrer, nous la transmettre et permettre le suivi de nos échanges.
               </p>
@@ -234,7 +235,7 @@ export default function PrivacyPage() {
                 Les services d’envoi et de messagerie peuvent impliquer des traitements hors de
                 l’Union européenne. Pour connaître les destinataires de votre demande et obtenir des
                 informations sur les pays concernés et les garanties applicables, contactez
-                privacy@sokar.tech.
+                privacy@suppernote.com.
               </p>
             </div>
             <div className="mt-6 first:mt-0">
@@ -244,10 +245,10 @@ export default function PrivacyPage() {
                 données et vous opposer au traitement pour des raisons tenant à votre situation.
                 Écrivez à{' '}
                 <a
-                  href="mailto:privacy@sokar.tech"
+                  href="mailto:privacy@suppernote.com"
                   className="underline transition-all duration-200"
                 >
-                  privacy@sokar.tech
+                  privacy@suppernote.com
                 </a>
                 . Vous pouvez également adresser une réclamation à la CNIL, comme indiqué
                 ci-dessous.
@@ -388,10 +389,10 @@ export default function PrivacyPage() {
               portabilité lorsque les conditions légales sont réunies. Vous pouvez retirer un
               consentement à tout moment. Pour exercer ces droits, contactez-nous à{' '}
               <a
-                href="mailto:privacy@sokar.tech"
+                href="mailto:privacy@suppernote.com"
                 className="text-foreground underline transition-all duration-200 hover:text-foreground"
               >
-                privacy@sokar.tech
+                privacy@suppernote.com
               </a>{' '}
               ou directement auprès du restaurant concerné.
             </p>

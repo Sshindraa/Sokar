@@ -8,7 +8,7 @@ vi.mock('@clerk/fastify', () => ({
   }),
 }));
 
-import { rateLimitBucket, registerRateLimit } from '../rate-limit';
+import { publicReadMax, rateLimitBucket, registerRateLimit } from '../rate-limit';
 import {
   RATE_LIMIT_GLOBAL_MAX,
   RATE_LIMIT_USER_READ_MAX,
@@ -91,5 +91,28 @@ describe('rate-limit global — budgets par utilisateur', () => {
     vi.stubEnv('NODE_ENV', 'development');
     vi.stubEnv('DEMO_RESTAURANT_ID', '');
     expect(rateLimitBucket(request('127.0.0.1', 'GET')).max).toBe(RATE_LIMIT_GLOBAL_MAX);
+  });
+});
+
+describe('publicReadMax — rendu serveur de Connect', () => {
+  it('le loopback a son budget, un visiteur garde le plafond public', async () => {
+    const app = Fastify();
+    await registerRateLimit(app);
+    app.get('/public', { config: { rateLimit: { max: publicReadMax(2) } } }, async () => ({}));
+    await app.ready();
+
+    const call = (remoteAddress: string) =>
+      app.inject({ method: 'GET', url: '/public', remoteAddress }).then((r) => r.statusCode);
+
+    // 3 pages absentes du cache rendues par Connect : au-delà du plafond public de 2.
+    expect([await call('127.0.0.1'), await call('127.0.0.1'), await call('127.0.0.1')]).toEqual([
+      200, 200, 200,
+    ]);
+    expect([
+      await call('198.51.100.9'),
+      await call('198.51.100.9'),
+      await call('198.51.100.9'),
+    ]).toEqual([200, 200, 429]);
+    await app.close();
   });
 });

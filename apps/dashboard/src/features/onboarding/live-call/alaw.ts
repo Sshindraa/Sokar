@@ -1,5 +1,5 @@
 // ─── G.711 A-law ────────────────────────────────────────────────
-// Le pipeline vocal de Sokar parle en A-law 8 kHz comme un appel téléphonique réel (PCMA) :
+// Le pipeline vocal de Suppernote parle en A-law 8 kHz comme un appel téléphonique réel (PCMA) :
 // la démonstration en direct restitue donc la qualité qu'un client entendra vraiment.
 // Implémentation de référence ITU-T G.711 (même table de segments que la libsndfile / Sun).
 

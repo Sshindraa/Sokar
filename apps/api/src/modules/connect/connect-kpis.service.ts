@@ -1,6 +1,6 @@
 /**
  * Connect Pilot KPIs : agrège les 4 critères go/no-go du pilote P1
- * Sokar Connect depuis les compteurs/histogrammes Prometheus in-process.
+ * Suppernote Connect depuis les compteurs/histogrammes Prometheus in-process.
  *
  * Critères go/no-go P1 (spec v1.1) :
  *   1. hold_to_confirm_rate : >= 30% (réservations web confirmées / holds créés)

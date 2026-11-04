@@ -2,13 +2,13 @@
 import { GiftCardTestBanner } from './gift-card-test-banner';
 
 /**
- * Sokar Connect — GiftCardConfirmation.
+ * Suppernote Connect — GiftCardConfirmation.
  *
  * Écran de confirmation affiché après l'achat d'une carte cadeau.
  * Affiche le code complet (non masqué) car c'est le bénéficiaire qui le voit.
  * Si l'option "réserver maintenant" était activée, affiche le slots picker.
  *
- * Design aligné avec le widget de réservation Sokar.
+ * Design aligné avec le widget de réservation Suppernote.
  */
 
 import { useEffect, useState, type CSSProperties } from 'react';
@@ -155,7 +155,7 @@ export function GiftCardConfirmation({
           réservation.
         </p>
 
-        {/* PDF download — bouton Sokar style */}
+        {/* PDF download — bouton Suppernote style */}
         {result.pdfUrl && (
           <a
             href={result.pdfUrl}

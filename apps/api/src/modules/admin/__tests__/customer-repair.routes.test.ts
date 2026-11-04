@@ -15,7 +15,7 @@ vi.mock('../../../plugins/clerk', () => ({
       reply: { status: (code: number) => { send: (body: unknown) => unknown } },
     ) => {
       if (!mocks.operator)
-        return reply.status(403).send({ error: 'Sokar operator access required' });
+        return reply.status(403).send({ error: 'Suppernote operator access required' });
       req.userId = 'user-operator';
     },
 }));
@@ -43,7 +43,7 @@ describe('admin customer projection repair', () => {
     mocks.operator = true;
   });
 
-  it('refuse un utilisateur qui n’est pas opérateur Sokar', async () => {
+  it('refuse un utilisateur qui n’est pas opérateur Suppernote', async () => {
     mocks.operator = false;
     const app = await buildApp();
     const res = await app.inject({ method: 'GET', url: `${base}/projection-repair-preview` });

@@ -72,7 +72,7 @@ function digitGroups(number: string) {
   return [number];
 }
 
-/** Le geste exact pour activer le renvoi, avec le numéro Sokar déjà rempli. */
+/** Le geste exact pour activer le renvoi, avec le numéro Suppernote déjà rempli. */
 function lineGuide(type: LineType, sokarNumber: string) {
   if (type === 'mobile') {
     return {
@@ -208,7 +208,7 @@ export function PhoneStep({ onComplete }: StepProps) {
       );
     } catch (err: unknown) {
       // L'API renvoie un code structuré pour différencier les causes d'échec.
-      // NO_PHONE_ASSIGNED : action Sokar (pas un retry utilisateur)
+      // NO_PHONE_ASSIGNED : action Suppernote (pas un retry utilisateur)
       // TELNYX_FAILED    : erreur réseau/opérateur (réessayer)
       // fallback         : message générique
       const errRecord = (err && typeof err === 'object' ? err : {}) as Record<string, unknown>;
@@ -219,7 +219,7 @@ export function PhoneStep({ onComplete }: StepProps) {
       if (code === 'NO_PHONE_ASSIGNED') {
         setTestError(
           apiMessage ??
-            "Aucun numéro Sokar attribué. L'appel test vérifie que le renvoi arrive jusqu'à ce numéro : l'équipe Sokar doit d'abord vous en attribuer un.",
+            "Aucun numéro Suppernote attribué. L'appel test vérifie que le renvoi arrive jusqu'à ce numéro : l'équipe Suppernote doit d'abord vous en attribuer un.",
         );
       } else if (code === 'TELNYX_FAILED') {
         setTestError(
@@ -280,7 +280,7 @@ export function PhoneStep({ onComplete }: StepProps) {
       <StepHeader
         icon={PhoneForwarded}
         title="Votre accueil au téléphone"
-        body="Gardez votre numéro. Confiez vos appels à Sokar."
+        body="Gardez votre numéro. Confiez vos appels à Suppernote."
       />
 
       <ol
@@ -436,7 +436,7 @@ export function PhoneStep({ onComplete }: StepProps) {
             <div className="flex items-center gap-3">
               <Headphones size={17} className="shrink-0" aria-hidden />
               <div>
-                <p className="text-xs text-background/60">Sokar répond</p>
+                <p className="text-xs text-background/60">Suppernote répond</p>
                 <p className="whitespace-nowrap text-sm font-medium tabular-nums">
                   {hasAssignedPhone ? toNationalDisplay(phoneNumber) : 'Numéro en attente'}
                 </p>
@@ -456,10 +456,12 @@ export function PhoneStep({ onComplete }: StepProps) {
                   <span className="inline-flex size-10 items-center justify-center rounded-full bg-muted">
                     <Phone size={18} aria-hidden />
                   </span>
-                  <h3 className="text-lg font-semibold">Votre numéro Sokar est en préparation</h3>
+                  <h3 className="text-lg font-semibold">
+                    Votre numéro Suppernote est en préparation
+                  </h3>
                   <p className="text-sm leading-6 text-muted-foreground">
-                    L’équipe Sokar doit vous attribuer un numéro pour activer le renvoi. Vous pouvez
-                    vérifier les autres étapes en attendant.
+                    L’équipe Suppernote doit vous attribuer un numéro pour activer le renvoi. Vous
+                    pouvez vérifier les autres étapes en attendant.
                   </p>
                 </div>
               ) : (
@@ -632,7 +634,7 @@ export function PhoneStep({ onComplete }: StepProps) {
           <div className="flex flex-wrap items-center justify-end gap-3">
             <p id="phone-next-hint" className="max-w-60 text-xs leading-5 text-muted-foreground">
               {!hasAssignedPhone
-                ? 'En attente de votre numéro Sokar.'
+                ? 'En attente de votre numéro Suppernote.'
                 : showPhoneForm
                   ? phoneInput.trim()
                     ? 'Validez d’abord le numéro du restaurant.'

@@ -65,7 +65,7 @@ beforeEach(() => {
   vi.stubEnv('RESERVATION_MANAGEMENT_ENABLED', 'true');
   vi.stubEnv('RESERVATION_SELF_CANCELLATION_ENABLED', 'true');
   vi.stubEnv('RESERVATION_MANAGEMENT_SECRET', randomBytes(32).toString('hex'));
-  vi.stubEnv('DASHBOARD_URL', 'https://sokar.tech');
+  vi.stubEnv('DASHBOARD_URL', 'https://suppernote.com');
   current = { ...row };
   vi.mocked(db.reservation.findUnique).mockImplementation((async () => current) as never);
   vi.mocked(db.reservation.update).mockImplementation((({

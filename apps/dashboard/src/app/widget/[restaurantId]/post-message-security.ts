@@ -30,7 +30,7 @@ function validateOrigin(raw: string): string {
  *
  * Priorité :
  * 1. `explicitParentOrigin` — paramètre `parentOrigin` passé dans l'URL du
- *    widget par le snippet embed contrôlé par Sokar. Permet de fonctionner
+ *    widget par le snippet embed contrôlé par Suppernote. Permet de fonctionner
  *    même avec `Referrer-Policy: no-referrer` ou `iframe referrerpolicy="no-referrer"`.
  * 2. `document.referrer` — dérivé du referrer de l'iframe.
  *

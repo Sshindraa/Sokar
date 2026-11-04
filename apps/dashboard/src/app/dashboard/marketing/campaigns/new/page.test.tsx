@@ -49,7 +49,7 @@ const campaignPreview = {
   audience: { captured: 12, eligible: 12, sampleCustomer: 'Alice' },
   render: {
     subject: null,
-    body: 'Bonjour Alice https://sokar.tech/marketing/unsubscribe?token=preview',
+    body: 'Bonjour Alice https://suppernote.com/marketing/unsubscribe?token=preview',
     usedFallbackCustomer: false,
   },
   usage: {

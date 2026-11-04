@@ -12,7 +12,7 @@ const NEXT_STEP_LABEL: Record<OnboardingTaskKey, string> = {
   knowledge: 'les consignes de l’assistant',
   phone: 'les appels',
   channels: 'vos canaux de réservation',
-  'connect-identity': 'Sokar Connect',
+  'connect-identity': 'Suppernote Connect',
   'connect-location': 'votre adresse',
   'connect-cuisine': 'la cuisine et l’ambiance',
   'connect-activation': 'la publication',

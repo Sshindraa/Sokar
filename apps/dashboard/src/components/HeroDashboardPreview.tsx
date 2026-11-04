@@ -1,4 +1,4 @@
-// Capture du vrai dashboard Sokar (restaurant de démonstration « Chez Sokar », données fictives),
+// Capture du vrai dashboard Suppernote (restaurant de démonstration « Chez Sokar », données fictives),
 // sous le hero à la manière de linear.app. Une capture par format d'écran, chargée en priorité.
 export default function HeroDashboardPreview() {
   return (
@@ -37,7 +37,7 @@ export default function HeroDashboardPreview() {
           <source media="(max-width: 1279px)" srcSet="/marketing/dashboard-tablet.webp" />
           <img
             src="/marketing/dashboard-desktop.webp"
-            alt="Tableau de bord Sokar : réservations, couverts, chiffre d'affaires estimé et réservations par canal"
+            alt="Tableau de bord Suppernote : réservations, couverts, chiffre d'affaires estimé et réservations par canal"
             width={3200}
             height={2000}
             loading="eager"

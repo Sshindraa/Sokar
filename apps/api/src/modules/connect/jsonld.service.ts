@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — JSON-LD Service.
+ * Suppernote Connect — JSON-LD Service.
  *
  * Génère le Schema.org Restaurant JSON-LD pour /r/[slug].
  *
@@ -20,7 +20,7 @@ import {
 } from '../agentic-reservations/core/confidence.service';
 import type { OpeningHoursSpec, PublicRestaurantDto } from './connect.types';
 
-const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
+const SITE_URL = process.env.SITE_URL ?? 'https://suppernote.com';
 
 // Seuils min de confidence par attribut (cf. spec v1.1 §5.5)
 const CONFIDENCE_THRESHOLDS = {

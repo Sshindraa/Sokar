@@ -1,5 +1,5 @@
 /**
- * Service d'alertes Sokar.
+ * Service d'alertes Suppernote.
  *
  * Centralise les alertes critiques qui doivent déclencher Sentry
  * + idéalement PagerDuty (Phase 6+). Les alertes sont typées

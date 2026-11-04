@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Middleware sécurité.
+ * Suppernote Connect — Middleware sécurité.
  *
  * Headers ajoutés sur toutes les réponses :
  * - Strict-Transport-Security (HSTS)
@@ -14,7 +14,7 @@
  *
  * En mode preview (?preview=1), on autorise l'embedding iframe depuis le
  * dashboard (cf. spec connect-v1.1 §13.5). DASHBOARD_URL (env) contient
- * l'origine du dashboard — en prod c'est le même domaine (sokar.tech),
+ * l'origine du dashboard — en prod c'est le même domaine (suppernote.com),
  * en dev c'est http://localhost:3000.
  *
  * Cf. spec connect-v1.1 §21.4 (sécurité) et §17.3 (performance).
@@ -22,6 +22,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { resolveDemoSlug, SUPPERNOTE_DEMO_SLUG } from '@sokar/shared';
 
 // Bots IA à tracker (pour mesurer l'efficacité réelle du web crawl).
 // Loggué côté serveur via console.log (récupéré par PM2 / Docker logs).
@@ -62,22 +63,22 @@ export function proxy(request: NextRequest) {
   }
   const isPreview = request.nextUrl.searchParams.get('preview') === '1';
 
-  // Sokar Connect P2 — Premium subdomain detection.
-  // Si le host n'est pas sokar.tech (ou www.), on vérifie si c'est un custom domain.
+  // Suppernote Connect P2 — Premium subdomain detection.
+  // Si le host n'est pas suppernote.com (ou www.), on vérifie si c'est un custom domain.
   // Le lookup DB se fait via l'API interne (Edge Runtime ne peut pas accéder à Prisma).
   // On fire-and-forget le lookup et on rewrite si match.
   const host = request.headers.get('host') ?? '';
-  const siteUrl = process.env.SITE_URL ?? 'https://sokar.tech';
-  const primaryHost = new URL(siteUrl).host; // sokar.tech
+  const siteUrl = process.env.SITE_URL ?? 'https://suppernote.com';
+  const primaryHost = new URL(siteUrl).host; // suppernote.com
   const isPrimaryHost =
     host === primaryHost ||
     host === `www.${primaryHost}` ||
     host.startsWith('localhost:') ||
     host.startsWith('127.0.0.1:');
 
-  // Subdomain gratuit : *.sokar.tech (ex: chezmario.sokar.tech)
+  // Subdomain gratuit : *.suppernote.com (ex: chezmario.suppernote.com)
   // Zero config — basé sur le slug du restaurant. Détecté AVANT les custom domains
-  // pour éviter un lookup DB inutile sur les subdomains Sokar.
+  // pour éviter un lookup DB inutile sur les subdomains Suppernote.
   //
   // Sécurité (defense-in-depth) : le middleware Edge ne peut pas faire de DB lookup
   // pour vérifier que le restaurant est publié. La validation se fait dans la page
@@ -87,7 +88,7 @@ export function proxy(request: NextRequest) {
   const isSubdomain = !isPrimaryHost && host.endsWith(`.${primaryHost}`);
 
   if (isSubdomain && host) {
-    // Extraire le slug du subdomain (ex: chezmario.sokar.tech → chezmario)
+    // Extraire le slug du subdomain (ex: chezmario.suppernote.com → chezmario)
     const slug = host.slice(0, host.length - primaryHost.length - 1);
     if (slug && slug !== 'www') {
       // Cloner nextUrl et forcer le protocole en http:// pour éviter le proxy
@@ -128,12 +129,22 @@ export function proxy(request: NextRequest) {
     }
   }
 
-  const response = NextResponse.next({
-    request: { headers: requestHeaders },
-  });
+  const url = request.nextUrl.clone();
+  const [root, section, slug, ...rest] = url.pathname.split('/');
+  const isDemoAlias =
+    (section === 'restaurant' || section === 'widget') && slug === SUPPERNOTE_DEMO_SLUG;
+  if (isDemoAlias) {
+    // Nginx termine TLS ; le serveur Next.js interne écoute en HTTP.
+    url.protocol = 'http:';
+    url.pathname = [root, section, resolveDemoSlug(slug), ...rest].join('/');
+  }
+  const requestOptions = { request: { headers: requestHeaders } };
+  const response = isDemoAlias
+    ? NextResponse.rewrite(url, requestOptions)
+    : NextResponse.next(requestOptions);
 
   // Instrumentation : log les hits par bot IA sur les pages publiques.
-  // Permet de savoir quels bots crawlent réellement Sokar (vs hypothèse).
+  // Permet de savoir quels bots crawlent réellement Suppernote (vs hypothèse).
   const userAgent = request.headers.get('user-agent') ?? '';
   const bot = detectBot(userAgent);
   if (bot) {

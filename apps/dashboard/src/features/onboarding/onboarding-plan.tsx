@@ -46,7 +46,7 @@ const euros = (amount: string | number, unit: string) => `${amount} €/${unit}
  * Écran « Choisissez votre formule », proposé juste après la validation de l'appel test. Il reprend
  * la formule choisie sur la page Tarifs (gardée pendant l'inscription). Un seul bouton démarre
  * l'essai gratuit sur cette formule, sans carte et sans passer par Stripe : la carte s'ajoute plus
- * tard depuis le dashboard. Aucun compte n'utilise donc Sokar hors essai ou abonnement.
+ * tard depuis le dashboard. Aucun compte n'utilise donc Suppernote hors essai ou abonnement.
  */
 export function OnboardingPlan({
   restaurantId,

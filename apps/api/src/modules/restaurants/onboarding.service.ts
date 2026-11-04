@@ -49,7 +49,7 @@ export const ONBOARDING_STEPS: ReadonlyArray<{
   {
     key: 'hours',
     title: 'Quand prenez-vous des réservations ?',
-    description: 'Horaires des créneaux proposés par Sokar.',
+    description: 'Horaires des créneaux proposés par Suppernote.',
     required: false,
     group: 'voice',
     index: 2,
@@ -74,7 +74,7 @@ export const ONBOARDING_STEPS: ReadonlyArray<{
   {
     key: 'phone',
     title: 'Mise en service des appels',
-    description: 'Numéro Sokar et consignes de renvoi opérateur.',
+    description: 'Numéro Suppernote et consignes de renvoi opérateur.',
     required: false,
     group: 'voice',
     index: 5,
@@ -82,12 +82,12 @@ export const ONBOARDING_STEPS: ReadonlyArray<{
   {
     key: 'channels',
     title: 'Vos canaux de réservation',
-    description: 'Test des disponibilités avant la configuration de la page Sokar Connect.',
+    description: 'Test des disponibilités avant la configuration de la page Suppernote Connect.',
     required: false,
     group: 'voice',
     index: 6,
   },
-  // Sokar Connect group
+  // Suppernote Connect group
   {
     key: 'connect-identity',
     title: 'Votre page',
@@ -252,7 +252,7 @@ export type RestaurantLike = {
   firstCallAt?: Date | null;
   provisioningStatus?: string | null;
   onboardingTasks?: unknown;
-  // Sokar Connect fields
+  // Suppernote Connect fields
   slug?: string | null;
   description?: string | null;
   formattedAddress?: string | null;
@@ -387,7 +387,7 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     markCompleted(tasks, 'channels', now);
   }
 
-  // Auto-completion Sokar Connect
+  // Auto-completion Suppernote Connect
   const hasConnectLocation = Boolean(
     restaurant.formattedAddress &&
     restaurant.city &&
@@ -435,7 +435,7 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     }
   }
 
-  // Progression Sokar Connect group
+  // Progression Suppernote Connect group
   // Adresse et cuisine sont intégrées à l’éditeur ; leurs clés restent exposées pour compatibilité.
   const connectSteps = ONBOARDING_STEPS.filter(
     (step) => step.key === 'connect-identity' || step.key === 'connect-activation',

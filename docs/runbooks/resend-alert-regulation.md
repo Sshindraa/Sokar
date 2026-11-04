@@ -50,7 +50,7 @@ configurations : 30 admissions, espacement minimum de 150 ms, cle temporaire ret
 Les API staging et production repondaient HTTP 200 apres cette preparation.
 
 Sur autorisation specifique, une cle staging distincte a ete creee avec permission
-**Sending access**, uniquement pour `sokar.tech`. Secret de depot
+**Sending access**, uniquement pour `suppernote.com`. Secret de depot
 `RESEND_API_KEY_STAGING` et `.env` staging configures ; cle production et liste des
 destinataires de staging inchangees. La copie locale de transfert a ete supprimee.
 Un message technique sans donnee client vers l'adresse de test fournisseur

@@ -179,4 +179,4 @@ echo "  3. Renommer la base prod : docker exec ${CONTAINER} psql -U ${DB_USER} -
 echo "  4. Restaurer : bash scripts/database/restore-postgres-backup.sh /tmp/restore.dump sokar"
 echo "     (restore-postgres-backup.sh refuse 'sokar' — lever la garde avec SKIP_PROD_GUARD=1 en cas d'urgence P0)"
 echo "  5. Relancer : pm2 start sokar-api"
-echo "  6. Vérifier : curl -fsS https://api.sokar.tech/health"
+echo "  6. Vérifier : curl -fsS https://api.suppernote.com/health"

@@ -75,7 +75,7 @@ export function KnowledgeStep({ onComplete }: StepProps) {
       <StepHeader
         icon={Globe}
         title="Consignes & démo"
-        body="Donnez à Sokar la manière de parler qui correspond à votre restaurant."
+        body="Donnez à Suppernote la manière de parler qui correspond à votre restaurant."
       />
       <div className="grid max-w-6xl items-start gap-6 lg:grid-cols-2">
         <div className="min-w-0 space-y-5 rounded-[1.75rem] border border-border bg-card p-5 sm:p-6">

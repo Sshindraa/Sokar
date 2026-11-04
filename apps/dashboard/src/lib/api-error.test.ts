@@ -55,7 +55,7 @@ describe('describeApiError', () => {
       'Votre session a expiré. Reconnectez-vous pour continuer.',
     );
     expect(
-      describeApiError({ ...base, status: 403, message: 'Sokar operator access required' }),
+      describeApiError({ ...base, status: 403, message: 'Suppernote operator access required' }),
     ).toBe('Vous n’avez pas accès à cette fonction avec votre rôle.');
     expect(describeApiError({ ...base, status: 409, message: 'Erreur 409' })).toMatch(
       /n’est plus possible/,
