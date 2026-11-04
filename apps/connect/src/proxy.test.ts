@@ -50,6 +50,22 @@ function getCsp(response: ReturnType<typeof proxy>): string | null {
 }
 
 describe('proxy framing policy', () => {
+  it.each([
+    ['/restaurant', '/book', "'none'"],
+    ['/widget', '/gift-card', '*'],
+  ])(
+    'réécrit l’alias %s en conservant le suffixe, la requête et le CSP',
+    (prefix, suffix, framing) => {
+      const response = proxy(
+        makeRequest(`${prefix}/chez-suppernote-demo${suffix}?date=2026-11-04`),
+      );
+      expect(response.headers.get('x-middleware-rewrite')).toBe(
+        `https://suppernote.com${prefix}/chez-sokar-demo${suffix}?date=2026-11-04`,
+      );
+      expect(getCspFrameAncestors(response)).toBe(framing);
+    },
+  );
+
   it('denies framing by default', () => {
     const response = proxy(makeRequest('/restaurant/chez-sokar-demo'));
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
