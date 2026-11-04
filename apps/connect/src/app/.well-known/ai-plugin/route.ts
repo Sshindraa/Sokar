@@ -2,7 +2,7 @@
  * /.well-known/ai-plugin.json
  *
  * Standard émergent pour la discovery IA (similaire à ai-plugin.json
- * d'OpenAI plugins). Décrit les capabilities de Sokar pour les crawlers
+ * d'OpenAI plugins). Décrit les capabilities de Suppernote pour les crawlers
  * IA qui cherchent un manifeste structuré.
  *
  * Ce fichier est complémentaire du JSON-LD (qui est par-page) et du
@@ -15,18 +15,18 @@ import type { NextRequest } from 'next/server';
 
 import { publicApiUrl } from '@/lib/public-api-url';
 
-const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
+const SITE_URL = process.env.SITE_URL ?? 'https://suppernote.com';
 // Public API address only: `API_URL` is the internal one (127.0.0.1 in production).
 const API_URL = publicApiUrl();
 
 export async function GET(_req: NextRequest) {
   const manifest = {
     schema_version: '1.0',
-    name: 'Sokar',
+    name: 'Suppernote',
     description:
       'Réseau de restaurants réservables en France. Trouvez et réservez une table en ligne ou via votre assistant IA.',
     url: SITE_URL,
-    contact_email: 'contact@sokar.tech',
+    contact_email: 'contact@suppernote.com',
     capabilities: {
       // Web crawl : les pages /restaurant/[slug] sont publiquement crawlables
       // et contiennent du JSON-LD Schema.org Restaurant + ReserveAction.
@@ -65,12 +65,12 @@ export async function GET(_req: NextRequest) {
     // Comment un client final peut réserver
     user_flows: {
       // Flow 1 : l'IA trouve le resto via crawl et donne un lien (aucune config)
-      web: "L'utilisateur demande à son IA, qui trouve le restaurant sur Sokar et propose un lien de réservation pré-rempli. L'utilisateur clique et confirme sur la page.",
+      web: "L'utilisateur demande à son IA, qui trouve le restaurant sur Suppernote et propose un lien de réservation pré-rempli. L'utilisateur clique et confirme sur la page.",
       // Flow 2 : l'IA réserve directement via MCP (API key requise, pour clients MCP)
-      mcp: "L'utilisateur demande à son IA, qui réserve directement via le protocole MCP. Nécessite une API key Sokar (attribution par contact@sokar.tech). Aucune page web nécessaire.",
+      mcp: "L'utilisateur demande à son IA, qui réserve directement via le protocole MCP. Nécessite une API key Suppernote (attribution par contact@suppernote.com). Aucune page web nécessaire.",
       // Flow 3 : l'utilisateur va directement sur la page
       direct:
-        "L'utilisateur va sur sokar.tech/restaurant/[restaurant] et réserve via le formulaire en ligne.",
+        "L'utilisateur va sur suppernote.com/restaurant/[restaurant] et réserve via le formulaire en ligne.",
     },
   };
 

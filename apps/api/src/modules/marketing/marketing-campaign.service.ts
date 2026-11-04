@@ -606,8 +606,8 @@ function previewContext(
         name: normalizedName || 'Client de démonstration',
       },
       restaurant: { name: restaurantName || 'Votre restaurant' },
-      reservationLink: 'https://sokar.tech/book/preview?campaignPreview=1',
-      unsubscribeUrl: 'https://sokar.tech/marketing/unsubscribe?token=preview',
+      reservationLink: 'https://suppernote.com/book/preview?campaignPreview=1',
+      unsubscribeUrl: 'https://suppernote.com/marketing/unsubscribe?token=preview',
     },
     usedFallbackCustomer: !normalizedName,
   };

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildOutboundCallParams } from '../client';
 
 const ENV_KEYS = ['TELNYX_FROM_NUMBER', 'TELNYX_CONNECTION_ID'] as const;
-const WEBHOOK = 'https://api-staging.sokar.tech/voice/telnyx';
+const WEBHOOK = 'https://api-staging.suppernote.com/voice/telnyx';
 
 describe('buildOutboundCallParams', () => {
   const saved: Record<string, string | undefined> = {};

@@ -234,7 +234,7 @@ describe('confirmation e-mail after a web booking', () => {
 
 describe('confirmation e-mail content', () => {
   const base = {
-    restaurantName: 'Chez <Sokar>',
+    restaurantName: 'Chez <Suppernote>',
     date: 'mardi 27 octobre',
     time: '19:30',
     partySize: 2,
@@ -243,9 +243,9 @@ describe('confirmation e-mail content', () => {
   it('stays transactional and escapes the restaurant name', () => {
     const { html } = buildReservationConfirmationEmail(base);
 
-    expect(html).toContain('Chez &lt;Sokar&gt;');
+    expect(html).toContain('Chez &lt;Suppernote&gt;');
     expect(html).toContain(
-      'Vous avez réservé une table au restaurant <strong>Chez &lt;Sokar&gt;</strong>',
+      'Vous avez réservé une table au restaurant <strong>Chez &lt;Suppernote&gt;</strong>',
     );
     expect(html).toContain('à <strong>19:30</strong>');
     expect(html).toContain('pour <strong>2 personnes</strong>');
@@ -258,7 +258,9 @@ describe('confirmation e-mail content', () => {
       consentUrl: 'https://api.test/marketing/consent?token=t',
     });
 
-    expect(html).toContain('Recevoir les offres et actualités du restaurant Chez &lt;Sokar&gt;');
+    expect(html).toContain(
+      'Recevoir les offres et actualités du restaurant Chez &lt;Suppernote&gt;',
+    );
     expect(html).toContain('href="https://api.test/marketing/consent?token=t"');
   });
 

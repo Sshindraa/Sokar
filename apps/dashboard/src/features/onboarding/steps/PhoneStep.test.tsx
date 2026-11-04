@@ -68,7 +68,7 @@ describe('PhoneStep', () => {
     expect(onboardingMocks.updateTask).toHaveBeenCalledWith('activate');
   });
 
-  it('montre le code de renvoi selon le type de ligne, numéro Sokar déjà rempli', () => {
+  it('montre le code de renvoi selon le type de ligne, numéro Suppernote déjà rempli', () => {
     render(<PhoneStep onComplete={vi.fn()} />);
 
     expect(screen.getByText('**21*+33123456789#')).toBeInTheDocument();
@@ -239,7 +239,7 @@ describe('PhoneStep', () => {
   it('explique l’attente d’attribution sans afficher de code incomplet', () => {
     (onboardingMocks.state!.restaurant as Record<string, unknown>).phoneAssigned = false;
     render(<PhoneStep onComplete={vi.fn()} />);
-    expect(screen.getByText('Votre numéro Sokar est en préparation')).toBeInTheDocument();
+    expect(screen.getByText('Votre numéro Suppernote est en préparation')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copier le code' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'J’ai composé le code' })).toBeDisabled();
   });

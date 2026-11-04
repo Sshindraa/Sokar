@@ -407,7 +407,7 @@ export default function DemoSection() {
               <div className="h-8 w-8 rounded-full bg-pricing-accent/10 border border-pricing-accent/20 flex items-center justify-center shadow-inner">
                 <Image
                   src="/logo-nav.png"
-                  alt="Sokar AI"
+                  alt="Suppernote AI"
                   width={18}
                   height={18}
                   className="h-4.5 w-4.5"

@@ -139,7 +139,7 @@ describe('DashboardModeSwitcher : Companion', () => {
       </NextIntlClientProvider>,
     );
 
-    const nav = screen.getByRole('navigation', { name: 'Espaces Sokar' });
+    const nav = screen.getByRole('navigation', { name: 'Espaces Suppernote' });
     for (const item of Array.from(nav.children)) expect(item).toHaveClass('flex-1');
     fireEvent.click(screen.getByRole('button', { name: 'Choisir un plan de salle' }));
     expect(screen.getByRole('listbox', { name: 'Plans de salle' })).toBeInTheDocument();

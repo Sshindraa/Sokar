@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Page widget achat carte cadeau.
+ * Suppernote Connect — Page widget achat carte cadeau.
  *
  * URL : /widget/[slug]/gift-card?embedded=1&primary=0f172a&accent=f97316
  *

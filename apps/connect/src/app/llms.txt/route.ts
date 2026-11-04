@@ -15,16 +15,16 @@ import type { NextRequest } from 'next/server';
 
 import { publicApiUrl } from '@/lib/public-api-url';
 
-const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
+const SITE_URL = process.env.SITE_URL ?? 'https://suppernote.com';
 // Public API address only: `API_URL` is the internal one (127.0.0.1 in production).
 const API_URL = publicApiUrl();
 
 export async function GET(_req: NextRequest) {
-  const content = `# Sokar
+  const content = `# Suppernote
 
-> Sokar est un réseau de restaurants réservables en France. Chaque restaurant a une page web publique avec ses informations (adresse, horaires, cuisine, prix) et un système de réservation en ligne. Les assistants IA peuvent trouver ces restaurants et aider les utilisateurs à réserver.
+> Suppernote est un réseau de restaurants réservables en France. Chaque restaurant a une page web publique avec ses informations (adresse, horaires, cuisine, prix) et un système de réservation en ligne. Les assistants IA peuvent trouver ces restaurants et aider les utilisateurs à réserver.
 
-## Comment réserver via Sokar
+## Comment réserver via Suppernote
 
 ### Option 1 : Web crawl (aucune configuration requise)
 
@@ -40,11 +40,11 @@ ${SITE_URL}/book/{slug}?partySize={partySize}&date={date}&time={time}
 Exemple :
 ${SITE_URL}/book/chez-mario?partySize=4&date=2026-06-25&time=20:00
 
-L'utilisateur clique sur ce lien et complète le formulaire sur la page Sokar.
+L'utilisateur clique sur ce lien et complète le formulaire sur la page Suppernote.
 
 ### Option 2 : MCP Server (réservation directe dans la conversation)
 
-Sokar expose un serveur MCP (Model Context Protocol) qui permet aux clients
+Suppernote expose un serveur MCP (Model Context Protocol) qui permet aux clients
 MCP (Claude Desktop, Cursor, etc.) de rechercher et réserver directement,
 sans page web. L'authentification se fait par OAuth 2.0 ou clé API.
 
@@ -121,7 +121,7 @@ pour les crawlers qui préfèrent un format machine-readable.
 
 - Site : ${SITE_URL}
 - API : ${API_URL}
-- Email : contact@sokar.tech
+- Email : contact@suppernote.com
 `;
 
   return new Response(content, {

@@ -5,7 +5,7 @@
     "note": "English locale. Convention: you, never thou. See apps/dashboard/src/i18n/config.ts."
   },
   "common": {
-    "appName": "Sokar",
+    "appName": "Suppernote",
     "tagline": "AI voice assistant for your restaurant",
     "loading": "Loading…",
     "retry": "Retry",
@@ -32,7 +32,7 @@
     "events": "Events",
     "distribution": "Distribution",
     "usage": "Usage",
-    "margin": "Sokar margin",
+    "margin": "Suppernote margin",
     "reactivation": "Reactivation",
     "giftCards": "Gift cards",
     "giftCardPacks": "Gift packs",
@@ -46,20 +46,20 @@
     "expand": "Show navigation groups",
     "collapse": "Collapse navigation groups",
     "close": "Close",
-    "admin": "Sokar Admin",
+    "admin": "Suppernote Admin",
     "provisioning": "Pilot Provisioning",
     "settings": "Settings",
     "health": "Health"
   },
   "dashboard": {
-    "subdomain": "Sokar OS",
+    "subdomain": "Suppernote OS",
     "themeToggle": "Theme",
     "themeTooltipLight": "Switch to dark mode",
     "themeTooltipDark": "Switch to light mode"
   },
   "home": {
     "heroTitle": "The AI that takes your calls when you can't",
-    "heroSubtitle": "Sokar answers your customers 24/7, takes reservations, and logs every call. You run the dining room, Sokar handles the phone."
+    "heroSubtitle": "Suppernote answers your customers 24/7, takes reservations, and logs every call. You run the dining room, Suppernote handles the phone."
   },
   "pricing": {
     "title": "Simple pricing, no commitment",
@@ -70,7 +70,7 @@
     "description": "A floating button your customers add in one click. No installation, no password."
   },
   "onboarding": {
-    "title": "Let's set up Sokar together",
+    "title": "Let's set up Suppernote together",
     "subtitle": "In a few steps, your assistant will be ready to take your calls."
   },
   "errors": {
@@ -80,7 +80,7 @@
   },
   "companion": {
     "title": "Companion",
-    "greeting": "I am Sokar's AI assistant. I read your restaurant's figures, with no customer data.",
+    "greeting": "I am Suppernote's AI assistant. I read your restaurant's figures, with no customer data.",
     "suggestions": {
       "week": "How do the next 7 days look?",
       "noShows": "Where do my no-shows stand?",
@@ -124,7 +124,7 @@
   "languageSwitcher": {
     "label": "Language",
     "settingsTitle": "Display language",
-    "settingsDescription": "Choose the language used in your Sokar workspace.",
+    "settingsDescription": "Choose the language used in your Suppernote workspace.",
     "current": "Current language: {label}",
     "comingSoon": "Coming soon",
     "comingSoonHint": "More languages will be added gradually."

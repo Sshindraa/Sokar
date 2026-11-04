@@ -29,7 +29,7 @@ describe.skipIf(!enabled)('personal modification on PostgreSQL', () => {
     vi.stubEnv('RESERVATION_SELF_CANCELLATION_ENABLED', 'true');
     vi.stubEnv('RESERVATION_SELF_MODIFICATION_ENABLED', 'true');
     vi.stubEnv('RESERVATION_MANAGEMENT_SECRET', randomBytes(32).toString('hex'));
-    vi.stubEnv('DASHBOARD_URL', 'https://sokar.tech');
+    vi.stubEnv('DASHBOARD_URL', 'https://suppernote.com');
     const restaurant = await db.restaurant.create({
       data: {
         name: 'Local modification test',

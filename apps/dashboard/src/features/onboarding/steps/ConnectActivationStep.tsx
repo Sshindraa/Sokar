@@ -28,7 +28,7 @@ import { CLIPBOARD_RESET_DELAY_MS } from '@/constants/ui';
 const CONNECT_HOST =
   process.env.NODE_ENV === 'development'
     ? 'http://localhost:4002'
-    : (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://sokar.tech');
+    : (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://suppernote.com');
 
 const LEAD_TIME_OPTIONS = [
   { value: 0, label: 'Aucun' },

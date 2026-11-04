@@ -24,7 +24,7 @@ it('enregistre avant la démo, invalide après ajustement et complète seulement
   const next = screen.getByRole('button', { name: 'Continuer' });
   expect(next).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Calme' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Écouter Sokar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Écouter Suppernote' }));
   await waitFor(() => expect(next).toBeEnabled());
   expect(mocks.patch).toHaveBeenCalledWith(
     'restaurants/restaurant-1/personality',
@@ -36,7 +36,7 @@ it('enregistre avant la démo, invalide après ajustement et complète seulement
   expect(mocks.updateTask).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Plus chaleureux' }));
   expect(next).toBeDisabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Écouter Sokar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Écouter Suppernote' }));
   await waitFor(() => expect(next).toBeEnabled());
   fireEvent.click(next);
   await waitFor(() => expect(complete).toHaveBeenCalledWith('phone'));
@@ -45,7 +45,7 @@ it('enregistre avant la démo, invalide après ajustement et complète seulement
 it('affiche une erreur et ne génère pas la démo si la sauvegarde échoue', async () => {
   mocks.patch.mockRejectedValue(new Error('Enregistrement indisponible'));
   render(<KnowledgeStep onComplete={vi.fn()} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Écouter Sokar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Écouter Suppernote' }));
   await screen.findByText('Enregistrement indisponible');
   expect(mocks.fetch).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: 'Continuer' })).toBeDisabled();
@@ -54,7 +54,7 @@ it('affiche une erreur et ne génère pas la démo si la sauvegarde échoue', as
 it('explique pourquoi « Continuer » est grisé, puis propose un ajustement après l’écoute', async () => {
   render(<KnowledgeStep onComplete={vi.fn()} />);
   expect(screen.getByText(/Écoutez la démonstration/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Écouter Sokar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Écouter Suppernote' }));
   await screen.findByText('Un ajustement ?');
   expect(screen.queryByText(/Écoutez la démonstration/)).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Parfait' })).not.toBeInTheDocument();

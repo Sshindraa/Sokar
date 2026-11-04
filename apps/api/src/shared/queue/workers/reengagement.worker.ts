@@ -78,7 +78,7 @@ export async function processReengagement(
     action,
     restaurantName: restaurant.name,
     sokarNumber: restaurant.phoneNumber,
-    dashboardUrl: process.env.DASHBOARD_URL ?? 'https://sokar.tech',
+    dashboardUrl: process.env.DASHBOARD_URL ?? 'https://suppernote.com',
   });
   if (!email) return 'already-complete';
 

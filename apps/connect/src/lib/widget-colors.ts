@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Widget color + slug helpers.
+ * Suppernote Connect — Widget color + slug helpers.
  *
  * Validation des couleurs et slugs passés en query param pour les pages widget embed.
  */

@@ -3,7 +3,7 @@
  *
  * Flow :
  *   1. Vérifier que le PaymentIntent Stripe est succeeded
- *   2. Calculer la commission Sokar = amount * restaurant.giftCardCommissionRate
+ *   2. Calculer la commission Suppernote = amount * restaurant.giftCardCommissionRate
  *   3. Créer la GiftCard avec stripePaymentIntentId, stripePaymentStatus, sokarCommissionAmount
  *   4. Déclencher les notifications (email expéditeur, email destinataire, WhatsApp, notif restaurateur)
  */

@@ -25,7 +25,7 @@ describe('notifyDemoRequest : statut de notification', () => {
   beforeEach(() => {
     sendMock.mockClear();
     vi.stubEnv('RESEND_API_KEY', 'unit-test-placeholder');
-    vi.stubEnv('EMAIL_FROM', 'noreply@sokar.tech');
+    vi.stubEnv('EMAIL_FROM', 'noreply@suppernote.com');
     vi.stubEnv('EMAIL_TEST_ALLOWLIST', '');
   });
 
@@ -34,8 +34,8 @@ describe('notifyDemoRequest : statut de notification', () => {
   });
 
   it('retourne true quand le destinataire autorisé accepte l’envoi', async () => {
-    vi.stubEnv('DEMO_REQUEST_NOTIFY_TO', 'hamza@sokar.tech');
-    vi.stubEnv('EMAIL_TEST_ALLOWLIST', 'hamza@sokar.tech');
+    vi.stubEnv('DEMO_REQUEST_NOTIFY_TO', 'hamza@suppernote.com');
+    vi.stubEnv('EMAIL_TEST_ALLOWLIST', 'hamza@suppernote.com');
 
     await expect(notifyDemoRequest(RECORD)).resolves.toBe(true);
     expect(sendMock).toHaveBeenCalledTimes(1);
@@ -43,7 +43,7 @@ describe('notifyDemoRequest : statut de notification', () => {
 
   it('ne transmet pas les coordonnées ni le contenu de la demande au fournisseur e-mail', async () => {
     vi.stubEnv('DEMO_REQUEST_NOTIFY_TO', 'ops@example.test');
-    vi.stubEnv('DASHBOARD_URL', 'https://staging.sokar.tech');
+    vi.stubEnv('DASHBOARD_URL', 'https://staging.suppernote.com');
     const record = {
       ...RECORD,
       contactPhone: '+33****0000',
@@ -53,11 +53,11 @@ describe('notifyDemoRequest : statut de notification', () => {
 
     await expect(notifyDemoRequest(record)).resolves.toBe(true);
     expect(sendMock).toHaveBeenCalledWith({
-      from: 'Sokar <noreply@sokar.tech>',
-      replyTo: 'hello@sokar.tech',
+      from: 'Suppernote <noreply@suppernote.com>',
+      replyTo: 'hello@suppernote.com',
       to: 'ops@example.test',
-      subject: 'Nouvelle demande de démonstration Sokar',
-      html: expect.stringContaining('https://staging.sokar.tech/admin/demo-requests'),
+      subject: 'Nouvelle demande de démonstration Suppernote',
+      html: expect.stringContaining('https://staging.suppernote.com/admin/demo-requests'),
     });
     const payload = JSON.stringify(sendMock.mock.calls[0][0]);
     expect(payload).toContain(RECORD.id);
@@ -74,26 +74,26 @@ describe('notifyDemoRequest : statut de notification', () => {
 
   it('échappe la référence et ne place ni identifiant ni jeton d’accès dans le lien', async () => {
     vi.stubEnv('DEMO_REQUEST_NOTIFY_TO', 'ops@example.test');
-    vi.stubEnv('DASHBOARD_URL', 'https://staging.sokar.tech/');
+    vi.stubEnv('DASHBOARD_URL', 'https://staging.suppernote.com/');
 
     await expect(notifyDemoRequest({ id: '<script>test</script>' })).resolves.toBe(true);
     const payload = sendMock.mock.calls[0][0] as { html: string };
     expect(payload.html).toContain('&lt;script&gt;test&lt;/script&gt;');
     expect(payload.html).not.toContain('<script>');
-    expect(payload.html).toContain('href="https://staging.sokar.tech/admin/demo-requests"');
+    expect(payload.html).toContain('href="https://staging.suppernote.com/admin/demo-requests"');
     expect(payload.html).not.toMatch(/\?|token=|mailto:|tel:/);
   });
 
   it('retourne false sans appeler Resend quand le destinataire est bloqué', async () => {
     vi.stubEnv('DEMO_REQUEST_NOTIFY_TO', 'client@example.test');
-    vi.stubEnv('EMAIL_TEST_ALLOWLIST', 'hamza@sokar.tech');
+    vi.stubEnv('EMAIL_TEST_ALLOWLIST', 'hamza@suppernote.com');
 
     await expect(notifyDemoRequest(RECORD)).resolves.toBe(false);
     expect(sendMock).not.toHaveBeenCalled();
   });
 
   it('retourne false quand un des destinataires échoue, en tentant quand même les autres', async () => {
-    vi.stubEnv('DEMO_REQUEST_NOTIFY_TO', 'a@sokar.tech,b@sokar.tech');
+    vi.stubEnv('DEMO_REQUEST_NOTIFY_TO', 'a@suppernote.com,b@suppernote.com');
     sendMock.mockResolvedValueOnce({
       data: null,
       error: { name: 'application_error', message: 'provider unavailable' },
@@ -105,7 +105,7 @@ describe('notifyDemoRequest : statut de notification', () => {
   });
 
   it('retourne false quand un destinataire lève une exception, sans interrompre les suivants', async () => {
-    vi.stubEnv('DEMO_REQUEST_NOTIFY_TO', 'a@sokar.tech,b@sokar.tech');
+    vi.stubEnv('DEMO_REQUEST_NOTIFY_TO', 'a@suppernote.com,b@suppernote.com');
     sendMock.mockRejectedValueOnce(new Error('network down'));
     sendMock.mockResolvedValueOnce({ data: { id: 'msg_test_3' }, error: null });
 

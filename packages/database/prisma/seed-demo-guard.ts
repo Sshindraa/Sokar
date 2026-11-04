@@ -1,5 +1,5 @@
 /**
- * Decides whether `prisma/seed.ts` may create the extra Sokar Connect demo
+ * Decides whether `prisma/seed.ts` may create the extra Suppernote Connect demo
  * listings (`chez-sokar-*`, excluding `chez-sokar-demo`).
  *
  * Those listings exist so the city pages (`/restaurants/:city`, which require at

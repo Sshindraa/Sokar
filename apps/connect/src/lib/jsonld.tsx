@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — JSON-LD helpers.
+ * Suppernote Connect — JSON-LD helpers.
  *
  * Wrapper pour injecter le JSON-LD Restaurant dans le <head> des pages publiques.
  * Cf. spec connect-v1.1 §8.

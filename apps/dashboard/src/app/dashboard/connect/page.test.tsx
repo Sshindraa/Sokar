@@ -23,7 +23,7 @@ const SETTINGS = {
   connectPublished: false,
   connectAgentic: false,
   connectPublishedAt: null,
-  pageUrl: 'https://sokar.tech/restaurant/le-bistrot',
+  pageUrl: 'https://suppernote.com/restaurant/le-bistrot',
   customDomain: null,
   customDomainStatus: null,
 };
@@ -58,7 +58,7 @@ describe('ConnectDashboardPage', () => {
     expect(screen.queryByRole('link', { name: /KPIs pilote/ })).not.toBeInTheDocument();
   });
 
-  it('montre le lien des KPIs du pilote à l’équipe Sokar', async () => {
+  it('montre le lien des KPIs du pilote à l’équipe Suppernote', async () => {
     loadSucceeds(true);
     render(<ConnectDashboardPage />);
     expect(await screen.findByRole('link', { name: /KPIs pilote/ })).toHaveAttribute(

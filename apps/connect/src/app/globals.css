@@ -9,14 +9,14 @@
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
-    --primary: 24 10% 10%; /* ink — Sokar primary */
+    --primary: 24 10% 10%; /* ink — Suppernote primary */
     --primary-foreground: 0 0% 100%;
 
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
 
     --border: 214.3 31.8% 91.4%;
-    --ring: 207 92% 52%; /* blue — Sokar accent */
+    --ring: 207 92% 52%; /* blue — Suppernote accent */
 
     /* Widget brand tokens — overridable via inline style for white-label embeds.
        Hex conservé volontairement : ces tokens sont consommés tels quels dans
@@ -25,7 +25,7 @@
     /* stylelint-disable-next-line color-no-hex -- token white-label overridable par hex */
     --widget-primary: #0f172a;
     /* stylelint-disable-next-line color-no-hex -- token white-label overridable par hex */
-    --widget-accent: #0284c7; /* blue Sokar */
+    --widget-accent: #0284c7; /* blue Suppernote */
 
     /* Reservation theme — aligné avec apps/dashboard widget.
        Utilisé par la page gift-card pour matcher le design du widget résa. */

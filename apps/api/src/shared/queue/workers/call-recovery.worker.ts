@@ -115,8 +115,8 @@ export async function processCallRecoveryJob(
 
   const opening = data.customerName ? `Bonjour ${data.customerName.split(' ')[0]}, ` : 'Bonjour, ';
 
-  // Lien de réservation en ligne (Sokar Connect) si le slug est disponible.
-  const siteUrl = process.env.SITE_URL ?? 'https://sokar.tech';
+  // Lien de réservation en ligne (Suppernote Connect) si le slug est disponible.
+  const siteUrl = process.env.SITE_URL ?? 'https://suppernote.com';
   const bookingUrl =
     data.restaurantSlug != null ? `${siteUrl}/restaurant/${data.restaurantSlug}/book` : null;
 

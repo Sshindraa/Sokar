@@ -6415,8 +6415,8 @@ export function FloorPlanCanvas({
       title="Confirmer les deux changements ?"
       description={
         delayImpact?.alternativeTable && delayImpact.waitingListEntry
-          ? `${delayImpact.waitingListEntry.customerName} prendra la table libérée et ${reportedDelayReservation?.customerName || 'la réservation retardée'} passera sur ${delayImpact.alternativeTable.name}. Sokar vérifiera encore les disponibilités. Aucun message n’est envoyé automatiquement.`
-          : 'Sokar vérifiera encore les disponibilités avant application. Aucun message n’est envoyé automatiquement.'
+          ? `${delayImpact.waitingListEntry.customerName} prendra la table libérée et ${reportedDelayReservation?.customerName || 'la réservation retardée'} passera sur ${delayImpact.alternativeTable.name}. Suppernote vérifiera encore les disponibilités. Aucun message n’est envoyé automatiquement.`
+          : 'Suppernote vérifiera encore les disponibilités avant application. Aucun message n’est envoyé automatiquement.'
       }
       confirmLabel={applyingDelayRecovery ? 'Application…' : 'Confirmer les changements'}
       cancelLabel="Annuler"
@@ -6440,7 +6440,7 @@ export function FloorPlanCanvas({
       description={
         appliedDelayRecovery
           ? `${appliedDelayRecovery.delayedCustomerName} retrouvera ${appliedDelayRecovery.delayedOriginalTableName} et son horaire initial. La réservation créée pour ${appliedDelayRecovery.waitingCustomerName} sera annulée et le groupe retournera en liste d’attente. Les communications déjà effectuées ne peuvent pas être annulées.`
-          : 'Sokar restaurera le plan initial seulement si aucune donnée n’a changé depuis son application.'
+          : 'Suppernote restaurera le plan initial seulement si aucune donnée n’a changé depuis son application.'
       }
       confirmLabel={revertingDelayRecovery ? 'Annulation…' : 'Annuler ce plan'}
       cancelLabel="Conserver le plan"

@@ -63,7 +63,7 @@ function ChannelCard({
   track: ChannelTrack;
   progress: TrackProgress;
   onOpen: (key: OnboardingTaskKey) => void;
-  /** Téléphone : le numéro Sokar n'est pas encore attribué ; consignes et démo restent faisables. */
+  /** Téléphone : le numéro Suppernote n'est pas encore attribué ; consignes et démo restent faisables. */
   awaitingNumber?: boolean;
 }) {
   const channel = CHANNELS[track];
@@ -86,7 +86,7 @@ function ChannelCard({
         >
           {progress.done && <Check size={12} aria-hidden="true" />}
           {awaitingNumber && <Clock size={12} aria-hidden="true" className="shrink-0" />}
-          {awaitingNumber ? 'Numéro Sokar en cours d’attribution' : statusLabel(progress)}
+          {awaitingNumber ? 'Numéro Suppernote en cours d’attribution' : statusLabel(progress)}
         </span>
       </div>
       <div>
@@ -127,7 +127,7 @@ export function OnboardingChannels({
 }: {
   steps: OnboardingStep[];
   readiness?: ReservationReadiness;
-  /** Le restaurant a-t-il son numéro Sokar ? Sans lui, l'étape Appels ne peut pas se terminer. */
+  /** Le restaurant a-t-il son numéro Suppernote ? Sans lui, l'étape Appels ne peut pas se terminer. */
   phoneAssigned: boolean;
   /** Message d'accueil, par exemple la confirmation d'un paiement au retour de Stripe. */
   notice?: string;
@@ -215,7 +215,7 @@ export function OnboardingChannels({
 
       <p role="status" className="text-xs text-muted-foreground">
         {awaitingNumber
-          ? 'Votre numéro Sokar est en cours d’attribution : votre espace s’ouvrira une fois ce numéro attribué et vos deux canaux prêts.'
+          ? 'Votre numéro Suppernote est en cours d’attribution : votre espace s’ouvrira une fois ce numéro attribué et vos deux canaux prêts.'
           : remaining === 0
             ? 'Vos canaux sont prêts.'
             : remaining === 1

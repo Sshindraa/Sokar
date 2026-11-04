@@ -142,7 +142,7 @@ espacement minimum 150 ms, clé temporaire supprimée, aucun appel Resend.
 Mise à jour après livraison : PR #463 fusionnée, commit `e5eb3520` livré en staging
 puis production après CI et smoke tests verts. API et workers en ligne, santé
 base/Redis/files OK. Clé staging distincte créée sur confirmation spécifique,
-Sending access limité à `sokar.tech`, secret `RESEND_API_KEY_STAGING` et `.env`
+Sending access limité à `suppernote.com`, secret `RESEND_API_KEY_STAGING` et `.env`
 staging configurés ; clé production et allowlist inchangées. Le nouvel artefact
 staging a groupé deux alertes dans un e-mail accepté vers l'adresse de test
 fournisseur, puis supprimé leur répétition. Admission production vérifiée sans
@@ -190,8 +190,8 @@ définissent que des budgets de cost-watch opérateur.
 
 Le dashboard restaurant et l'espace opérateur ont des URLs et des layouts distincts :
 
-- `https://sokar.tech/dashboard` pour un établissement ;
-- `https://sokar.tech/admin` pour l'équipe Sokar.
+- `https://suppernote.com/dashboard` pour un établissement ;
+- `https://suppernote.com/admin` pour l'équipe Sokar.
 
 Les pages `/admin/*` et les routes API `/admin/*` exigent un identifiant Clerk présent dans
 `SOKAR_OPERATOR_USER_IDS`, une liste CSV injectée uniquement dans l'environnement de l'API par
@@ -231,7 +231,7 @@ staging contrôlé. Elles ne doivent jamais être committées ni exposées au da
 | `MARKETING_SENDS_ENABLED`        | `false` par défaut ; seul `true` autorise les routes et le worker à appeler un fournisseur.                                                                                                                                                                                                                                                                                                                                       |
 | `MARKETING_WHATSAPP_ENABLED`     | `false` par défaut ; doit rester `false` tant que le template et le compte WhatsApp ne sont pas qualifiés.                                                                                                                                                                                                                                                                                                                        |
 | `MARKETING_RECIPIENT_ALLOWLIST`  | Vide par défaut (aucune restriction). Adresses e-mail ou numéros séparés par des virgules : seuls ces contacts reçoivent un message marketing (tous restaurants), les autres sont annulés `NOT_IN_TEST_ALLOWLIST`. Ne touche pas les e-mails transactionnels, contrairement à `EMAIL_TEST_ALLOWLIST`. Voir `marketing-email-pilot.md`.                                                                                            |
-| `MARKETING_EMAIL_FROM`           | Expéditeur dédié aux seuls e-mails marketing, par exemple `bonjour@news.sokar.tech` (adresse seule : le nom affiché est celui du restaurant). Absent = aucun envoi marketing (`MARKETING_EMAIL_FROM_MISSING`, la campagne reste prête) ; Adresse seule, validée au démarrage ; jamais de repli sur `EMAIL_FROM`.                                                                                                                  |
+| `MARKETING_EMAIL_FROM`           | Expéditeur dédié aux seuls e-mails marketing, par exemple `bonjour@news.suppernote.com` (adresse seule : le nom affiché est celui du restaurant). Absent = aucun envoi marketing (`MARKETING_EMAIL_FROM_MISSING`, la campagne reste prête) ; Adresse seule, validée au démarrage ; jamais de repli sur `EMAIL_FROM`.                                                                                                              |
 | `MARKETING_EMAIL_DAILY_BUDGET`   | Budget quotidien global des e-mails marketing, toute la plateforme (jour UTC), `40` par défaut. Entier ≥ 0, validé au démarrage. Une campagne dont l'audience dépasse le reste du jour est refusée au lancement (envoi immédiat ou programmation). Garde le quota Resend Free, partagé avec les transactionnels, hors de portée du marketing. Voir `marketing-email-pilot.md` §3.                                                 |
 | `RESEND_WEBHOOK_SECRET`          | Secret de signature (Svix) du webhook Resend `POST /marketing/webhooks/resend` ; absent = `503`. À poser à la main dans l'`.env` du VPS (aucun workflow ne le propage).                                                                                                                                                                                                                                                           |
 | `WHATSAPP_ENABLED`               | `false` par defaut. Rappel WhatsApp J-1 uniquement pour WEB avec accord et fournisseur qualifie (`WHATSAPP_PROVIDER`). Aucun rappel SMS, y compris en secours.                                                                                                                                                                                                                                                                    |
@@ -898,7 +898,7 @@ propriétaire le 30/09/2026, car les nombres de mots ne suffisaient pas à compr
 `VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS`), et `GET /api/internal/voice/calls/:callId/report`
 (rapport d'appel JSON stocké, début de l'id accepté, mêmes restaurants que le dialogue). Jamais le
 numéro de l'appelant, le transcript brut, l'audio ni les champs d'enregistrement. Pour une session
-Claude : autoriser `api.sokar.tech` dans l'accès réseau de l'environnement et y poser la même
+Claude : autoriser `api.suppernote.com` dans l'accès réseau de l'environnement et y poser la même
 valeur en variable d'environnement `SOKAR_VOICE_READ_TOKEN`. Une session cloud ne peut pas ouvrir
 de SSH (port 22 sortant fermé) : cette lecture HTTPS est la voie prévue.
 
@@ -1120,11 +1120,11 @@ Chaque bloc se valide seul. Un bloc ne conditionne pas les autres.
 
 ### Bloc 1 : e-mail
 
-| Réglage                | Où le renseigner                        | Lu par         | Utilité                                                                    |
-| ---------------------- | --------------------------------------- | -------------- | -------------------------------------------------------------------------- |
-| `RESEND_API_KEY`       | secret `RESEND_API_KEY_STAGING`         | `shared/email` | Clé d'envoi Resend, dédiée à staging et limitée à l'envoi                  |
-| `EMAIL_FROM`           | variable `EMAIL_FROM_STAGING`           | `shared/email` | Expéditeur déjà vérifié : `noreply@sokar.tech` (production)                |
-| `EMAIL_TEST_ALLOWLIST` | variable `EMAIL_TEST_ALLOWLIST_STAGING` | `shared/email` | Seuls ces destinataires reçoivent un e-mail. Campagne : `hamza@sokar.tech` |
+| Réglage                | Où le renseigner                        | Lu par         | Utilité                                                                        |
+| ---------------------- | --------------------------------------- | -------------- | ------------------------------------------------------------------------------ |
+| `RESEND_API_KEY`       | secret `RESEND_API_KEY_STAGING`         | `shared/email` | Clé d'envoi Resend, dédiée à staging et limitée à l'envoi                      |
+| `EMAIL_FROM`           | variable `EMAIL_FROM_STAGING`           | `shared/email` | Expéditeur déjà vérifié : `noreply@suppernote.com` (production)                |
+| `EMAIL_TEST_ALLOWLIST` | variable `EMAIL_TEST_ALLOWLIST_STAGING` | `shared/email` | Seuls ces destinataires reçoivent un e-mail. Campagne : `hamza@suppernote.com` |
 
 Règles :
 
@@ -1142,12 +1142,12 @@ Règles :
 Hors `.env` (à vérifier avec l'équipe) : `ELEVENLABS_API_KEY` (transcription), une clé LLM
 (`CEREBRAS_API_KEY` ou `OPENROUTER_API_KEY`), et `VOICE_DISABLED=false`, réglage critique à décider.
 
-Côté Telnyx : l'application d'appel de staging a pour webhook `https://api-staging.sokar.tech/voice/telnyx`.
+Côté Telnyx : l'application d'appel de staging a pour webhook `https://api-staging.suppernote.com/voice/telnyx`.
 Le numéro de test est rattaché à cette application (provisioning, `assign-phone`). Ce numéro n'est jamais un
 numéro de production, ni le numéro public affiché sur le site.
 
 **État vérifié le 24/10/2026 :** le compte n'a qu'un numéro, rattaché à l'application de production
-`Sokar Voice` avec webhook `https://api.sokar.tech/voice/telnyx`. L'application `Sokar VOICE-01 staging`
+`Sokar Voice` avec webhook `https://api.suppernote.com/voice/telnyx`. L'application `Sokar VOICE-01 staging`
 existe avec le webhook staging, mais ses voies entrante et sortante sont désactivées et aucun numéro ne lui
 est affecté. La configuration de staging réutilise actuellement le numéro de production. Ne pas appeler ni
 activer un pilote staging avant d'avoir un numéro dédié, son rattachement à l'application staging, les voies
@@ -1159,7 +1159,7 @@ nécessaires activées et la configuration vérifiée de bout en bout.
 | ---------------------- | --------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------ |
 | `TELNYX_FROM_NUMBER`   | secret `TELNYX_FROM_NUMBER_STAGING`     | `shared/telnyx/client`              | Numéro émetteur de l'appel de test (format E.164)                                          |
 | `TELNYX_SMS_FROM`      | optionnel                               | `shared/telnyx/client`              | Expéditeur SMS (numéro du profil de messagerie ou `SOKAR`) ; défaut : `TELNYX_FROM_NUMBER` |
-| `EMAIL_REPLY_TO`       | optionnel                               | `shared/email`                      | Adresse de réponse des e-mails ; défaut : `hello@sokar.tech`                               |
+| `EMAIL_REPLY_TO`       | optionnel                               | `shared/email`                      | Adresse de réponse des e-mails ; défaut : `hello@suppernote.com`                           |
 | `TELNYX_CONNECTION_ID` | variable `TELNYX_CONNECTION_ID_STAGING` | `shared/telnyx/client`              | Application d'appel utilisée pour l'appel sortant (même que le bloc 2)                     |
 | `PUBLIC_API_URL`       | variable `PUBLIC_API_URL_STAGING`       | `admin/provisioning`, `restaurants` | Base des URL de webhook. Sans elle, le repli est la production                             |
 
@@ -1177,8 +1177,8 @@ de test ; à confirmer dans le portail.
 
 ### Vérifications
 
-- `GET https://api-staging.sokar.tech/health` : `telnyx` à `ok` (bloc 2).
-- Le bloc 1 se vérifie par un envoi de test vers `hamza@sokar.tech` uniquement.
+- `GET https://api-staging.suppernote.com/health` : `telnyx` à `ok` (bloc 2).
+- Le bloc 1 se vérifie par un envoi de test vers `hamza@suppernote.com` uniquement.
 - Le bloc 3 se vérifie par un appel de test réel, validé par le gérant (`validate-test-call`).
 
 ### Identité opérateur staging

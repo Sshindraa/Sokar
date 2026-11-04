@@ -163,7 +163,7 @@ function runSelfTest() {
     },
     {
       name: 'hôte distant sans opt-in → refusé',
-      env: { DATABASE_URL: 'postgresql://sokar:pw@db.sokar.tech:5432/sokar' },
+      env: { DATABASE_URL: 'postgresql://sokar:pw@db.suppernote.com:5432/sokar' },
       allowed: false,
       code: 'remote',
     },
@@ -176,7 +176,7 @@ function runSelfTest() {
     {
       name: 'NODE_ENV=production → refusé même avec opt-in',
       env: {
-        DATABASE_URL: 'postgresql://sokar:pw@db.sokar.tech:5432/sokar',
+        DATABASE_URL: 'postgresql://sokar:pw@db.suppernote.com:5432/sokar',
         NODE_ENV: 'production',
         [REMOTE_PUSH_OPT_IN]: REMOTE_PUSH_ACKNOWLEDGEMENT,
       },
@@ -186,7 +186,7 @@ function runSelfTest() {
     {
       name: 'opt-in exact → autorisé',
       env: {
-        DATABASE_URL: 'postgresql://sokar:pw@db.sokar.tech:5432/sokar',
+        DATABASE_URL: 'postgresql://sokar:pw@db.suppernote.com:5432/sokar',
         [REMOTE_PUSH_OPT_IN]: REMOTE_PUSH_ACKNOWLEDGEMENT,
       },
       allowed: true,
@@ -195,7 +195,7 @@ function runSelfTest() {
     {
       name: 'opt-in approximatif → refusé',
       env: {
-        DATABASE_URL: 'postgresql://sokar:pw@db.sokar.tech:5432/sokar',
+        DATABASE_URL: 'postgresql://sokar:pw@db.suppernote.com:5432/sokar',
         [REMOTE_PUSH_OPT_IN]: 'true',
       },
       allowed: false,

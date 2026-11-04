@@ -32,9 +32,9 @@ describe('FeatureLockCard', () => {
         }}
       />,
     );
-    expect(screen.getByRole('link', { name: 'hello@sokar.tech' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'hello@suppernote.com' })).toHaveAttribute(
       'href',
-      'mailto:hello@sokar.tech',
+      'mailto:hello@suppernote.com',
     );
     expect(screen.queryByRole('link', { name: 'Voir les formules' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();

@@ -117,7 +117,7 @@ function CreateRestaurantForm() {
         <div className="mb-8 flex flex-col items-center gap-3">
           <SokarLogo className="h-12 w-12 text-foreground" />
           <span className="text-xl font-bold tracking-tight text-foreground font-display">
-            Sokar
+            Suppernote
           </span>
         </div>
 
@@ -128,7 +128,7 @@ function CreateRestaurantForm() {
             </div>
             <h1 className="text-2xl font-bold tracking-tight">Créez votre restaurant</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              {'Donnez un nom à votre établissement pour configurer votre espace Sokar.'}
+              {'Donnez un nom à votre établissement pour configurer votre espace Suppernote.'}
             </p>
           </div>
 

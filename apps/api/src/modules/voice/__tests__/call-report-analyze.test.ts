@@ -147,6 +147,42 @@ function input(overrides: Partial<AnalyzeInput> = {}): AnalyzeInput {
 describe('analyzeCall', () => {
   const report = analyzeCall(input());
 
+  it.each(['IA', 'i a'])("exclut l'accueil avec %s avant la première réponse", (ia) => {
+    const data = input();
+    data.tracks.agent.segments.unshift([0, 0.9]);
+    data.transcripts.agent.words.unshift(
+      ...words([
+        ['bonjour', 0, 0.2],
+        ['votre', 0.2, 0.4],
+        ['assistante', 0.4, 0.6],
+        [ia, 0.6, 0.9],
+      ]),
+    );
+    const result = analyzeCall(data);
+    expect(result.mouth.filter((item) => item.turnId === 't1')).toEqual([]);
+    expect(result.mouth).toContainEqual(
+      expect.objectContaining({ kind: 'isolated_letters', turnId: 't2' }),
+    );
+    expect(result.summary.issues.filter((item) => item.turnId === 't1')).toEqual([]);
+  });
+
+  it.each([false, true])('conserve une faute au début de la réponse (accueil : %s)', (greeting) => {
+    const data = input();
+    // Le premier mot est absent de la transcription, mais son énergie précède « plaisir ».
+    data.transcripts.agent.words.shift();
+    if (greeting) {
+      data.tracks.agent.segments.unshift([0, 0.9]);
+      data.transcripts.agent.words.unshift(...words([['bonjour votre assistante i a', 0, 0.9]]));
+    }
+    const result = analyzeCall(data);
+    expect(result.mouth).toContainEqual(expect.objectContaining({ turnId: 't1', liveStart: 0 }));
+    expect(
+      result.mouth
+        .filter((item) => item.turnId === 't1')
+        .every((item) => !item.engines.nova?.includes('assistante')),
+    ).toBe(true);
+  });
+
   it('mesure le délai de réponse sur les pistes, pas sur les journaux', () => {
     expect(report.timeline[0].responseDelaySec).toBeCloseTo(0.8, 1);
     expect(report.timeline[1].responseDelaySec).toBeCloseTo(3.5, 1);

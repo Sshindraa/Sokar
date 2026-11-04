@@ -23,7 +23,13 @@ export default function PricingPage() {
             href="/"
             className="flex items-center gap-1.5 md:hidden pl-1 hover:opacity-80 transition-opacity"
           >
-            <Image src="/logo-nav.png" alt="Sokar" width={28} height={28} className="h-7 w-7" />
+            <Image
+              src="/logo-nav.png"
+              alt="Suppernote"
+              width={28}
+              height={28}
+              className="h-7 w-7"
+            />
           </Link>
 
           <div className="hidden items-center gap-1 md:flex">
@@ -63,13 +69,13 @@ export default function PricingPage() {
       {/* ---- HERO ---- */}
       <section className="pricing-hero">
         <div className="mx-auto max-w-3xl px-5 text-center">
-          <p className="mb-4 text-sm font-semibold text-pricing-accent">Les formules Sokar</p>
+          <p className="mb-4 text-sm font-semibold text-pricing-accent">Les formules Suppernote</p>
           <h1 className="text-4xl font-semibold leading-tight md:text-6xl">
             L’accueil commence avant le premier couvert.
           </h1>
           <p className="mt-5 text-lg leading-relaxed text-muted-foreground">
             Le téléphone sonne pendant le service. Une réservation arrive du web ou se prend en
-            salle. Sokar les réunit dans votre planning pour que l’équipe retrouve les bonnes
+            salle. Suppernote les réunit dans votre planning pour que l’équipe retrouve les bonnes
             informations au bon moment.
           </p>
         </div>
@@ -98,7 +104,7 @@ export default function PricingPage() {
 
       {/* ---- FOOTER ---- */}
       <footer className="border-t border-border py-6 text-center text-sm text-muted-foreground">
-        &copy; {new Date().getFullYear()} Sokar. Tous droits réservés.
+        &copy; {new Date().getFullYear()} Suppernote. Tous droits réservés.
       </footer>
     </div>
   );

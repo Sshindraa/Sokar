@@ -57,7 +57,7 @@ describe('Pilotage — situations de travail', () => {
     expect(screen.queryByText(/avec une erreur enregistrée/)).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('Copilot opérationnel')).not.toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Activité Sokar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Activité Suppernote' })).not.toBeInTheDocument();
   });
 
   it('les vrais points à vérifier se déplient sans occuper l’accueil', async () => {

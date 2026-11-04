@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — lib/utils.ts
+ * Suppernote Connect — lib/utils.ts
  * Helper `cn()` pour composer les classNames (cf. AGENTS.md "Shadcn UI from
  * @/components/ui/*; class composition via `cn()`").
  */

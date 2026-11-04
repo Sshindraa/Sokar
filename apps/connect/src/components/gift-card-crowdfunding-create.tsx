@@ -2,13 +2,13 @@
 import { crowdfundingContributionUrl } from './gift-card/shared';
 
 /**
- * Sokar Connect — GiftCardCrowdfundingCreate.
+ * Suppernote Connect — GiftCardCrowdfundingCreate.
  *
  * Formulaire de création d'une cagnotte pour carte cadeau.
  * Le créateur définit : titre, occasion, destinataire, date butoir,
  * montant cible (optionnel), message.
  *
- * Design aligné avec le widget de réservation Sokar.
+ * Design aligné avec le widget de réservation Suppernote.
  */
 
 import { useState, type CSSProperties } from 'react';

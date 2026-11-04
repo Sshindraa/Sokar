@@ -24,7 +24,7 @@ function makeRequest(
     search?: Record<string, string>;
   } = {},
 ): Parameters<typeof proxy>[0] {
-  const origin = options.host ? `https://${options.host}` : 'https://sokar.tech';
+  const origin = options.host ? `https://${options.host}` : 'https://suppernote.com';
   const url = new URL(pathname, origin);
   if (options.preview) url.searchParams.set('preview', options.preview);
   Object.entries(options.search ?? {}).forEach(([key, value]) => url.searchParams.set(key, value));
@@ -50,6 +50,22 @@ function getCsp(response: ReturnType<typeof proxy>): string | null {
 }
 
 describe('proxy framing policy', () => {
+  it.each([
+    ['/restaurant', '/book', "'none'"],
+    ['/widget', '/gift-card', '*'],
+  ])(
+    'réécrit l’alias %s en conservant le suffixe, la requête et le CSP',
+    (prefix, suffix, framing) => {
+      const response = proxy(
+        makeRequest(`${prefix}/chez-suppernote-demo${suffix}?date=2026-11-04`),
+      );
+      expect(response.headers.get('x-middleware-rewrite')).toBe(
+        `http://suppernote.com${prefix}/chez-sokar-demo${suffix}?date=2026-11-04`,
+      );
+      expect(getCspFrameAncestors(response)).toBe(framing);
+    },
+  );
+
   it('denies framing by default', () => {
     const response = proxy(makeRequest('/restaurant/chez-sokar-demo'));
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
@@ -124,7 +140,7 @@ describe('proxy framing policy', () => {
   });
 });
 
-describe('proxy subdomain routing (*.sokar.tech)', () => {
+describe('proxy subdomain routing (*.suppernote.com)', () => {
   // Le custom domain flow nécessite API_URL pour déclencher le rewrite.
   let originalApiUrl: string | undefined;
   beforeAll(() => {
@@ -136,22 +152,22 @@ describe('proxy subdomain routing (*.sokar.tech)', () => {
     else process.env.API_URL = originalApiUrl;
   });
 
-  it('rewrites chezmario.sokar.tech to /restaurant/chezmario', () => {
-    const response = proxy(makeRequest('/', { host: 'chezmario.sokar.tech' }));
+  it('rewrites chezmario.suppernote.com to /restaurant/chezmario', () => {
+    const response = proxy(makeRequest('/', { host: 'chezmario.suppernote.com' }));
     // NextResponse.rewrite returns a response whose .headers includes the rewritten URL
     // in the `x-middleware-rewrite` header (Next.js internal).
     expect(response.headers.get('x-middleware-rewrite')).toBe(
-      'http://chezmario.sokar.tech/restaurant/chezmario',
+      'http://chezmario.suppernote.com/restaurant/chezmario',
     );
   });
 
-  it('does not rewrite www.sokar.tech (primary host)', () => {
-    const response = proxy(makeRequest('/', { host: 'www.sokar.tech' }));
+  it('does not rewrite www.suppernote.com (primary host)', () => {
+    const response = proxy(makeRequest('/', { host: 'www.suppernote.com' }));
     expect(response.headers.get('x-middleware-rewrite')).toBeNull();
   });
 
-  it('does not rewrite sokar.tech (primary host)', () => {
-    const response = proxy(makeRequest('/', { host: 'sokar.tech' }));
+  it('does not rewrite suppernote.com (primary host)', () => {
+    const response = proxy(makeRequest('/', { host: 'suppernote.com' }));
     expect(response.headers.get('x-middleware-rewrite')).toBeNull();
   });
 
@@ -162,10 +178,10 @@ describe('proxy subdomain routing (*.sokar.tech)', () => {
     expect(rewrite).toContain('host=reserve.chezmario.fr');
   });
 
-  it('does not rewrite to /restaurant/ when slug is empty (host === .sokar.tech)', () => {
-    // host = ".sokar.tech" → slug would be empty → no subdomain rewrite.
+  it('does not rewrite to /restaurant/ when slug is empty (host === .suppernote.com)', () => {
+    // host = ".suppernote.com" → slug would be empty → no subdomain rewrite.
     // Falls through to custom-domain flow (not a /restaurant/ rewrite).
-    const response = proxy(makeRequest('/', { host: '.sokar.tech' }));
+    const response = proxy(makeRequest('/', { host: '.suppernote.com' }));
     const rewrite = response.headers.get('x-middleware-rewrite');
     // Soit pas de rewrite, soit un rewrite vers /custom-domain (jamais /restaurant/).
     if (rewrite) {
@@ -173,26 +189,26 @@ describe('proxy subdomain routing (*.sokar.tech)', () => {
     }
   });
 
-  it('rewrites multi-dot subdomain foo.bar.sokar.tech to /restaurant/foo.bar', () => {
-    // Le slug est tout ce qui précède .sokar.tech, y compris les dots internes.
-    // foo.bar.sokar.tech → slug = "foo.bar" → /restaurant/foo.bar
+  it('rewrites multi-dot subdomain foo.bar.suppernote.com to /restaurant/foo.bar', () => {
+    // Le slug est tout ce qui précède .suppernote.com, y compris les dots internes.
+    // foo.bar.suppernote.com → slug = "foo.bar" → /restaurant/foo.bar
     // Comportement documenté : on accepte les dots dans le slug (pas de validation
     // de format ici — la page /restaurant/[slug] retournera notFound() si invalide).
-    const response = proxy(makeRequest('/', { host: 'foo.bar.sokar.tech' }));
+    const response = proxy(makeRequest('/', { host: 'foo.bar.suppernote.com' }));
     expect(response.headers.get('x-middleware-rewrite')).toBe(
-      'http://foo.bar.sokar.tech/restaurant/foo.bar',
+      'http://foo.bar.suppernote.com/restaurant/foo.bar',
     );
   });
 
   it('handles uppercase subdomain (browsers lowercase the host, but test the edge)', () => {
     // Les navigateurs lowercaset le host avant l'envoi. Si un client envoie
-    // quand même un host en majuscules (ex: CHEZMARIO.sokar.tech), le proxy
-    // match car endsWith('.sokar.tech') est sensible à la casse mais le suffixe
-    // .sokar.tech reste en minuscules. Le slug est préservé en majuscules dans
+    // quand même un host en majuscules (ex: CHEZMARIO.suppernote.com), le proxy
+    // match car endsWith('.suppernote.com') est sensible à la casse mais le suffixe
+    // .suppernote.com reste en minuscules. Le slug est préservé en majuscules dans
     // la rewrite — la page /restaurant/[slug] retournera notFound() car les slugs
     // en DB sont lowercase. Comportement documenté : pas de normalisation de casse
     // dans le proxy (Edge), la validation se fait côté page.
-    const response = proxy(makeRequest('/', { host: 'CHEZMARIO.sokar.tech' }));
+    const response = proxy(makeRequest('/', { host: 'CHEZMARIO.suppernote.com' }));
     const rewrite = response.headers.get('x-middleware-rewrite');
     expect(rewrite).toContain('/restaurant/CHEZMARIO');
   });

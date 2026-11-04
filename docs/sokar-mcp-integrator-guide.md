@@ -24,12 +24,12 @@ Origin: https://claude.ai
 Production:
 
 ```http
-POST https://api.sokar.tech/mcp
+POST https://api.suppernote.com/mcp
 Content-Type: application/json
 Authorization: Bearer sk_sokar_agent_xxx
 ```
 
-Staging : `POST https://api-staging.sokar.tech/mcp`. Ne pas mélanger les clients, tokens ni
+Staging : `POST https://api-staging.suppernote.com/mcp`. Ne pas mélanger les clients, tokens ni
 redirect URIs entre staging et production.
 
 Le body est un message JSON-RPC 2.0:

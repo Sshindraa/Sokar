@@ -68,6 +68,14 @@ describe('Next proxy — protection Clerk', () => {
     expect(response?.headers.get('location')).toBe('https://dashboard.test/login');
   });
 
+  it.each(['/book', '/widget'])('sert l’alias de démonstration depuis %s', async (prefix) => {
+    const response = await runProxy(`${prefix}/chez-suppernote-demo?date=2026-11-04`);
+    expect(response?.headers.get('x-middleware-rewrite')).toBe(
+      'https://dashboard.test/widget/chez-sokar-demo?date=2026-11-04',
+    );
+    expect(auth).not.toHaveBeenCalled();
+  });
+
   it('conserve la réécriture publique de réservation et ses paramètres', async () => {
     const response = await runProxy('/book/chez-sokar?date=2026-10-20');
     expect(response?.headers.get('x-middleware-rewrite')).toBe(

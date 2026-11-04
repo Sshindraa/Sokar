@@ -16,7 +16,7 @@ const baseRestaurant = {
   id: 'test-rest-1',
   name: 'Le Bistrot',
   managerPhone: '+33612345678',
-  managerEmail: 'restaurant@sokar.tech',
+  managerEmail: 'restaurant@suppernote.com',
   phoneNumber: '+33123456789',
   personality: { speakingRate: 1.0 },
 };

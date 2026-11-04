@@ -34,7 +34,7 @@ describe('Ma reservation', () => {
     vi.stubGlobal('fetch', fetch);
     render(
       <ReservationView
-        confirmation={{ reservation: data, managementUrl: `https://sokar.tech/r#${token}` }}
+        confirmation={{ reservation: data, managementUrl: `https://suppernote.com/r#${token}` }}
       />,
     );
     expect(await screen.findByText('Annulée')).toBeInTheDocument();
@@ -44,7 +44,7 @@ describe('Ma reservation', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Connexion interrompue')));
     render(
       <ReservationView
-        confirmation={{ reservation: data, managementUrl: `https://sokar.tech/r#${token}` }}
+        confirmation={{ reservation: data, managementUrl: `https://suppernote.com/r#${token}` }}
       />,
     );
     expect(await screen.findByText('Connexion interrompue')).toBeInTheDocument();
@@ -295,16 +295,15 @@ describe('Ma reservation', () => {
     later.setDate(later.getDate() + 60);
     fireEvent.click(calendar);
     const picker = await screen.findByRole('dialog', { name: 'Choisir une date' });
-    const initialMonth = 9; // The demo reservation is on 20 October 2026.
-    const distance = (later.getFullYear() - 2026) * 12 + later.getMonth() - initialMonth;
-    for (let i = 0; i < distance; i++)
-      fireEvent.click(within(picker).getByRole('button', { name: 'Mois suivant' }));
     const label = new Intl.DateTimeFormat('fr-FR', {
       weekday: 'long',
       day: 'numeric',
       month: 'long',
       year: 'numeric',
     }).format(later);
+    // The month the picker opens on depends on today's date: browse until the target appears.
+    for (let i = 0; i < 24 && !within(picker).queryByRole('button', { name: label }); i++)
+      fireEvent.click(within(picker).getByRole('button', { name: 'Mois suivant' }));
     fireEvent.click(within(picker).getByRole('button', { name: label }));
     const next = await screen.findByRole('button', { name: 'Continuer · 19h30' });
     await waitFor(() => expect(next).toBeEnabled());

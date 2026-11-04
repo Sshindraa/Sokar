@@ -19,7 +19,7 @@ export const reservationTheme: CSSProperties & Record<`--${string}`, string> = {
   '--reservation-success': '142 70% 38%',
 };
 
-// Shared button classes — palette Sokar : ink (near-black) pour primary, pas orange
+// Shared button classes — palette Suppernote : ink (near-black) pour primary, pas orange
 export const primaryBtnClass =
   'flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[hsl(var(--reservation-ink))] text-[17px] font-extrabold text-white shadow-lg shadow-black/10 transition-all duration-200 active:scale-[0.97] hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0';
 

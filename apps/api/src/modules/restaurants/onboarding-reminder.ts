@@ -24,7 +24,7 @@ export type ReminderAction =
   /** Les sept tâches sont terminées : l'espace est ouvert, il n'y a rien à relancer. */
   | { kind: 'complete' }
   | { kind: 'room'; step: RoomStep }
-  /** La salle est prête mais le numéro Sokar n'est pas attribué : c'est Sokar qui doit agir. */
+  /** La salle est prête mais le numéro Suppernote n'est pas attribué : c'est Suppernote qui doit agir. */
   | { kind: 'waiting-number' }
   | { kind: 'channels'; remaining: ReminderChannel[]; step: OnboardingTask | null };
 
@@ -52,8 +52,8 @@ export function resolveReminderAction(
   const onlineOpen = firstOpen(state, ONLINE_STEPS);
   if (!phoneOpen && !onlineOpen) return { kind: 'complete' };
 
-  // Sans numéro Sokar, le téléphone ne peut pas se terminer : le restaurateur attend l'équipe
-  // Sokar, pas l'inverse. On ne le relance pas.
+  // Sans numéro Suppernote, le téléphone ne peut pas se terminer : le restaurateur attend l'équipe
+  // Suppernote, pas l'inverse. On ne le relance pas.
   if (!hasUsablePhone(phoneNumber)) return { kind: 'waiting-number' };
 
   const remaining: ReminderChannel[] = [];
@@ -110,7 +110,7 @@ function layout(args: {
           ${args.cta.label} →
         </a>
         <p style="margin-top:24px;color:#64748b;font-size:13px">
-          Vous recevez cet e-mail parce que vous avez créé le compte Sokar de ${escapeHtml(args.restaurantName)}.
+          Vous recevez cet e-mail parce que vous avez créé le compte Suppernote de ${escapeHtml(args.restaurantName)}.
         </p>
       </div>
     `;
@@ -121,7 +121,7 @@ export function buildReminderEmail(args: {
   kind: ReminderKind;
   action: ReminderAction;
   restaurantName: string;
-  /** Numéro Sokar du restaurant, quand il est attribué. */
+  /** Numéro Suppernote du restaurant, quand il est attribué. */
   sokarNumber?: string | null;
   dashboardUrl: string;
 }): ReminderEmail | null {
@@ -138,7 +138,7 @@ export function buildReminderEmail(args: {
         restaurantName: args.restaurantName,
         title: `${name}, votre salle n’est pas encore prête`,
         paragraphs: [
-          `Vous avez commencé à configurer ${name} sur Sokar. La prochaine étape : ${ROOM_STEP_LABEL[action.step]}.`,
+          `Vous avez commencé à configurer ${name} sur Suppernote. La prochaine étape : ${ROOM_STEP_LABEL[action.step]}.`,
           'Votre salle (horaires, tables et règles) sert ensuite au téléphone comme à la réservation en ligne : vous la réglez une seule fois.',
         ],
         cta: { label: 'Reprendre la configuration', href: `${base}/onboarding` },
@@ -156,8 +156,8 @@ export function buildReminderEmail(args: {
         title: `${name}, votre salle est prête`,
         paragraphs: [
           both
-            ? `Il reste à activer deux canaux pour ouvrir votre espace Sokar : ${remainingLabel}. Vous les faites dans l’ordre de votre choix.`
-            : `Il reste à activer ${remainingLabel} pour ouvrir votre espace Sokar.`,
+            ? `Il reste à activer deux canaux pour ouvrir votre espace Suppernote : ${remainingLabel}. Vous les faites dans l’ordre de votre choix.`
+            : `Il reste à activer ${remainingLabel} pour ouvrir votre espace Suppernote.`,
         ],
         cta: {
           label: both ? 'Choisir mon canal' : 'Reprendre la configuration',
@@ -178,7 +178,7 @@ export function buildReminderEmail(args: {
       paragraphs: [
         `La configuration de ${name} est terminée.${
           number
-            ? ` Pour entendre votre assistant, appelez votre numéro Sokar depuis votre téléphone : <strong>${number}</strong>.`
+            ? ` Pour entendre votre assistant, appelez votre numéro Suppernote depuis votre téléphone : <strong>${number}</strong>.`
             : ''
         }`,
         'Pour que vos clients tombent sur lui, renvoyez les appels de votre ligne vers ce numéro depuis votre opérateur.',

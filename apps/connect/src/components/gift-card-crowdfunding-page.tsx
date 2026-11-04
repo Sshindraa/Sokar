@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Sokar Connect — GiftCardCrowdfundingPage.
+ * Suppernote Connect — GiftCardCrowdfundingPage.
  *
  * Page publique de contribution à une cagnotte.
  * Accessible sans authentification via le lien partagé.
