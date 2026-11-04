@@ -85,10 +85,10 @@ packages/
 
 ## Points d'entrée publics
 
-- **Dashboard** : `https://sokar.tech` (Next.js App Router, Clerk).
-- **Connect** : `https://sokar.tech/restaurant/<slug>`, `/restaurants/<city>`, `/widget/<slug>/gift-card`. Le formulaire `/widget/<slug>` et `/book/<slug>` vient du dashboard.
+- **Dashboard** : `https://suppernote.com` (Next.js App Router, Clerk).
+- **Connect** : `https://suppernote.com/restaurant/<slug>`, `/restaurants/<city>`, `/widget/<slug>/gift-card`. Le formulaire `/widget/<slug>` et `/book/<slug>` vient du dashboard.
 - **Widget** : `apps/widget/src/app/restaurant-reservation/`.
-- **API** : `https://api.sokar.tech`.
+- **API** : `https://api.suppernote.com`.
 - **Versioning API public** : `main.ts` réécrit `/public/v1/*` vers `/public/*` (transition progressive). Les routes publiques sont dans `connect.routes.ts`.
 
 Les routes CRM et marketing sont authentifiées par organisation via `requireOrg` et les capabilities
@@ -226,7 +226,7 @@ rollback reste possible.
 ### Connect / widget
 
 - Page publique → `connect.service.ts` (agrégateur) ; disponibilités via `CapacityAwareAvailabilityService` (floor-plan).
-- Widget de réservation : `apps/dashboard/src/components/reservation/reservation-widget.tsx`, servi par le dashboard sur `/widget/<slug>` et `/book/<slug>` (sokar.tech, sous-domaines et domaines personnalisés). Écran ChatGPT : `apps/widget/src/app/restaurant-reservation/` (non publié).
+- Widget de réservation : `apps/dashboard/src/components/reservation/reservation-widget.tsx`, servi par le dashboard sur `/widget/<slug>` et `/book/<slug>` (suppernote.com, sous-domaines et domaines personnalisés). Écran ChatGPT : `apps/widget/src/app/restaurant-reservation/` (non publié).
 - Cartes cadeaux : `widget/[slug]/gift-card/` et `gift-card-*` components.
 
 ### CRM / marketing

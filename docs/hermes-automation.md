@@ -73,7 +73,7 @@ A Hermes cron job is scheduled:
 
 - name: `Sokar Dogfood QA — Weekly`
 - schedule: Monday 08:00 Europe/Paris
-- target: `https://sokar.tech`
+- target: `https://suppernote.com`
 - output: `~/Projects/Sokar/.hermes/dogfood/YYYYMMDD-HHMM/report.md`
 - delivery: Telegram
 
@@ -96,11 +96,11 @@ A no-agent Hermes cron job is scheduled:
 
 It checks:
 
-- `https://sokar.tech/`
-- `https://sokar.tech/pricing`
-- `https://sokar.tech/mcp`
-- `https://sokar.tech/privacy`
-- `https://api.sokar.tech/health`
-- `https://api.sokar.tech/.well-known/oauth-protected-resource`
-- `https://api.sokar.tech/.well-known/oauth-authorization-server`
+- `https://suppernote.com/`
+- `https://suppernote.com/pricing`
+- `https://suppernote.com/mcp`
+- `https://suppernote.com/privacy`
+- `https://api.suppernote.com/health`
+- `https://api.suppernote.com/.well-known/oauth-protected-resource`
+- `https://api.suppernote.com/.well-known/oauth-authorization-server`
 - `https://hermes.sokar.tech/health`

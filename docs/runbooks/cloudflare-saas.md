@@ -9,20 +9,20 @@
 
 Permet aux restaurants d'utiliser leur propre domaine (ex: `reserve.chezmario.fr`)
 pour leur page de réservation Sokar. Cloudflare gère le SSL automatiquement
-(no certbot) et route le trafic vers l'origin `sokar.tech`.
+(no certbot) et route le trafic vers l'origin `suppernote.com`.
 
 ## Prérequis
 
-- Le domaine `sokar.tech` doit être géré par Cloudflare (DNS + proxy orange cloud).
+- Le domaine `suppernote.com` doit être géré par Cloudflare (DNS + proxy orange cloud).
 - Le VPS doit être accessible depuis Cloudflare (ports 80/443 ouverts).
 
 ## Configuration Cloudflare (one-time)
 
 ### 1. Activer Cloudflare for SaaS
 
-1. Dashboard Cloudflare → **sokar.tech** → **SSL/TLS** → **Custom Hostnames**
+1. Dashboard Cloudflare → **suppernote.com** → **SSL/TLS** → **Custom Hostnames**
 2. Cliquer **Enable Cloudflare for SaaS**
-3. Définir le **fallback origin** : `sokar.tech`
+3. Définir le **fallback origin** : `suppernote.com`
 4. Attendre que le statut passe à **Active**
 
 ### 2. Créer un API Token
@@ -32,12 +32,12 @@ pour leur page de réservation Sokar. Cloudflare gère le SSL automatiquement
    - **Zone.SaaS** : Edit (pour gérer les Custom Hostnames)
    - **Zone.DNS** : Read (pour vérifier les CNAME)
    - **Zone** : Read (pour lister les zones)
-3. **Zone Resources** : Include → Specific zone → `sokar.tech`
+3. **Zone Resources** : Include → Specific zone → `suppernote.com`
 4. Copier le token (il ne sera plus affiché)
 
 ### 3. Récupérer le Zone ID
 
-1. Dashboard Cloudflare → **sokar.tech** → **Overview**
+1. Dashboard Cloudflare → **suppernote.com** → **Overview**
 2. En bas à droite : **Zone ID** → copier
 
 ### 4. Configurer les variables d'env sur le VPS (automatisée)
@@ -59,7 +59,7 @@ Le script :
 Pour staging (optionnel — voir note ci-dessous) :
 
 ```zsh
-bash scripts/ops/setup-cloudflare-saas.sh --env staging --token "cf-token-xxx" --zone-id "zone-xxx" --fallback-origin "staging.sokar.tech"
+bash scripts/ops/setup-cloudflare-saas.sh --env staging --token "cf-token-xxx" --zone-id "zone-xxx" --fallback-origin "staging.suppernote.com"
 ```
 
 > **Note — Staging :** Les vars Cloudflare SaaS sont **optionnelles en staging**. Le guard `isCloudflareSaaSEnabled()` (dans `apps/api/src/modules/connect/cloudflare-saas.service.ts`) vérifie que `CLOUDFLARE_API_TOKEN` ET `CLOUDFLARE_ZONE_ID` sont définies. Si elles sont absentes, le customDomain est stocké en DB sans provisioning Cloudflare — l'API continue de fonctionner normalement. En staging, on laisse généralement ces vars vides.
@@ -80,7 +80,7 @@ Ajouter à la fin :
 ```env
 CLOUDFLARE_API_TOKEN="votre-token-ici"
 CLOUDFLARE_ZONE_ID="votre-zone-id-ici"
-CLOUDFLARE_SAAS_FALLBACK_ORIGIN="sokar.tech"
+CLOUDFLARE_SAAS_FALLBACK_ORIGIN="suppernote.com"
 ```
 
 Puis redémarrer l'API :
@@ -104,7 +104,7 @@ curl -s http://127.0.0.1:4000/livez | jq .
 2. Il entre `reserve.chezmario.fr` et clique **Configurer le domaine**
 3. L'API provisionne un Custom Hostname sur Cloudflare (statut `pending`)
 4. Le dashboard affiche les instructions CNAME :
-   - `reserve.chezmario.fr` → `sokar.tech`
+   - `reserve.chezmario.fr` → `suppernote.com`
 5. Le restaurateur configure le CNAME chez son registrar (OVH, Gandi, etc.)
 6. Il clique **Vérifier le DNS** → l'API vérifie le CNAME localement (`dig`) + rafraîchit le statut Cloudflare
 7. Cloudflare provisionne le SSL automatiquement (quelques minutes)
@@ -121,7 +121,7 @@ curl -s http://127.0.0.1:4000/livez | jq .
 ### Le statut reste `pending`
 
 1. Vérifier que le CNAME est bien configuré : `dig CNAME reserve.chezmario.fr`
-2. Le CNAME doit pointer vers `sokar.tech` (pas vers l'IP du VPS)
+2. Le CNAME doit pointer vers `suppernote.com` (pas vers l'IP du VPS)
 3. Attendre la propagation DNS (TTL du registrar, généralement 5-30 min)
 
 ### Le statut est `dns_validated` mais pas `active`
@@ -134,7 +134,7 @@ curl -s http://127.0.0.1:4000/livez | jq .
 
 1. Vérifier que Nginx route bien le trafic : `curl -H "Host: reserve.chezmario.fr" http://127.0.0.1/`
 2. Le server block catch-all (`server_name _`) doit être actif
-3. Vérifier que le fallback origin est bien `sokar.tech` dans Cloudflare
+3. Vérifier que le fallback origin est bien `suppernote.com` dans Cloudflare
 
 ### Le restaurateur veut changer de domaine
 
@@ -155,17 +155,17 @@ En cas de problème, on peut désactiver Cloudflare for SaaS :
 1. Supprimer les variables d'env `CLOUDFLARE_*` sur le VPS
 2. Redémarrer l'API : `pm2 restart sokar-api`
 3. Les custom domains existants restent en DB mais ne sont plus provisionnés
-4. Les restaurateurs doivent reconfigurer leur DNS pour pointer vers `sokar.tech` directement
+4. Les restaurateurs doivent reconfigurer leur DNS pour pointer vers `suppernote.com` directement
 
 ## Coûts
 
 Cloudflare for SaaS : **$0.10 par custom hostname par mois** (au-delà du free tier de 100).
 Voir https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/pricing/
 
-## Subdomain gratuit \*.sokar.tech (zero config)
+## Subdomain gratuit \*.suppernote.com (zero config)
 
 Chaque restaurant qui active Sokar Connect obtient automatiquement un subdomain gratuit
-`chezmario.sokar.tech` (basé sur le slug). Zero configuration, instantané.
+`chezmario.suppernote.com` (basé sur le slug). Zero configuration, instantané.
 
 Le custom domain (`reserve.chezmario.fr`) reste une option premium avec le flux CNAME
 décrit ci-dessus. Le subdomain gratuit est détecté par le middleware Connect **avant**
@@ -175,7 +175,7 @@ le flux custom domain, évitant tout lookup DB sur les sous-domaines Sokar.
 
 #### 1. Wildcard DNS record
 
-Dans le dashboard Cloudflare → sokar.tech → DNS :
+Dans le dashboard Cloudflare → suppernote.com → DNS :
 
 - Type : A
 - Name : `*`
@@ -184,27 +184,27 @@ Dans le dashboard Cloudflare → sokar.tech → DNS :
 
 #### 2. Certificat Origin CA wildcard
 
-Dans le dashboard Cloudflare → sokar.tech → SSL/TLS → Origin Server → Create Certificate :
+Dans le dashboard Cloudflare → suppernote.com → SSL/TLS → Origin Server → Create Certificate :
 
 - Private key type : RSA (2048)
-- Hostnames : `*.sokar.tech, sokar.tech`
+- Hostnames : `*.suppernote.com, suppernote.com`
 - Certificate Validity : 15 years
 - Copier le cert et la key sur le VPS :
-  - `/etc/letsencrypt/live/sokar.tech/fullchain.pem` (remplacer par le cert Origin CA)
-  - `/etc/letsencrypt/live/sokar.tech/privkey.pem` (remplacer par la key Origin CA)
+  - `/etc/letsencrypt/live/suppernote.com/fullchain.pem` (remplacer par le cert Origin CA)
+  - `/etc/letsencrypt/live/suppernote.com/privkey.pem` (remplacer par la key Origin CA)
 - Reload nginx : `sudo systemctl reload nginx`
 
 #### 3. Vérification
 
 ```zsh
-curl -s -o /dev/null -w '%{http_code}' -H 'Host: chez-sokar-demo.sokar.tech' http://127.0.0.1/
+curl -s -o /dev/null -w '%{http_code}' -H 'Host: chez-sokar-demo.suppernote.com' http://127.0.0.1/
 # Doit retourner 200
 ```
 
 ### Widget de réservation sur un sous-domaine ou un domaine personnalisé
 
 La fiche (`/`) vient de Connect, mais le bouton « Réserver » ouvre `/book/<slug>` : nginx
-l'envoie au **dashboard**, comme sur `sokar.tech`, pour servir le même widget partout
+l'envoie au **dashboard**, comme sur `suppernote.com`, pour servir le même widget partout
 (consentement marketing, liste d'attente). Seules ces routes vont au dashboard
 (bloc `server_name _` de `infra/nginx/sokar.conf`) :
 
@@ -220,8 +220,8 @@ vers la fiche. Sur ces routes publiques, le middleware du dashboard n'appelle pa
 Vérification après déploiement :
 
 ```zsh
-curl -s -o /dev/null -w '%{http_code}\n' https://chez-sokar-demo.sokar.tech/book/chez-sokar-demo
-curl -s https://chez-sokar-demo.sokar.tech/api/proxy/public/widget/chez-sokar-demo | head -c 80
+curl -s -o /dev/null -w '%{http_code}\n' https://chez-sokar-demo.suppernote.com/book/chez-sokar-demo
+curl -s https://chez-sokar-demo.suppernote.com/api/proxy/public/widget/chez-sokar-demo | head -c 80
 # 200, puis un JSON qui commence par {"id":
 ```
 
@@ -235,7 +235,7 @@ bloc nginx ci-dessus renverrait `/book/<slug>` vers une page introuvable.
 ### Flux restaurateur (zero clic)
 
 1. Le restaurateur active Sokar Connect dans le dashboard
-2. Le subdomain `{slug}.sokar.tech` est immédiatement fonctionnel (détecté par le middleware)
+2. Le subdomain `{slug}.suppernote.com` est immédiatement fonctionnel (détecté par le middleware)
 3. Le dashboard affiche le subdomain dans la carte « Sous-domaine gratuit » avec un bouton copier
 4. Aucune action supplémentaire requise — le SSL est géré par le wildcard Origin CA
 
