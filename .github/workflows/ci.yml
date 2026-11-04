@@ -177,6 +177,9 @@ jobs:
       - name: Lint
         # Real ESLint (flat config, type-checked rules) — catches floating
         # promises, unused vars, and misused promises that tsc misses.
+        env:
+          # ESLint typé sur toute l'API dépasse le tas par défaut du runner (OOM, exit 134).
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm --filter @suppernote/api lint
 
       - name: Tenant scoping guard
