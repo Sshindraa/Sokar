@@ -60,6 +60,24 @@ jobs:
       contents: read
     timeout-minutes: 20
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # Dépôt privé et aucun accès GitHub sur le VPS : le runner lui envoie l'archive du commit.
+      - name: Archive source
+        run: git archive --format=tar.gz --prefix=source/ -o sokar-staging-source.tar.gz "$GITHUB_SHA"
+
+      - name: Copy source to staging host
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: deploy
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          source: sokar-staging-source.tar.gz
+          target: /tmp/
+          overwrite: true
+
       - name: Prepare Clerk secret transfer
         env:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -136,18 +154,14 @@ jobs:
             test "${NEXT_PUBLIC_DEMO_STAGING:-}" = "1"
             [[ "${NEXT_PUBLIC_DEMO_RESTAURANT_ID:-}" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]]
             git checkout main
-            # Le VPS ne peut pas utiliser son helper GitHub pour le fetch HTTPS.
-            # On transfère donc une archive publique du commit exact depuis
-            # codeload.github.com, sans token ni clé GitHub sur le VPS, puis on
-            # crée un snapshot Git local pour conserver les rollbacks/hash.
+            # Le VPS n'a aucun accès GitHub : le runner a copié l'archive du commit exact
+            # dans /tmp. On en crée un snapshot Git local pour conserver les rollbacks/hash.
             SOURCE_SHA="${{ github.sha }}"
             [[ "$SOURCE_SHA" =~ ^[[:xdigit:]]{40}$ ]]
             git reset --hard
             git clean -fd -e releases/
             SOURCE_TMP=$(mktemp -d /tmp/sokar-staging-source.XXXXXX)
-            curl --fail --silent --show-error --location --retry 3 --max-time 120 \
-              "https://codeload.github.com/Sshindraa/Sokar/tar.gz/${SOURCE_SHA}" \
-              -o "$SOURCE_TMP/source.tar.gz"
+            mv /tmp/sokar-staging-source.tar.gz "$SOURCE_TMP/source.tar.gz"
             mkdir "$SOURCE_TMP/tree"
             tar -xzf "$SOURCE_TMP/source.tar.gz" --strip-components=1 -C "$SOURCE_TMP/tree"
             while IFS= read -r -d '' tracked_path; do
