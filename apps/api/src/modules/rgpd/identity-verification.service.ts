@@ -240,7 +240,11 @@ export class IdentityVerificationService {
   async verifyVerificationToken(
     token: string,
     expectedIntent: string,
-  ): Promise<{ subject: string }> {
+    deferConsumption = false,
+  ): Promise<{ subject: string; jti?: string }> {
+    if (deferConsumption && expectedIntent !== 'erase') {
+      throw new IdentityVerificationError('INVALID_CODE', 'Invalid deferred token intent');
+    }
     const parts = token.split('.');
     if (parts.length !== 2) throw new IdentityVerificationError('INVALID_CODE', 'Malformed token');
     const [b64, sig] = parts;
@@ -274,6 +278,7 @@ export class IdentityVerificationService {
     if (payload.intent !== expectedIntent) {
       throw new IdentityVerificationError('INVALID_CODE', 'Token intent mismatch');
     }
+    if (deferConsumption) return { subject: payload.sub, jti: payload.jti };
     await this.consumeTokenJti(payload.jti, payload.sub, payload.intent);
     return { subject: payload.sub };
   }

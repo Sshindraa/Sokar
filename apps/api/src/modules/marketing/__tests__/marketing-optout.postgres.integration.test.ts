@@ -437,17 +437,20 @@ describe.skipIf(!url)('marketing opt-out on PostgreSQL', () => {
       providerMessageId: message.providerMessageId!,
       eventType: 'email.complained',
     };
+    const verificationJti = randomUUID();
     const erase = () =>
       new ErasureService(db).eraseSubject({
         subject: customer.phone,
         reason: 'TEST',
         actor: 'test',
+        verificationJti,
       });
     vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', '');
     await expect(applyMarketingProviderEvent(event)).rejects.toThrow(
       'MARKETING_OPTOUT_REGISTER_UNAVAILABLE',
     );
     await expect(erase()).rejects.toThrow('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+    expect(await db.signedTokenUsage.findUnique({ where: { jti: verificationJti } })).toBeNull();
     expect(await db.campaignMessage.count({ where: { id: message.id } })).toBe(1);
     expect(
       (await db.customer.findUniqueOrThrow({ where: { id: customer.id } })).archivedAt,
