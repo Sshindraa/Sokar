@@ -168,7 +168,7 @@ export function requireOrg() {
 
 /**
  * Un invité qui vient d'accepter appartient à l'organisation Clerk mais n'a pas encore de
- * membership Sokar : on lit le rôle de son invitation, on le rattache, puis on résout de nouveau.
+ * membership Suppernote : on lit le rôle de son invitation, on le rattache, puis on résout de nouveau.
  */
 async function resolveContextForMember(input: {
   organizationId: string;
@@ -228,7 +228,7 @@ export function requireAuth(options: { allowDemo?: boolean } = {}) {
 }
 
 /**
- * Middleware for Sokar-wide operator actions.
+ * Middleware for Suppernote-wide operator actions.
  *
  * Organization membership is intentionally not enough here: provisioning and
  * restaurant-health routes can address any tenant. The allowlist is kept in
@@ -264,8 +264,8 @@ export function requireSokarOperator() {
       req.userId === (process.env.DEMO_USER_ID ?? 'demo-user');
 
     if (!req.userId || (!operatorIds.has(req.userId) && !localDemoOperator)) {
-      req.log.warn({ user_id: req.userId ?? null }, 'Sokar operator access denied');
-      return reply.status(403).send({ error: 'Sokar operator access required' });
+      req.log.warn({ user_id: req.userId ?? null }, 'Suppernote operator access denied');
+      return reply.status(403).send({ error: 'Suppernote operator access required' });
     }
   };
 }

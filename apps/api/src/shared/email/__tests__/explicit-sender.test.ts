@@ -18,7 +18,7 @@ describe('sendEmail : expéditeur et Reply-To explicites', () => {
     sendMock.mockClear();
     vi.mocked(waitForResendSlot).mockReset().mockResolvedValue(undefined);
     vi.stubEnv('RESEND_API_KEY', 'unit-test-placeholder');
-    vi.stubEnv('EMAIL_FROM', 'noreply@sokar.tech');
+    vi.stubEnv('EMAIL_FROM', 'noreply@suppernote.com');
     vi.stubEnv('EMAIL_REPLY_TO', '');
     vi.stubEnv('EMAIL_TEST_ALLOWLIST', '');
   });
@@ -31,7 +31,10 @@ describe('sendEmail : expéditeur et Reply-To explicites', () => {
     await sendEmail(MESSAGE);
 
     expect(sendMock).toHaveBeenCalledWith(
-      expect.objectContaining({ from: 'Sokar <noreply@sokar.tech>', replyTo: 'hello@sokar.tech' }),
+      expect.objectContaining({
+        from: 'Suppernote <noreply@suppernote.com>',
+        replyTo: 'hello@suppernote.com',
+      }),
     );
   });
 

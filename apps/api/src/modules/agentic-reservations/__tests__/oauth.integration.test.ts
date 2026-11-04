@@ -124,7 +124,7 @@ describe('OAuth MCP integration flow', () => {
     expect(res.headers['content-type']).toContain('text/html');
     expect(res.body).toContain('Autoriser');
     expect(res.body).toContain('/icon.svg');
-    expect(res.body).toContain('<span>Sokar</span>');
+    expect(res.body).toContain('<span>Suppernote</span>');
     expect(res.body).toContain('Plus+Jakarta+Sans');
     expect(res.body).toContain("font-family: 'Outfit'");
     expect(res.body).toContain('--sokar-blue: #0284c7');
@@ -558,7 +558,7 @@ describe('OAuth MCP integration flow', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('Autoriser');
     expect(res.body).toContain('/icon.svg');
-    expect(res.body).toContain('<span>Sokar</span>');
+    expect(res.body).toContain('<span>Suppernote</span>');
     expect(res.body).toContain('Plus+Jakarta+Sans');
     expect(res.body).toContain("font-family: 'Outfit'");
     expect(res.body).toContain('--sokar-blue: #0284c7');

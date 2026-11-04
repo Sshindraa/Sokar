@@ -67,10 +67,10 @@ function RegisterShell({ children }: { children: ReactNode }) {
   return (
     <main className="sokar-login dark brand-palette">
       <div className="sokar-login__frame">
-        <aside className="sokar-login__story" aria-label="Votre restaurant avec Sokar">
-          <Link href="/" className="sokar-login__brand" aria-label="Sokar, accueil">
+        <aside className="sokar-login__story" aria-label="Votre restaurant avec Suppernote">
+          <Link href="/" className="sokar-login__brand" aria-label="Suppernote, accueil">
             <Image src="/logo-sokar-white.svg" alt="" width={36} height={36} priority />
-            <span>Sokar</span>
+            <span>Suppernote</span>
           </Link>
 
           <div className="sokar-login__paths" aria-hidden="true">
@@ -100,16 +100,16 @@ function RegisterShell({ children }: { children: ReactNode }) {
             <Link href="/" className="sokar-login__back">
               <ArrowLeft size={15} aria-hidden="true" /> Accueil
             </Link>
-            <Link href="/" className="sokar-login__mobile-brand" aria-label="Sokar, accueil">
+            <Link href="/" className="sokar-login__mobile-brand" aria-label="Suppernote, accueil">
               <Image src="/logo-sokar-white.svg" alt="" width={28} height={28} />
-              <span>Sokar</span>
+              <span>Suppernote</span>
             </Link>
           </header>
 
           <div className="sokar-login__form">{children}</div>
 
           <footer className="sokar-login__footer">
-            <span>© {new Date().getFullYear()} Sokar</span>
+            <span>© {new Date().getFullYear()} Suppernote</span>
             <Link href="/privacy">Confidentialité</Link>
           </footer>
         </section>

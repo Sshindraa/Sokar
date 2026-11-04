@@ -24,7 +24,7 @@ function stateWith(completed: OnboardingTask[], phoneNumber = '+33451221999') {
   };
 }
 
-const URL_BASE = 'https://sokar.tech';
+const URL_BASE = 'https://suppernote.com';
 
 describe('resolveReminderAction', () => {
   it('pointe la première étape de la salle qui manque', () => {
@@ -32,7 +32,7 @@ describe('resolveReminderAction', () => {
     expect(resolveReminderAction(state, phoneNumber)).toEqual({ kind: 'room', step: 'hours' });
   });
 
-  it('une salle sans numéro Sokar n’est pas relancée : c’est à Sokar d’agir', () => {
+  it('une salle sans numéro Suppernote n’est pas relancée : c’est à Suppernote d’agir', () => {
     const { state, phoneNumber } = stateWith([...ROOM], '+000chez-sokar');
     expect(resolveReminderAction(state, phoneNumber)).toEqual({ kind: 'waiting-number' });
   });
@@ -100,7 +100,7 @@ describe('buildReminderEmail', () => {
     const email = build('stalled', { kind: 'room', step: 'hours' })!;
     expect(email.subject).toBe('Chez Sokar : terminez la configuration de votre salle');
     expect(email.html).toContain('vos horaires de réservation');
-    expect(email.html).toContain('href="https://sokar.tech/onboarding"');
+    expect(email.html).toContain('href="https://suppernote.com/onboarding"');
   });
 
   it('deux canaux restants : renvoie vers l’écran des canaux', () => {
@@ -111,7 +111,7 @@ describe('buildReminderEmail', () => {
     })!;
     expect(email.subject).toBe('Chez Sokar : il vous reste deux canaux à activer');
     expect(email.html).toContain('le téléphone et la réservation en ligne');
-    expect(email.html).toContain('href="https://sokar.tech/onboarding?step=canaux"');
+    expect(email.html).toContain('href="https://suppernote.com/onboarding?step=canaux"');
   });
 
   it('un canal restant : renvoie vers son étape', () => {
@@ -121,7 +121,7 @@ describe('buildReminderEmail', () => {
       step: 'connect-identity',
     })!;
     expect(email.subject).toBe('Chez Sokar : il vous reste un canal à activer');
-    expect(email.html).toContain('href="https://sokar.tech/onboarding?step=connect-identity"');
+    expect(email.html).toContain('href="https://suppernote.com/onboarding?step=connect-identity"');
     expect(email.html).not.toContain('le téléphone');
   });
 
@@ -130,12 +130,12 @@ describe('buildReminderEmail', () => {
     expect(build('inactive', { kind: 'waiting-number' })).toBeNull();
   });
 
-  it('parcours terminé : seule la relance « inactive » part, avec le numéro Sokar', () => {
+  it('parcours terminé : seule la relance « inactive » part, avec le numéro Suppernote', () => {
     expect(build('stalled', { kind: 'complete' })).toBeNull();
     const email = build('inactive', { kind: 'complete' }, { sokarNumber: '+33451221999' })!;
     expect(email.subject).toBe('Chez Sokar : entendez votre assistant');
     expect(email.html).toContain('04 51 22 19 99');
-    expect(email.html).toContain('href="https://sokar.tech/dashboard"');
+    expect(email.html).toContain('href="https://suppernote.com/dashboard"');
   });
 
   it('ne promet plus d’appel, ne cite plus Google Agenda ni « 5 étapes »', () => {

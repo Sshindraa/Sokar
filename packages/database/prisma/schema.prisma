@@ -144,7 +144,7 @@ model Restaurant {
   distributionAvailabilitySnapshots DistributionAvailabilitySnapshot[]
   distributionWebhookEvents         DistributionWebhookEvent[]
 
-  // Sokar Connect (P0) — données publiques structurées, pas de flags de gating ici
+  // Suppernote Connect (P0) — données publiques structurées, pas de flags de gating ici
   description   String?   @map("description")
   city          String?   @map("city")
   country       String    @default("FR") @map("country")
@@ -1250,7 +1250,7 @@ model ExperienceSession {
 }
 
 /// Capacity-controlled booking with an immutable price snapshot. It can be
-/// attached to a Sokar customer and reservation, but no payment is implied.
+/// attached to a Suppernote customer and reservation, but no payment is implied.
 model ExperienceReservation {
   id              String                      @id @default(uuid())
   restaurantId    String                      @map("restaurant_id")
@@ -1641,7 +1641,7 @@ model DistributionSyncRun {
 }
 
 /// Last known availability sent to or received from a partner. The snapshot
-/// is not authoritative: reservation capacity remains in Sokar.
+/// is not authoritative: reservation capacity remains in Suppernote.
 model DistributionAvailabilitySnapshot {
   id             String                 @id @default(uuid())
   restaurantId   String                 @map("restaurant_id")
@@ -1667,7 +1667,7 @@ model DistributionAvailabilitySnapshot {
   @@map("distribution_availability_snapshots")
 }
 
-/// Explicit link between a partner booking and an existing Sokar reservation.
+/// Explicit link between a partner booking and an existing Suppernote reservation.
 /// Automatic reservation creation is intentionally outside this foundation.
 model DistributionReservationLink {
   id              String                            @id @default(uuid())
@@ -2808,12 +2808,12 @@ model RestaurantExposureSettings {
   noShowPolicy            String     @default("warning") @map("no_show_policy")
   notificationChannels    String[]   @default(["sms", "email"]) @map("notification_channels")
   capacitySpecials        Json       @default("{}") @map("capacity_specials")
-  // Sokar Connect (P0) — source de vérité unique pour le gating
+  // Suppernote Connect (P0) — source de vérité unique pour le gating
   connectPublished        Boolean    @default(false) @map("connect_published")
   connectAgentic          Boolean    @default(false) @map("connect_agentic")
   connectPublishedAt      DateTime?  @map("connect_published_at")
   connectDescription      String?    @map("connect_description")
-  // Sokar Connect (P2) — premium subdomain via Cloudflare for SaaS
+  // Suppernote Connect (P2) — premium subdomain via Cloudflare for SaaS
   customDomain            String?    @unique @map("custom_domain")
   customDomainStatus      String?    @map("custom_domain_status") // pending|dns_validated|ssl_provisioning|active|failed
   customDomainValidatedAt DateTime?  @map("custom_domain_validated_at")

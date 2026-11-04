@@ -10,6 +10,6 @@ const nextConfig = {
 };
 
 // NEXT_PUBLIC_API_URL doit être défini au build time (baked dans le bundle static).
-// Ex: https://api.sokar.tech en prod, http://localhost:4100 en dev.
+// Ex: https://api.suppernote.com en prod, http://localhost:4100 en dev.
 
 module.exports = nextConfig;

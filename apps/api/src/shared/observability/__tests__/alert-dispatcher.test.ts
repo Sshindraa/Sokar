@@ -48,7 +48,7 @@ describe('dispatchAlert', () => {
   });
 
   it('envoie un email quand ALERT_EMAIL_TO est défini', async () => {
-    process.env.ALERT_EMAIL_TO = 'ops@sokar.tech';
+    process.env.ALERT_EMAIL_TO = 'ops@suppernote.com';
 
     const results = await dispatchAlert({
       kind: 'failed_jobs',
@@ -59,7 +59,7 @@ describe('dispatchAlert', () => {
 
     expect(sendEmail).toHaveBeenCalledOnce();
     const call = vi.mocked(sendEmail).mock.calls[0][0];
-    expect(call.to).toBe('ops@sokar.tech');
+    expect(call.to).toBe('ops@suppernote.com');
     expect(call.subject).toContain('CRITICAL');
     expect(call.subject).toContain('5 jobs en échec');
     expect(call.html).toContain('file sms-client');
@@ -145,7 +145,7 @@ describe('dispatchAlert', () => {
   });
 
   it('envoie une alerte info sans SMS et garde la sévérité info', async () => {
-    process.env.ALERT_EMAIL_TO = 'ops@sokar.tech';
+    process.env.ALERT_EMAIL_TO = 'ops@suppernote.com';
     process.env.ALERT_SMS_TO = '+33612345678';
 
     const results = await dispatchAlert({
@@ -156,7 +156,7 @@ describe('dispatchAlert', () => {
     });
 
     expect(sendEmail).toHaveBeenCalledOnce();
-    expect(vi.mocked(sendEmail).mock.calls[0][0].subject).toContain('[Sokar INFO]');
+    expect(vi.mocked(sendEmail).mock.calls[0][0].subject).toContain('[Suppernote INFO]');
     expect(sendSms).not.toHaveBeenCalled();
     expect(results).toEqual([{ channel: 'email', ok: true }]);
   });
@@ -176,7 +176,7 @@ describe('dispatchAlert', () => {
   });
 
   it('un canal en échec ne throw pas et est marqué ko', async () => {
-    process.env.ALERT_EMAIL_TO = 'ops@sokar.tech';
+    process.env.ALERT_EMAIL_TO = 'ops@suppernote.com';
     process.env.ALERT_WEBHOOK_URL = 'https://hooks.slack.com/test';
     vi.mocked(sendEmail).mockRejectedValue(new Error('SMTP down'));
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
@@ -200,7 +200,7 @@ describe('dispatchAlert', () => {
   });
 
   it('compte les envois dans sokar_alerts_sent_total', async () => {
-    process.env.ALERT_EMAIL_TO = 'ops@sokar.tech';
+    process.env.ALERT_EMAIL_TO = 'ops@suppernote.com';
 
     await dispatchAlert({
       kind: 'failed_jobs',

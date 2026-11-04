@@ -1,4 +1,4 @@
-# Sokar Connect — Dockerfile production
+# Suppernote Connect — Dockerfile production
 #
 # Build multi-stage pour limiter la taille de l'image finale.
 # Cf. spec connect-v1.1 §3 hébergement.

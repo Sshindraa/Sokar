@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Sokar Connect — BookCtaLink component.
+ * Suppernote Connect — BookCtaLink component.
  *
  * Wrapper autour de <Link> qui tracke le clic sur le CTA "Réserver"
  * via fetch fire-and-forget vers /public/analytics/events.

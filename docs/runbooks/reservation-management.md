@@ -118,7 +118,7 @@ Staging doit servir `/r` et le proxy avant de creer la reservation de test.
 Garder le flag production off. L’expediteur `TELNYX_SMS_FROM` conserve
 `SOKAR`, deja configure dans le profil ; ne pas remplacer le numero voix.
 Configurer `TELNYX_SMS_WEBHOOK_URL` vers
-`https://api-staging.sokar.tech/sms/telnyx/inbound` pour isoler le callback
+`https://api-staging.suppernote.com/sms/telnyx/inbound` pour isoler le callback
 du webhook production du profil partage. Aucun changement du profil Telnyx.
 
 Le claim `success` et `CONFIRMATION_SMS_SENT` signifient acceptation fournisseur,

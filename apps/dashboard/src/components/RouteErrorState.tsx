@@ -20,7 +20,7 @@ type RouteErrorStateProps = {
  * React. Le restaurateur voit un message français et un bouton « Réessayer »
  * qui appelle `reset()`.
  *
- * Les erreurs 4xx/5xx de l'API Sokar ne tombent pas ici : chaque page les
+ * Les erreurs 4xx/5xx de l'API Suppernote ne tombent pas ici : chaque page les
  * rattrape et rend un `DataFetchError` inline, qui garde le contexte de la page.
  */
 export function RouteErrorState({ error, reset, scope }: RouteErrorStateProps) {

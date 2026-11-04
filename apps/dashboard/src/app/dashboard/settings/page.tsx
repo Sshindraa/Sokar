@@ -718,19 +718,19 @@ export default function SettingsPage() {
                   <TrialRecap trial={billingStatus.trial} />
                   <p className="text-sm text-muted-foreground">
                     {canManageBilling
-                      ? `Ajoutez une carte avant le ${billingPeriodEnd} pour que Sokar continue de répondre. Aucun prélèvement avant cette date.`
+                      ? `Ajoutez une carte avant le ${billingPeriodEnd} pour que Suppernote continue de répondre. Aucun prélèvement avant cette date.`
                       : `Le propriétaire du compte doit ajouter une carte avant le ${billingPeriodEnd}.`}
                   </p>
                 </div>
               )}
               {billingStatus?.suspended && (
                 <p role="alert" className="mt-3 max-w-xl text-sm text-destructive">
-                  Votre abonnement est terminé : Sokar ne répond plus aux appels.{' '}
+                  Votre abonnement est terminé : Suppernote ne répond plus aux appels.{' '}
                   {canManageBilling
                     ? 'Choisissez une formule pour le réactiver.'
                     : 'Le propriétaire du compte doit choisir une formule pour le réactiver.'}{' '}
-                  Si votre ligne est encore renvoyée vers Sokar, désactivez ce renvoi chez votre
-                  opérateur pour que vos clients vous joignent directement.
+                  Si votre ligne est encore renvoyée vers Suppernote, désactivez ce renvoi chez
+                  votre opérateur pour que vos clients vous joignent directement.
                 </p>
               )}
               {billingStatus?.subscriptionStatus === 'past_due' && (

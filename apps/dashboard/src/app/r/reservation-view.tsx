@@ -237,9 +237,9 @@ export default function ReservationView({
     const content = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//Sokar//Reservation//FR',
+      'PRODID:-//Suppernote//Reservation//FR',
       'BEGIN:VEVENT',
-      `UID:${crypto.randomUUID()}@sokar.tech`,
+      `UID:${crypto.randomUUID()}@suppernote.com`,
       `DTSTAMP:${stamp(new Date().toISOString())}`,
       `DTSTART:${stamp(reservation.startsAt)}`,
       ...(reservation.endsAt ? [`DTEND:${stamp(reservation.endsAt)}`] : []),
@@ -272,7 +272,7 @@ export default function ReservationView({
         <header className={styles.navigation}>
           <div className="flex items-center gap-2">
             <SokarLogo className="h-5 w-5 text-foreground" />
-            <span className="font-serif text-xl">Sokar</span>
+            <span className="font-serif text-xl">Suppernote</span>
           </div>
           <h1 className="sr-only">Ma réservation</h1>
           {demo && <p className={styles.demo}>Aperçu de démonstration</p>}

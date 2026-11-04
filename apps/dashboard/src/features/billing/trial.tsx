@@ -248,7 +248,7 @@ function RecapTile({
   );
 }
 
-/** What Sokar did during the trial, in the dashboard's KPI style. */
+/** What Suppernote did during the trial, in the dashboard's KPI style. */
 export function TrialRecap({ trial }: { trial: BillingTrial }) {
   const recap = trial.recap;
   if (!recap) return null;
@@ -259,7 +259,7 @@ export function TrialRecap({ trial }: { trial: BillingTrial }) {
         <div>
           <p className="font-semibold text-foreground">Aucun appel reçu pour l’instant</p>
           <p className="mt-1 text-muted-foreground">
-            Le plus souvent, le renvoi de votre ligne vers votre numéro Sokar n’est pas encore
+            Le plus souvent, le renvoi de votre ligne vers votre numéro Suppernote n’est pas encore
             activé. Une fois fait, l’assistant décroche à votre place pendant le service.
           </p>
         </div>
@@ -514,9 +514,9 @@ export function BillingNotice({ canManageBilling }: { canManageBilling: boolean 
               conservés : choisissez une formule et l’assistant reprend immédiatement.
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
-              Votre ligne est encore renvoyée vers Sokar ? Vos clients entendent un court message
-              leur demandant de rappeler. Désactivez ce renvoi chez votre opérateur pour qu’ils vous
-              joignent directement.
+              Votre ligne est encore renvoyée vers Suppernote ? Vos clients entendent un court
+              message leur demandant de rappeler. Désactivez ce renvoi chez votre opérateur pour
+              qu’ils vous joignent directement.
             </p>
           </div>
         </div>

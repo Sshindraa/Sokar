@@ -56,7 +56,7 @@ const COPY: Record<OnboardingTaskKey, { title: string; body: string; label: stri
   channels: {
     title: 'Présentez votre restaurant',
     body: 'Créez votre page de réservation.',
-    label: 'Sokar Connect',
+    label: 'Suppernote Connect',
   },
   'connect-identity': {
     title: 'Votre restaurant, en ligne',
@@ -299,7 +299,7 @@ export function OnboardingWizard({ footerControls }: { footerControls?: ReactNod
       >
         <div className="flex items-center gap-2.5">
           <SokarLogo className="size-8 text-foreground" />
-          <span className="text-lg font-semibold tracking-tight">Sokar</span>
+          <span className="text-lg font-semibold tracking-tight">Suppernote</span>
         </div>
         <p className="text-xs text-foreground/70 md:hidden">{copy.mobile}</p>
         <div className="relative hidden md:block">

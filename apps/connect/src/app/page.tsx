@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Root page (sokar.tech/).
+ * Suppernote Connect — Root page (suppernote.com/).
  *
  * Landing qui liste les restos publiés via l'API publique paginée
  * (Phase 6 : un seul fetch au lieu de N+1, ISR 5min).
@@ -17,10 +17,10 @@ export default async function HomePage() {
   return (
     <main id="main-content" className="mx-auto max-w-6xl px-6 py-12">
       <header className="mb-12">
-        <h1 className="text-4xl font-bold text-ink">Sokar — Agent-Ready Pages</h1>
+        <h1 className="text-4xl font-bold text-ink">Suppernote — Agent-Ready Pages</h1>
         <p className="mt-3 text-lg text-muted-foreground">
-          Réseau de pages publiques Sokar rendant chaque restaurant client trouvable, compréhensible
-          et réservable par les moteurs de recherche et les assistants IA.
+          Réseau de pages publiques Suppernote rendant chaque restaurant client trouvable,
+          compréhensible et réservable par les moteurs de recherche et les assistants IA.
         </p>
       </header>
 
@@ -43,7 +43,7 @@ export default async function HomePage() {
 
       <footer className="mt-16 border-t border-border pt-6 text-sm text-muted-foreground">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <span>Sokar Connect</span>
+          <span>Suppernote Connect</span>
           <span aria-hidden>·</span>
           <Link className="text-blue underline" href="/restaurant/chez-sokar-demo">
             Restaurant démo

@@ -11,7 +11,7 @@ const UNPROVEN_CLAIMS = [
   'Chef Matthieu',
   'Bistrot L’Ardoise',
   'Partenaire Certifié',
-  'Sokar gère 100%',
+  'Suppernote gère 100%',
   'Simulation temps réel',
   'sans limite',
   'Vos clients reconnus',
@@ -21,7 +21,7 @@ const UNPROVEN_CLAIMS = [
   'Toujours disponible',
   '24h/24',
   'zéro débordement',
-  'Sokar est conforme au RGPD',
+  'Suppernote est conforme au RGPD',
 ];
 
 const PUBLIC_COPY_FILES = [

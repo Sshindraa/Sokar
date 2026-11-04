@@ -1,7 +1,7 @@
 /**
- * Sokar Connect P2 — Custom domain resolver.
+ * Suppernote Connect P2 — Custom domain resolver.
  *
- * Cette route est appelée par le middleware quand le host n'est pas sokar.tech.
+ * Cette route est appelée par le middleware quand le host n'est pas suppernote.com.
  * Elle fait le lookup DB (customDomain → slug) et render la page restaurant.
  *
  * Le middleware rewrite silencieusement / → /custom-domain?host=reserve.chezmario.fr
@@ -15,9 +15,12 @@ async function resolveCustomDomain(host: string): Promise<string | null> {
   const apiUrl = process.env.API_URL;
   if (!apiUrl) return null;
   try {
-    const res = await fetch(`${apiUrl}/public/resolve-custom-domain?host=${encodeURIComponent(host)}`, {
-      next: { revalidate: 300 }, // Cache 5 min — le mapping customDomain → slug change rarement
-    });
+    const res = await fetch(
+      `${apiUrl}/public/resolve-custom-domain?host=${encodeURIComponent(host)}`,
+      {
+        next: { revalidate: 300 }, // Cache 5 min — le mapping customDomain → slug change rarement
+      },
+    );
     if (!res.ok) return null;
     const data = (await res.json()) as { slug: string | null };
     return data.slug;
@@ -64,7 +67,7 @@ export default async function CustomDomainPage({
           <h1 className="text-2xl font-bold text-foreground">Domaine non configuré</h1>
           <p className="mt-4 text-muted-foreground">
             Ce domaine n’est pas encore actif. Si vous êtes le restaurateur, vérifiez la
-            configuration dans votre dashboard Sokar. Si le problème persiste, contactez le
+            configuration dans votre dashboard Suppernote. Si le problème persiste, contactez le
             support.
           </p>
         </div>

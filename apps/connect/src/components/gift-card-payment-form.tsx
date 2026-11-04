@@ -1,12 +1,12 @@
 'use client';
 
 /**
- * Sokar Connect — GiftCardPaymentForm.
+ * Suppernote Connect — GiftCardPaymentForm.
  *
  * Formulaire de paiement Stripe Elements.
  * Affiche le PaymentElement, gère la confirmation du paiement et les erreurs.
  *
- * Design aligné avec le widget de réservation Sokar.
+ * Design aligné avec le widget de réservation Suppernote.
  */
 
 import { useState, type CSSProperties } from 'react';

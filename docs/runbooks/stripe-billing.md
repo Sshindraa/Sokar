@@ -292,11 +292,11 @@ cadeaux **et** recevoir `checkout.session.completed`, `customer.subscription.cre
 facture, Checkout peut réussir tandis qu'un échec ou un recouvrement ne met jamais à jour les droits.
 
 ```zsh
-STRIPE_WEBHOOK_ENDPOINT_URL=https://api-staging.sokar.tech/webhooks/stripe \
+STRIPE_WEBHOOK_ENDPOINT_URL=https://api-staging.suppernote.com/webhooks/stripe \
   node --env-file=apps/api/.env scripts/ops/ensure-stripe-webhook-events.mjs
 
 # Compte test : ajoute seulement les événements manquants, en préservant les autres.
-STRIPE_WEBHOOK_ENDPOINT_URL=https://api-staging.sokar.tech/webhooks/stripe \
+STRIPE_WEBHOOK_ENDPOINT_URL=https://api-staging.suppernote.com/webhooks/stripe \
   node --env-file=apps/api/.env scripts/ops/ensure-stripe-webhook-events.mjs --apply
 ```
 

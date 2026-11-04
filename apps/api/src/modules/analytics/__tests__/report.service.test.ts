@@ -66,10 +66,10 @@ describe('buildReportEmail', () => {
     expect(html).toMatch(/3\s*702,00\s*€/);
   });
 
-  it('affiche le branding Sokar et le footer "envoyé automatiquement"', () => {
+  it('affiche le branding Suppernote et le footer "envoyé automatiquement"', () => {
     const html = buildReportEmail(makeBase());
-    expect(html).toContain('Sokar');
-    expect(html).toContain('Cet email est envoyé automatiquement par Sokar.');
+    expect(html).toContain('Suppernote');
+    expect(html).toContain('Cet email est envoyé automatiquement par Suppernote.');
   });
 
   it('produit un markup HTML bien formé (sécurise contre injection côté rendu)', () => {

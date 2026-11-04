@@ -1,3 +1,4 @@
+import { resolveDemoSlug, SUPPERNOTE_DEMO_SLUG } from '@sokar/shared';
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server';
 
@@ -9,8 +10,8 @@ const isOperatorRoute = createRouteMatcher([
 ]);
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 // Widget public, aussi servi sur les sous-domaines des restaurants : jamais de session Clerk.
-// Sans cela, un restaurateur connecté (cookie Clerk partagé avec *.sokar.tech) serait redirigé
-// vers la poignée de main Clerk, refusée hors de sokar.tech.
+// Sans cela, un restaurateur connecté (cookie Clerk partagé avec *.suppernote.com) serait redirigé
+// vers la poignée de main Clerk, refusée hors de suppernote.com.
 // Même liste que le bloc des sous-domaines dans infra/nginx/sokar.conf.
 const PUBLIC_WIDGET_ROUTE =
   /^\/(?:(?:widget|book)\/[^/]+|api\/proxy\/(?:public\/.+|marketing\/attribution\/click|restaurants\/[^/]+\/(?:public|availability)))$/;
@@ -47,11 +48,11 @@ if (process.env.NODE_ENV === 'production' && !hasClerkKey && !process.env.CI) {
   );
 }
 
-/** URL de booking publique courte : /book/[slug] -> /widget/[slug] (meme widget). */
-function rewriteBookToWidget(req: NextRequest): NextResponse | null {
-  const match = req.nextUrl.pathname.match(/^\/book\/([^/]+)$/);
-  if (!match) return null;
-  const slug = match[1];
+/** Les liens courts et l’alias de démonstration utilisent le même widget. */
+function rewritePublicWidget(req: NextRequest): NextResponse | null {
+  const match = req.nextUrl.pathname.match(/^\/(book|widget)\/([^/]+)$/);
+  if (!match || (match[1] === 'widget' && match[2] !== SUPPERNOTE_DEMO_SLUG)) return null;
+  const slug = resolveDemoSlug(match[2]);
   const url = new URL(`/widget/${slug}`, req.url);
   url.search = req.nextUrl.search;
   return NextResponse.rewrite(url);
@@ -59,7 +60,7 @@ function rewriteBookToWidget(req: NextRequest): NextResponse | null {
 
 const clerkProxy = hasClerkKey
   ? clerkMiddleware(async (auth, req) => {
-      const rewrite = rewriteBookToWidget(req);
+      const rewrite = rewritePublicWidget(req);
       if (rewrite) return rewrite;
 
       if (isProtectedRoute(req) && (!isDemoMode || isOperatorRoute(req))) {
@@ -78,7 +79,7 @@ const clerkProxy = hasClerkKey
   : null;
 
 function localPreviewMiddleware(req: NextRequest) {
-  const rewrite = rewriteBookToWidget(req);
+  const rewrite = rewritePublicWidget(req);
   if (rewrite) return rewrite;
 
   const legacyDestination = getLegacyOperatorDestination(req.nextUrl.pathname);

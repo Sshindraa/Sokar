@@ -17,17 +17,17 @@ import {
 } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Sokar MCP — Connectez votre restaurant à ChatGPT, Claude & Mistral',
+  title: 'Suppernote MCP — Connectez votre restaurant à ChatGPT, Claude & Mistral',
   description:
-    'Model Context Protocol officiel de Sokar. Permettez à vos clients de réserver, vérifier les disponibilités et annuler depuis leurs assistants IA préférés.',
+    'Model Context Protocol officiel de Suppernote. Permettez à vos clients de réserver, vérifier les disponibilités et annuler depuis leurs assistants IA préférés.',
   openGraph: {
-    title: 'Sokar MCP — Reservations IA pour restaurateurs',
-    description: 'Connectez Sokar à Claude.ai, ChatGPT et Mistral. Six outils OAuth + PKCE.',
+    title: 'Suppernote MCP — Reservations IA pour restaurateurs',
+    description: 'Connectez Suppernote à Claude.ai, ChatGPT et Mistral. Six outils OAuth + PKCE.',
     type: 'website',
   },
 };
 
-const MCP_URL = 'https://api.sokar.tech/mcp';
+const MCP_URL = 'https://api.suppernote.com/mcp';
 
 const TOOLS = [
   {
@@ -120,7 +120,7 @@ export default function McpPage() {
           </p>
 
           <h1 className="mt-7 max-w-4xl text-[2.5rem] font-semibold leading-[0.98] tracking-tight text-white sm:text-6xl md:text-7xl font-display">
-            Sokar dans <span className="text-[hsl(var(--pricing-accent))]">ChatGPT</span>,{' '}
+            Suppernote dans <span className="text-[hsl(var(--pricing-accent))]">ChatGPT</span>,{' '}
             <span className="text-[hsl(var(--pricing-accent))]">Claude</span> &amp;{' '}
             <span className="text-[hsl(var(--pricing-accent))]">Mistral</span>
           </h1>
@@ -151,7 +151,7 @@ export default function McpPage() {
             icon={<Sparkles size={14} />}
             eyebrow="Exemples"
             title="Trois prompts qui marchent"
-            description="Copiez-collez dans ChatGPT, Claude ou Mistral après avoir connecté Sokar. Les outils s'enchaînent automatiquement."
+            description="Copiez-collez dans ChatGPT, Claude ou Mistral après avoir connecté Suppernote. Les outils s'enchaînent automatiquement."
           />
 
           <div className="mt-12 grid gap-5 md:grid-cols-3">
@@ -226,7 +226,7 @@ export default function McpPage() {
           <SectionHeader
             icon={<KeyRound size={14} />}
             eyebrow="Connexion"
-            title="Ajouter Sokar à votre assistant"
+            title="Ajouter Suppernote à votre assistant"
             description="Trois étapes. OAuth 2.0 + PKCE S256. Aucun secret à copier."
           />
 
@@ -244,7 +244,7 @@ export default function McpPage() {
                 'Settings → Connectors',
                 'Bouton "Add custom connector"',
                 "Coller l'URL ci-dessus",
-                'Cliquer "Connect" → écran de consentement Sokar',
+                'Cliquer "Connect" → écran de consentement Suppernote',
                 'Une fois autorisé, le connecteur apparaît dans la liste',
               ]}
             />
@@ -255,7 +255,7 @@ export default function McpPage() {
                 'Settings → Connectors → "Create"',
                 'Mode "Developer" (nécessite un compte Pro/Team/Enterprise)',
                 "Coller l'URL ci-dessus",
-                'OAuth flow automatique → consentement Sokar',
+                'OAuth flow automatique → consentement Suppernote',
                 'Le connecteur apparaît dans la liste des outils disponibles',
               ]}
             />
@@ -265,7 +265,7 @@ export default function McpPage() {
               steps={[
                 'Settings → Connectors → "Custom MCP server"',
                 "Coller l'URL ci-dessus",
-                'Bouton "Connect" → écran de consentement Sokar',
+                'Bouton "Connect" → écran de consentement Suppernote',
                 'Une fois autorisé, le serveur apparaît dans la liste',
               ]}
             />
@@ -274,7 +274,7 @@ export default function McpPage() {
               tag="Terminal"
               steps={[
                 "Ajout direct via variable d'environnement ou commande",
-                'claude mcp add sokar --transport http https://api.sokar.tech/mcp',
+                'claude mcp add sokar --transport http https://api.suppernote.com/mcp',
                 'Le flow OAuth se déclenche à la première utilisation',
                 'Le connecteur est persisté dans ~/.claude/mcp.json',
               ]}
@@ -291,9 +291,10 @@ export default function McpPage() {
               </code>{' '}
               pour découvrir le serveur d&apos;autorisation. Il s&apos;enregistre automatiquement
               via Dynamic Client Registration (DCR, RFC 7591), génère un PKCE S256, affiche
-              l&apos;écran de consentement Sokar, et vous redirige avec un code d&apos;autorisation.
-              Le consentement est lié à votre organisation Clerk : aucun mot de passe n&apos;est
-              partagé avec l&apos;assistant, et l&apos;accès est limité à votre restaurant.
+              l&apos;écran de consentement Suppernote, et vous redirige avec un code
+              d&apos;autorisation. Le consentement est lié à votre organisation Clerk : aucun mot de
+              passe n&apos;est partagé avec l&apos;assistant, et l&apos;accès est limité à votre
+              restaurant.
             </p>
           </div>
         </div>
@@ -355,7 +356,7 @@ export default function McpPage() {
       {/* ── FOOTER ────────────────────────────────────────── */}
       <footer className="py-10 text-center text-sm text-muted-foreground">
         <div className="mx-auto flex max-w-5xl flex-col items-center gap-2 px-5 sm:flex-row sm:justify-between sm:px-8">
-          <span>&copy; {new Date().getFullYear()} Sokar. Tous droits réservés.</span>
+          <span>&copy; {new Date().getFullYear()} Suppernote. Tous droits réservés.</span>
           <div className="flex items-center gap-5">
             <Link href="/pricing" className="hover:text-foreground transition-all duration-200">
               Tarifs

@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Google Places Details service.
+ * Suppernote Connect — Google Places Details service.
  *
  * Récupère le rating et le nombre d'avis d'un restaurant depuis Google Places.
  * Respect des CGU Google Places API :

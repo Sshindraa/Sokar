@@ -594,6 +594,8 @@ detect_changed_apps() {
             echo "$changed_files" | grep -qE '^apps/dashboard/' && NEED_DASHBOARD=true
             echo "$changed_files" | grep -qE '^apps/connect/' && NEED_CONNECT=true
             echo "$changed_files" | grep -qE '^apps/api/' && NEED_API=true
+            # Config PM2 (env) et dépendances runtime de l'API : redémarrage requis.
+            echo "$changed_files" | grep -qE '^(infra/ecosystem|pnpm-lock\.yaml$|package\.json$|pnpm-workspace\.yaml$)' && NEED_API=true
             # Prisma schema/migrations changent → generate + migrate
             if echo "$changed_files" | grep -qE '^packages/database/prisma/'; then
                 NEED_PRISMA=true
@@ -790,10 +792,10 @@ install_nginx() {
     log info "📦 Installing Nginx ${DEPLOY_ENV} routing..."
     sudo "$PRIVILEGED_WRAPPER" install-nginx "$DEPLOY_ENV"
 
-    # Prod : vérifier qu'un seul virtual host déclare api.sokar.tech
+    # Prod : vérifier qu'un seul virtual host déclare api.suppernote.com
     if [ "$DEPLOY_ENV" = "prod" ]; then
         if ! sudo "$PRIVILEGED_WRAPPER" check-prod-vhost "$DEPLOY_ENV"; then
-            log_error "Le nombre de virtual hosts déclarant api.sokar.tech est incorrect (attendu: 1)."
+            log_error "Le nombre de virtual hosts déclarant api.suppernote.com est incorrect (attendu: 1)."
             log info "   Supprime l'ancien fichier dans /etc/nginx/sites-enabled avant de relancer."
             exit 1
         fi
@@ -804,7 +806,7 @@ install_nginx() {
 }
 
 # Vérifier que le catch-all Nginx déclare default_server sur 443.
-# Bug PR #67 : les sous-domaines *.sokar.tech tombaient sur le dashboard au lieu
+# Bug PR #67 : les sous-domaines *.suppernote.com tombaient sur le dashboard au lieu
 # de Connect car default_server manquait sur le listen 443 du server_name _.
 validate_nginx_config() {
     # Staging n'a pas de catch-all (pas de subdomains) — skip la validation.
@@ -816,11 +818,19 @@ validate_nginx_config() {
 
     if ! grep -q "listen 443 ssl http2 default_server" "$conf_file" 2>/dev/null; then
         log_error "Nginx catch-all missing 'default_server' on listen 443."
-        log_error "Subdomains *.sokar.tech will be routed to the wrong server block."
+        log_error "Subdomains *.suppernote.com will be routed to the wrong server block."
         log_error "Check $conf_file — the server_name _ block must have default_server on 443."
         exit 1
     fi
     log info "   ✅ Nginx catch-all default_server 443 — OK"
+}
+
+api_env_fingerprint() {
+    if [ -f "$1" ]; then
+        sha256sum "$1" | cut -d ' ' -f 1
+    else
+        printf '%s\n' missing
+    fi
 }
 
 # Redémarrer les services PM2 + Nginx (+ LocalStack en prod)
@@ -837,14 +847,30 @@ restart_services() {
         pm2 stop "$PM2_CONNECT" 2>/dev/null || true
     fi
 
-    pm2 start "$ECOSYSTEM_FILE"
-
-    # L'API n'est redémarrée que si son artefact ou son schéma a changé. Les
-    # déploiements purement Dashboard/Connect ne provoquent ainsi aucun arrêt
-    # du backend.
-    if [ "${NEED_API:-false}" = true ]; then
-        pm2 restart "$PM2_API" "$PM2_WORKERS" 2>/dev/null || true
+    # `pm2 start <ecosystem>` redémarre aussi les apps déjà en ligne : on ne le
+    # lance qu'app par app, pour celles qui sont réellement remplacées, une seule
+    # fois. Un déploiement Dashboard/Connect ne coupe donc pas le backend.
+    local TO_START=""
+    if [ "${NEXT_BUILD_ACTIVATED_DASHBOARD:-false}" = true ]; then
+        TO_START="$PM2_DASH"
     fi
+    if [ "${NEXT_BUILD_ACTIVATED_CONNECT:-false}" = true ]; then
+        TO_START="$TO_START $PM2_CONNECT"
+    fi
+    if [ "${NEED_API:-false}" = true ] || { [ -n "${SOKAR_API_ENV_BEFORE:-}" ] && [ "$SOKAR_API_ENV_BEFORE" != "$(api_env_fingerprint "$SOKAR_ROOT/apps/api/.env")" ]; }; then
+        TO_START="$TO_START $PM2_API $PM2_WORKERS"
+    fi
+    # Une app absente ou arrêtée (pm2 delete, plantage) est aussi relancée : l'ancien
+    # `pm2 start <ecosystem>` la remontait, et le runbook impose un `pm2 delete`.
+    local APP PID
+    for APP in "$PM2_API" "$PM2_WORKERS" "$PM2_DASH" "$PM2_CONNECT"; do
+        PID="$(pm2 pid "$APP" 2>/dev/null | tr -d '[:space:]' || true)"
+        case " $TO_START " in
+            *" $APP "*) ;;
+            *) if [ -n "$PID" ] && [ "$PID" != 0 ]; then continue; fi ;;
+        esac
+        pm2 start "$ECOSYSTEM_FILE" --only "$APP"
+    done
     pm2 save
     sudo "$PRIVILEGED_WRAPPER" reload-nginx "$DEPLOY_ENV"
 
@@ -942,18 +968,18 @@ health_checks() {
     if [ "$EXTENDED_HEALTH_CHECKS" = true ]; then
         # Checks étendus prod
         local API_VHOST_STATUS WIDGET_API_STATUS PUBLIC_PAGE_STATUS
-        API_VHOST_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: api.sokar.tech" \
+        API_VHOST_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: api.suppernote.com" \
             http://127.0.0.1/health 2>/dev/null || echo "FAIL")
-        WIDGET_API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: sokar.tech" \
+        WIDGET_API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: suppernote.com" \
             http://127.0.0.1/api/proxy/public/widget/chez-sokar-demo 2>/dev/null || echo "FAIL")
-        PUBLIC_PAGE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: sokar.tech" \
+        PUBLIC_PAGE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: suppernote.com" \
             http://127.0.0.1/restaurant/chez-sokar-demo 2>/dev/null || echo "FAIL")
-        log info "   api.sokar.tech/health via Nginx → $API_VHOST_STATUS"
+        log info "   api.suppernote.com/health via Nginx → $API_VHOST_STATUS"
         log info "   widget slug API via Next proxy → $WIDGET_API_STATUS"
         log info "   public Sokar Connect page via Nginx → $PUBLIC_PAGE_STATUS"
 
         local WIDGET_HEADERS WIDGET_IFRAME_STATUS
-        WIDGET_HEADERS=$(curl -sSI -H "Host: sokar.tech" \
+        WIDGET_HEADERS=$(curl -sSI -H "Host: suppernote.com" \
             http://127.0.0.1/widget/chez-sokar-demo 2>/dev/null || true)
         if printf '%s' "$WIDGET_HEADERS" | grep -Eqi '^X-Frame-Options:'; then
             WIDGET_IFRAME_STATUS="FAIL"
@@ -967,17 +993,17 @@ health_checks() {
 
         # Vérification de la page achat carte cadeau (P1.4) — route /widget/[slug]/gift-card.
         local GIFT_CARD_WIDGET_STATUS
-        GIFT_CARD_WIDGET_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: sokar.tech" \
+        GIFT_CARD_WIDGET_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: suppernote.com" \
             http://127.0.0.1/widget/chez-sokar-demo/gift-card 2>/dev/null || echo "FAIL")
         log info "   gift-card widget page → $GIFT_CARD_WIDGET_STATUS"
 
-        # Subdomain routing check — verify *.sokar.tech middleware routes to Connect
+        # Subdomain routing check — verify *.suppernote.com middleware routes to Connect
         # (not the dashboard). Bug historique : default_server manquant sur 443 →
         # les sous-domaines tombaient sur le dashboard au lieu de Connect.
         local SUBDOMAIN_STATUS
         SUBDOMAIN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Host: chez-sokar-demo.sokar.tech" "http://127.0.0.1/" 2>/dev/null || echo "FAIL")
-        log info "   subdomain (Host: chez-sokar-demo.sokar.tech) → $SUBDOMAIN_STATUS"
+            -H "Host: chez-sokar-demo.suppernote.com" "http://127.0.0.1/" 2>/dev/null || echo "FAIL")
+        log info "   subdomain (Host: chez-sokar-demo.suppernote.com) → $SUBDOMAIN_STATUS"
 
         # Vérification post-déploiement : un asset CSS/JS réel doit répondre 200.
         # Bug historique : `curl -I /` répond 200 même si .next/static n'a pas été
@@ -985,12 +1011,12 @@ health_checks() {
         # chunk JS du HTML rendu et on vérifie qu'il est servi.
         local DASH_CSS_STATUS FIRST_CHUNK
         DASH_CSS_STATUS="N/A"
-        FIRST_CHUNK=$(curl -s -H "Host: sokar.tech" http://127.0.0.1/ 2>/dev/null \
+        FIRST_CHUNK=$(curl -s -H "Host: suppernote.com" http://127.0.0.1/ 2>/dev/null \
           | grep -oE '/_next/static/[^\"]+\.(js|css)' \
           | head -1 || true)
         if [ -n "$FIRST_CHUNK" ]; then
           DASH_CSS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Host: sokar.tech" "http://127.0.0.1${FIRST_CHUNK}" 2>/dev/null || echo "FAIL")
+            -H "Host: suppernote.com" "http://127.0.0.1${FIRST_CHUNK}" 2>/dev/null || echo "FAIL")
           log info "   dashboard asset ${FIRST_CHUNK} → $DASH_CSS_STATUS"
         else
           log_warn " Aucun chunk JS/CSS trouvé dans le HTML du dashboard (build cassé ?)"
@@ -1000,12 +1026,12 @@ health_checks() {
         # HTML 200 mais /_next/static/css/*.css en 400 → page sans CSS).
         local PRICING_CSS_STATUS PRICING_CSS
         PRICING_CSS_STATUS="FAIL"
-        PRICING_CSS=$(curl -s -H "Host: sokar.tech" http://127.0.0.1/pricing 2>/dev/null \
+        PRICING_CSS=$(curl -s -H "Host: suppernote.com" http://127.0.0.1/pricing 2>/dev/null \
           | grep -oE '/_next/static/css/[^"]+\.css' \
           | head -1 || true)
         if [ -n "$PRICING_CSS" ]; then
           PRICING_CSS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Host: sokar.tech" "http://127.0.0.1${PRICING_CSS}" 2>/dev/null || echo "FAIL")
+            -H "Host: suppernote.com" "http://127.0.0.1${PRICING_CSS}" 2>/dev/null || echo "FAIL")
           log info "   /pricing CSS ${PRICING_CSS} → $PRICING_CSS_STATUS"
         else
           log_warn " Aucune feuille CSS trouvée dans le HTML de /pricing"
@@ -1048,12 +1074,12 @@ health_checks() {
         log info "   api (/livez)       → $LIVEZ_STATUS"
 
         # Vérifier via Nginx (Host header)
-        STAGING_API_VHOST=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: staging.sokar.tech" \
+        STAGING_API_VHOST=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: staging.suppernote.com" \
             http://127.0.0.1/health 2>/dev/null || echo "FAIL")
-        STAGING_DASH_VHOST=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: staging.sokar.tech" \
+        STAGING_DASH_VHOST=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: staging.suppernote.com" \
             http://127.0.0.1/ 2>/dev/null || echo "FAIL")
-        log info "   staging.sokar.tech/health via Nginx → $STAGING_API_VHOST"
-        log info "   staging.sokar.tech/ via Nginx       → $STAGING_DASH_VHOST"
+        log info "   staging.suppernote.com/health via Nginx → $STAGING_API_VHOST"
+        log info "   staging.suppernote.com/ via Nginx       → $STAGING_DASH_VHOST"
 
         if [ "$API_STATUS" = "200" ] \
             && [ "$LIVEZ_STATUS" = "200" ] \

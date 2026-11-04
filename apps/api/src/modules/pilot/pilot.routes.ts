@@ -4,7 +4,7 @@
  *
  * Ces KPIs passent par le vhost public de l'API : « interne » décrit leur
  * audience, pas leur accessibilité. La route exige donc une identité
- * opérateur Sokar, comme les autres routes `/api/internal/*`.
+ * opérateur Suppernote, comme les autres routes `/api/internal/*`.
  */
 
 import type { FastifyInstance } from 'fastify';

@@ -106,7 +106,7 @@ const groups = [
 const questions = [
   [
     'Puis-je conserver mon numéro actuel ?',
-    'Un numéro Sokar dédié est attribué à votre restaurant. Vous pouvez conserver votre numéro habituel et configurer un renvoi d’appel vers Sokar avec votre opérateur. Le renvoi et un appel test sont vérifiés avant l’activation. Les éventuels frais de renvoi dépendent de votre opérateur.',
+    'Un numéro Suppernote dédié est attribué à votre restaurant. Vous pouvez conserver votre numéro habituel et configurer un renvoi d’appel vers Suppernote avec votre opérateur. Le renvoi et un appel test sont vérifiés avant l’activation. Les éventuels frais de renvoi dépendent de votre opérateur.',
   ],
   [
     'Comment se déroule la mise en service ?',
@@ -114,15 +114,15 @@ const questions = [
   ],
   [
     'Quel planning mon équipe utilise-t-elle ?',
-    'Le planning Sokar réunit les réservations prises par téléphone, sur votre page Connect, dans le widget et celles que votre équipe saisit en salle. Votre équipe conserve la main pour ajouter, modifier et suivre les réservations.',
+    'Le planning Suppernote réunit les réservations prises par téléphone, sur votre page Connect, dans le widget et celles que votre équipe saisit en salle. Votre équipe conserve la main pour ajouter, modifier et suivre les réservations.',
   ],
   [
-    'Que fait Sokar pendant le service ?',
+    'Que fait Suppernote pendant le service ?',
     'L’assistant traite les demandes de réservation par téléphone à partir de vos disponibilités et consignes. Votre équipe prépare la salle, accueille les clients et suit les demandes qui nécessitent son intervention. Les confirmations et rappels dépendent des canaux configurés.',
   ],
   [
     'Qu’apporte Pro aujourd’hui ?',
-    'Essential permet à votre équipe de gérer les appels, les réservations et la salle. Pro ajoute le copilote : suggestions pour les retards, estimations de libération des tables, rapprochements avec les clients en attente et plans de réorganisation. Votre équipe valide le plan ; Sokar vérifie encore les disponibilités avant de l’appliquer. Une démonstration vous permet de découvrir ce parcours. La préparation marketing reste un complément, sans envoi de campagnes.',
+    'Essential permet à votre équipe de gérer les appels, les réservations et la salle. Pro ajoute le copilote : suggestions pour les retards, estimations de libération des tables, rapprochements avec les clients en attente et plans de réorganisation. Votre équipe valide le plan ; Suppernote vérifie encore les disponibilités avant de l’appliquer. Une démonstration vous permet de découvrir ce parcours. La préparation marketing reste un complément, sans envoi de campagnes.',
   ],
   [
     'Le copilote déplace-t-il seul mes réservations ?',
@@ -130,7 +130,7 @@ const questions = [
   ],
   [
     'Comment sont facturés les appels et les SMS ?',
-    'Les offres n’appliquent actuellement aucun quota client de minutes vocales ou de SMS, ni facturation automatique de dépassement. Les budgets de suivi internes ne limitent pas votre usage. Les SMS de confirmation et de rappel nécessitent la configuration du canal. Les frais de renvoi de votre opérateur restent distincts de l’abonnement Sokar.',
+    'Les offres n’appliquent actuellement aucun quota client de minutes vocales ou de SMS, ni facturation automatique de dépassement. Les budgets de suivi internes ne limitent pas votre usage. Les SMS de confirmation et de rappel nécessitent la configuration du canal. Les frais de renvoi de votre opérateur restent distincts de l’abonnement Suppernote.',
   ],
   [
     'Quand suis-je débité et puis-je résilier ?',

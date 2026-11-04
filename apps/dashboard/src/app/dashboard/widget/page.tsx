@@ -163,7 +163,7 @@ export default function WidgetIntegrationPage() {
               <div className="overflow-hidden rounded-lg border border-border bg-background">
                 <iframe
                   src={buildWidgetUrl(settings.slug)}
-                  title="Aperçu du widget Sokar"
+                  title="Aperçu du widget Suppernote"
                   className="w-full"
                   style={{ height: 520 }}
                   scrolling="no"

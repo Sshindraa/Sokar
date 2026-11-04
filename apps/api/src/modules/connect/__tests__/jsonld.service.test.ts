@@ -1,5 +1,5 @@
 /**
- * Tests JSON-LD — Sokar Connect T3.
+ * Tests JSON-LD — Suppernote Connect T3.
  *
  * Vérifie :
  * - structure schema.org Restaurant
@@ -33,7 +33,7 @@ const baseRestaurant: PublicRestaurantDto = {
     { day: 'monday', open: '19:00', close: '22:30' },
     { day: 'tuesday', open: '12:00', close: '14:30' },
   ],
-  reservationUrl: 'https://sokar.tech/r/chez-mario-lyon/book',
+  reservationUrl: 'https://suppernote.com/r/chez-mario-lyon/book',
   images: { cover: 'https://sokar.app/img/cover.jpg', gallery: [] },
   acceptsReservations: true,
   publishedAt: '2026-06-24T00:00:00.000Z',
@@ -44,7 +44,7 @@ const baseRestaurant: PublicRestaurantDto = {
 
 describe('buildPublicRestaurantJsonLd', () => {
   it('génère un JSON-LD Restaurant conforme', () => {
-    const expectedSiteUrl = process.env.SITE_URL ?? 'https://sokar.tech';
+    const expectedSiteUrl = process.env.SITE_URL ?? 'https://suppernote.com';
     const jsonLd = buildPublicRestaurantJsonLd({
       restaurant: baseRestaurant,
       attributesConfidence: {
@@ -67,7 +67,7 @@ describe('buildPublicRestaurantJsonLd', () => {
       restaurant: baseRestaurant,
       attributesConfidence: null,
     });
-    expect(jsonLd.acceptsReservations).toBe('https://sokar.tech/r/chez-mario-lyon/book');
+    expect(jsonLd.acceptsReservations).toBe('https://suppernote.com/r/chez-mario-lyon/book');
     expect(typeof jsonLd.acceptsReservations).toBe('string');
   });
 

@@ -156,4 +156,48 @@ mkdir -p "$TMP_ROOT/restore-root"
 test "$(cat "$TMP_ROOT/restore-root/pnpm-lock.yaml")" = 'lockfileVersion: v1'
 test -f "$TMP_ROOT/restore-root/apps/api/package.json"
 
+# Redémarrages PM2 : une seule fois par app remplacée, l'API seulement si elle a changé.
+PM2_API=sokar-api PM2_WORKERS=sokar-workers PM2_DASH=sokar-dashboard PM2_CONNECT=sokar-connect
+ECOSYSTEM_FILE=eco.js PRIVILEGED_WRAPPER=/bin/true HAS_LOCALSTACK=false
+PM2_CALLS="$TMP_ROOT/pm2-calls.log"
+PM2_DOWN=""
+pm2() {
+    if [ "$1" = pid ]; then
+        case " $PM2_DOWN " in *" $2 "*) echo 0 ;; *) echo 4242 ;; esac
+        return 0
+    fi
+    echo "pm2 $*" >> "$PM2_CALLS"
+}
+sudo() { :; }
+: > "$PM2_CALLS"
+NEXT_BUILD_ACTIVATED_DASHBOARD=false NEXT_BUILD_ACTIVATED_CONNECT=false NEED_API=false restart_services >/dev/null
+test "$(cat "$PM2_CALLS")" = 'pm2 save'
+: > "$PM2_CALLS"
+NEXT_BUILD_ACTIVATED_DASHBOARD=true NEXT_BUILD_ACTIVATED_CONNECT=false NEED_API=false restart_services >/dev/null
+test "$(cat "$PM2_CALLS")" = "$(printf 'pm2 stop sokar-dashboard\npm2 start eco.js --only sokar-dashboard\npm2 save')"
+: > "$PM2_CALLS"
+NEXT_BUILD_ACTIVATED_DASHBOARD=false NEXT_BUILD_ACTIVATED_CONNECT=false NEED_API=true restart_services >/dev/null
+test "$(cat "$PM2_CALLS")" = "$(printf 'pm2 start eco.js --only sokar-api\npm2 start eco.js --only sokar-workers\npm2 save')"
+
+# Une app absente (pm2 delete, plantage) est relancée même sans changement de code.
+PM2_DOWN=sokar-api
+: > "$PM2_CALLS"
+NEXT_BUILD_ACTIVATED_DASHBOARD=false NEXT_BUILD_ACTIVATED_CONNECT=false NEED_API=false restart_services >/dev/null
+test "$(cat "$PM2_CALLS")" = "$(printf 'pm2 start eco.js --only sokar-api\npm2 save')"
+PM2_DOWN=""
+
+# Une modification de .env impose aussi le redémarrage sans changement de code.
+mkdir -p "$TMP_ROOT/apps/api"
+printf 'VALUE=before\n' > "$TMP_ROOT/apps/api/.env"
+SOKAR_ROOT="$TMP_ROOT"
+SOKAR_API_ENV_BEFORE="$(api_env_fingerprint "$SOKAR_ROOT/apps/api/.env")"
+NEXT_BUILD_ACTIVATED_DASHBOARD=false NEXT_BUILD_ACTIVATED_CONNECT=false
+: > "$PM2_CALLS"
+NEED_API=false restart_services >/dev/null
+test "$(cat "$PM2_CALLS")" = 'pm2 save'
+printf 'VALUE=after\n' > "$TMP_ROOT/apps/api/.env"
+: > "$PM2_CALLS"
+NEED_API=false restart_services >/dev/null
+test "$(cat "$PM2_CALLS")" = "$(printf 'pm2 start eco.js --only sokar-api\npm2 start eco.js --only sokar-workers\npm2 save')"
+
 echo 'deploy-common release activation/rollback: OK'

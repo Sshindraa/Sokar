@@ -44,7 +44,7 @@ const inviteRateLimit = { max: 20, timeWindow: '1 minute' };
 export async function teamRoutes(app: FastifyInstance) {
   type Owner = { organizationId: string; accountId: string; userId: string };
 
-  /** Propriétaire d'un compte Sokar relié à une organisation Clerk, sinon la réponse est faite. */
+  /** Propriétaire d'un compte Suppernote relié à une organisation Clerk, sinon la réponse est faite. */
   function requireOwner(req: FastifyRequest, reply: FastifyReply): Owner | null {
     if (req.siteRole !== 'OWNER' || !req.accountId || !req.clerkOrganizationId || !req.userId) {
       reply.status(403).send({
@@ -110,7 +110,7 @@ export async function teamRoutes(app: FastifyInstance) {
           inviterUserId: owner.userId,
           email: body.email,
           role: body.role,
-          redirectUrl: `${(process.env.DASHBOARD_URL ?? 'https://sokar.tech').replace(/\/$/, '')}/register`,
+          redirectUrl: `${(process.env.DASHBOARD_URL ?? 'https://suppernote.com').replace(/\/$/, '')}/register`,
         });
         // Ni l'adresse ni le nom de l'invité ne vont dans les journaux.
         req.log.info({ invited_role: invitation.role }, 'team invitation sent');

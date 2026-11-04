@@ -28,7 +28,7 @@ export default function FooterGlow() {
         )}
         style={{
           background:
-            // Palette Sokar : bleu nuit, bleu ardoise, gris-bleu pâle.
+            // Palette Suppernote : bleu nuit, bleu ardoise, gris-bleu pâle.
             'radial-gradient(70% 120% at 50% 100%, hsl(210 30% 92%), hsl(212 30% 72%) 25%, hsl(213 28% 46%) 50%, hsl(216 42% 20%) 75%, transparent 95%)',
           maskImage: 'linear-gradient(to top, black 65%, transparent)',
           WebkitMaskImage: 'linear-gradient(to top, black 65%, transparent)',

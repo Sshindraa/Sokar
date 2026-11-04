@@ -88,7 +88,7 @@ export default function ConnectDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<'connectPublished' | 'connectAgentic' | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // La page des KPIs du pilote est réservée à l'équipe Sokar : le lien n'existe que pour elle.
+  // La page des KPIs du pilote est réservée à l'équipe Suppernote : le lien n'existe que pour elle.
   const [isOperator, setIsOperator] = useState(false);
 
   useEffect(() => {
