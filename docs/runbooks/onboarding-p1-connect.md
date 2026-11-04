@@ -51,7 +51,7 @@ Source : `apps/api/src/modules/connect/connect-kpis.service.ts` (`CONNECT_TARGET
 
 ### 2. Configuration via dashboard
 
-- [ ] Accéder au dashboard Sokar (`https://sokar.tech/dashboard`)
+- [ ] Accéder au dashboard Sokar (`https://suppernote.com/dashboard`)
 - [ ] Créer le restaurant
 - [ ] Compléter le socle commun (`restaurant`, `hours`, `floor` : salle et règles) puis les 2 étapes Connect (nouveau parcours local, 9 octobre 2026) :
   - `connect-identity` — Votre page : éditeur et aperçu côte à côte ; adresse importée à la sélection Google et enregistrée à l’étape restaurant ; correction de l’adresse intégrée. Photo, présentation, cuisine, gamme de prix, régimes et ambiance facultatifs.
@@ -74,15 +74,15 @@ Source : `apps/api/src/modules/connect/connect-kpis.service.ts` (`CONNECT_TARGET
 ### 4. Validation
 
 - [ ] Page `/restaurant/[slug]` accessible (HTTP 200)
-- [ ] Sitemap inclut le restaurant (`GET /sitemap.xml` sur `https://sokar.tech`)
+- [ ] Sitemap inclut le restaurant (`GET /sitemap.xml` sur `https://suppernote.com`)
 - [ ] Widget de réservation fonctionnel (`/restaurant/[slug]/book`)
 - [ ] Test de réservation end-to-end : hold (`POST /public/r/:slug/hold`) → confirm (`POST /public/r/:slug/confirm`)
 
 ### 5. Google Search Console (one-time)
 
-- [ ] Créer la propriété `https://sokar.tech` dans Google Search Console
+- [ ] Créer la propriété `https://suppernote.com` dans Google Search Console
 - [ ] Vérifier via `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION` (meta tag dans `apps/connect/src/app/layout.tsx`) ou fichier `google<hash>.html`
-- [ ] Soumettre le sitemap `https://sokar.tech/sitemap.xml`
+- [ ] Soumettre le sitemap `https://suppernote.com/sitemap.xml`
 - [ ] Surveiller l'indexation (jours → semaines)
 
 ## Suivi du pilote

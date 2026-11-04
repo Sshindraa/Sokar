@@ -23,28 +23,28 @@ contrôlé et exiger le statut `delivered` ainsi que la réception sur le télé
 
 ## E-mails
 
-| Élément                     | État                                                                                                                   | Action                                                    |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Envoi applicatif            | Resend, `noreply@sokar.tech`, signature DKIM `resend._domainkey` et retour `send.sokar.tech` (SPF Amazon SES) présents | Rien                                                      |
-| Nom affiché                 | Adresse nue, affichée « noreply »                                                                                      | Corrigé : `Sokar <noreply@sokar.tech>` (`emailSender`)    |
-| Réponses                    | Partaient vers `noreply`                                                                                               | Corrigé : `Reply-To: hello@sokar.tech` (`EMAIL_REPLY_TO`) |
-| Adresse de secours du code  | `noreply@sokar.fr` (domaine non vérifié)                                                                               | Corrigé                                                   |
-| Clerk (connexion)           | DKIM `clk`/`clk2` et `clkmail` présents                                                                                | Rien                                                      |
-| Google Workspace (`hello@`) | DKIM `google._domainkey` présent, mais **SPF racine sans Google**                                                      | DNS ci-dessous                                            |
-| DMARC                       | **Absent** (exigé par Gmail et Yahoo pour les envois en volume)                                                        | DNS ci-dessous                                            |
+| Élément                     | État                                                                                                                           | Action                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| Envoi applicatif            | Resend, `noreply@suppernote.com`, signature DKIM `resend._domainkey` et retour `send.suppernote.com` (SPF Amazon SES) présents | Rien                                                          |
+| Nom affiché                 | Adresse nue, affichée « noreply »                                                                                              | Corrigé : `Sokar <noreply@suppernote.com>` (`emailSender`)    |
+| Réponses                    | Partaient vers `noreply`                                                                                                       | Corrigé : `Reply-To: hello@suppernote.com` (`EMAIL_REPLY_TO`) |
+| Adresse de secours du code  | `noreply@sokar.fr` (domaine non vérifié)                                                                                       | Corrigé                                                       |
+| Clerk (connexion)           | DKIM `clk`/`clk2` et `clkmail` présents                                                                                        | Rien                                                          |
+| Google Workspace (`hello@`) | DKIM `google._domainkey` présent, mais **SPF racine sans Google**                                                              | DNS ci-dessous                                                |
+| DMARC                       | **Absent** (exigé par Gmail et Yahoo pour les envois en volume)                                                                | DNS ci-dessous                                                |
 
 ### Enregistrements à poser chez Cloudflare
 
-1. Remplacer le SPF racine `sokar.tech` (TXT) par :
+1. Remplacer le SPF racine `suppernote.com` (TXT) par :
 
    ```text
    v=spf1 include:_spf.google.com include:mail.qald09162xf0.clerk.services ~all
    ```
 
-2. Ajouter `_dmarc.sokar.tech` (TXT) :
+2. Ajouter `_dmarc.suppernote.com` (TXT) :
 
    ```text
-   v=DMARC1; p=none; rua=mailto:hello@sokar.tech; adkim=r; aspf=r
+   v=DMARC1; p=none; rua=mailto:hello@suppernote.com; adkim=r; aspf=r
    ```
 
    Lire les rapports deux à quatre semaines, puis passer à `p=quarantine` quand Resend, Clerk et
