@@ -32,13 +32,19 @@
   --glass-2: 216 24% 12% / 0.7;
 }
 
-/* Accueil « une journée de service » : le fond suit l'heure, du clair à la nuit. */
-.brand-palette {
-  --day-paper: 210 30% 93%;
-  --day-ink: 216 42% 14%;
-  --day-ink-muted: 216 18% 36%;
-  --day-dusk: 216 42% 20%;
+/* Accueil : bleu nuit, chaleur du déjeuner, bleu nuit, puis noir. */
+.day-home {
+  --day-paper: 216 43% 10%;
+  --day-hero-panel: 216 42% 16%;
+  --day-hero-lit: 34 49% 79%;
+  --day-hero-muted: 212 30% 71%;
+  --day-lunch: 25 14% 12%;
+  --day-accent-color: 30 24% 74%;
+  --day-ink: 40 20% 94%;
+  --day-ink-muted: 220 8% 68%;
+  --day-dusk: 216 24% 9%;
   --day-night: 0 0% 0%;
+  --day-surface: 225 12% 14%;
 }
 
 .day-paper {
@@ -47,21 +53,185 @@
   color: hsl(var(--day-ink));
 }
 
+/* Hero : le texte sur le bleu nuit, la journée sur un bleu un peu plus clair. */
+.day-hero-panel {
+  background-color: hsl(var(--day-hero-panel));
+  color: hsl(var(--day-ink));
+}
+
+.day-hero-muted {
+  color: hsl(var(--day-hero-muted));
+}
+
+.day-hero-hour {
+  border-color: hsl(213 28% 34%);
+  color: hsl(var(--day-hero-muted));
+}
+
+.day-hero-hour-active {
+  border-color: hsl(var(--day-hero-lit));
+  color: hsl(var(--day-ink));
+}
+
+.day-hero-lit-text {
+  color: hsl(var(--day-hero-lit));
+}
+
+.day-hero-lit {
+  background-color: hsl(var(--day-hero-lit));
+  color: hsl(var(--day-paper));
+}
+
+.day-hero-card {
+  background-color: hsl(var(--day-paper));
+}
+
+/* Plan du hero : libre en contour, occupée en aplat, la table 9 allumée. */
+.day-hero-table {
+  fill: transparent;
+  stroke: hsl(var(--day-hero-muted) / 0.55);
+  stroke-width: 1.5;
+}
+
+.day-hero-table-busy {
+  fill: hsl(var(--day-hero-muted) / 0.22);
+  stroke: transparent;
+}
+
+.day-hero-table-free {
+  stroke: hsl(var(--day-ink));
+}
+
+.day-hero-table-lit {
+  fill: hsl(var(--day-hero-lit));
+  stroke: hsl(var(--day-hero-lit));
+}
+
+.day-hero-emblem {
+  stroke: hsl(var(--day-hero-muted) / 0.38);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.day-hero-emblem-lit {
+  stroke: hsl(var(--day-hero-lit));
+}
+
+.day-hero-chair {
+  fill: none;
+  stroke: hsl(var(--day-hero-muted) / 0.6);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.day-hero-chair-free {
+  stroke: hsl(var(--day-ink) / 0.7);
+}
+
+.day-hero-chair-lit {
+  stroke: hsl(var(--day-hero-lit));
+}
+
+.day-hero-table-label {
+  fill: hsl(var(--day-ink));
+  font-size: 1.875rem;
+}
+
+.day-hero-table-label-lit {
+  fill: hsl(var(--day-paper));
+}
+
+.day-lunch {
+  --day-muted: var(--day-ink-muted);
+  --day-accent-color: 24 32% 74%;
+  color: hsl(var(--day-ink));
+  background-color: hsl(var(--day-lunch));
+}
+
+.day-accent {
+  color: hsl(var(--day-accent-color));
+}
+
+.day-header-glass {
+  background-color: hsl(var(--day-paper) / 0.16);
+}
+
+@media (min-width: 768px) {
+  .day-header-glass {
+    background-image: linear-gradient(
+      to right,
+      hsl(var(--day-paper) / 0.8) 13rem,
+      transparent 21rem
+    );
+  }
+}
+
+.day-nav {
+  border-color: hsl(var(--day-ink) / 0.14);
+  background-color: hsl(var(--day-paper) / 0.82);
+  color: hsl(var(--day-ink));
+}
+
+.day-menu {
+  border-color: hsl(var(--day-ink) / 0.14);
+  background-color: hsl(var(--day-hero-panel));
+  color: hsl(var(--day-ink));
+}
+
 .day-dusk {
-  --day-muted: 212 30% 82%;
+  --day-muted: 212 16% 72%;
+  --day-accent-color: 212 28% 76%;
   background-color: hsl(var(--day-dusk));
   color: hsl(0 0% 100%);
 }
 
+/* Même bleu que l'écran de la journée : la tablette prolonge le panneau sans rupture. */
+.day-tablet {
+  --day-muted: 212 16% 72%;
+  --day-accent-color: 212 28% 76%;
+  background-color: hsl(var(--day-hero-panel));
+  color: hsl(0 0% 100%);
+}
+
+.day-tablet-to-night {
+  background-image: linear-gradient(to bottom, hsl(var(--day-hero-panel)), hsl(var(--day-paper)));
+}
+
+.day-team {
+  --background: var(--day-paper);
+  --foreground: var(--day-ink);
+  --muted-foreground: var(--day-hero-muted);
+  --primary: var(--day-hero-muted);
+  --primary-foreground: var(--day-paper);
+  --ring: var(--primary);
+  background-color: hsl(var(--background));
+  background-image: radial-gradient(
+    ellipse at left center,
+    hsl(var(--primary) / 0.08),
+    transparent 60%
+  );
+  color: hsl(var(--foreground));
+}
+
+/* Le bas du hero rejoint le bleu du panneau de la journée. */
+.day-hero-fade {
+  background-image: linear-gradient(to bottom, transparent, hsl(var(--day-hero-panel)));
+}
+
 .day-night {
   --day-muted: 212 16% 68%;
-  background-color: hsl(var(--day-night));
+  --day-accent-color: 212 16% 76%;
+  background-color: hsl(var(--day-paper));
   color: hsl(0 0% 100%);
 }
 
 /* Hauteurs fractionnaires : le léger recouvrement évite une ligne entre deux sections. */
 .day-paper,
+.day-lunch,
 .day-dusk,
+.day-tablet,
 .day-night {
   margin-bottom: -1px;
 }
@@ -70,8 +240,12 @@
   color: hsl(var(--day-muted));
 }
 
+.day-to-lunch {
+  background-image: linear-gradient(to bottom, hsl(var(--day-paper)), hsl(var(--day-lunch)));
+}
+
 .day-to-dusk {
-  background-image: linear-gradient(to bottom, hsl(var(--day-paper)), hsl(var(--day-dusk)));
+  background-image: linear-gradient(to bottom, hsl(var(--day-lunch)), hsl(var(--day-dusk)));
 }
 
 .day-to-night {
@@ -80,22 +254,23 @@
 
 .day-screen {
   border: 1px solid hsl(0 0% 100% / 0.12);
-  box-shadow: 0 30px 80px hsl(var(--day-ink) / 0.3);
+  box-shadow: 0 30px 80px hsl(var(--day-night) / 0.4);
 }
 
 .day-cta {
   background-color: hsl(var(--day-ink));
-  color: hsl(0 0% 100%);
+  color: hsl(var(--day-paper));
 }
 
 .day-cta-secondary {
-  border: 1px solid hsl(var(--day-ink) / 0.25);
+  border: 1px solid hsl(var(--day-ink) / 0.18);
+  background-color: hsl(var(--day-ink) / 0.03);
   color: hsl(var(--day-ink));
 }
 
 .day-cta-night {
-  background-color: hsl(0 0% 100%);
-  color: hsl(var(--day-ink));
+  background-color: hsl(var(--day-ink));
+  color: hsl(var(--day-night));
 }
 
 .day-cta-night-secondary {
@@ -103,15 +278,12 @@
   color: hsl(0 0% 100%);
 }
 
-/* Halo derrière les titres : il s'éteint avant le bord de la section, sinon la coupe se voit. */
-.day-halo-day {
-  background-image:
-    radial-gradient(ellipse 42% 50% at 50% 42%, hsl(0 0% 100% / 0.95), transparent 100%),
-    radial-gradient(ellipse 34% 30% at 64% 26%, hsl(0 0% 100% / 0.5), transparent 100%);
+.day-deep {
+  background-color: hsl(var(--day-paper));
 }
 
 .day-halo-night {
   background-image:
-    radial-gradient(ellipse 22% 36% at 55% 42%, hsl(0 0% 100% / 0.2), transparent 100%),
+    radial-gradient(ellipse 22% 36% at 55% 42%, hsl(210 40% 75% / 0.16), transparent 100%),
     radial-gradient(ellipse 45% 40% at 60% 42%, hsl(213 28% 52% / 0.32), transparent 100%);
 }

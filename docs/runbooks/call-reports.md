@@ -104,7 +104,7 @@ Ces commandes lisent le stockage privé **depuis le VPS** (code compilé déploy
 qu'après le déploiement de cette phase). Pour un appel déjà enregistré, avant ou sans déclencheur :
 
 ```bash
-pnpm --filter @sokar/api exec tsx scripts/call-report-local.ts <id> [--refresh]
+pnpm --filter @suppernote/api exec tsx scripts/call-report-local.ts <id> [--refresh]
 ```
 
 Le script lit l'enregistrement, le dialogue et les journaux par SSH ; la clé Deepgram ne quitte pas le

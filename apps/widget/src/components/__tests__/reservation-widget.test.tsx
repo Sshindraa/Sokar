@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { fetchWithTimeout } from '@sokar/shared';
+import { fetchWithTimeout } from '@suppernote/shared';
 import { ReservationWidget } from '../reservation-widget';
 
 interface WindowWithOpenAI extends Window {
@@ -12,7 +12,7 @@ interface WindowWithOpenAI extends Window {
   };
 }
 
-vi.mock('@sokar/shared', () => ({
+vi.mock('@suppernote/shared', () => ({
   fetchWithTimeout: vi.fn(),
 }));
 

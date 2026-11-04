@@ -1,4 +1,4 @@
-# @sokar/widget — OpenAI Reserve Widget
+# @suppernote/widget — OpenAI Reserve Widget
 
 ## État au 13 septembre 2026
 
@@ -31,9 +31,9 @@ Définir `NEXT_PUBLIC_API_URL` au moment du build (par exemple
 `http://localhost:3001` en local), puis lancer :
 
 ```bash
-pnpm --filter @sokar/widget dev
-pnpm --filter @sokar/widget test
-pnpm --filter @sokar/widget typecheck
+pnpm --filter @suppernote/widget dev
+pnpm --filter @suppernote/widget test
+pnpm --filter @suppernote/widget typecheck
 ```
 
 Le fallback standalone accepte `?slug=...`. Dans ChatGPT, le slug est lu

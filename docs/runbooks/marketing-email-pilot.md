@@ -176,7 +176,7 @@ Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jo
   Limite : un expéditeur alphanumérique « SOKAR » ne reçoit aucune réponse ; le STOP n'arrive que si
   l'expéditeur est un numéro. Les filtres STOP propres à Telnyx ne sont pas vérifiés dans ce dépôt.
   retraits antérieurs à la migration se reprennent avec
-  `pnpm --filter @sokar/api exec tsx scripts/backfill-marketing-opt-out-register.ts --dry-run` puis `--apply`
+  `pnpm --filter @suppernote/api exec tsx scripts/backfill-marketing-opt-out-register.ts --dry-run` puis `--apply`
   (comptes seulement, jamais d'adresse). Le registre est une donnée personnelle pseudonymisée : il doit
   figurer dans la politique et l'annexe client (**non fait**).
 

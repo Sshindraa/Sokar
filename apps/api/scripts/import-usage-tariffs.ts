@@ -2,9 +2,9 @@
  * Import validated provider tariffs into the versioned UsageTariff catalog.
  *
  * Usage:
- *   pnpm --filter @sokar/api exec tsx apps/api/scripts/import-usage-tariffs.ts \
+ *   pnpm --filter @suppernote/api exec tsx apps/api/scripts/import-usage-tariffs.ts \
  *     --file ./tariffs.csv --dry-run
- *   pnpm --filter @sokar/api exec tsx apps/api/scripts/import-usage-tariffs.ts \
+ *   pnpm --filter @suppernote/api exec tsx apps/api/scripts/import-usage-tariffs.ts \
  *     --file ./tariffs.csv --apply
  *
  * The input must contain the columns documented in the usage costing runbook.

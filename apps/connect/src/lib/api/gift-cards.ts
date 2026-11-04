@@ -5,7 +5,7 @@
  * Utilise fetchWithTimeout pour tous les appels.
  */
 
-import { fetchWithTimeout } from '@sokar/shared';
+import { fetchWithTimeout } from '@suppernote/shared';
 
 function getApiUrl(): string {
   if (typeof window === 'undefined') {

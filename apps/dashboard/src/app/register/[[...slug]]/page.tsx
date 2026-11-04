@@ -6,7 +6,7 @@ import {
   VAT_MENTION,
   pricingTotalCents,
   formatPriceCents,
-} from '@sokar/shared';
+} from '@suppernote/shared';
 
 import { SignUp, useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
@@ -69,7 +69,7 @@ function RegisterShell({ children }: { children: ReactNode }) {
       <div className="sokar-login__frame">
         <aside className="sokar-login__story" aria-label="Votre restaurant avec Suppernote">
           <Link href="/" className="sokar-login__brand" aria-label="Suppernote, accueil">
-            <Image src="/logo-sokar-white.svg" alt="" width={36} height={36} priority />
+            <Image src="/logo-suppernote-white.svg" alt="" width={36} height={36} priority />
             <span>Suppernote</span>
           </Link>
 
@@ -101,7 +101,7 @@ function RegisterShell({ children }: { children: ReactNode }) {
               <ArrowLeft size={15} aria-hidden="true" /> Accueil
             </Link>
             <Link href="/" className="sokar-login__mobile-brand" aria-label="Suppernote, accueil">
-              <Image src="/logo-sokar-white.svg" alt="" width={28} height={28} />
+              <Image src="/logo-suppernote-white.svg" alt="" width={28} height={28} />
               <span>Suppernote</span>
             </Link>
           </header>

@@ -4,7 +4,7 @@ import {
   MARKETING_CONSENT_VERSION,
   type MarketingConsentChannel,
   type MarketingConsentCollectionMethod,
-} from '@sokar/shared';
+} from '@suppernote/shared';
 import { db } from '../../shared/db/client';
 import { logger } from '../../shared/logger/pino';
 import { normalizeCustomerEmail, upsertCustomerIdentity } from '../customers/customer-crm.service';

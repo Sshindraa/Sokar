@@ -1,13 +1,13 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { BRAND_SLOGAN, BRAND_TITLE } from '@sokar/shared';
+import { BRAND_SLOGAN, BRAND_TITLE } from '@suppernote/shared';
 import FooterGlow from './FooterGlow';
 
 const COLUMNS = [
   {
     title: 'Menu',
     links: [
-      { label: 'Démonstration', href: '#demo' },
+      { label: 'Démonstration', href: '/demo' },
       { label: 'Tarifs', href: '/pricing' },
       { label: 'FAQ', href: '#faq' },
     ],
@@ -24,7 +24,7 @@ const LINK =
 
 export default function SiteFooter() {
   return (
-    <footer className="relative z-10 flex w-full flex-col items-center overflow-hidden border-t border-white/5 bg-black px-6 pt-16">
+    <footer className="relative z-10 flex w-full flex-col items-center overflow-hidden border-t border-white/5 bg-[hsl(var(--day-paper,0_0%_0%))] px-6 pt-16">
       <div className="flex w-full max-w-6xl flex-col gap-12 lg:flex-row lg:justify-between">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:gap-6">
           <Link href="/" className="flex w-fit shrink-0 items-center gap-3">

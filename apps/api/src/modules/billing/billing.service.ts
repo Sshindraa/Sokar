@@ -1,4 +1,4 @@
-import { PRICING_CATALOG_VERSION, TRIAL_DAYS, VAT_MENTION } from '@sokar/shared';
+import { PRICING_CATALOG_VERSION, TRIAL_DAYS, VAT_MENTION } from '@suppernote/shared';
 import { createHash } from 'node:crypto';
 import Stripe from 'stripe';
 import { Prisma, type Plan } from '@prisma/client';

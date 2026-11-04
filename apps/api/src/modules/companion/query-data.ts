@@ -3,7 +3,7 @@
  * la borne au restaurant, calcule et ne renvoie que des totaux. Les sources, leurs champs et leurs
  * mesures viennent du catalogue (catalog.ts) : ce fichier ne contient que le moteur.
  */
-import { normalizeOpeningHours } from '@sokar/shared';
+import { normalizeOpeningHours } from '@suppernote/shared';
 import { z } from 'zod';
 import { db } from '../../shared/db/client';
 import { WaitingListDisabledError } from '../agentic-reservations/core/waiting-list.errors';

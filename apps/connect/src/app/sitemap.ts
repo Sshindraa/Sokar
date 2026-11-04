@@ -15,7 +15,7 @@
  */
 
 import type { MetadataRoute } from 'next';
-import { isConnectDemoSlug } from '@sokar/shared';
+import { isConnectDemoSlug } from '@suppernote/shared';
 import { fetchSitemapSources } from '@/lib/api-client';
 
 const SITE_URL = process.env.SITE_URL ?? 'https://suppernote.com';

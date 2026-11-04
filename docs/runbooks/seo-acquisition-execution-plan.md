@@ -635,8 +635,8 @@ dans le repo courant ; ne pas lancer une suite complète pour une simple correct
 ```sh
 pnpm node:check
 pnpm exec prettier --check docs/runbooks/seo-acquisition-execution-plan.md
-pnpm --filter @sokar/dashboard typecheck
-pnpm --filter @sokar/api typecheck
+pnpm --filter @suppernote/dashboard typecheck
+pnpm --filter @suppernote/api typecheck
 ```
 
 - UI : contrôle navigateur mobile/iPad/desktop ; build ou typecheck adapté ; tests de comportements

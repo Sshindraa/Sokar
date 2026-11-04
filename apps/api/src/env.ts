@@ -7,7 +7,7 @@ import {
   RESPAN_BASE_URL,
   VOICE_LLM_MODEL_DEFAULT,
   VOICE_LLM_PROVIDERS,
-} from '@sokar/config';
+} from '@suppernote/config';
 import { sttChunkMsSchema } from './shared/stt-chunking';
 import { telnyxCodecSchema } from './modules/voice/stream/telnyx-codec';
 

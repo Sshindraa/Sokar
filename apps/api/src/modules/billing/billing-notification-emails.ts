@@ -9,7 +9,7 @@
  * messageries n'affichent pas le SVG).
  */
 
-import { BRAND_SLOGAN, BRAND_TITLE } from '@sokar/shared';
+import { BRAND_SLOGAN, BRAND_TITLE } from '@suppernote/shared';
 
 export type BillingNotificationKind = 'trial-ending' | 'service-suspended';
 

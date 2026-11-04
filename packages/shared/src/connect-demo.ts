@@ -1,6 +1,13 @@
+export const SUPPERNOTE_DEMO_SLUG = 'chez-suppernote-demo';
+const STORED_DEMO_SLUG = 'chez-sokar-demo';
+
+export function resolveDemoSlug(slug: string): string {
+  return slug === SUPPERNOTE_DEMO_SLUG ? STORED_DEMO_SLUG : slug;
+}
+
 /** Explicit seed fixtures, never a name or prefix heuristic. Keep their direct test pages accessible. */
 export const CONNECT_DEMO_SLUGS = [
-  'chez-sokar-demo',
+  STORED_DEMO_SLUG,
   'chez-sokar-bouchon-lyon',
   'chez-sokar-italien-lyon',
   'chez-sokar-sushi-lyon',

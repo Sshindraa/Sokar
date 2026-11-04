@@ -61,7 +61,7 @@ export function normalizeCallEndedReason(raw: string | null | undefined): CallEn
 
 /**
  * Raw call event as emitted by the carrier webhook.
- * Moved from @sokar/types — kept here for shared API/dashboard typing.
+ * Moved from @suppernote/types — kept here for shared API/dashboard typing.
  */
 export interface CallEvent {
   id: string;

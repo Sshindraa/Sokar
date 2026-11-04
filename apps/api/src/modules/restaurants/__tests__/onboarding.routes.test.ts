@@ -328,6 +328,28 @@ describe('restaurant.routes - onboarding', () => {
   });
 
   describe('PATCH /restaurants/:id/connect', () => {
+    it('réserve l’alias de la démonstration', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue(null);
+      const headers = { authorization: 'Bearer test' };
+      const slug = 'chez-suppernote-demo';
+      const availability = await app.inject({
+        method: 'GET',
+        url: '/restaurants/check-slug',
+        headers,
+        query: { slug },
+      });
+      expect(availability.json()).toEqual({ available: false });
+
+      const update = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/test-rest-1/connect',
+        headers,
+        payload: { slug },
+      });
+      expect(update.statusCode).toBe(409);
+    });
+
     it('renvoie 409 si le slug est déjà utilisé par un autre restaurant', async () => {
       const app = await getApp();
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({

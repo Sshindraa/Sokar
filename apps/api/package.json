@@ -1,5 +1,5 @@
 {
-  "name": "@sokar/api",
+  "name": "@suppernote/api",
   "version": "0.0.1",
   "private": true,
   "scripts": {
@@ -38,10 +38,10 @@
     "@modelcontextprotocol/sdk": "^1.32.0",
     "@prisma/client": "^6.0.0",
     "@sentry/node": "^10.63.0",
-    "@sokar/agent-client": "workspace:*",
-    "@sokar/config": "workspace:*",
-    "@sokar/database": "workspace:*",
-    "@sokar/shared": "workspace:*",
+    "@suppernote/agent-client": "workspace:*",
+    "@suppernote/config": "workspace:*",
+    "@suppernote/database": "workspace:*",
+    "@suppernote/shared": "workspace:*",
     "alawmulaw": "^6.0.0",
     "bullmq": "^5.48.0",
     "configcat-node": "^11.4.1",

@@ -1,5 +1,5 @@
 {
-  "name": "@sokar/config",
+  "name": "@suppernote/config",
   "version": "0.0.1",
   "private": true,
   "main": "./dist/constants.js",
@@ -16,7 +16,7 @@
     "eslint-config-prettier": "^9",
     "globals": "^15",
     "typescript-eslint": "^8",
-    "@sokar/shared": "workspace:*"
+    "@suppernote/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.8.0"

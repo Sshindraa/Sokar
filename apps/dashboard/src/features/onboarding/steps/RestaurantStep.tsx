@@ -24,7 +24,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { normalizePhone } from '@sokar/shared';
+import { normalizePhone } from '@suppernote/shared';
 import { isValidPhoneInput, toNationalDisplay } from '../phone-format';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

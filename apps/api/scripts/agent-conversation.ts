@@ -25,7 +25,7 @@ import {
   type LLMAdapter,
   type Message,
   type MockStep,
-} from '@sokar/agent-client';
+} from '@suppernote/agent-client';
 
 const SOKAR_API_KEY = env.AGENT_DEV_KEY ?? process.env.AGENT_STAGING_KEY;
 const SOKAR_BASE_URL = process.env.SOKAR_BASE_URL ?? 'http://localhost:4000';

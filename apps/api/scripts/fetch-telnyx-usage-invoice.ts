@@ -2,7 +2,7 @@
  * Read-only Telnyx billing export for the usage reconciliation gate.
  *
  * Examples:
- *   TELNYX_API_KEY=... pnpm --filter @sokar/api usage:telnyx:fetch \
+ *   TELNYX_API_KEY=... pnpm --filter @suppernote/api usage:telnyx:fetch \
  *     --month 2026-09 --product messaging \
  *     --invoice-id 48eff763-ea80-4345-b688-78249eb165a8 \
  *     --output ./private/telnyx-usage-2026-09.json
@@ -58,8 +58,8 @@ const log = (message: string): void => {
 
 function usage(): void {
   log(`Usage:
-  TELNYX_API_KEY=... pnpm --filter @sokar/api usage:telnyx:fetch --month YYYY-MM --product <product> --output <path> [options]
-  TELNYX_API_KEY=... pnpm --filter @sokar/api usage:telnyx:fetch --month YYYY-MM --list-invoices --output <path>
+  TELNYX_API_KEY=... pnpm --filter @suppernote/api usage:telnyx:fetch --month YYYY-MM --product <product> --output <path> [options]
+  TELNYX_API_KEY=... pnpm --filter @suppernote/api usage:telnyx:fetch --month YYYY-MM --list-invoices --output <path>
 
 Options:
   --month <YYYY-MM>             UTC month to export (required).

@@ -24,7 +24,7 @@ import { RestaurantService } from '../../restaurants/restaurant.service';
 import { redisCache } from '../../../shared/redis/client';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
-import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { DEFAULT_MAX_PARTY_SIZE } from '@suppernote/config';
 import { DemoCallRecorder, liveDemoRecordingDir } from './demo-recorder';
 import {
   LIVE_DEMO_MAX_DURATION_SEC,

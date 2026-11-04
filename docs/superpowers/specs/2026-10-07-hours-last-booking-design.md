@@ -52,7 +52,7 @@ Critères de réussite :
 
 ## Conception
 
-### 1. Règle unique dans `@sokar/shared`
+### 1. Règle unique dans `@suppernote/shared`
 
 `NormalizedOpeningHours` gagne `lastBooking?: string` sur chaque période. Un helper partagé
 calcule la dernière heure d'un service (`lastBooking`, sinon la valeur par défaut de la décision 4) et génère les
@@ -106,7 +106,7 @@ client.
 
 ## Tests et vérification
 
-- `@sokar/shared` : helper (défaut, valeur explicite, passage minuit).
+- `@suppernote/shared` : helper (défaut, valeur explicite, passage minuit).
 - API : schéma Zod (champ conservé, valeurs refusées, absence acceptée) ; disponibilité (créneaux
   jusqu'à `lastBooking`, comportement identique sans champ).
 - Tableau de bord : `hours.ts` et `HoursStep.test.tsx` (préréglages, suivi de la fermeture,

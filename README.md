@@ -1,4 +1,4 @@
-# Sokar
+# Suppernote
 
 French-first restaurant platform: reservations on every channel, service organisation and customer relationship. The AI voice agent is one of its features. See `docs/PROJECT_MAP.md`.
 

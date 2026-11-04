@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { BRAND_SLOGAN, BRAND_TITLE } from '@sokar/shared';
+import { BRAND_SLOGAN, BRAND_TITLE } from '@suppernote/shared';
 import { NextIntlClientProvider } from 'next-intl';
 import { setRequestLocale, getMessages } from 'next-intl/server';
 import { cookies } from 'next/headers';

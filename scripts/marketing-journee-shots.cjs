@@ -2,7 +2,7 @@
 // Les données sont modifiées dans le navigateur seulement, rien n'est écrit en base.
 //
 // Prérequis, en local uniquement :
-//   API :       RUN_WORKERS_IN_PROCESS=false pnpm --filter @sokar/api exec tsx src/main.ts
+//   API :       RUN_WORKERS_IN_PROCESS=false pnpm --filter @suppernote/api exec tsx src/main.ts
 //   Dashboard : pnpm --filter dashboard exec next dev -p 3000 (démo locale, sans connexion)
 // Usage :       node scripts/marketing-journee-shots.cjs <dossier des captures brutes>
 //               MARKETING_SHOTS_CROP_ONLY=1 pour seulement recadrer des captures déjà prises.

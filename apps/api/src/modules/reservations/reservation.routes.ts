@@ -8,7 +8,7 @@ import {
   CreateReservationSchema,
   ReservationQuerySchema,
 } from './reservation.schema';
-import { ERROR_CODE_MESSAGES, RESERVATION_STATUS_VALUES, normalizePhone } from '@sokar/shared';
+import { ERROR_CODE_MESSAGES, RESERVATION_STATUS_VALUES, normalizePhone } from '@suppernote/shared';
 import { db } from '../../shared/db/client';
 import {
   ReservationService as AgenticReservationService,

@@ -1,5 +1,5 @@
 /**
- * @sokar/shared — confidence utilities.
+ * @suppernote/shared — confidence utilities.
  *
  * Pure helpers used by both API (confidence.service) and JSON-LD builder.
  */

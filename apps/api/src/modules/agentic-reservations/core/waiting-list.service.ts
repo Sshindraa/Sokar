@@ -13,7 +13,7 @@ import { Prisma, type PrismaClient, type Reservation, type WaitingListEntry } fr
 import type { WaitingListStatus } from '@prisma/client';
 import type { ReservationChannel } from '@prisma/client';
 import { creationProjection } from '../../../shared/reservations/reservation-state.js';
-import { normalizePhone } from '@sokar/shared';
+import { normalizePhone } from '@suppernote/shared';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
 import { resolveServiceDurationMinutes } from '../../floor-plan/floor-plan.types.js';
 import { zonedTimeToUtc } from '../../floor-plan/availability-capacity-aware.service.js';

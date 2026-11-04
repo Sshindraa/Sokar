@@ -17,7 +17,7 @@
  */
 
 import type { Metadata } from 'next';
-import { isConnectDemoSlug } from '@sokar/shared';
+import { isConnectDemoSlug } from '@suppernote/shared';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';

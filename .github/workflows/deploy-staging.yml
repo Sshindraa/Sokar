@@ -330,7 +330,7 @@ jobs:
 
       - name: Playwright version
         id: playwright
-        run: echo "version=$(pnpm --filter @sokar/dashboard exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(pnpm --filter @suppernote/dashboard exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
       # Navigateur Playwright en cache (clé = version), partagé avec la CI : environ 1 min de téléchargement en moins.
       - name: Cache Playwright browsers
@@ -342,11 +342,11 @@ jobs:
 
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter @sokar/dashboard exec playwright install --with-deps chromium
+        run: pnpm --filter @suppernote/dashboard exec playwright install --with-deps chromium
 
       - name: Install Playwright system dependencies
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: pnpm --filter @sokar/dashboard exec playwright install-deps chromium
+        run: pnpm --filter @suppernote/dashboard exec playwright install-deps chromium
 
       - name: Run E2E against staging
         env:
@@ -361,7 +361,7 @@ jobs:
           echo "Dashboard E2E smoke test completed (blocking)"
 
       - name: Install Connect Playwright browsers
-        run: pnpm --filter @sokar/connect exec playwright install --with-deps chromium
+        run: pnpm --filter @suppernote/connect exec playwright install --with-deps chromium
 
       - name: Run Connect E2E smoke against staging
         env:

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { ReactNode, useEffect, useId, useRef, useState } from 'react';
-import { SokarLogo } from '@/components/SokarLogo';
+import { SuppernoteLogo } from '@/components/SuppernoteLogo';
 import { useTranslations } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -131,7 +131,7 @@ const isDemoMode = Boolean(
 );
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) && !isDemoMode;
 const demoRestaurantId = process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID;
-const defaultRestaurantName = demoRestaurantId ? 'Chez Sokar' : 'Votre restaurant';
+const defaultRestaurantName = demoRestaurantId ? 'Chez Suppernote' : 'Votre restaurant';
 
 function cleanRestaurantName(name: string | undefined) {
   const trimmed = name?.trim() ?? '';
@@ -442,11 +442,14 @@ export function DashboardSidebar({
           aria-label="Suppernote"
           title="Suppernote"
           className={cn(
-            'flex h-11 items-center gap-3 rounded-xl px-2 text-sm font-semibold text-foreground transition-all duration-200 hover:bg-accent',
+            'flex h-11 items-center gap-2 rounded-xl px-2 text-sm font-semibold text-foreground transition-all duration-200 hover:bg-accent',
             !expanded && 'h-10 w-10 justify-center gap-0 px-0',
           )}
         >
-          <SokarLogo className="h-8 w-8 text-foreground" /> {expanded && 'Suppernote'}
+          <SuppernoteLogo className="size-10 text-foreground" />{' '}
+          {expanded && (
+            <span className={'font-brand text-xl font-medium tracking-tight'}>Suppernote</span>
+          )}
         </Link>
         <button
           type="button"

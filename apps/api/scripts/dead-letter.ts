@@ -2,12 +2,12 @@
  * Operations CLI for the BullMQ dead-letter queue.
  *
  * Usage (from apps/api, with its .env):
- *   pnpm --filter @sokar/api ops:dead-letter list
- *   pnpm --filter @sokar/api ops:dead-letter list --queue sms-client --limit 50
- *   pnpm --filter @sokar/api ops:dead-letter stats
- *   pnpm --filter @sokar/api ops:dead-letter show <deadLetterJobId>
- *   pnpm --filter @sokar/api ops:dead-letter replay <deadLetterJobId> --confirm
- *   pnpm --filter @sokar/api ops:dead-letter discard <deadLetterJobId> --reason "duplicate" --confirm
+ *   pnpm --filter @suppernote/api ops:dead-letter list
+ *   pnpm --filter @suppernote/api ops:dead-letter list --queue sms-client --limit 50
+ *   pnpm --filter @suppernote/api ops:dead-letter stats
+ *   pnpm --filter @suppernote/api ops:dead-letter show <deadLetterJobId>
+ *   pnpm --filter @suppernote/api ops:dead-letter replay <deadLetterJobId> --confirm
+ *   pnpm --filter @suppernote/api ops:dead-letter discard <deadLetterJobId> --reason "duplicate" --confirm
  *
  * Read commands are safe. `replay` and `discard` mutate Redis and therefore
  * require an explicit `--confirm`. Runbook: docs/runbooks/dead-letter.md.
@@ -44,7 +44,7 @@ interface ParsedArgs {
 function usage(): void {
   log(`Dead-letter queue operations
 
-Usage: pnpm --filter @sokar/api ops:dead-letter <command> [options]
+Usage: pnpm --filter @suppernote/api ops:dead-letter <command> [options]
 
 Commands:
   list                     List dead-letter entries (newest first).

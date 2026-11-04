@@ -354,7 +354,7 @@ if [ "$SKIP_ALL_BUILDS" = true ] || [ "$NEED_PRISMA" = false ]; then
 else
     log info ""
     log info "📦 Generating Prisma client..."
-    NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database generate
+    NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @suppernote/database generate
 fi
 
 # ── 15. Build (incrémental) ──────────────────────────────

@@ -1,4 +1,9 @@
-import { ANNUAL_DISCOUNT_PERCENT, PRICING_CATALOG, TRIAL_DAYS, VAT_MENTION } from '@sokar/shared';
+import {
+  ANNUAL_DISCOUNT_PERCENT,
+  PRICING_CATALOG,
+  TRIAL_DAYS,
+  VAT_MENTION,
+} from '@suppernote/shared';
 
 const groups = [
   {
