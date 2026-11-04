@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Score de complétude du profil restaurant.
+ * Suppernote Connect — Score de complétude du profil restaurant.
  *
  * Calcule un score 0-100% basé sur les champs qui rendent la page publique
  * efficace (SEO, conversion, richesse du profil). Le score alimente :
@@ -168,7 +168,7 @@ function getLevelMessage(score: number): { level: ConnectScoreResult['level']; m
 }
 
 /**
- * Calcule le score de complétude Sokar Connect.
+ * Calcule le score de complétude Suppernote Connect.
  */
 export function computeConnectScore(input: ScoreInput): ConnectScoreResult {
   const items: CompletenessItem[] = SCORE_ITEMS.map((item) => ({

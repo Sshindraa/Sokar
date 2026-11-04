@@ -236,7 +236,7 @@ export interface BillingTrial {
   totalDays: number;
   /** Whole days left, rounded up; 0 on the last day. */
   daysLeft: number;
-  /** What Sokar did during the trial; only when requested (dashboard), never on the call path. */
+  /** What Suppernote did during the trial; only when requested (dashboard), never on the call path. */
   recap?: ActivityRecap;
 }
 
@@ -1782,7 +1782,7 @@ async function findAccountBillingForRestaurant(restaurantId: string, tx: Prisma.
 
 /**
  * Stripe's Billing Portal owns proration and cancellation scheduling. These
- * invoice events keep Sokar's entitlement projection in sync with the
+ * invoice events keep Suppernote's entitlement projection in sync with the
  * provider: a failed attempt enters the configured Stripe grace window as
  * `past_due`, a later `invoice.paid` reactivates it, and only
  * `customer.subscription.deleted` removes the plan.

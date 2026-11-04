@@ -22,7 +22,7 @@ export default function FaqSection() {
           Foire Aux Questions
         </h2>
         <p className="mt-2 text-xs sm:text-sm text-white/50 leading-relaxed font-sans">
-          Tout ce que vous devez savoir pour déployer Sokar dans votre établissement.
+          Tout ce que vous devez savoir pour déployer Suppernote dans votre établissement.
         </p>
       </div>
 
@@ -77,7 +77,7 @@ export default function FaqSection() {
           </div>
         </div>
         <a
-          href="mailto:hello@sokar.tech?subject=Question%20sur%20Sokar"
+          href="mailto:hello@suppernote.com?subject=Question%20sur%20Sokar"
           className="inline-flex min-h-12 w-full items-center justify-center gap-3 rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-200 sm:text-base hover:-translate-y-0.5 hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 sm:w-auto"
         >
           Poser une question

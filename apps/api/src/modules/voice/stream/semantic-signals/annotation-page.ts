@@ -44,7 +44,7 @@ export function renderAnnotationPage(data: {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Annotation Sokar</title>
+<title>Annotation Suppernote</title>
 <style>
 :root {
   --bg: #f7f7f5; --card: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --border: #e3e2dd;
@@ -102,7 +102,7 @@ main { max-width: 900px; margin: 0 auto; padding: 16px; }
 </head>
 <body>
 <header>
-  <h1>Annotation Sokar</h1>
+  <h1>Annotation Suppernote</h1>
   <div class="progress"><div id="bar"></div></div>
   <span class="count" id="count"></span>
   <button id="prev">← Précédent</button>

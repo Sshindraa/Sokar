@@ -224,7 +224,7 @@ export function DashboardModeSwitcher({
 
   const modeNav = (
     <nav
-      aria-label="Espaces Sokar"
+      aria-label="Espaces Suppernote"
       className="dashboard-mode-switcher__nav flex h-12 items-center gap-1 rounded-full border border-border bg-card/90 p-1 shadow-xl shadow-background/30 backdrop-blur-xl"
     >
       <Link
@@ -439,14 +439,14 @@ export function DashboardSidebar({
       >
         <Link
           href="/dashboard"
-          aria-label="Sokar"
-          title="Sokar"
+          aria-label="Suppernote"
+          title="Suppernote"
           className={cn(
             'flex h-11 items-center gap-3 rounded-xl px-2 text-sm font-semibold text-foreground transition-all duration-200 hover:bg-accent',
             !expanded && 'h-10 w-10 justify-center gap-0 px-0',
           )}
         >
-          <SokarLogo className="h-8 w-8 text-foreground" /> {expanded && 'Sokar'}
+          <SokarLogo className="h-8 w-8 text-foreground" /> {expanded && 'Suppernote'}
         </Link>
         <button
           type="button"

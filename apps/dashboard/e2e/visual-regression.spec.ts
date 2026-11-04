@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import path from 'node:path';
 
 /**
- * Tests de régression visuelle — Phase 2 du plan qualité Sokar.
+ * Tests de régression visuelle — Phase 2 du plan qualité Suppernote.
  *
  * Pour chaque page critique et chaque viewport (iPhone 14, iPad Mini, desktop
  * 1440px), on capture un screenshot et on le compare au baseline stocké dans

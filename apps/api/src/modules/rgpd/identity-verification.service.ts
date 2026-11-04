@@ -357,8 +357,8 @@ export class IdentityVerificationService {
   private async sendOtpSms(phone: string, otp: string, intent: string): Promise<void> {
     const message =
       intent === 'erase'
-        ? `[Sokar] Code RGPD effacement : ${otp}. Valide 10 min. Pas demandé ? Ignorez.`
-        : `[Sokar] Code RGPD export : ${otp}. Valide 10 min. Pas demandé ? Ignorez.`;
+        ? `[Suppernote] Code RGPD effacement : ${otp}. Valide 10 min. Pas demandé ? Ignorez.`
+        : `[Suppernote] Code RGPD export : ${otp}. Valide 10 min. Pas demandé ? Ignorez.`;
     try {
       await sendSms(phone, message);
     } catch (err) {

@@ -155,7 +155,7 @@ function normalizeText(value: string, field: string, maxLength: number): string 
 
 /**
  * Normalize a phone to E.164. A French national number (« 06 12 34 56 78 ») becomes
- * « +33612345678 » with the shared rule, since every Sokar restaurant is in France: without
+ * « +33612345678 » with the shared rule, since every Suppernote restaurant is in France: without
  * it the same guest booked from the dashboard and calling in got two profiles. Invalid or
  * masked values return null so legacy call paths keep their original lookup.
  */

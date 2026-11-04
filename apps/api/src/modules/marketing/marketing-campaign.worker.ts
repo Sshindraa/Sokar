@@ -270,7 +270,7 @@ export function buildMarketingReservationLink(
     process.env.DASHBOARD_URL?.trim() ||
     process.env.SITE_URL?.trim() ||
     process.env.PUBLIC_URL?.trim() ||
-    'https://sokar.tech';
+    'https://suppernote.com';
   const path = slug ? `/book/${encodeURIComponent(slug)}` : '/';
   try {
     const url = new URL(path, base);

@@ -94,7 +94,7 @@ export class AgenticAdminService {
       }
     }
 
-    // La publication Sokar Connect pose `agenticOptIn` sans `mcpEnabled` : on compare l'état
+    // La publication Suppernote Connect pose `agenticOptIn` sans `mcpEnabled` : on compare l'état
     // réellement actif (les deux drapeaux) pour qu'une activation resynchronise `mcpEnabled`.
     const currentMcp = await this.isMcpActive(args.restaurantId, current.agenticOptIn);
     const mcpChanged = args.input.mcp !== currentMcp;

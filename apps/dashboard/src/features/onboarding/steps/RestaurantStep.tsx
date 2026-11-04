@@ -971,7 +971,7 @@ function RestaurantForm({ onComplete, accountEmail }: StepProps & { accountEmail
                 <div className="px-5 pb-2 pt-5">
                   <div className="mb-1.5 flex min-h-6 flex-wrap items-center justify-between gap-2">
                     <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-foreground/70">
-                      Pour gérer Sokar
+                      Pour gérer Suppernote
                     </p>
                     {missingContactCount > 0 ? (
                       <button
@@ -1046,7 +1046,7 @@ function RestaurantForm({ onComplete, accountEmail }: StepProps & { accountEmail
                   <FieldRow
                     id="review-email"
                     icon={Mail}
-                    label="Email pour gérer Sokar"
+                    label="Email pour gérer Suppernote"
                     emphasis
                     editing={editing.email}
                     display={managerEmail}
@@ -1068,7 +1068,7 @@ function RestaurantForm({ onComplete, accountEmail }: StepProps & { accountEmail
                       id="review-email"
                       type="email"
                       className="h-11 rounded-full border-0 bg-background/80 placeholder:text-muted-foreground"
-                      aria-label="Email pour gérer Sokar"
+                      aria-label="Email pour gérer Suppernote"
                       autoComplete="email"
                       autoCapitalize="none"
                       spellCheck={false}

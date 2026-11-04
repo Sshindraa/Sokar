@@ -348,8 +348,8 @@ export function TablesPanel({
           <FloorDots counts={counts} />
           <p className="border-t border-background/15 pt-3 text-sm leading-relaxed text-background/70">
             {totals.tables === 0
-              ? 'Sans table, Sokar ne peut proposer aucun créneau à vos clients.'
-              : `Votre plus grande table accueille ${totals.largest} ${totals.largest > 1 ? 'personnes' : 'personne'} : c’est la taille maximale d’un groupe que Sokar pourra placer.`}
+              ? 'Sans table, Suppernote ne peut proposer aucun créneau à vos clients.'
+              : `Votre plus grande table accueille ${totals.largest} ${totals.largest > 1 ? 'personnes' : 'personne'} : c’est la taille maximale d’un groupe que Suppernote pourra placer.`}
           </p>
         </aside>
       )}
@@ -683,7 +683,7 @@ export function RulesPanel({
           <div className="space-y-1 border-t border-background/15 pt-3 text-xs leading-5 text-background/70">
             <p>Réservation en ligne ou par téléphone jusqu’à {v.maxParty} personnes.</p>
             <p>{v.policyText || 'Votre condition d’annulation apparaîtra ici.'}</p>
-            <p>Pour un groupe plus grand, Sokar passe la main au gérant.</p>
+            <p>Pour un groupe plus grand, Suppernote passe la main au gérant.</p>
           </div>
         </aside>
       )}

@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Configuration Playwright pour le dashboard Sokar.
+ * Configuration Playwright pour le dashboard Suppernote.
  *
  * Deux familles de tests E2E :
  *

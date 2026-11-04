@@ -446,7 +446,7 @@ describe('RGPD routes (with identity verification)', () => {
       for (const rule of PRIVACY_RETENTION_RULES) expect(body.text).toContain(rule.description);
       for (const provider of PRIVACY_PROVIDERS) expect(body.text).toContain(provider.name);
       expect(body.text).not.toMatch(
-        /Sokar SAS|Twilio|Brevo|Postmark|2 ans à compter de la dernière interaction/,
+        /Suppernote SAS|Twilio|Brevo|Postmark|2 ans à compter de la dernière interaction/,
       );
     });
   });

@@ -38,7 +38,7 @@ export const SLO_DEFINITIONS: readonly SloDefinition[] = [
   },
   {
     id: 'connect_availability',
-    title: 'Disponibilité Sokar Connect',
+    title: 'Disponibilité Suppernote Connect',
     objective: 'au moins 99 % des requêtes Connect ne répondent pas 5xx',
     target: 0.99,
     comparator: 'gte',

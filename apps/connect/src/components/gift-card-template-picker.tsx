@@ -1,12 +1,12 @@
 'use client';
 
 /**
- * Sokar Connect — GiftCardTemplatePicker.
+ * Suppernote Connect — GiftCardTemplatePicker.
  *
  * Permet de choisir un template visuel pour la carte cadeau.
  * 3 templates par défaut + upload d'image personnalisée (optionnel P2).
  *
- * Design aligné avec le widget de réservation Sokar.
+ * Design aligné avec le widget de réservation Suppernote.
  */
 
 import { useState } from 'react';

@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Root layout.
+ * Suppernote Connect — Root layout.
  *
  * Pas de Clerk, pas de header restaurateur, pas de bundle dashboard.
  * Cf. spec connect-v1.1 §3.2 : "Zéro Clerk, zéro cookie auth, zéro header
@@ -29,13 +29,13 @@ const jakarta = localFont({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.SITE_URL ?? 'https://sokar.tech'),
+  metadataBase: new URL(process.env.SITE_URL ?? 'https://suppernote.com'),
   title: {
-    default: 'Sokar — Réservez en ligne',
-    template: '%s | Sokar',
+    default: 'Suppernote — Réservez en ligne',
+    template: '%s | Suppernote',
   },
   description:
-    'Sokar rend votre restaurant réservable depuis Google, ChatGPT et les assistants IA.',
+    'Suppernote rend votre restaurant réservable depuis Google, ChatGPT et les assistants IA.',
   robots: {
     index: true,
     follow: true,
@@ -60,7 +60,7 @@ export const metadata: Metadata = {
     : {}),
   openGraph: {
     type: 'website',
-    siteName: 'Sokar',
+    siteName: 'Suppernote',
     locale: 'fr_FR',
   },
   twitter: {

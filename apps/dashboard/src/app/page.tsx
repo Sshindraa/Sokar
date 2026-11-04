@@ -63,14 +63,14 @@ export default function HomePage() {
       >
         <Image
           src="/logo-nav.png"
-          alt="Sokar"
+          alt="Suppernote"
           width={36}
           height={36}
           className="h-9 w-9 sm:h-11 sm:w-11"
           priority
         />
         <span className="hidden text-xl font-bold tracking-tight text-white font-display sm:inline">
-          Sokar
+          Suppernote
         </span>
       </Link>
 
@@ -82,7 +82,13 @@ export default function HomePage() {
             href="/"
             className="flex items-center gap-1.5 md:hidden pl-1 hover:opacity-80 transition-opacity"
           >
-            <Image src="/logo-nav.png" alt="Sokar" width={28} height={28} className="h-7 w-7" />
+            <Image
+              src="/logo-nav.png"
+              alt="Suppernote"
+              width={28}
+              height={28}
+              className="h-7 w-7"
+            />
           </Link>
           <span className="h-4 w-px bg-white/10 md:hidden mx-1" />
 

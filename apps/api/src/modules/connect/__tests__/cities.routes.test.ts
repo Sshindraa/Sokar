@@ -1,5 +1,5 @@
 /**
- * Tests routes Sokar Connect — T7 (pages locales).
+ * Tests routes Suppernote Connect — T7 (pages locales).
  *
  * Couvre (acceptance criteria spec v1.1 §3.3 + §10) :
  * - GET /public/cities → liste filtrée 5+ restos
@@ -48,7 +48,7 @@ const RESTAURANT_BASE = {
   images: { cover: null, gallery: [] },
   rating: null,
   acceptsReservations: true,
-  reservationUrl: 'https://sokar.tech/r/chez-sokar-demo/book',
+  reservationUrl: 'https://suppernote.com/r/chez-sokar-demo/book',
   published: true,
   publishedAt: '2026-06-24T10:00:00.000Z',
   connectAgentic: false,
@@ -81,7 +81,7 @@ const RESTAURANT_BASE = {
 
 let app: FastifyInstance;
 
-describe('Sokar Connect — Pages locales T7', () => {
+describe('Suppernote Connect — Pages locales T7', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     await redisCache.flushall();

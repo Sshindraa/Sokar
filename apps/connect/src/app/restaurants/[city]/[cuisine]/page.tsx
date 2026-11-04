@@ -1,7 +1,7 @@
 /**
- * Sokar Connect — Page ville + cuisine (T7).
+ * Suppernote Connect — Page ville + cuisine (T7).
  *
- * URL : /restaurants/[city]/[cuisine] (ex. sokar.tech/restaurants/lyon/italien)
+ * URL : /restaurants/[city]/[cuisine] (ex. suppernote.com/restaurants/lyon/italien)
  *
  * Règle : indexable si totalInCity >= 10 ET cuisineCount >= 5.
  */
@@ -12,7 +12,7 @@ import Link from 'next/link';
 import { fetchCityPage } from '@/lib/api-client';
 import { RestaurantCard } from '@/components/restaurant-card';
 
-const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
+const SITE_URL = process.env.SITE_URL ?? 'https://suppernote.com';
 
 export const revalidate = 300;
 export const dynamicParams = true;
@@ -35,7 +35,7 @@ export async function generateMetadata({
   return {
     // Marque ajoutée par le template du layout (cf. restaurant/[slug]).
     title: `Restaurants ${data.cuisine.toLowerCase()} réservables à ${data.city}`,
-    description: `Découvrez les restaurants ${data.cuisine.toLowerCase()} réservables en ligne à ${data.city} via Sokar.`,
+    description: `Découvrez les restaurants ${data.cuisine.toLowerCase()} réservables en ligne à ${data.city} via Suppernote.`,
     alternates: { canonical },
     robots: data.shouldIndex ? { index: true, follow: true } : { index: false, follow: true },
     openGraph: {
@@ -82,7 +82,7 @@ export default async function CityCuisinePage({
         </h1>
         <p className="mt-2 text-muted-foreground">
           {data.cuisineCount} restaurant{data.cuisineCount > 1 ? 's' : ''}{' '}
-          {data.cuisine.toLowerCase()} · réservation en ligne via Sokar
+          {data.cuisine.toLowerCase()} · réservation en ligne via Suppernote
         </p>
       </header>
 

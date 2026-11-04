@@ -254,7 +254,7 @@ export default function AdminMarginPage() {
           response.status === 401
             ? 'Votre session a expiré. Reconnectez-vous pour continuer.'
             : response.status === 403
-              ? 'Cet export est réservé à l’équipe Sokar.'
+              ? 'Cet export est réservé à l’équipe Suppernote.'
               : 'L’export n’a pas pu être généré. Réessayez dans un instant.',
         );
       }
@@ -282,7 +282,7 @@ export default function AdminMarginPage() {
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            Opérations Sokar
+            Opérations Suppernote
           </p>
           <h1 className="mt-2 text-3xl font-black tracking-tight">Coût opérationnel</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">

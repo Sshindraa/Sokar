@@ -5,7 +5,7 @@
     "note": "Italian locale. Convention: Lei, mai tu. See apps/dashboard/src/i18n/config.ts."
   },
   "common": {
-    "appName": "Sokar",
+    "appName": "Suppernote",
     "tagline": "Assistente vocale intelligente per il suo ristorante",
     "loading": "Caricamento…",
     "retry": "Riprova",
@@ -32,7 +32,7 @@
     "events": "Eventi",
     "distribution": "Distribuzione",
     "usage": "Consumi",
-    "margin": "Margine Sokar",
+    "margin": "Margine Suppernote",
     "reactivation": "Riattivazione",
     "giftCards": "Buoni regalo",
     "giftCardPacks": "Pacchi regalo",
@@ -46,19 +46,19 @@
     "expand": "Mostra gruppi di navigazione",
     "collapse": "Riduci gruppi di navigazione",
     "close": "Chiudi",
-    "admin": "Admin Sokar",
+    "admin": "Admin Suppernote",
     "settings": "Impostazioni",
     "health": "Salute"
   },
   "dashboard": {
-    "subdomain": "Sokar OS",
+    "subdomain": "Suppernote OS",
     "themeToggle": "Tema",
     "themeTooltipLight": "Passa alla modalità scura",
     "themeTooltipDark": "Passa alla modalità chiara"
   },
   "home": {
     "heroTitle": "L'IA che risponde alle Sue chiamate quando non può",
-    "heroSubtitle": "Sokar risponde ai Suoi clienti 24h/24, prende le prenotazioni e registra ogni chiamata. Lei gestisce la sala, Sokar gestisce il telefono."
+    "heroSubtitle": "Suppernote risponde ai Suoi clienti 24h/24, prende le prenotazioni e registra ogni chiamata. Lei gestisce la sala, Suppernote gestisce il telefono."
   },
   "pricing": {
     "title": "Prezzi semplici, senza impegno",
@@ -69,7 +69,7 @@
     "description": "Un pulsante fluttuante che i Suoi clienti aggiungono con un clic. Nessuna installazione, nessuna password."
   },
   "onboarding": {
-    "title": "Configuriamo Sokar insieme",
+    "title": "Configuriamo Suppernote insieme",
     "subtitle": "In pochi passi, il Suo assistente sarà pronto a prendere le chiamate."
   },
   "errors": {
@@ -79,7 +79,7 @@
   },
   "companion": {
     "title": "Companion",
-    "greeting": "Sono l'assistente IA di Sokar. Leggo le cifre del suo ristorante, senza dati dei clienti.",
+    "greeting": "Sono l'assistente IA di Suppernote. Leggo le cifre del suo ristorante, senza dati dei clienti.",
     "suggestions": {
       "week": "Come si presentano i prossimi 7 giorni?",
       "noShows": "Come vanno i no-show?",
@@ -123,7 +123,7 @@
   "languageSwitcher": {
     "label": "Lingua",
     "settingsTitle": "Lingua di visualizzazione",
-    "settingsDescription": "Scelga la lingua utilizzata nel Suo spazio Sokar.",
+    "settingsDescription": "Scelga la lingua utilizzata nel Suo spazio Suppernote.",
     "current": "Lingua corrente: {label}",
     "comingSoon": "Prossimamente",
     "comingSoonHint": "Altre lingue saranno aggiunte gradualmente."
@@ -193,6 +193,7 @@
     "bodyHelp": "Mantenga '{reservationLink}' e '{unsubscribeUrl}': sono obbligatori per l’invio.",
     "create": "Crea la campagna",
     "creating": "Creazione…",
+    "today": "Oggi",
     "openFromQuietDay": "Riempi questo servizio",
     "report": {
       "title": "Servizio mirato",

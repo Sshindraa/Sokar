@@ -1,6 +1,6 @@
 {
-  "name": "Sokar — Dashboard Restaurant",
-  "short_name": "Sokar",
+  "name": "Suppernote — Dashboard Restaurant",
+  "short_name": "Suppernote",
   "description": "Assistant vocal intelligent pour votre restaurant",
   "start_url": "/dashboard",
   "display": "standalone",

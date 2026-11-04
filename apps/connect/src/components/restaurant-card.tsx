@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — RestaurantCard component.
+ * Suppernote Connect — RestaurantCard component.
  * Carte restaurant pour la liste de la landing / et futures pages locales.
  *
  * Accepte un PublicRestaurantDto (issu de l'API publique) — pas le modèle

@@ -132,17 +132,17 @@ function isRecipientAllowed(to: string): boolean {
   return allowed.includes(to.trim().toLowerCase());
 }
 
-const DEFAULT_EMAIL_FROM = 'Sokar <noreply@sokar.tech>';
-const DEFAULT_EMAIL_REPLY_TO = 'hello@sokar.tech';
+const DEFAULT_EMAIL_FROM = 'Suppernote <noreply@suppernote.com>';
+const DEFAULT_EMAIL_REPLY_TO = 'hello@suppernote.com';
 
 /**
- * Expéditeur affiché « Sokar » : une adresse nue s'affiche « noreply » dans la boîte de réception,
+ * Expéditeur affiché « Suppernote » : une adresse nue s'affiche « noreply » dans la boîte de réception,
  * ce qui coûte en confiance et en ouverture. `EMAIL_FROM` peut fournir l'adresse seule ou complète.
  */
 export function emailSender(environment: NodeJS.ProcessEnv = process.env): string {
   const configured = environment.EMAIL_FROM?.trim();
   if (!configured) return DEFAULT_EMAIL_FROM;
-  return configured.includes('<') ? configured : `Sokar <${configured}>`;
+  return configured.includes('<') ? configured : `Suppernote <${configured}>`;
 }
 
 /** Les réponses arrivent à une boîte lue par un humain, jamais à `noreply`. */

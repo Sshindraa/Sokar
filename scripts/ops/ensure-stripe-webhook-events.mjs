@@ -9,9 +9,9 @@
  * et ajoute seulement ceux qui manquent après `--apply`.
  *
  * Usage :
- *   STRIPE_WEBHOOK_ENDPOINT_URL=https://api-staging.sokar.tech/webhooks/stripe \
+ *   STRIPE_WEBHOOK_ENDPOINT_URL=https://api-staging.suppernote.com/webhooks/stripe \
  *     node --env-file=apps/api/.env scripts/ops/ensure-stripe-webhook-events.mjs
- *   STRIPE_WEBHOOK_ENDPOINT_URL=https://api-staging.sokar.tech/webhooks/stripe \
+ *   STRIPE_WEBHOOK_ENDPOINT_URL=https://api-staging.suppernote.com/webhooks/stripe \
  *     node --env-file=apps/api/.env scripts/ops/ensure-stripe-webhook-events.mjs --apply
  */
 
