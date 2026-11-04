@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { PrismaClient } from '@sokar/database';
+import { PrismaClient } from '@suppernote/database';
 import { env } from '../src/env.js';
 
 const MISTRAL_API_URL = 'https://api.mistral.ai/v1/connectors';

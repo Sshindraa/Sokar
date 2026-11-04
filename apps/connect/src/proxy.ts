@@ -22,7 +22,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { resolveDemoSlug, SUPPERNOTE_DEMO_SLUG } from '@sokar/shared';
+import { resolveDemoSlug, SUPPERNOTE_DEMO_SLUG } from '@suppernote/shared';
 
 // Bots IA à tracker (pour mesurer l'efficacité réelle du web crawl).
 // Loggué côté serveur via console.log (récupéré par PM2 / Docker logs).

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { ArrowRight, Check, Loader2, Lock } from 'lucide-react';
-import { TRIAL_DAYS, ANNUAL_DISCOUNT_PERCENT } from '@sokar/shared';
+import { TRIAL_DAYS, ANNUAL_DISCOUNT_PERCENT } from '@suppernote/shared';
 import { TrialStartTimeline } from '@/features/billing/trial';
 import { PLANS, DISPLAY_PRICE } from '@/app/constants';
 import { Button } from '@/components/ui/button';

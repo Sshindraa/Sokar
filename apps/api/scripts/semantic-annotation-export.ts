@@ -6,7 +6,7 @@
  * VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS (appels de test, 14 jours). Aucun appel
  * de restaurant client n'y figure. Téléphones et emails sont masqués.
  *
- *   pnpm --filter @sokar/api semantic:annotation-export -- [--days 14] [--limit 400]
+ *   pnpm --filter @suppernote/api semantic:annotation-export -- [--days 14] [--limit 400]
  *     [--history 6] [--no-prioritize] [--out scratch/semantic-annotation]
  *
  * Avec la priorisation (défaut, nécessite OPENROUTER_API_KEY), chaque tour est

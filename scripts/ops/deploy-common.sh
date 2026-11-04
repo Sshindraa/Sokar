@@ -658,15 +658,15 @@ build_packages_api() {
 
     if [ "$need_packages" = true ] || [ "$need_api" = true ]; then
         # config imports the shared catalogue; database imports config.
-        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/shared build
-        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/config build
-        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database build
+        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @suppernote/shared build
+        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @suppernote/config build
+        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @suppernote/database build
     fi
     if [ "$need_api" = true ]; then
         # `tsc` sur l'API consomme ~2 Go de mémoire (mesuré le 27/09/2026 avec
         # --extendedDiagnostics) : avec 1536 Mo le build échouait au hasard du GC
         # (OOM, exit 134). Le VPS a ~5,7 Go disponibles pendant le build.
-        NODE_OPTIONS="--max-old-space-size=3072" pnpm --filter @sokar/api build
+        NODE_OPTIONS="--max-old-space-size=3072" pnpm --filter @suppernote/api build
         if [ ! -f "$SOKAR_ROOT/apps/api/dist/main.js" ]; then
             log_error "API build terminé sans apps/api/dist/main.js (entrypoint PM2 manquant)."
             return 1
@@ -699,10 +699,10 @@ build_dashboard_connect() {
     local build_dash_cmd=""
     local build_connect_cmd=""
     if [ "$need_dash" = true ]; then
-        build_dash_cmd="NODE_OPTIONS='--max-old-space-size=2048' NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_ALLOW_DEV=1 NEXT_DIST_DIR='$NEXT_DIST_DIR_DASHBOARD' SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1 pnpm --filter @sokar/dashboard build"
+        build_dash_cmd="NODE_OPTIONS='--max-old-space-size=2048' NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_ALLOW_DEV=1 NEXT_DIST_DIR='$NEXT_DIST_DIR_DASHBOARD' SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1 pnpm --filter @suppernote/dashboard build"
     fi
     if [ "$need_connect" = true ]; then
-        build_connect_cmd="NODE_OPTIONS='--max-old-space-size=1024' NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_ALLOW_DEV=1 NEXT_DIST_DIR='$NEXT_DIST_DIR_CONNECT' pnpm --filter @sokar/connect build"
+        build_connect_cmd="NODE_OPTIONS='--max-old-space-size=1024' NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_ALLOW_DEV=1 NEXT_DIST_DIR='$NEXT_DIST_DIR_CONNECT' pnpm --filter @suppernote/connect build"
     fi
 
     # Les services restent actifs pendant le build : les sorties sont écrites

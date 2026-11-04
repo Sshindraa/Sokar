@@ -14,7 +14,7 @@ import {
   PRIVACY_PROVIDERS,
   PRIVACY_RETENTION,
   PRIVACY_RETENTION_RULES,
-} from '@sokar/shared';
+} from '@suppernote/shared';
 
 // A per-request nonce cannot be attached to a prerendered HTML document.
 export const dynamic = 'force-dynamic';

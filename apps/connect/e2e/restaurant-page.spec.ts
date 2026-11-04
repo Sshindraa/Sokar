@@ -46,7 +46,7 @@ test.describe('Page restaurant publique', () => {
     // Le H1 contient le nom du restaurant
     const h1 = page.getByRole('heading', { level: 1 });
     await expect(h1).toBeVisible();
-    await expect(h1).toContainText('Chez Sokar');
+    await expect(h1).toContainText('Chez Suppernote');
   });
 
   test('affiche le CTA "Réserver une table"', async ({ page }) => {

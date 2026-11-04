@@ -1,5 +1,5 @@
 /**
- * Types du SDK @sokar/agent-client.
+ * Types du SDK @suppernote/agent-client.
  *
  * Le SDK est transport-agnostique : le SokarAgentClient ne fait que du HTTP
  * REST. Les adapters LLM (OpenAI-compatible, Gemini) implémentent l'interface

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Mail } from 'lucide-react';
-import { PRIVACY_DOCUMENT, PRIVACY_PROVIDERS, PRIVACY_RETENTION } from '@sokar/shared';
+import { PRIVACY_DOCUMENT, PRIVACY_PROVIDERS, PRIVACY_RETENTION } from '@suppernote/shared';
 
 export const metadata: Metadata = {
   title: 'Politique de confidentialité — Suppernote',

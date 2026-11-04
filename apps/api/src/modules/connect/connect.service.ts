@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { logger } from '../../shared/logger/pino';
 import { env } from '../../env';
-import { normalizeOpeningHours as normalizeSharedOpeningHours } from '@sokar/shared';
+import { normalizeOpeningHours as normalizeSharedOpeningHours } from '@suppernote/shared';
 import {
   type OpeningHoursDay,
   type OpeningHoursSpec,

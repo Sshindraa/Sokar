@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CARTESIA_MODEL } from '@sokar/config';
+import { CARTESIA_MODEL } from '@suppernote/config';
 import type { CallSession } from '../stream/types';
 import { buildCartesiaContextRequest, buildCartesiaWebSocketUrl } from '../stream/cartesia-context';
 

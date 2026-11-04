@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarketingCampaignStatus, MarketingPermissionStatus } from '@prisma/client';
-import { MARKETING_CONSENT_VERSION } from '@sokar/shared';
+import { MARKETING_CONSENT_VERSION } from '@suppernote/shared';
 import { closeApp, getApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { marketingOptOutHash } from '../marketing-opt-out.service';

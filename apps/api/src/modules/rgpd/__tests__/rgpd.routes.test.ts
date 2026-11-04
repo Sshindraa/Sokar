@@ -18,7 +18,7 @@ import { db } from '../../../shared/db/client';
 import { sendSms } from '../../../shared/telnyx/client';
 import { sendEmail } from '../../../shared/email';
 import { redisCache } from '../../../shared/redis/client';
-import { PRIVACY_DOCUMENT, PRIVACY_PROVIDERS, PRIVACY_RETENTION_RULES } from '@sokar/shared';
+import { PRIVACY_DOCUMENT, PRIVACY_PROVIDERS, PRIVACY_RETENTION_RULES } from '@suppernote/shared';
 
 // Mocks Telnyx et Brevo (hoisted pour être dispo dans le mock factory)
 const { sendSmsMock, sendEmailMock } = vi.hoisted(() => ({

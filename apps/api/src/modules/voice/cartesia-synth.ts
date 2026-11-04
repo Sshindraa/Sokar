@@ -10,7 +10,7 @@
  * Cas d'usage : endpoint démo onboarding, previews, exports audio.
  * Pas de dépendance Telnyx, pas de WebSocket, pas de codec télécom.
  */
-import { DEFAULT_CARTESIA_VOICE_ID, CARTESIA_MODEL } from '@sokar/config';
+import { DEFAULT_CARTESIA_VOICE_ID, CARTESIA_MODEL } from '@suppernote/config';
 import { logger } from '../../shared/logger/pino';
 import {
   CARTESIA_NORMALIZATION,

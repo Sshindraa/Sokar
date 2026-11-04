@@ -231,7 +231,7 @@ Pas de colonne NOT NULL forcée tant que <100% des restos ont la valeur.
 ```
 apps/
 ├── connect/                          # NOUVELLE APP
-│   ├── package.json                  # @sokar/connect
+│   ├── package.json                  # @suppernote/connect
 │   ├── next.config.js                # output: 'standalone', PAS basePath
 │   ├── tailwind.config.js            # design tokens Shadcn
 │   ├── tsconfig.json                 # strict
@@ -313,7 +313,7 @@ module.exports = nextConfig;
 
 ```json
 {
-  "name": "@sokar/connect",
+  "name": "@suppernote/connect",
   "version": "0.0.1",
   "private": true,
   "scripts": {
@@ -325,8 +325,8 @@ module.exports = nextConfig;
     "test": "vitest run"
   },
   "dependencies": {
-    "@sokar/shared": "workspace:*",
-    "@sokar/types": "workspace:*",
+    "@suppernote/shared": "workspace:*",
+    "@suppernote/types": "workspace:*",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.460.0",
@@ -1022,8 +1022,8 @@ ses données contacte `dpo@suppernote.com`.
 **Scope** :
 
 - Nouvelle app Next.js 14 App Router
-- `package.json` `@sokar/connect` + workspace dep sur
-  `@sokar/shared` (pour les types)
+- `package.json` `@suppernote/connect` + workspace dep sur
+  `@suppernote/shared` (pour les types)
 - `next.config.js` avec `output: 'standalone'`, **PAS de basePath**,
   `images: { unoptimized: true }`
 - `tailwind.config.js` (réutilise les design tokens du dashboard —
@@ -1040,10 +1040,10 @@ ses données contacte `dpo@suppernote.com`.
 
 **Acceptance** :
 
-- [ ] `pnpm --filter @sokar/connect dev` lance l'app sur :4002
-- [ ] `pnpm --filter @sokar/connect build` produit
+- [ ] `pnpm --filter @suppernote/connect dev` lance l'app sur :4002
+- [ ] `pnpm --filter @suppernote/connect build` produit
       `apps/connect/.next/standalone/`
-- [ ] `pnpm --filter @sokar/connect typecheck` passe
+- [ ] `pnpm --filter @suppernote/connect typecheck` passe
 - [ ] `pnpm turbo build` global passe
 - [ ] `curl -I https://suppernote.com/r/chez-sokar-demo` (après deploy)
       répond 200 avec HSTS
@@ -1136,7 +1136,7 @@ ses données contacte `dpo@suppernote.com`.
   depuis l'API ou réimplémentés côté Next ? — **ré-export depuis
   l'API** pour éviter la duplication, on appelle
   `apps/api/src/modules/connect/sitemap.service.ts` directement
-  depuis le route handler Next via `@sokar/api` workspace dep)
+  depuis le route handler Next via `@suppernote/api` workspace dep)
 - Pas d'inclusion des pages `noindex`
 - Sitemap par défaut `https://suppernote.com/sitemap.xml`
 - Robots référence le sitemap

@@ -1,4 +1,5 @@
 # Sokar — Sprint 1 : Brief Technique Agent Code
+
 ### MVP Production-Ready — Mai 2026
 
 ---
@@ -301,15 +302,15 @@ POST   /auth/*
 
 ```typescript
 export const PLANS = {
-  STARTER:  { label: 'Starter' },
-  PRO:      { label: 'Pro' },
-  PREMIUM:  { label: 'Premium' },
+  STARTER: { label: 'Starter' },
+  PRO: { label: 'Pro' },
+  PREMIUM: { label: 'Premium' },
 } as const;
 
 export const INTERNAL_CALL_ALERT_THRESHOLD = 3000;
-export const CIRCUIT_BREAKER_HOURLY_LIMIT  = 200;
-export const REDIS_CTX_TTL_SECONDS         = 300;
-export const SMS_RATE_LIMIT_SECONDS        = 900;
+export const CIRCUIT_BREAKER_HOURLY_LIMIT = 200;
+export const REDIS_CTX_TTL_SECONDS = 300;
+export const SMS_RATE_LIMIT_SECONDS = 900;
 
 export const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
 ```
@@ -322,12 +323,12 @@ export const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
 // packages/types/src/call-event.ts
 
 export interface CallEvent {
-  id:            string;
+  id: string;
   phoneNumberId: string;
-  endedReason?:  'transfer' | 'error' | 'customer-ended-call' | 'assistant-ended-call' | string;
-  transcript?:   string;
-  startedAt?:    string;
-  endedAt?:      string;
+  endedReason?: 'transfer' | 'error' | 'customer-ended-call' | 'assistant-ended-call' | string;
+  transcript?: string;
+  startedAt?: string;
+  endedAt?: string;
 }
 ```
 
@@ -336,12 +337,12 @@ export interface CallEvent {
 ## 🔧 Augmentation Fastify — `src/types/fastify.d.ts`
 
 ```typescript
-import type { db }     from '../shared/db/client';
+import type { db } from '../shared/db/client';
 import type { queues } from '../shared/queue/queues';
 
 declare module 'fastify' {
   interface FastifyInstance {
-    db:     typeof db;
+    db: typeof db;
     queues: typeof queues;
   }
 }
@@ -352,14 +353,14 @@ declare module 'fastify' {
 ## 🔐 Better Auth — `lib/auth.ts`
 
 ```typescript
-import { betterAuth }    from 'better-auth';
+import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
-import { db }            from '../shared/db/client';
+import { db } from '../shared/db/client';
 
 export const auth = betterAuth({
   database: prismaAdapter(db, { provider: 'postgresql' }),
-  secret:   process.env.BETTER_AUTH_SECRET!,
-  baseURL:  process.env.BETTER_AUTH_URL!,
+  secret: process.env.BETTER_AUTH_SECRET!,
+  baseURL: process.env.BETTER_AUTH_URL!,
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: process.env.NODE_ENV === 'production',
@@ -375,22 +376,24 @@ export const auth = betterAuth({
 import nodemailer from 'nodemailer';
 
 const transporter = nodemailer.createTransport({
-  host:   process.env.SMTP_HOST!,
-  port:   Number(process.env.SMTP_PORT ?? 465),
+  host: process.env.SMTP_HOST!,
+  port: Number(process.env.SMTP_PORT ?? 465),
   secure: true,
   auth: { user: process.env.SMTP_USER!, pass: process.env.SMTP_PASS! },
 });
 
 export interface SendEmailOptions {
-  to: string; subject: string; html: string;
+  to: string;
+  subject: string;
+  html: string;
 }
 
 export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   await transporter.sendMail({
-    from:    process.env.EMAIL_FROM ?? 'noreply@sokar.fr',
-    to:      opts.to,
+    from: process.env.EMAIL_FROM ?? 'noreply@sokar.fr',
+    to: opts.to,
     subject: opts.subject,
-    html:    opts.html,
+    html: opts.html,
   });
 }
 ```
@@ -400,16 +403,14 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
 ## 🎯 Outcome Detection — `voice/outcome.ts`
 
 ```typescript
-import type { CallEvent } from '@sokar/types';
+import type { CallEvent } from '@suppernote/types';
 
 export type CallOutcome = 'RESERVED' | 'INFO' | 'NO_ACTION' | 'HANDOFF' | 'ERROR';
 
-export function detectOutcome(
-  call: Pick<CallEvent, 'transcript' | 'endedReason'>
-): CallOutcome {
+export function detectOutcome(call: Pick<CallEvent, 'transcript' | 'endedReason'>): CallOutcome {
   if (call.transcript?.match(/réservation confirmée|numéro de réservation/i)) return 'RESERVED';
-  if (call.endedReason === 'transfer')  return 'HANDOFF';
-  if (call.endedReason === 'error')     return 'ERROR';
+  if (call.endedReason === 'transfer') return 'HANDOFF';
+  if (call.endedReason === 'error') return 'ERROR';
   if (call.transcript?.match(/horaire|ouvert|fermé/i)) return 'INFO';
   return 'NO_ACTION';
 }
@@ -420,22 +421,36 @@ export function detectOutcome(
 ## 🛠️ Tools Vapi — `voice/tools.ts`
 
 ```typescript
-const TIME_PATTERN = ['^(', ' [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/57331281/b661ecad-c5ae-4d03-8749-dfc7e5170650/paste.txt)\\d', '|2[0-3]):[0-5]\\d$'].join('');
+const TIME_PATTERN = [
+  '^(',
+  ' [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/57331281/b661ecad-c5ae-4d03-8749-dfc7e5170650/paste.txt)\\d',
+  '|2[0-3]):[0-5]\\d$',
+].join('');
 
 export function getRestaurantTools(_restaurantId: string) {
   return [
     {
       type: 'function',
       function: {
-        name:        'createReservation',
-        description: 'Crée une réservation. À appeler uniquement après avoir confirmé date, heure, nombre de personnes et nom du client.',
+        name: 'createReservation',
+        description:
+          'Crée une réservation. À appeler uniquement après avoir confirmé date, heure, nombre de personnes et nom du client.',
         parameters: {
           type: 'object',
           properties: {
-            date:          { type: 'string', format: 'date', description: 'Date au format YYYY-MM-DD' },
-            time:          { type: 'string', pattern: TIME_PATTERN, description: 'Heure au format HH:MM (ex: 19:30)' },
-            partySize:     { type: 'integer', minimum: 1, maximum: 7, description: 'Nombre de personnes — ≥8 déclenche handoffToManager' },
-            customerName:  { type: 'string', description: 'Nom complet du client' },
+            date: { type: 'string', format: 'date', description: 'Date au format YYYY-MM-DD' },
+            time: {
+              type: 'string',
+              pattern: TIME_PATTERN,
+              description: 'Heure au format HH:MM (ex: 19:30)',
+            },
+            partySize: {
+              type: 'integer',
+              minimum: 1,
+              maximum: 7,
+              description: 'Nombre de personnes — ≥8 déclenche handoffToManager',
+            },
+            customerName: { type: 'string', description: 'Nom complet du client' },
             customerPhone: { type: 'string', description: 'Téléphone du client (optionnel)' },
           },
           required: ['date', 'time', 'partySize', 'customerName'],
@@ -445,13 +460,13 @@ export function getRestaurantTools(_restaurantId: string) {
     {
       type: 'function',
       function: {
-        name:        'checkAvailability',
+        name: 'checkAvailability',
         description: 'Vérifie si le restaurant est ouvert pour un créneau donné.',
         parameters: {
           type: 'object',
           properties: {
-            date:      { type: 'string', format: 'date' },
-            time:      { type: 'string', pattern: TIME_PATTERN },
+            date: { type: 'string', format: 'date' },
+            time: { type: 'string', pattern: TIME_PATTERN },
             partySize: { type: 'integer', minimum: 1 },
           },
           required: ['date', 'time', 'partySize'],
@@ -461,7 +476,7 @@ export function getRestaurantTools(_restaurantId: string) {
     {
       type: 'function',
       function: {
-        name:        'getOpeningHours',
+        name: 'getOpeningHours',
         description: "Retourne les horaires d'ouverture formatés pour être lus à voix haute.",
         parameters: { type: 'object', properties: {}, required: [] },
       },
@@ -469,8 +484,9 @@ export function getRestaurantTools(_restaurantId: string) {
     {
       type: 'function',
       function: {
-        name:        'handoffToManager',
-        description: "Transfère l'appel au gérant. Utiliser si : groupe ≥8 personnes, demande complexe, client mécontent, ou incompréhension après 2 essais.",
+        name: 'handoffToManager',
+        description:
+          "Transfère l'appel au gérant. Utiliser si : groupe ≥8 personnes, demande complexe, client mécontent, ou incompréhension après 2 essais.",
         parameters: { type: 'object', properties: {}, required: [] },
       },
     },
@@ -485,13 +501,23 @@ export function getRestaurantTools(_restaurantId: string) {
 ```typescript
 type DaySlot = { open: string; close: string } | null;
 export type OpeningHours = {
-  mon?: DaySlot; tue?: DaySlot; wed?: DaySlot; thu?: DaySlot;
-  fri?: DaySlot; sat?: DaySlot; sun?: DaySlot;
+  mon?: DaySlot;
+  tue?: DaySlot;
+  wed?: DaySlot;
+  thu?: DaySlot;
+  fri?: DaySlot;
+  sat?: DaySlot;
+  sun?: DaySlot;
 };
 
 const DAY_LABELS: Record<string, string> = {
-  mon: 'Lundi', tue: 'Mardi', wed: 'Mercredi', thu: 'Jeudi',
-  fri: 'Vendredi', sat: 'Samedi', sun: 'Dimanche',
+  mon: 'Lundi',
+  tue: 'Mardi',
+  wed: 'Mercredi',
+  thu: 'Jeudi',
+  fri: 'Vendredi',
+  sat: 'Samedi',
+  sun: 'Dimanche',
 };
 
 export function formatOpeningHours(hours: OpeningHours): string {
@@ -499,7 +525,7 @@ export function formatOpeningHours(hours: OpeningHours): string {
     .map(([day, slot]) =>
       slot
         ? `${DAY_LABELS[day] ?? day} : ${slot.open}–${slot.close}`
-        : `${DAY_LABELS[day] ?? day} : fermé`
+        : `${DAY_LABELS[day] ?? day} : fermé`,
     )
     .join('\n');
 }
@@ -541,10 +567,7 @@ ${ctx.personality?.systemPromptExtra ?? ''}`;
 ```typescript
 import { FastifyRequest, FastifyReply } from 'fastify';
 
-export async function vapiWebhookGuard(
-  req: FastifyRequest,
-  reply: FastifyReply,
-): Promise<void> {
+export async function vapiWebhookGuard(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   const secret = req.headers['x-vapi-secret'] as string | undefined;
   if (!secret || secret !== process.env.VAPI_WEBHOOK_SECRET) {
     req.log.warn({ ip: req.ip }, 'Invalid or missing Vapi webhook secret');
@@ -560,10 +583,7 @@ export async function vapiWebhookGuard(
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { auth } from '../../lib/auth';
 
-export async function authGuard(
-  req: FastifyRequest,
-  reply: FastifyReply,
-): Promise<void> {
+export async function authGuard(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   const session = await auth.api.getSession({ headers: req.headers as any });
   if (!session?.user) {
     reply.status(401).send({ error: 'Unauthorized' });
@@ -581,11 +601,11 @@ export async function authGuard(
 import { db } from '../../shared/db/client';
 
 export interface CreateReservationInput {
-  restaurantId:   string;
-  callId?:        string;
-  reservedAt:     Date;
-  partySize:      number;
-  customerName:   string;
+  restaurantId: string;
+  callId?: string;
+  reservedAt: Date;
+  partySize: number;
+  customerName: string;
   customerPhone?: string;
 }
 
@@ -593,13 +613,13 @@ export class ReservationService {
   static async create(input: CreateReservationInput) {
     return db.reservation.create({
       data: {
-        restaurantId:     input.restaurantId,
-        callId:           input.callId,
-        reservedAt:       input.reservedAt,
-        partySize:        input.partySize,
-        customerName:     input.customerName,
-        customerPhone:    input.customerPhone,
-        status:           'CONFIRMED',
+        restaurantId: input.restaurantId,
+        callId: input.callId,
+        reservedAt: input.reservedAt,
+        partySize: input.partySize,
+        customerName: input.customerName,
+        customerPhone: input.customerPhone,
+        status: 'CONFIRMED',
         estimatedRevenue: input.partySize * 35,
       },
     });
@@ -608,8 +628,10 @@ export class ReservationService {
   static async findByRestaurant(restaurantId: string, date?: string) {
     const where: any = { restaurantId };
     if (date) {
-      const start = new Date(date); start.setHours(0, 0, 0, 0);
-      const end   = new Date(date); end.setHours(23, 59, 59, 999);
+      const start = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(date);
+      end.setHours(23, 59, 59, 999);
       where.reservedAt = { gte: start, lte: end };
     }
     return db.reservation.findMany({ where, orderBy: { reservedAt: 'asc' } });
@@ -622,10 +644,14 @@ export class ReservationService {
 ## 🏪 Restaurant Service — `restaurants/restaurant.service.ts`
 
 ```typescript
-import { db }                               from '../../shared/db/client';
+import { db } from '../../shared/db/client';
 import { getCachedContext, setCachedContext, redisCache } from '../../shared/redis/client';
-import * as Sentry                           from '@sentry/node';
-import { INTERNAL_CALL_ALERT_THRESHOLD, CIRCUIT_BREAKER_HOURLY_LIMIT, REDIS_CTX_TTL_SECONDS } from '@sokar/config';
+import * as Sentry from '@sentry/node';
+import {
+  INTERNAL_CALL_ALERT_THRESHOLD,
+  CIRCUIT_BREAKER_HOURLY_LIMIT,
+  REDIS_CTX_TTL_SECONDS,
+} from '@suppernote/config';
 
 function getCurrentMonthKey() {
   const d = new Date();
@@ -634,17 +660,17 @@ function getCurrentMonthKey() {
 function getHourKey() {
   const d = new Date();
   return [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours()]
-    .map(n => String(n).padStart(2, '0')).join('-');
+    .map((n) => String(n).padStart(2, '0'))
+    .join('-');
 }
 
 export class RestaurantService {
-
   static async loadContext(phoneNumberId: string) {
     const cacheKey = `phone:${phoneNumberId}`;
-    const cached   = await getCachedContext(cacheKey);
+    const cached = await getCachedContext(cacheKey);
     if (cached) return cached;
     const restaurant = await db.restaurant.findUniqueOrThrow({
-      where:   { phoneNumber: phoneNumberId },
+      where: { phoneNumber: phoneNumberId },
       include: { personality: true },
     });
     await setCachedContext(cacheKey, restaurant, REDIS_CTX_TTL_SECONDS);
@@ -654,23 +680,27 @@ export class RestaurantService {
   static async checkMarginHealth(restaurantId: string): Promise<boolean> {
     const monthKey = getCurrentMonthKey();
     const countKey = `infra:calls:${restaurantId}:${monthKey}`;
-    const count    = await redisCache.incr(countKey);
+    const count = await redisCache.incr(countKey);
     if (count === 1) await redisCache.expire(countKey, 33 * 24 * 3600);
 
     if (count > INTERNAL_CALL_ALERT_THRESHOLD) {
       Sentry.captureMessage(`[MARGIN] Restaurant ${restaurantId} atteint ${count} appels ce mois`, {
-        level: 'warning', tags: { restaurantId, monthKey },
+        level: 'warning',
+        tags: { restaurantId, monthKey },
       });
     }
 
-    const hourKey   = `infra:calls:${restaurantId}:${getHourKey()}`;
+    const hourKey = `infra:calls:${restaurantId}:${getHourKey()}`;
     const hourCount = await redisCache.incr(hourKey);
     if (hourCount === 1) await redisCache.expire(hourKey, 3600);
 
     if (hourCount > CIRCUIT_BREAKER_HOURLY_LIMIT) {
-      Sentry.captureMessage(`[CIRCUIT_BREAKER] Restaurant ${restaurantId}: ${hourCount} appels en 1h`, {
-        level: 'error',
-      });
+      Sentry.captureMessage(
+        `[CIRCUIT_BREAKER] Restaurant ${restaurantId}: ${hourCount} appels en 1h`,
+        {
+          level: 'error',
+        },
+      );
       return false;
     }
     return true;
@@ -678,13 +708,13 @@ export class RestaurantService {
 
   static isOpen(ctx: any, date: string, time: string): boolean {
     const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-    const d      = new Date(`${date}T${time}`);
-    const slot   = (ctx.openingHours as any)[dayMap[d.getDay()]];
+    const d = new Date(`${date}T${time}`);
+    const slot = (ctx.openingHours as any)[dayMap[d.getDay()]];
     if (!slot) return false;
     const [oh, om] = slot.open.split(':').map(Number);
     const [ch, cm] = slot.close.split(':').map(Number);
-    const mins     = d.getHours() * 60 + d.getMinutes();
-    return mins >= (oh * 60 + om) && mins < (ch * 60 + cm);
+    const mins = d.getHours() * 60 + d.getMinutes();
+    return mins >= oh * 60 + om && mins < ch * 60 + cm;
   }
 }
 ```
@@ -695,25 +725,24 @@ export class RestaurantService {
 
 ```typescript
 import { FastifyInstance } from 'fastify';
-import { z }              from 'zod';
-import { db }             from '../../shared/db/client';
-import { redisCache }     from '../../shared/redis/client';
-import { authGuard }      from '../../shared/security/auth.guard';
+import { z } from 'zod';
+import { db } from '../../shared/db/client';
+import { redisCache } from '../../shared/redis/client';
+import { authGuard } from '../../shared/security/auth.guard';
 
 const CreateRestaurantSchema = z.object({
-  name:         z.string().min(2).max(100),
+  name: z.string().min(2).max(100),
   managerPhone: z.string().regex(/^\+?[0-9]{10,15}$/),
   managerEmail: z.string().email(),
-  phoneNumber:  z.string().min(5),
+  phoneNumber: z.string().min(5),
   openingHours: z.record(
-    z.enum(['mon','tue','wed','thu','fri','sat','sun']),
-    z.union([z.object({ open: z.string(), close: z.string() }), z.null()])
+    z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']),
+    z.union([z.object({ open: z.string(), close: z.string() }), z.null()]),
   ),
   plan: z.enum(['STARTER', 'PRO', 'PREMIUM']).default('STARTER'),
 });
 
 export async function restaurantRoutes(app: FastifyInstance) {
-
   app.post('/restaurants', { preHandler: authGuard }, async (req, reply) => {
     const body = CreateRestaurantSchema.parse(req.body);
     try {
@@ -721,7 +750,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
       await app.queues.eveningReport.upsertJobScheduler(
         `nightly-${restaurant.id}`,
         { pattern: '0 23 * * *', tz: 'Europe/Paris' },
-        { name: 'nightly', data: { restaurantId: restaurant.id } }
+        { name: 'nightly', data: { restaurantId: restaurant.id } },
       );
       return reply.status(201).send(restaurant);
     } catch (err: any) {
@@ -735,13 +764,13 @@ export async function restaurantRoutes(app: FastifyInstance) {
   app.get('/restaurants/:id', { preHandler: authGuard }, async (req, reply) => {
     const { id } = req.params as { id: string };
     return reply.send(
-      await db.restaurant.findUniqueOrThrow({ where: { id }, include: { personality: true } })
+      await db.restaurant.findUniqueOrThrow({ where: { id }, include: { personality: true } }),
     );
   });
 
   app.patch('/restaurants/:id', { preHandler: authGuard }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body   = CreateRestaurantSchema.partial().parse(req.body);
+    const body = CreateRestaurantSchema.partial().parse(req.body);
     const updated = await db.restaurant.update({ where: { id }, data: body });
     await redisCache.del(`phone:${updated.phoneNumber}`);
     return reply.send(updated);
@@ -759,8 +788,8 @@ import Redis from 'ioredis';
 const baseUrl = process.env.REDIS_URL!;
 
 export const redisSession = new Redis(baseUrl + '/0');
-export const redisCache   = new Redis(baseUrl + '/1');
-export const redisQueue   = new Redis(baseUrl + '/2');
+export const redisCache = new Redis(baseUrl + '/1');
+export const redisQueue = new Redis(baseUrl + '/2');
 
 export async function getCachedContext(key: string) {
   const cached = await redisCache.get(key);
@@ -783,7 +812,7 @@ import { redisQueue } from '../redis/client';
 export const queues = {
   eveningReport: new Queue('evening-report', { connection: redisQueue }),
   sms: new Queue('sms-notification', {
-    connection:        redisQueue,
+    connection: redisQueue,
     defaultJobOptions: { removeOnComplete: 100, removeOnFail: 50 },
   }),
 };
@@ -794,36 +823,50 @@ export const queues = {
 ## 👷 Worker Evening Report — `queue/workers/evening-report.worker.ts`
 
 ```typescript
-import { Worker }           from 'bullmq';
-import { redisQueue }       from '../redis/client';
-import { db }               from '../db/client';
-import { sendEmail }        from '../email';
+import { Worker } from 'bullmq';
+import { redisQueue } from '../redis/client';
+import { db } from '../db/client';
+import { sendEmail } from '../email';
 import { buildReportEmail } from '../../modules/analytics/report.service';
 
-export const eveningReportWorker = new Worker('evening-report', async (job) => {
-  const { restaurantId } = job.data;
+export const eveningReportWorker = new Worker(
+  'evening-report',
+  async (job) => {
+    const { restaurantId } = job.data;
 
-  const startDay = new Date(); startDay.setHours(0, 0, 0, 0);
-  const endDay   = new Date(); endDay.setHours(23, 59, 59, 999);
+    const startDay = new Date();
+    startDay.setHours(0, 0, 0, 0);
+    const endDay = new Date();
+    endDay.setHours(23, 59, 59, 999);
 
-  const [calls, reservations, restaurant] = await Promise.all([
-    db.call.findMany({ where: { restaurantId, createdAt: { gte: startDay, lte: endDay } } }),
-    db.reservation.findMany({ where: { restaurantId, createdAt: { gte: startDay, lte: endDay } } }),
-    db.restaurant.findUniqueOrThrow({ where: { id: restaurantId } }),
-  ]);
+    const [calls, reservations, restaurant] = await Promise.all([
+      db.call.findMany({ where: { restaurantId, createdAt: { gte: startDay, lte: endDay } } }),
+      db.reservation.findMany({
+        where: { restaurantId, createdAt: { gte: startDay, lte: endDay } },
+      }),
+      db.restaurant.findUniqueOrThrow({ where: { id: restaurantId } }),
+    ]);
 
-  const reserved         = reservations.filter(r => r.status === 'CONFIRMED').length;
-  const cancelled        = reservations.filter(r => r.status === 'CANCELLED').length;
-  const estimatedRevenue = reservations
-    .filter(r => r.estimatedRevenue)
-    .reduce((sum, r) => sum + Number(r.estimatedRevenue), 0);
+    const reserved = reservations.filter((r) => r.status === 'CONFIRMED').length;
+    const cancelled = reservations.filter((r) => r.status === 'CANCELLED').length;
+    const estimatedRevenue = reservations
+      .filter((r) => r.estimatedRevenue)
+      .reduce((sum, r) => sum + Number(r.estimatedRevenue), 0);
 
-  await sendEmail({
-    to:      restaurant.managerEmail,
-    subject: `📊 Résumé Sokar — ${new Date().toLocaleDateString('fr-FR')}`,
-    html:    buildReportEmail({ restaurantName: restaurant.name, totalCalls: calls.length, reserved, cancelled, estimatedRevenue }),
-  });
-}, { connection: redisQueue });
+    await sendEmail({
+      to: restaurant.managerEmail,
+      subject: `📊 Résumé Sokar — ${new Date().toLocaleDateString('fr-FR')}`,
+      html: buildReportEmail({
+        restaurantName: restaurant.name,
+        totalCalls: calls.length,
+        reserved,
+        cancelled,
+        estimatedRevenue,
+      }),
+    });
+  },
+  { connection: redisQueue },
+);
 ```
 
 ---
@@ -831,40 +874,44 @@ export const eveningReportWorker = new Worker('evening-report', async (job) => {
 ## 🔀 Pipeline Vocal — `voice/pipeline.ts`
 
 ```typescript
-import { FastifyInstance }    from 'fastify';
-import { vapiWebhookGuard }   from '../../shared/security/webhook.guard';
+import { FastifyInstance } from 'fastify';
+import { vapiWebhookGuard } from '../../shared/security/webhook.guard';
 import { ReservationService } from '../reservations/reservation.service';
-import { RestaurantService }  from '../restaurants/restaurant.service';
+import { RestaurantService } from '../restaurants/restaurant.service';
 import { buildSystemPrompt, formatOpeningHours } from './prompts';
 import { getRestaurantTools } from './tools';
-import { detectOutcome }      from './outcome';
-import { DEFAULT_VOICE_ID }   from '@sokar/config';
+import { detectOutcome } from './outcome';
+import { DEFAULT_VOICE_ID } from '@suppernote/config';
 
 interface VapiIncomingPayload {
   call: { id: string; phoneNumberId: string };
 }
 interface VapiFunctionCallPayload {
   functionCall: { name: string; parameters: Record<string, any> };
-  call:         { id: string; phoneNumberId: string };
+  call: { id: string; phoneNumberId: string };
 }
 interface VapiEndPayload {
   call: {
-    id: string; endedReason?: string; transcript?: string;
-    startedAt?: string; endedAt?: string;
+    id: string;
+    endedReason?: string;
+    transcript?: string;
+    startedAt?: string;
+    endedAt?: string;
   };
 }
 
 export async function voiceRoutes(app: FastifyInstance) {
-
   app.post('/voice/incoming', { preHandler: vapiWebhookGuard }, async (req, reply) => {
     const body = req.body as VapiIncomingPayload;
-    const ctx  = await RestaurantService.loadContext(body.call.phoneNumberId);
+    const ctx = await RestaurantService.loadContext(body.call.phoneNumberId);
 
     const safe = await RestaurantService.checkMarginHealth(ctx.id);
     if (!safe) {
       return reply
         .type('text/xml')
-        .send(`<Response><Play>https://cdn.sokar.fr/assets/technical-issue.mp3</Play><Hangup/></Response>`);
+        .send(
+          `<Response><Play>https://cdn.sokar.fr/assets/technical-issue.mp3</Play><Hangup/></Response>`,
+        );
     }
 
     return reply.send({
@@ -875,7 +922,7 @@ export async function voiceRoutes(app: FastifyInstance) {
         },
         voice: {
           provider: 'elevenlabs',
-          voiceId:  ctx.personality?.voiceIdEl ?? DEFAULT_VOICE_ID,
+          voiceId: ctx.personality?.voiceIdEl ?? DEFAULT_VOICE_ID,
         },
         tools: getRestaurantTools(ctx.id),
       },
@@ -887,13 +934,12 @@ export async function voiceRoutes(app: FastifyInstance) {
     const ctx = await RestaurantService.loadContext(call.phoneNumberId);
 
     switch (functionCall.name) {
-
       case 'createReservation': {
         const { date, time, partySize, customerName, customerPhone } = functionCall.parameters;
         const reservation = await ReservationService.create({
-          restaurantId:  ctx.id,
-          callId:        call.id,
-          reservedAt:    new Date(`${date}T${time}`),
+          restaurantId: ctx.id,
+          callId: call.id,
+          reservedAt: new Date(`${date}T${time}`),
           partySize,
           customerName,
           customerPhone,
@@ -920,9 +966,12 @@ export async function voiceRoutes(app: FastifyInstance) {
         app.log.info({ restaurantId: ctx.id, callId: call.id }, 'Handoff to manager');
         await app.queues.sms.add('manager-alert', {
           restaurantId: ctx.id,
-          message:      '📞 Un client demande à vous parler — appel en cours',
+          message: '📞 Un client demande à vous parler — appel en cours',
         });
-        return reply.send({ result: 'Je vous transfère immédiatement.', phoneNumber: ctx.managerPhone });
+        return reply.send({
+          result: 'Je vous transfère immédiatement.',
+          phoneNumber: ctx.managerPhone,
+        });
 
       default:
         return reply.status(400).send({ error: `Unknown function: ${functionCall.name}` });
@@ -937,10 +986,10 @@ export async function voiceRoutes(app: FastifyInstance) {
         durationSec: Math.round(
           call.endedAt && call.startedAt
             ? (new Date(call.endedAt).getTime() - new Date(call.startedAt).getTime()) / 1000
-            : 0
+            : 0,
         ),
         transcript: call.transcript ?? null,
-        outcome:    detectOutcome(call),
+        outcome: detectOutcome(call),
       },
     });
     return reply.send({ received: true });
@@ -953,37 +1002,36 @@ export async function voiceRoutes(app: FastifyInstance) {
 ## ⏰ Main — `main.ts`
 
 ```typescript
-import Fastify              from 'fastify';
-import { db }               from './shared/db/client';
-import { redisCache }       from './shared/redis/client';
-import { queues }           from './shared/queue/queues';
-import { voiceRoutes }      from './modules/voice/pipeline';
+import Fastify from 'fastify';
+import { db } from './shared/db/client';
+import { redisCache } from './shared/redis/client';
+import { queues } from './shared/queue/queues';
+import { voiceRoutes } from './modules/voice/pipeline';
 import { restaurantRoutes } from './modules/restaurants/restaurant.routes';
-import { toNodeHandler }    from 'better-auth/node';
-import { auth }             from './lib/auth';
+import { toNodeHandler } from 'better-auth/node';
+import { auth } from './lib/auth';
 import './shared/queue/workers/evening-report.worker';
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
 
-  app.decorate('db',     db);
+  app.decorate('db', db);
   app.decorate('queues', queues);
 
   await app.register(voiceRoutes);
   await app.register(restaurantRoutes);
 
   await app.register(async (instance) => {
-    instance.addContentTypeParser(
-      'application/json',
-      { parseAs: 'string' },
-      (_req, body, done) => {
-        try { done(null, JSON.parse(body as string)); }
-        catch (e) { done(e as Error); }
+    instance.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+      try {
+        done(null, JSON.parse(body as string));
+      } catch (e) {
+        done(e as Error);
       }
-    );
+    });
     instance.route({
-      method:  ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      url:     '/auth/*',
+      method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      url: '/auth/*',
       handler: async (req, reply) => {
         const handler = toNodeHandler(auth);
         await handler(req.raw, reply.raw);
@@ -993,12 +1041,23 @@ export async function buildApp() {
   });
 
   app.get('/health', async (_req, reply) => {
-    let dbStatus = 'ok', redisStatus = 'ok';
-    try { await db.$queryRaw`SELECT 1`; }  catch { dbStatus    = 'error'; }
-    try { await redisCache.ping(); }        catch { redisStatus = 'error'; }
+    let dbStatus = 'ok',
+      redisStatus = 'ok';
+    try {
+      await db.$queryRaw`SELECT 1`;
+    } catch {
+      dbStatus = 'error';
+    }
+    try {
+      await redisCache.ping();
+    } catch {
+      redisStatus = 'error';
+    }
     return reply.send({
       status: dbStatus === 'ok' && redisStatus === 'ok' ? 'ok' : 'degraded',
-      db: dbStatus, redis: redisStatus, vapi: 'not_checked',
+      db: dbStatus,
+      redis: redisStatus,
+      vapi: 'not_checked',
     });
   });
 
@@ -1013,10 +1072,13 @@ const shutdown = async (signal: string) => {
   process.exit(0);
 };
 process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT',  () => shutdown('SIGINT'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 app.listen({ port: 3000, host: '0.0.0.0' }, (err) => {
-  if (err) { app.log.error(err); process.exit(1); }
+  if (err) {
+    app.log.error(err);
+    process.exit(1);
+  }
 });
 
 setImmediate(async () => {
@@ -1026,10 +1088,11 @@ setImmediate(async () => {
       await queues.eveningReport.upsertJobScheduler(
         `nightly-${r.id}`,
         { pattern: '0 23 * * *', tz: 'Europe/Paris' },
-        { name: 'nightly', data: { restaurantId: r.id } }
+        { name: 'nightly', data: { restaurantId: r.id } },
       );
     }
   } catch (err) {
     app.log.error(err, 'Failed to register schedulers on startup');
   }
 });
+```

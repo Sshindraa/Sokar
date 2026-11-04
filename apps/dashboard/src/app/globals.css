@@ -290,6 +290,10 @@
   font-family: var(--font-display), sans-serif;
 }
 
+.font-brand {
+  font-family: var(--font-brand), serif;
+}
+
 .font-sans {
   font-family: var(--font-sans), sans-serif;
 }

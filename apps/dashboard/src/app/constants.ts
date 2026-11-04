@@ -8,8 +8,7 @@ import {
   annualPriceCents,
   formatPriceCents,
   formatMonthlyEquivalent,
-  VAT_MENTION,
-} from '@sokar/shared';
+} from '@suppernote/shared';
 import { featuresIntroducedIn, type FeatureStatus, type PlanLabel } from '@/app/pricing-catalog';
 
 export const SIMULATOR_STEPS = [
@@ -111,7 +110,7 @@ export const FAQS = [
   },
   {
     question: 'Combien coûte Suppernote ?',
-    answer: `Essential à ${PLAN_PRICES_EUR.ESSENTIAL} €/mois, Pro à ${PLAN_PRICES_EUR.PRO} €/mois et Multi-restaurant à ${PLAN_PRICES_EUR.PREMIUM} €/mois pour le premier établissement, puis ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} €/mois par établissement supplémentaire (${VAT_MENTION}). Le paiement annuel engage douze mois avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. Consultez les inclusions actuelles sur la page Tarifs.`,
+    answer: `Essential à ${PLAN_PRICES_EUR.ESSENTIAL} €/mois, Pro à ${PLAN_PRICES_EUR.PRO} €/mois et Multi-restaurant à ${PLAN_PRICES_EUR.PREMIUM} €/mois pour le premier établissement, puis ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} €/mois par établissement supplémentaire. Le paiement annuel engage douze mois avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. Consultez les inclusions actuelles sur la page Tarifs.`,
   },
   {
     question: 'Y a-t-il un engagement de durée ?',

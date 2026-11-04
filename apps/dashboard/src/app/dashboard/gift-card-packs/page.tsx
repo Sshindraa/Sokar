@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useGiftCardApi } from '@/lib/api/gift-cards';
 import { getErrorMessage } from '@/types/api';
-import { formatEuro } from '@sokar/shared';
+import { formatEuro } from '@suppernote/shared';
 import type { GiftCardPack } from '@/lib/api/gift-cards';
 import GiftCardPackForm from '@/components/gift-cards/gift-card-pack-form';
 import { GiftCardSectionNav } from '@/components/gift-cards/GiftCardSectionNav';

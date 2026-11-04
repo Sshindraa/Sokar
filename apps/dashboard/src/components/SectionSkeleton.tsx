@@ -1,35 +1,15 @@
 import { cn } from '@/lib/utils';
 
 interface SectionSkeletonProps {
-  variant: 'storyboard' | 'demo';
   className?: string;
 }
 
 /**
  * Placeholder reserved for deferred dynamic sections.
  * Mirrors the real section's height to avoid CLS while the
- * heavy client bundle (framer-motion / chat timer) is loaded.
+ * heavy client bundle (chat timer) is loaded.
  */
-export default function SectionSkeleton({ variant, className }: SectionSkeletonProps) {
-  if (variant === 'storyboard') {
-    return (
-      <section
-        aria-hidden="true"
-        className={cn(
-          'relative w-full bg-black/40',
-          // ScrollStoryboard renders h-[260vh] — reserve it
-          'min-h-[260vh]',
-          className,
-        )}
-      >
-        <div className="sticky top-0 flex h-screen w-full items-center justify-center px-4 sm:px-6 lg:px-10">
-          <div className="h-[min(76vh,46rem)] w-full max-w-6xl rounded-[2rem] border border-white/10 bg-black/40" />
-        </div>
-      </section>
-    );
-  }
-
-  // demo
+export default function SectionSkeleton({ className }: SectionSkeletonProps) {
   return (
     <section
       aria-hidden="true"

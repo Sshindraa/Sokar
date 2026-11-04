@@ -36,7 +36,6 @@ export default function PricingPage() {
             {[
               { label: 'Accueil', href: '/' },
               { label: 'Services', href: '/#services' },
-              { label: "Cas d'usage", href: '/#demo' },
               { label: 'Tarifs', href: '/pricing' },
             ].map((item) => (
               <Link

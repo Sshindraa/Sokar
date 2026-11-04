@@ -1,5 +1,5 @@
 import { PrismaClient, Prisma } from '@prisma/client';
-import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { DEFAULT_MAX_PARTY_SIZE } from '@suppernote/config';
 import { createHash, randomBytes } from 'crypto';
 import { shouldSeedDemoListings, shouldSeedDemoMcpClient } from './seed-demo-guard';
 
@@ -33,7 +33,7 @@ async function main() {
   const restaurant = await prisma.restaurant.upsert({
     where: { slug: DEMO_SLUG },
     update: {
-      name: 'Chez Sokar',
+      name: 'Chez Suppernote',
       plan: 'STARTER',
       managerPhone: '+33601020304',
       managerEmail: 'demo@sokar.com',
@@ -63,7 +63,7 @@ async function main() {
     },
     create: {
       slug: DEMO_SLUG,
-      name: 'Chez Sokar',
+      name: 'Chez Suppernote',
       plan: 'STARTER',
       managerPhone: '+33601020304',
       managerEmail: 'demo@sokar.com',

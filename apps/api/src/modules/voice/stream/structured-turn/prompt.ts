@@ -1,4 +1,4 @@
-import { normalizeOpeningHours } from '@sokar/shared';
+import { normalizeOpeningHours } from '@suppernote/shared';
 import { nameLetterSequence, nameLettersData } from './name-readback';
 import { replyScopeInstruction, type ReplyScope } from './reply-scope';
 import type { ChatMessage } from '../types';

@@ -23,7 +23,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { SokarLogo } from '@/components/SokarLogo';
+import { SuppernoteLogo } from '@/components/SuppernoteLogo';
 import { cn } from '@/lib/utils';
 import styles from './reservation-view.module.css';
 import { ReservationModification } from './reservation-modification';
@@ -271,7 +271,7 @@ export default function ReservationView({
       <div className={styles.shell}>
         <header className={styles.navigation}>
           <div className="flex items-center gap-2">
-            <SokarLogo className="h-5 w-5 text-foreground" />
+            <SuppernoteLogo className="h-5 w-5 text-foreground" />
             <span className="font-serif text-xl">Suppernote</span>
           </div>
           <h1 className="sr-only">Ma réservation</h1>

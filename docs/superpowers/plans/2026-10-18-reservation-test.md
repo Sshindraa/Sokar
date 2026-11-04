@@ -59,8 +59,8 @@ ALTER TABLE "reservations" ADD COLUMN "is_test" BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX "reservations_test_created_at_idx" ON "reservations" ("created_at") WHERE "is_test";
 ```
 
-- [ ] **Step 3:** Vérifier : `pnpm --filter @sokar/database exec prisma validate` puis `prisma migrate diff --from-migrations packages/database/prisma/migrations --to-schema-datamodel packages/database/prisma/schema.prisma --shadow-database-url "$SHADOW_DATABASE_URL" --script` → sortie vide hors index partiel (que Prisma ne modélise pas). Aucun `DROP`.
-- [ ] **Step 4:** `pnpm --filter @sokar/database exec prisma generate` ; typecheck API vert.
+- [ ] **Step 3:** Vérifier : `pnpm --filter @suppernote/database exec prisma validate` puis `prisma migrate diff --from-migrations packages/database/prisma/migrations --to-schema-datamodel packages/database/prisma/schema.prisma --shadow-database-url "$SHADOW_DATABASE_URL" --script` → sortie vide hors index partiel (que Prisma ne modélise pas). Aucun `DROP`.
+- [ ] **Step 4:** `pnpm --filter @suppernote/database exec prisma generate` ; typecheck API vert.
 - [ ] **Step 5:** Commit `feat(db): colonne is_test sur les réservations`.
 
 ### Task 2: Extension Prisma d'exclusion
@@ -99,9 +99,9 @@ it('ne touche pas findUnique ni create', () => {
 });
 ```
 
-- [ ] **Step 2:** `pnpm --filter @sokar/api exec vitest run src/shared/db/__tests__/test-reservation-scope.test.ts` → FAIL (module absent).
+- [ ] **Step 2:** `pnpm --filter @suppernote/api exec vitest run src/shared/db/__tests__/test-reservation-scope.test.ts` → FAIL (module absent).
 - [ ] **Step 3:** Implémenter. L'extension : `{ query: { reservation: { $allOperations({ operation, args, query }) { return query(scopeReservationArgs(operation, args)); } } } }`. Dans `client.ts`, chaîner après `slowQueryExtension`, en gardant le garde `typeof $extends === 'function'` et le cast existant ; ajouter au commentaire une phrase sur l'exclusion des réservations test.
-- [ ] **Step 4:** Test vert ; `pnpm --filter @sokar/api test` vert.
+- [ ] **Step 4:** Test vert ; `pnpm --filter @suppernote/api test` vert.
 - [ ] **Step 5:** Commit `feat(api): exclure les réservations test des lectures en masse`.
 
 ### Task 3: Audit SQL brut et lectures par relation
@@ -118,7 +118,7 @@ it('ne touche pas findUnique ni create', () => {
 - [ ] **Step 1: Garde-fou** — le test parcourt `apps/api/src` (hors tests), repère chaque appel `$queryRaw`/`$executeRaw`/`Prisma.sql` dont le texte contient `reservations`, et échoue si le fichier ne contient ni `is_test` ni d'entrée dans `RAW_SQL_RESERVATION_EXCEPTIONS`. Un second bloc fait de même pour `reservations: {`, `reservations: true` et `_count: { select: { reservations`.
 - [ ] **Step 2:** Lancer → FAIL avec la liste des fichiers.
 - [ ] **Step 3:** Pour chaque requête : si elle compte, liste ou vérifie la capacité, ajouter `AND r.is_test = false` (ou `isTest: false` dans le `where` de la relation) ; si elle cible une réservation par `id` (verrou `FOR UPDATE`, mise à jour unitaire), l'inscrire en exception avec la raison.
-- [ ] **Step 4:** Garde-fou vert ; `pnpm --filter @sokar/api test` vert.
+- [ ] **Step 4:** Garde-fou vert ; `pnpm --filter @suppernote/api test` vert.
 - [ ] **Step 5:** Commit `fix(api): exclure les réservations test du SQL brut et des relations`.
 
 ### Task 4: Jeton, drapeau et quota
@@ -186,7 +186,7 @@ it('ne touche pas findUnique ni create', () => {
 - [ ] **Step 2: Tests (service)** — `isTest: true` : `CustomerService.lookupOrCreate`, `recordReservationEvent`, attribution et carte cadeau non appelés ; `tx.reservation.create` reçoit `isTest: true` et pas de `customerId` ; `enqueueReservationConfirmation` toujours appelé.
 - [ ] **Step 3:** Lancer → FAIL.
 - [ ] **Step 4:** Implémenter. Vérifier le jeton juste après `getPublishedBySlug` (avant tout effet). Consommer le quota dans `confirm` seulement, après le contrôle du hold.
-- [ ] **Step 5:** Tests verts ; `pnpm --filter @sokar/api test` vert.
+- [ ] **Step 5:** Tests verts ; `pnpm --filter @suppernote/api test` vert.
 - [ ] **Step 6:** Commit `feat(api): créer une réservation test par le circuit Connect`.
 
 ### Task 7: Page « Ma réservation » d'une réservation test
@@ -238,7 +238,7 @@ it('ne touche pas findUnique ni create', () => {
   - page restaurant : avec `testBooking=<jeton>` (motif `TEST_BOOKING_TOKEN_PATTERN` recopié côté client), tous les liens `/book` portent `testBooking=<jeton>` encodé, bandeau exact présent, pas de `PageViewTracker` ; une valeur qui ne respecte pas le motif est ignorée (page normale) ;
   - page widget : jeton transmis au widget, pas de `widget_page_view`, lien retour conservant le jeton ;
   - widget : `hold` et `confirm` sont envoyés et portent `testBookingToken`, sans `marketingAttributionToken` ; bandeau exact ; écran de confirmation = réponse réelle de l'API (code et lien « Gérer ma réservation » si présents) ; une réponse `403` ou `429` affiche le message de l'API.
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter (retirer la confirmation simulée du commit `565e02c1`). **Step 4:** `pnpm --filter @sokar/connect test`, `tsc`, `lint` verts.
+- [ ] **Step 2:** FAIL. **Step 3:** Implémenter (retirer la confirmation simulée du commit `565e02c1`). **Step 4:** `pnpm --filter @suppernote/connect test`, `tsc`, `lint` verts.
 - [ ] **Step 5:** Commit `feat(connect): parcours de réservation test par lien signé`.
 
 ### Task 10: Dashboard — onboarding et « Page en ligne »

@@ -27,8 +27,8 @@ processus depuis `infra/ecosystem.config.js`.
 cd /opt/sokar/apps/connect
 
 # 1. Build
-pnpm install --frozen-lockfile --filter @sokar/connect...
-pnpm --filter @sokar/connect build
+pnpm install --frozen-lockfile --filter @suppernote/connect...
+pnpm --filter @suppernote/connect build
 bash scripts/copy-static.sh
 
 # 2. Démarrer (le wrapper source .env)

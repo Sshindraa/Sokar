@@ -1,7 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { Prisma, PrismaClient, Reservation } from '@prisma/client';
 import { z } from 'zod';
-import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { DEFAULT_MAX_PARTY_SIZE } from '@suppernote/config';
 import { CapacityAwareAvailabilityService } from '../floor-plan/availability-capacity-aware.service';
 import { resolveServiceDurationMinutes } from '../floor-plan/floor-plan.types';
 import { utcToZonedParts, zonedTimeToUtc } from '../../shared/timezone/restaurant-time';

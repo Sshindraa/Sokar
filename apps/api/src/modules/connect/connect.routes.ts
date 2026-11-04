@@ -24,8 +24,8 @@ import {
   reservationManagementUrl,
 } from '../reservations/reservation-management';
 import { createWhatsAppReminderConsent, withdrawWhatsAppReminderConsent } from './whatsapp-consent';
-import { slugifyCity, slugifyCuisine } from '@sokar/shared';
-import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { slugifyCity, slugifyCuisine } from '@suppernote/shared';
+import { DEFAULT_MAX_PARTY_SIZE } from '@suppernote/config';
 import { db } from '../../shared/db/client';
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';

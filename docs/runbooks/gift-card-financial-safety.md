@@ -127,7 +127,7 @@ appliquer le schéma de référence puis la migration et lancer :
 
 ```sh
 GIFT_CARD_FINANCE_TEST_DATABASE_URL=postgresql://sokar_test@127.0.0.1:55439/sokar_gift_card_finance \
-  pnpm --filter @sokar/api exec vitest run src/modules/gift-cards
+  pnpm --filter @suppernote/api exec vitest run src/modules/gift-cards
 ```
 
 La suite transactionnelle refuse tout autre hôte/nom de base. Sans cette variable,

@@ -17,7 +17,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe, type Stripe as StripeType } from '@stripe/stripe-js';
-import { formatEuro, formatDate } from '@sokar/shared';
+import { formatEuro, formatDate } from '@suppernote/shared';
 import type { CrowdfundingStatus } from '@/lib/api/gift-cards';
 import {
   getCrowdfundingStatus,

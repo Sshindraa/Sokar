@@ -4,7 +4,7 @@ description: Sokar project context for Hermes CLI agents
 
 # Suppernote Agent Context
 
-Suppernote (formerly Sokar; internal names like `@sokar/*` and `/opt/sokar` stay) is a French-first restaurant platform: reservations on every channel (phone, web, widget, AI assistants via MCP), service organisation (floor plan, Service Copilot) and customer relationship (CRM, loyalty, gift cards, experiences). The AI voice agent is one feature, not the product definition. Brand: "Le chef de rang numérique de votre restaurant" (`packages/shared/src/brand.ts`); product scope and readiness: `docs/PROJECT_MAP.md#ce-quest-sokar`.
+Suppernote (formerly Sokar; private workspace packages use `@suppernote/*` and production still uses `/opt/sokar`) is a French-first restaurant platform: reservations on every channel (phone, web, widget, AI assistants via MCP), service organisation (floor plan, Service Copilot) and customer relationship (CRM, loyalty, gift cards, experiences). The AI voice agent is one feature, not the product definition. Brand: "Le chef de rang numérique de votre restaurant" (`packages/shared/src/brand.ts`); product scope and readiness: `docs/PROJECT_MAP.md#ce-quest-sokar`.
 Keep this file short. Detailed docs are in `docs/runbooks/` and `docs/architecture/`.
 
 ## Stack

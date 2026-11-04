@@ -1,6 +1,9 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { MARKETING_CONSENT_CHANNELS, MARKETING_CONSENT_COLLECTION_METHODS } from '@sokar/shared';
+import {
+  MARKETING_CONSENT_CHANNELS,
+  MARKETING_CONSENT_COLLECTION_METHODS,
+} from '@suppernote/shared';
 import { MarketingCampaignStatus } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { queues } from '../../shared/queue/queues';

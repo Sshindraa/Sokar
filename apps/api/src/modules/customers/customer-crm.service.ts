@@ -1,4 +1,4 @@
-import { normalizePhone } from '@sokar/shared';
+import { normalizePhone } from '@suppernote/shared';
 import {
   Prisma,
   type Customer,

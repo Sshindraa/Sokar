@@ -5,7 +5,7 @@ import { StatusBadge as StatusPill } from '@/components/StatusBadge';
 import { useEffect, useState, useCallback, useRef, type CSSProperties } from 'react';
 import { toast } from 'sonner';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { normalizePhone } from '@sokar/shared';
+import { normalizePhone } from '@suppernote/shared';
 import { addDays, format, isSameDay, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useApi } from '../../../lib/api';

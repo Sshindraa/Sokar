@@ -12,7 +12,7 @@
 import { useState, type CSSProperties } from 'react';
 import { PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { CreditCard, Loader2, Lock, AlertCircle } from 'lucide-react';
-import { formatEuro } from '@sokar/shared';
+import { formatEuro } from '@suppernote/shared';
 
 type Props = {
   clientSecret: string;

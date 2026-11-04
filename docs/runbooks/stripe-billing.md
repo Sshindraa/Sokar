@@ -278,8 +278,8 @@ Sokar, au lieu de la déduire des seuls prix actuellement proposés. Après `pri
 exécuter le backfill en lecture seule puis avec `--apply` sur chaque environnement :
 
 ```zsh
-pnpm --filter @sokar/api ops:billing-interval-backfill
-pnpm --filter @sokar/api ops:billing-interval-backfill -- --apply
+pnpm --filter @suppernote/api ops:billing-interval-backfill
+pnpm --filter @suppernote/api ops:billing-interval-backfill -- --apply
 ```
 
 Le script lit les objets Price Stripe et ne modifie que les projections dont la cadence est absente.
@@ -365,7 +365,7 @@ Le secret `STRIPE_WEBHOOK_SECRET` existant doit rester configuré sur le même e
 La migration additive `20260907110000_harden_stripe_billing` ajoute les tentatives Checkout, les checkpoints de séquencement et le ledger des événements. Elle doit être appliquée avant de publier l'API qui utilise ces colonnes :
 
 ```bash
-pnpm --filter @sokar/database migrate:deploy
+pnpm --filter @suppernote/database migrate:deploy
 ```
 
 Le champ `Restaurant.plan` est une projection des événements Billing. Les routes restaurant ne l'acceptent plus en mutation ; un changement de formule doit venir de Stripe ou d'une opération Sokar explicitement autorisée.
@@ -383,7 +383,7 @@ cd /opt/sokar-staging
 set -a
 . apps/api/.env
 set +a
-pnpm --filter @sokar/database backfill:restaurant-accounts
+pnpm --filter @suppernote/database backfill:restaurant-accounts
 ```
 
 La commande reste en dry-run par défaut ; ajouter `-- --apply` uniquement après vérification du rapport et de la sauvegarde de release.

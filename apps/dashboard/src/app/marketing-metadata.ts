@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { PLAN_PRICES_EUR, ANNUAL_DISCOUNT_PERCENT } from '@sokar/shared';
+import { PLAN_PRICES_EUR, ANNUAL_DISCOUNT_PERCENT } from '@suppernote/shared';
 
 const SITE_NAME = 'Suppernote';
 

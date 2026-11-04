@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import type { PlanUsageLimits } from '@sokar/config';
+import type { PlanUsageLimits } from '@suppernote/config';
 import type { UsageQuantity } from './usage.types';
 
 export type UsageQuotaState = 'NOT_CONFIGURED' | 'WITHIN_LIMIT' | 'EXCEEDED';

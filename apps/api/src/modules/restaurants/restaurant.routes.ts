@@ -3,7 +3,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { clerkClient } from '@clerk/fastify';
 import type { Prisma } from '@prisma/client';
-import { normalizePhone, SUPPERNOTE_DEMO_SLUG } from '@sokar/shared';
+import { normalizePhone, SUPPERNOTE_DEMO_SLUG } from '@suppernote/shared';
 import { requireOrg, requireSokarOperator } from '../../plugins/clerk';
 import { publicReadMax } from '../../plugins/rate-limit';
 import { trackOnboardingEvent, type OnboardingAnalyticsEvent } from '../analytics/events.service';
@@ -60,7 +60,7 @@ import {
   getCartesiaVoiceId,
 } from '../voice/stream/cartesia-config';
 import { normalizeVoiceLocale } from '../voice/stream/voice-language';
-import { CARTESIA_MODEL } from '@sokar/config';
+import { CARTESIA_MODEL } from '@suppernote/config';
 import { redisCache } from '../../shared/redis/client';
 import { isVoicePipelineEnabled } from '../../shared/configcat';
 import {

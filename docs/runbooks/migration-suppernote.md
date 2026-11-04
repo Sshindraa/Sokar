@@ -8,11 +8,24 @@ Décision de Hamza du 3 novembre 2026 : la marque Sokar devient Suppernote et `s
 
 Ces noms sont internes ou consommés hors du dépôt. Les renommer ne s'est pas justifié ici :
 
-- paquets `@sokar/*`, dossiers `/opt/sokar`, sauvegardes, scripts `sokar-*`, base de données ;
+- dossiers `/opt/sokar`, sauvegardes, services et scripts `sokar-*`, base de données ;
 - en-tête `X-Sokar-Site-ID`, `sokar-mcp`, noms d'outils MCP, champs d'API, événements analytics ;
 - identifiant iOS `tech.sokar.ios` et projet Xcode ;
-- restaurant de démonstration « Chez Sokar » et son slug `chez-sokar-demo` ;
+- slug `chez-sokar-demo`, utilisé dans les liens et les widgets ;
 - migrations Prisma, journal `docs/obsidian/` et bancs voix.
+
+## Renommage dans le dépôt
+
+Les paquets privés utilisent `@suppernote/*` dans le workspace, le lockfile, la CI et les scripts. Exécuter `pnpm install --frozen-lockfile` avant d'utiliser le nouveau périmètre. La migration Prisma renomme l'affichage de « Chez Sokar » uniquement pour le restaurant officiel dont le nom n'a pas été personnalisé. Son ID et son URL restent les mêmes.
+
+## Bascules techniques à qualifier séparément
+
+| Surface                          | Étapes avant le retrait de l'ancien nom                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chemin VPS et services           | Installer la release dans un second chemin et basculer les unités, sauvegardes, permissions et outils de déploiement ensemble. Qualifier staging et tester un retour à l'ancienne release avant la production.                                                                                                                                                  |
+| Redis, queues et clés de hachage | Inventorier les préfixes par propriétaire et durée de vie. Prévoir une lecture compatible pour les jetons OAuth, conserver l'accès aux jobs en cours et qualifier la concurrence avec deux versions. Les préfixes des hachages persistés nécessitent un traitement par contrat.                                                                                 |
+| API et MCP                       | Ajouter les nouveaux noms avec compatibilité pour les en-têtes, clients, outils et événements actuels. Vérifier les clients existants et nouveaux en staging avant toute annonce de retrait.                                                                                                                                                                    |
+| Slug de démo                     | L’alias web `chez-suppernote-demo` est implémenté dans Connect et Dashboard. Avant déploiement, vérifier que ce slug est libre en base et qualifier les anciennes et nouvelles URL en staging. L’API publique, MCP, le widget exporté, le seed et l’URL canonique utilisent encore `chez-sokar-demo`. Migrer ces consommateurs avant de changer le slug stocké. |
 
 ## Préalables, avant de fusionner la PR (faits le 3 novembre 2026)
 
@@ -35,7 +48,7 @@ Fait le 3 novembre 2026 : redirections de `sokar.tech` vers `suppernote.com` (30
 - Déclarer le changement d'adresse dans Google Search Console.
 - Reconnecter les connecteurs MCP : l'adresse de l'émetteur OAuth change.
 - Faire changer le CNAME des domaines personnalisés (cible `suppernote.com`) et prévenir les restaurants qui ont un widget.
-- Remplacer le logo : `SokarLogo` et `logo-sokar*` dessinent encore l'ancien.
+- Le monogramme Suppernote remplace le logo du dashboard (PR #646) ; les anciennes URL SVG servent le nouveau visuel.
 - App iOS : jamais publiée au 3 novembre 2026, donc rien à migrer ; à la première publication, vérifier que `suppernote.com` est traité comme un lien interne.
 
 ## Plan de bascule (exécuté le 3 novembre 2026)

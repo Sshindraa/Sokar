@@ -2,8 +2,8 @@
  * Backfill the marketing opt-out register from withdrawals recorded before it existed.
  *
  * Usage:
- *   MARKETING_OPTOUT_HASH_SECRET=... pnpm --filter @sokar/api exec tsx scripts/backfill-marketing-opt-out-register.ts --dry-run
- *   MARKETING_OPTOUT_HASH_SECRET=... pnpm --filter @sokar/api exec tsx scripts/backfill-marketing-opt-out-register.ts --apply
+ *   MARKETING_OPTOUT_HASH_SECRET=... pnpm --filter @suppernote/api exec tsx scripts/backfill-marketing-opt-out-register.ts --dry-run
+ *   MARKETING_OPTOUT_HASH_SECRET=... pnpm --filter @suppernote/api exec tsx scripts/backfill-marketing-opt-out-register.ts --apply
  *
  * Sources: `MarketingPermission` in OPTED_OUT, and `MarketingSuppression` of reason COMPLAINED (a
  * spam complaint). Hard bounces are not oppositions. The register needs the server key, so this cannot

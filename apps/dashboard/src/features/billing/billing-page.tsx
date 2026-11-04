@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ANNUAL_DISCOUNT_PERCENT, VAT_MENTION } from '@sokar/shared';
+import { ANNUAL_DISCOUNT_PERCENT, VAT_MENTION } from '@suppernote/shared';
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,

@@ -50,7 +50,7 @@ test.describe("Flow d'achat de carte cadeau", () => {
     // Le nom du restaurant est affiché en H1 (mode non-embedded)
     const h1 = page.getByRole('heading', { level: 1 });
     await expect(h1).toBeVisible();
-    await expect(h1).toContainText('Chez Sokar');
+    await expect(h1).toContainText('Chez Suppernote');
 
     // L'étape 1 "Choisissez le type de carte" est visible
     await expect(page.getByRole('heading', { name: /choisissez le type de carte/i })).toBeVisible();

@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { normalizeOpeningHours } from '@sokar/shared';
+import { normalizeOpeningHours } from '@suppernote/shared';
 import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { AlertCircle, Calendar, Clock, Users, UtensilsCrossed } from 'lucide-react';

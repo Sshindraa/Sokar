@@ -230,13 +230,13 @@ Commandes existantes vérifiées dans les scripts du dépôt ; à exécuter selo
 
 ```sh
 pnpm node:check
-pnpm --filter @sokar/api test src/modules/floor-plan/__tests__/service-copilot.service.test.ts
-pnpm --filter @sokar/dashboard test src/app/dashboard/reservations/page.test.tsx
-pnpm --filter @sokar/dashboard test 'src/app/widget/[restaurantId]/page.test.tsx'
-pnpm --filter @sokar/dashboard test src/app/dashboard/floor-plan/_components/FloorPlanCanvas.test.tsx src/app/dashboard/floor-plan/page.test.tsx
-pnpm --filter @sokar/dashboard test:e2e floor-plan.spec.ts widget.spec.ts
-pnpm --filter @sokar/dashboard typecheck
-pnpm --filter @sokar/api typecheck
+pnpm --filter @suppernote/api test src/modules/floor-plan/__tests__/service-copilot.service.test.ts
+pnpm --filter @suppernote/dashboard test src/app/dashboard/reservations/page.test.tsx
+pnpm --filter @suppernote/dashboard test 'src/app/widget/[restaurantId]/page.test.tsx'
+pnpm --filter @suppernote/dashboard test src/app/dashboard/floor-plan/_components/FloorPlanCanvas.test.tsx src/app/dashboard/floor-plan/page.test.tsx
+pnpm --filter @suppernote/dashboard test:e2e floor-plan.spec.ts widget.spec.ts
+pnpm --filter @suppernote/dashboard typecheck
+pnpm --filter @suppernote/api typecheck
 pnpm lint:css
 ```
 

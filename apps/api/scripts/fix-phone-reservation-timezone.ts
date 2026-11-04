@@ -6,9 +6,9 @@
  * (vérifier `timedatectl` sur le VPS). Aperçu par défaut ; --apply écrit après
  * avoir sauvegardé les valeurs d'origine dans le fichier --backup.
  *
- *   pnpm --filter @sokar/api ops:phone-reservation-timezone -- \
+ *   pnpm --filter @suppernote/api ops:phone-reservation-timezone -- \
  *     --server-timezone UTC --before 2026-09-24T12:00:00Z
- *   pnpm --filter @sokar/api ops:phone-reservation-timezone -- \
+ *   pnpm --filter @suppernote/api ops:phone-reservation-timezone -- \
  *     --server-timezone UTC --before <date du déploiement du correctif> \
  *     --backup ./phone-reservation-timezone-backup.json --apply
  *

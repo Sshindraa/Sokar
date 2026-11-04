@@ -11,7 +11,7 @@ import {
   validateExposureSettings,
   validateReservationAgainstPolicy,
 } from '../core/policies.service.js';
-import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { DEFAULT_MAX_PARTY_SIZE } from '@suppernote/config';
 
 const baseInput: RestaurantPolicyInput = {
   policyVersion: '2026-06-20',

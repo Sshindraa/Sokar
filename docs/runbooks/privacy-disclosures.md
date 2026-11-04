@@ -389,7 +389,7 @@ La revue finale, le manifeste des fichiers à livrer et les résultats élargis
 `privacy-local-review.md`. Ce manifeste distingue la page légale préexistante
 et les portions concurrentes du journal.
 
-- Construction de `@sokar/shared` et vérifications TypeScript API, Dashboard et
+- Construction de `@suppernote/shared` et vérifications TypeScript API, Dashboard et
   Connect réussies.
 - 42 tests ciblés réussis : routes et services de consentement RGPD, seuils du
   mécanisme d'anonymisation et rendu des deux pages depuis le catalogue commun.

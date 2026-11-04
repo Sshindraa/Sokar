@@ -1,4 +1,4 @@
-import { resolveDemoSlug, SUPPERNOTE_DEMO_SLUG } from '@sokar/shared';
+import { resolveDemoSlug, SUPPERNOTE_DEMO_SLUG } from '@suppernote/shared';
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server';
 

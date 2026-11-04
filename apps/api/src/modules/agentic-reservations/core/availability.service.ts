@@ -13,7 +13,7 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
-import { isConnectDemoSlug } from '@sokar/shared';
+import { isConnectDemoSlug } from '@suppernote/shared';
 import type { RestaurantPolicyInput } from './policies.service.js';
 import { buildPolicySnapshot } from './policies.service.js';
 import {

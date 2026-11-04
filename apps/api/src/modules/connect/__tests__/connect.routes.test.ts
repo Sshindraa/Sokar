@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach, afterAll, vi, type Mock } 
 import type { FastifyInstance } from 'fastify';
 import type { PublicRestaurantDto } from '../connect.types';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { MARKETING_CONSENT_VERSION } from '@sokar/shared';
+import { MARKETING_CONSENT_VERSION } from '@suppernote/shared';
 
 /**
  * Copie volontaire de l'invariant de publication (cf. `PUBLIC_CONNECT_WHERE`).

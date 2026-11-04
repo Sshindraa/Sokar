@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { PRIVACY_DOCUMENT, PRIVACY_PROVIDERS, PRIVACY_RETENTION_RULES } from '@sokar/shared';
+import { PRIVACY_DOCUMENT, PRIVACY_PROVIDERS, PRIVACY_RETENTION_RULES } from '@suppernote/shared';
 import PrivacyPage, { metadata } from './page';
 
 describe('dashboard privacy disclosure', () => {

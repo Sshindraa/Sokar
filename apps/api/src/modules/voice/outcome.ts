@@ -1,4 +1,4 @@
-import type { CallEvent } from '@sokar/shared';
+import type { CallEvent } from '@suppernote/shared';
 
 export type CallOutcome = 'RESERVED' | 'INFO' | 'NO_ACTION' | 'HANDOFF' | 'ERROR';
 

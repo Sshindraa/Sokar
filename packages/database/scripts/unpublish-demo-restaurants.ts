@@ -16,8 +16,8 @@ import { PrismaClient } from '@prisma/client';
  * rows are kept, so republishing is a single boolean.
  *
  * Dry run by default, `--apply` to execute:
- *   pnpm --filter @sokar/database unpublish:demo-restaurants
- *   pnpm --filter @sokar/database unpublish:demo-restaurants -- --apply
+ *   pnpm --filter @suppernote/database unpublish:demo-restaurants
+ *   pnpm --filter @suppernote/database unpublish:demo-restaurants -- --apply
  */
 
 const DEMO_SLUGS = [
