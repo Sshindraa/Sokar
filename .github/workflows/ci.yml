@@ -254,6 +254,16 @@ jobs:
           pnpm --filter @sokar/database migrate:deploy
           pnpm --filter @sokar/api exec vitest run src/modules/marketing/__tests__/marketing-optout.postgres.integration.test.ts
 
+      - name: Run RGPD erasure PostgreSQL tests
+        env:
+          DATABASE_URL: postgresql://sokar:sokar@127.0.0.1:5432/sokar_rgpd_erasure_ci
+          RGPD_ERASURE_TEST_DATABASE_URL: postgresql://sokar:sokar@127.0.0.1:5432/sokar_rgpd_erasure_ci
+          PGPASSWORD: sokar
+        run: |
+          createdb -h 127.0.0.1 -U sokar sokar_rgpd_erasure_ci
+          pnpm --filter @sokar/database migrate:deploy
+          pnpm --filter @sokar/api exec vitest run src/modules/rgpd/__tests__/erasure.postgres.integration.test.ts src/modules/voice/__tests__/call-recording-lock.postgres.integration.test.ts src/modules/voice/__tests__/call-report-lock.postgres.integration.test.ts
+
   # ─────────────────────────────────────────────────────────────
   # Dashboard: ESLint CLI (flat config), TypeScript via tsc --noEmit,
   # and next build (catches server/client component boundary errors).

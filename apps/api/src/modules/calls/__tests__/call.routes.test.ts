@@ -4,11 +4,21 @@ import { Readable } from 'node:stream';
 vi.mock('../../voice/call-recording.service', () => ({
   getPrivateRecording: vi.fn(),
   deletePrivateRecording: vi.fn(),
+  deleteTelnyxRecording: vi.fn(),
+  assertRecordingBucketUnversioned: vi.fn(),
+  reportStorageKeys: (key: string) => {
+    const prefix = key.slice(0, key.lastIndexOf('/') + 1);
+    return { json: `${prefix}report.json`, markdown: `${prefix}report.md` };
+  },
 }));
 
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
-import { deletePrivateRecording, getPrivateRecording } from '../../voice/call-recording.service';
+import {
+  deletePrivateRecording,
+  deleteTelnyxRecording,
+  getPrivateRecording,
+} from '../../voice/call-recording.service';
 
 describe('call.routes', () => {
   beforeEach(() => {
@@ -175,10 +185,34 @@ describe('call.routes', () => {
       });
     });
 
+    it.each(['PENDING', 'FAILED'] as const)(
+      'demande une revue manuelle pour un enregistrement %s',
+      async (recordingStatus) => {
+        const app = await getApp();
+        vi.mocked(db.call.findUnique).mockResolvedValue({
+          recordingStatus,
+          recordingStorageKey: null,
+          recordingProviderId: null,
+        } as never);
+        const response = await app.inject({
+          method: 'DELETE',
+          url: '/calls/c1',
+          headers: { authorization: 'Bearer test' },
+        });
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toEqual({ error: 'CALL_RECORDING_REQUIRES_MANUAL_REVIEW' });
+        expect(db.call.updateMany).not.toHaveBeenCalled();
+        expect(db.call.delete).not.toHaveBeenCalled();
+        expect(deletePrivateRecording).not.toHaveBeenCalled();
+        expect(deleteTelnyxRecording).not.toHaveBeenCalled();
+      },
+    );
+
     it("supprime aussi l'objet audio privé lorsqu'il existe", async () => {
       const app = await getApp();
       vi.mocked(db.call.findUnique).mockResolvedValue({
         recordingStorageKey: 'call-recordings/rest/call/rec.mp3',
+        recordingProviderId: 'recording-1',
       } as unknown as Awaited<ReturnType<typeof db.call.findUnique>>);
 
       const res = await app.inject({
@@ -189,7 +223,29 @@ describe('call.routes', () => {
 
       expect(res.statusCode).toBe(204);
       expect(deletePrivateRecording).toHaveBeenCalledWith('call-recordings/rest/call/rec.mp3');
+      expect(deletePrivateRecording).toHaveBeenCalledWith('call-recordings/rest/call/report.json');
+      expect(deletePrivateRecording).toHaveBeenCalledWith('call-recordings/rest/call/report.md');
+      expect(deleteTelnyxRecording).toHaveBeenCalledWith('recording-1');
     });
+  });
+
+  it('conserve la référence de l’appel si la suppression du rapport échoue', async () => {
+    const app = await getApp();
+    vi.mocked(db.call.findUnique).mockResolvedValue({
+      recordingStorageKey: 'call-recordings/rest/call/rec.mp3',
+      recordingProviderId: 'recording-1',
+    } as never);
+    vi.mocked(deletePrivateRecording)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('storage unavailable'));
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/calls/c1',
+      headers: { authorization: 'Bearer test' },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(deletePrivateRecording).toHaveBeenCalledTimes(2);
+    expect(db.call.delete).not.toHaveBeenCalled();
   });
 
   describe('GET /calls/:id/recording', () => {

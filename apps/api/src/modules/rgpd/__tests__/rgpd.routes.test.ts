@@ -63,8 +63,11 @@ function setupPrismaMocks() {
   vi.mocked(db.$transaction).mockImplementation(async (fn) =>
     (fn as unknown as (tx: unknown) => unknown)({
       customerConsent: db.customerConsent,
+      $queryRaw: db.$queryRaw,
       call: db.call,
+      voiceDebugTurn: db.voiceDebugTurn,
       reservationAuditLog: db.reservationAuditLog,
+      signedTokenUsage: db.signedTokenUsage,
       message: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
       reservation: { updateMany: vi.fn().mockResolvedValue({ count: 3 }) },
     }),
@@ -293,6 +296,20 @@ describe('RGPD routes (with identity verification)', () => {
       const body = res.json();
       expect(body.ok).toBe(true);
       expect(body.anonymized.reservations).toBe(3);
+    });
+
+    it('refuse le rejeu du jeton après un effacement réussi', async () => {
+      setupPrismaMocks();
+      const app = await getApp();
+      const token = await getVerifiedToken(app, '+33****0001', 'erase');
+      const request = {
+        method: 'POST' as const,
+        url: '/api/rgpd/erase',
+        headers: { 'x-identity-token': token },
+        payload: { subject: '+33****0001' },
+      };
+      expect((await app.inject(request)).statusCode).toBe(200);
+      expect((await app.inject(request)).statusCode).toBe(401);
     });
 
     it("répond par une erreur si l'effacement échoue", async () => {
