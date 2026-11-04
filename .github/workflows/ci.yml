@@ -46,6 +46,36 @@ jobs:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
 
   # ─────────────────────────────────────────────────────────────
+  # Analyse de sécurité du code. Remplace CodeQL, indisponible sur un dépôt privé
+  # sans licence GitHub Code Security. --metrics=off : le code n'est pas envoyé.
+  # Règles exclues, toutes en fausses alertes ou hors sujet sur ce dépôt (tri du 04/11/2026) :
+  # direct-response-write (règle Express, réponses JSON Fastify), raw-html-format (prend les
+  # génériques TS pour du HTML), request-host-used (nginx), mutable-action-tag (hygiène).
+  # ─────────────────────────────────────────────────────────────
+  sast:
+    name: Semgrep
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: semgrep/semgrep:1.183.0
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: |
+          semgrep scan --metrics=off --error \
+            --severity ERROR --severity WARNING \
+            --config p/javascript --config p/typescript --config p/nodejs \
+            --config p/react --config p/nextjs --config p/owasp-top-ten \
+            --exclude-rule generic.nginx.security.request-host-used.request-host-used \
+            --exclude-rule javascript.express.security.audit.xss.direct-response-write.direct-response-write \
+            --exclude-rule javascript.express.security.injection.raw-html-format.raw-html-format \
+            --exclude-rule yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag \
+            .
+
+  # ─────────────────────────────────────────────────────────────
   # Foundation: workspace packages typecheck + test first.
   # (prisma generate runs as part of `build`, which typecheck depends on
   #  via `^build`. tests in packages are stubs for now but the task exists
@@ -147,6 +177,9 @@ jobs:
       - name: Lint
         # Real ESLint (flat config, type-checked rules) — catches floating
         # promises, unused vars, and misused promises that tsc misses.
+        env:
+          # ESLint typé sur toute l'API dépasse le tas par défaut du runner (OOM, exit 134).
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm --filter @suppernote/api lint
 
       - name: Tenant scoping guard
