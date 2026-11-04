@@ -60,7 +60,7 @@ describe('proxy framing policy', () => {
         makeRequest(`${prefix}/chez-suppernote-demo${suffix}?date=2026-11-04`),
       );
       expect(response.headers.get('x-middleware-rewrite')).toBe(
-        `https://suppernote.com${prefix}/chez-sokar-demo${suffix}?date=2026-11-04`,
+        `http://suppernote.com${prefix}/chez-sokar-demo${suffix}?date=2026-11-04`,
       );
       expect(getCspFrameAncestors(response)).toBe(framing);
     },

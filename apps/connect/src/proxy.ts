@@ -134,6 +134,8 @@ export function proxy(request: NextRequest) {
   const isDemoAlias =
     (section === 'restaurant' || section === 'widget') && slug === SUPPERNOTE_DEMO_SLUG;
   if (isDemoAlias) {
+    // Nginx termine TLS ; le serveur Next.js interne écoute en HTTP.
+    url.protocol = 'http:';
     url.pathname = [root, section, resolveDemoSlug(slug), ...rest].join('/');
   }
   const requestOptions = { request: { headers: requestHeaders } };
