@@ -200,4 +200,34 @@ printf 'VALUE=after\n' > "$TMP_ROOT/apps/api/.env"
 NEED_API=false restart_services >/dev/null
 test "$(cat "$PM2_CALLS")" = "$(printf 'pm2 start eco.js --only sokar-api\npm2 start eco.js --only sokar-workers\npm2 save')"
 
+# Une dépendance modifiée reconstruit Dashboard et Connect ; un script seul, non.
+DETECT_REPO="$TMP_ROOT/detect-repo"
+mkdir -p "$DETECT_REPO/scripts"
+git -C "$DETECT_REPO" init -q
+printf 'a\n' > "$DETECT_REPO/pnpm-lock.yaml"
+printf 'a\n' > "$DETECT_REPO/scripts/x.sh"
+git -C "$DETECT_REPO" add -A
+git -C "$DETECT_REPO" -c user.name=t -c user.email=t@t commit -qm base
+DETECT_BASE="$(git -C "$DETECT_REPO" rev-parse HEAD)"
+printf 'b\n' > "$DETECT_REPO/scripts/x.sh"
+git -C "$DETECT_REPO" -c user.name=t -c user.email=t@t commit -qam script
+DETECT_SCRIPT="$(git -C "$DETECT_REPO" rev-parse HEAD)"
+printf 'b\n' > "$DETECT_REPO/pnpm-lock.yaml"
+git -C "$DETECT_REPO" -c user.name=t -c user.email=t@t commit -qam lock
+DETECT_LOCK="$(git -C "$DETECT_REPO" rev-parse HEAD)"
+SOKAR_ROOT="$TMP_ROOT/detect-root"
+mkdir -p "$SOKAR_ROOT/apps/dashboard/.next/standalone/apps/dashboard" \
+  "$SOKAR_ROOT/apps/connect/.next/standalone/apps/connect" "$SOKAR_ROOT/apps/api/dist"
+touch "$SOKAR_ROOT/apps/dashboard/.next/standalone/apps/dashboard/server.js" \
+  "$SOKAR_ROOT/apps/connect/.next/standalone/apps/connect/server.js" \
+  "$SOKAR_ROOT/apps/api/dist/main.js"
+cd "$DETECT_REPO"
+detect_changed_apps "$DETECT_BASE" "$DETECT_SCRIPT" >/dev/null
+test "$NEED_DASHBOARD" = false
+test "$NEED_CONNECT" = false
+detect_changed_apps "$DETECT_SCRIPT" "$DETECT_LOCK" >/dev/null
+test "$NEED_DASHBOARD" = true
+test "$NEED_CONNECT" = true
+cd - >/dev/null
+
 echo 'deploy-common release activation/rollback: OK'
