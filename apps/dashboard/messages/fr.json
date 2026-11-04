@@ -194,6 +194,7 @@
     "bodyHelp": "Gardez '{reservationLink}' et '{unsubscribeUrl}' : ils sont obligatoires pour un envoi.",
     "create": "Créer la campagne",
     "creating": "Création…",
+    "today": "Aujourd’hui",
     "openFromQuietDay": "Remplir ce service",
     "report": {
       "title": "Service visé",
