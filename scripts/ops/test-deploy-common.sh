@@ -160,7 +160,14 @@ test -f "$TMP_ROOT/restore-root/apps/api/package.json"
 PM2_API=sokar-api PM2_WORKERS=sokar-workers PM2_DASH=sokar-dashboard PM2_CONNECT=sokar-connect
 ECOSYSTEM_FILE=eco.js PRIVILEGED_WRAPPER=/bin/true HAS_LOCALSTACK=false
 PM2_CALLS="$TMP_ROOT/pm2-calls.log"
-pm2() { echo "pm2 $*" >> "$PM2_CALLS"; }
+PM2_DOWN=""
+pm2() {
+    if [ "$1" = pid ]; then
+        case " $PM2_DOWN " in *" $2 "*) echo 0 ;; *) echo 4242 ;; esac
+        return 0
+    fi
+    echo "pm2 $*" >> "$PM2_CALLS"
+}
 sudo() { :; }
 : > "$PM2_CALLS"
 NEXT_BUILD_ACTIVATED_DASHBOARD=false NEXT_BUILD_ACTIVATED_CONNECT=false NEED_API=false restart_services >/dev/null
@@ -171,6 +178,13 @@ test "$(cat "$PM2_CALLS")" = "$(printf 'pm2 stop sokar-dashboard\npm2 start eco.
 : > "$PM2_CALLS"
 NEXT_BUILD_ACTIVATED_DASHBOARD=false NEXT_BUILD_ACTIVATED_CONNECT=false NEED_API=true restart_services >/dev/null
 test "$(cat "$PM2_CALLS")" = "$(printf 'pm2 start eco.js --only sokar-api\npm2 start eco.js --only sokar-workers\npm2 save')"
+
+# Une app absente (pm2 delete, plantage) est relancée même sans changement de code.
+PM2_DOWN=sokar-api
+: > "$PM2_CALLS"
+NEXT_BUILD_ACTIVATED_DASHBOARD=false NEXT_BUILD_ACTIVATED_CONNECT=false NEED_API=false restart_services >/dev/null
+test "$(cat "$PM2_CALLS")" = "$(printf 'pm2 start eco.js --only sokar-api\npm2 save')"
+PM2_DOWN=""
 
 # Une modification de .env impose aussi le redémarrage sans changement de code.
 mkdir -p "$TMP_ROOT/apps/api"

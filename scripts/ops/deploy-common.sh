@@ -860,8 +860,15 @@ restart_services() {
     if [ "${NEED_API:-false}" = true ] || { [ -n "${SOKAR_API_ENV_BEFORE:-}" ] && [ "$SOKAR_API_ENV_BEFORE" != "$(api_env_fingerprint "$SOKAR_ROOT/apps/api/.env")" ]; }; then
         TO_START="$TO_START $PM2_API $PM2_WORKERS"
     fi
-    local APP
-    for APP in $TO_START; do
+    # Une app absente ou arrêtée (pm2 delete, plantage) est aussi relancée : l'ancien
+    # `pm2 start <ecosystem>` la remontait, et le runbook impose un `pm2 delete`.
+    local APP PID
+    for APP in "$PM2_API" "$PM2_WORKERS" "$PM2_DASH" "$PM2_CONNECT"; do
+        PID="$(pm2 pid "$APP" 2>/dev/null | tr -d '[:space:]' || true)"
+        case " $TO_START " in
+            *" $APP "*) ;;
+            *) if [ -n "$PID" ] && [ "$PID" != 0 ]; then continue; fi ;;
+        esac
         pm2 start "$ECOSYSTEM_FILE" --only "$APP"
     done
     pm2 save
