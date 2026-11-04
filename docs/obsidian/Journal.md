@@ -3125,7 +3125,7 @@ Le test de rollback de Sshindraa/Sokar#577 échouait : l'artefact de la release 
 
 ### 2026-10-30 — Déploiement prod : API redémarrée deux fois
 
-Chaque déploiement prod redémarrait l'API deux fois (`pm2 start <ecosystem>` puis `pm2 restart`), confirmé sur 00:57, 09:43 et 13:48 UTC. Correctif : `pm2 start --only` par app remplacée, une seule fois, et API seulement si son code, ses dépendances ou la config PM2 ont changé. Le 502 du smoke test prod (13:48:34 UTC) nest
+Chaque déploiement prod redémarrait l'API deux fois (`pm2 start <ecosystem>` puis `pm2 restart`), confirmé sur 00:57, 09:43 et 13:48 UTC. Correctif : `pm2 start --only` par app remplacée, une seule fois, et API seulement si son code, ses dépendances ou la config PM2 ont changé.
 ### 2026-10-30 — Qualification du lot réservations
 
 La PR #617 (0d4aaaff) contient les correctifs d'audit réservations ; workflows CI, déploiement staging et production et smoke tests réussis. Production vérifiée sur 0d4aaaff ; staging sur le snapshot de ce même commit. Réexécution locale isolée sur PostgreSQL : 53 tests de concurrence/modification réussis ; 146 tests ciblés allocation, disponibilité, confirmation et service réussis. Disponibilité publique Chez Sokar demo : HTTP 200 en staging et production, 22 créneaux renvoyés. Aucun hold ni réservation réel, SMS ou autre notification envoyé ; création, rejeu, modification et annulation via les environnements déployés restent à qualifier de bout en bout avec un dispositif de test sans notification à des tiers.
