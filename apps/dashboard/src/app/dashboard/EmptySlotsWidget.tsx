@@ -71,22 +71,22 @@ function getLocalDateKey(date: Date) {
   ].join('-');
 }
 
-function formatShortDate(date: string) {
+function formatShortDate(date: string, locale: string) {
   const parsed = new Date(`${date}T12:00:00`);
   if (Number.isNaN(parsed.getTime())) return '';
 
-  return new Intl.DateTimeFormat('fr-FR', {
+  return new Intl.DateTimeFormat(locale, {
     day: 'numeric',
     month: 'short',
   }).format(parsed);
 }
 
-function formatDayName(date: string, fallback: string) {
+function formatDayName(date: string, fallback: string, locale: string) {
   const parsed = new Date(`${date}T12:00:00`);
   if (Number.isNaN(parsed.getTime())) return DAY_LABELS[fallback] || fallback;
 
-  const dayName = new Intl.DateTimeFormat('fr-FR', { weekday: 'long' }).format(parsed);
-  return dayName.charAt(0).toUpperCase() + dayName.slice(1);
+  const dayName = new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(parsed);
+  return dayName.charAt(0).toLocaleUpperCase(locale) + dayName.slice(1);
 }
 
 export default function EmptySlotsWidget() {
@@ -202,8 +202,9 @@ export default function EmptySlotsWidget() {
           <ul className="mt-3 divide-y divide-border">
             {suggestions.map((item) => {
               const rowLabel = {
-                day: `${formatDayName(item.date, '').toLocaleLowerCase('fr-FR')} ${formatShortDate(item.date)}`,
-                service: t(`suggestions.${item.service}`).toLocaleLowerCase('fr-FR'),
+                // L'anglais garde la majuscule du jour de la semaine, contrairement au français, à l'espagnol et à l'italien.
+                day: `${locale === 'en' ? formatDayName(item.date, '', locale) : formatDayName(item.date, '', locale).toLocaleLowerCase(locale)} ${formatShortDate(item.date, locale)}`,
+                service: t(`suggestions.${item.service}`).toLocaleLowerCase(locale),
               };
               return (
                 <li
@@ -212,7 +213,7 @@ export default function EmptySlotsWidget() {
                 >
                   <div>
                     <p className="font-medium text-foreground">
-                      {formatDayName(item.date, '')} {formatShortDate(item.date)}
+                      {formatDayName(item.date, '', locale)} {formatShortDate(item.date, locale)}
                       {' · '}
                       <span>{t(`suggestions.${item.service}`)}</span>
                     </p>
@@ -343,11 +344,11 @@ export default function EmptySlotsWidget() {
             >
               <div>
                 <p className="font-medium text-foreground">
-                  {formatDayName(day.date, day.dayName)}
+                  {formatDayName(day.date, day.dayName, locale)}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {formatShortDate(day.date)}
-                  {day.date === getLocalDateKey(new Date()) ? ' · Aujourd’hui' : ''}
+                  {formatShortDate(day.date, locale)}
+                  {day.date === getLocalDateKey(new Date()) ? ` · ${t('today')}` : ''}
                 </p>
               </div>
               <span className="tabular-nums text-foreground">

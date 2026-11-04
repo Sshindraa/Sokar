@@ -1,19 +1,19 @@
 # Soumission du connecteur MCP aux annuaires
 
-État au 17 octobre 2026. Le serveur `https://api.sokar.tech/mcp` remplit les exigences techniques
+État au 17 octobre 2026. Le serveur `https://api.suppernote.com/mcp` remplit les exigences techniques
 de l'annuaire Claude : OAuth 2.0 avec enregistrement dynamique et PKCE S256, 401 +
 `WWW-Authenticate` sans jeton, `title` et `readOnlyHint` / `destructiveHint` sur chaque outil.
 
 ## Éléments de la fiche
 
-| Champ                        | Valeur                                                                           |
-| ---------------------------- | -------------------------------------------------------------------------------- |
-| URL du serveur               | `https://api.sokar.tech/mcp`                                                     |
-| Documentation                | `https://sokar.tech/assistants-ia` (aussi annoncée par `resource_documentation`) |
-| Politique de confidentialité | `https://sokar.tech/privacy`                                                     |
-| Support                      | `hello@sokar.tech`                                                               |
-| Authentification             | OAuth, enregistrement dynamique (DCR)                                            |
-| Données                      | API propre à Sokar ; nom et téléphone transmis au seul restaurant choisi         |
+| Champ                        | Valeur                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------ |
+| URL du serveur               | `https://api.suppernote.com/mcp`                                                     |
+| Documentation                | `https://suppernote.com/assistants-ia` (aussi annoncée par `resource_documentation`) |
+| Politique de confidentialité | `https://suppernote.com/privacy`                                                     |
+| Support                      | `hello@suppernote.com`                                                               |
+| Authentification             | OAuth, enregistrement dynamique (DCR)                                                |
+| Données                      | API propre à Sokar ; nom et téléphone transmis au seul restaurant choisi             |
 
 ## Parcours de test pour les relecteurs
 

@@ -115,9 +115,9 @@ les restaurants de `VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS` (voir `environment.md
 
 ```bash
 curl -sS -H "Authorization: Bearer $SOKAR_VOICE_READ_TOKEN" \
-  "https://api.sokar.tech/api/internal/voice/calls/latest?restaurantId=<id>"
+  "https://api.suppernote.com/api/internal/voice/calls/latest?restaurantId=<id>"
 curl -sS -H "Authorization: Bearer $SOKAR_VOICE_READ_TOKEN" \
-  "https://api.sokar.tech/api/internal/voice/calls/<début-de-l-id>/report"
+  "https://api.suppernote.com/api/internal/voice/calls/<début-de-l-id>/report"
 ```
 
 L'audio n'est pas exposé par cette voie : l'écoute (`voice_call_audio.py --listen`) reste sur le Mac.

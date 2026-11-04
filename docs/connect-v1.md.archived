@@ -685,7 +685,7 @@ Le `RGPD Phase 5` (juin 2026) a déjà codé `/api/rgpd/erase`. Le
 endpoint public `/public/r/:slug/erase-request` n'existe pas. **À
 ne pas exposer publiquement** (cf. memory RGPD: erase téléphone seul
 = OK MVP interne, BLOQUANT pilote/prod). Le client qui veut effacer
-ses données contacte `dpo@sokar.tech`.
+ses données contacte `dpo@suppernote.com`.
 
 ### 9.6 Sous-traitants
 
