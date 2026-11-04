@@ -594,6 +594,8 @@ detect_changed_apps() {
             echo "$changed_files" | grep -qE '^apps/dashboard/' && NEED_DASHBOARD=true
             echo "$changed_files" | grep -qE '^apps/connect/' && NEED_CONNECT=true
             echo "$changed_files" | grep -qE '^apps/api/' && NEED_API=true
+            # Config PM2 (env) et dépendances runtime de l'API : redémarrage requis.
+            echo "$changed_files" | grep -qE '^(infra/ecosystem|pnpm-lock\.yaml$|package\.json$|pnpm-workspace\.yaml$)' && NEED_API=true
             # Prisma schema/migrations changent → generate + migrate
             if echo "$changed_files" | grep -qE '^packages/database/prisma/'; then
                 NEED_PRISMA=true
@@ -823,6 +825,14 @@ validate_nginx_config() {
     log info "   ✅ Nginx catch-all default_server 443 — OK"
 }
 
+api_env_fingerprint() {
+    if [ -f "$1" ]; then
+        sha256sum "$1" | cut -d ' ' -f 1
+    else
+        printf '%s\n' missing
+    fi
+}
+
 # Redémarrer les services PM2 + Nginx (+ LocalStack en prod)
 restart_services() {
     log info ""
@@ -837,14 +847,30 @@ restart_services() {
         pm2 stop "$PM2_CONNECT" 2>/dev/null || true
     fi
 
-    pm2 start "$ECOSYSTEM_FILE"
-
-    # L'API n'est redémarrée que si son artefact ou son schéma a changé. Les
-    # déploiements purement Dashboard/Connect ne provoquent ainsi aucun arrêt
-    # du backend.
-    if [ "${NEED_API:-false}" = true ]; then
-        pm2 restart "$PM2_API" "$PM2_WORKERS" 2>/dev/null || true
+    # `pm2 start <ecosystem>` redémarre aussi les apps déjà en ligne : on ne le
+    # lance qu'app par app, pour celles qui sont réellement remplacées, une seule
+    # fois. Un déploiement Dashboard/Connect ne coupe donc pas le backend.
+    local TO_START=""
+    if [ "${NEXT_BUILD_ACTIVATED_DASHBOARD:-false}" = true ]; then
+        TO_START="$PM2_DASH"
     fi
+    if [ "${NEXT_BUILD_ACTIVATED_CONNECT:-false}" = true ]; then
+        TO_START="$TO_START $PM2_CONNECT"
+    fi
+    if [ "${NEED_API:-false}" = true ] || { [ -n "${SOKAR_API_ENV_BEFORE:-}" ] && [ "$SOKAR_API_ENV_BEFORE" != "$(api_env_fingerprint "$SOKAR_ROOT/apps/api/.env")" ]; }; then
+        TO_START="$TO_START $PM2_API $PM2_WORKERS"
+    fi
+    # Une app absente ou arrêtée (pm2 delete, plantage) est aussi relancée : l'ancien
+    # `pm2 start <ecosystem>` la remontait, et le runbook impose un `pm2 delete`.
+    local APP PID
+    for APP in "$PM2_API" "$PM2_WORKERS" "$PM2_DASH" "$PM2_CONNECT"; do
+        PID="$(pm2 pid "$APP" 2>/dev/null | tr -d '[:space:]' || true)"
+        case " $TO_START " in
+            *" $APP "*) ;;
+            *) if [ -n "$PID" ] && [ "$PID" != 0 ]; then continue; fi ;;
+        esac
+        pm2 start "$ECOSYSTEM_FILE" --only "$APP"
+    done
     pm2 save
     sudo "$PRIVILEGED_WRAPPER" reload-nginx "$DEPLOY_ENV"
 

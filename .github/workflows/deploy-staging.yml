@@ -171,6 +171,8 @@ jobs:
               sudo install -o root -g root -m 0755 \
                 scripts/ops/sokar-deploy-root.sh /usr/local/sbin/sokar-deploy-root
             fi
+            source scripts/ops/deploy-common.sh
+            api_env_before="$(api_env_fingerprint apps/api/.env)"
             if [ -n "${SENTRY_DSN:-}${ALERT_EMAIL_TO:-}${ALERT_WEBHOOK_URL:-}${ALERT_SMS_TO:-}${RESEND_RATE_LIMIT_REDIS_URL:-}" ]; then
               bash scripts/ops/sync-env.sh alerting staging
             fi
@@ -191,7 +193,7 @@ jobs:
             export CLERK_SECRET_KEY
             bash scripts/ops/sync-env.sh clerk staging
             bash scripts/ops/sync-env.sh stripe-prices staging
-            SOKAR_SKIP_GIT_PULL=1 bash scripts/deploy.sh --env staging
+            SOKAR_API_ENV_BEFORE="$api_env_before" SOKAR_SKIP_GIT_PULL=1 bash scripts/deploy.sh --env staging
 
       - name: Remove remote Clerk secret transport file
         if: always()

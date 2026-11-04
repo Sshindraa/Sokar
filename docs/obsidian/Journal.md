@@ -3122,6 +3122,10 @@ La fiche client est verrouillée pendant la mise à jour transactionnelle de son
 ### 2026-10-30 — Rollback staging : dépendances restaurées
 
 Le test de rollback de Sshindraa/Sokar#577 échouait : l'artefact de la release précédente exige `zod-to-json-schema`, retiré par la PR (passage à Zod 4), donc absent de node_modules après le déploiement. Correctif : chaque snapshot garde le lockfile et les package.json de son commit (`deps/`), et le rollback réinstalle via `pnpm install --frozen-lockfile` avant de redémarrer. Une release sans lockfile est refusée avant d'arrêter les services. Non validé sur le VPS : la prochaine exécution de staging le vérifiera (le pré-build utilise `.latest-hash`).
+
+### 2026-10-30 — Déploiement prod : API redémarrée deux fois
+
+Chaque déploiement prod redémarrait l'API deux fois (`pm2 start <ecosystem>` puis `pm2 restart`), confirmé sur 00:57, 09:43 et 13:48 UTC. Correctif : `pm2 start --only` par app remplacée, une seule fois, et API seulement si son code, ses dépendances ou la config PM2 ont changé.
 ### 2026-10-30 — Qualification du lot réservations
 
 La PR #617 (0d4aaaff) contient les correctifs d'audit réservations ; workflows CI, déploiement staging et production et smoke tests réussis. Production vérifiée sur 0d4aaaff ; staging sur le snapshot de ce même commit. Réexécution locale isolée sur PostgreSQL : 53 tests de concurrence/modification réussis ; 146 tests ciblés allocation, disponibilité, confirmation et service réussis. Disponibilité publique Chez Sokar demo : HTTP 200 en staging et production, 22 créneaux renvoyés. Aucun hold ni réservation réel, SMS ou autre notification envoyé ; création, rejeu, modification et annulation via les environnements déployés restent à qualifier de bout en bout avec un dispositif de test sans notification à des tiers.
@@ -3685,6 +3689,9 @@ Après l'essai staging classé en indésirable par Outlook (SPF, DKIM et DMARC r
 
 Décision de Hamza à la suite de l'analyse de la PR #634. L'empreinte utilise une clé dérivée par restaurant : les anciennes entrées ne sont plus reconnues, aucune n'existe en production au 3 novembre (à revérifier juste avant la fusion, car une entrée écrite entre-temps ne serait plus reconnue). Seul le geste de la personne (case de réservation, lien de confirmation) lève une opposition ; un accord saisi par l'équipe est refusé (`MARKETING_OPPOSITION_REGISTERED`, 409). Le texte public de la PR #634 devra retirer la levée par le restaurant une fois ce changement fusionné. Rien d'activé, envois toujours coupés.
 
+### 2026-11-03 — Déploiement : rechargement après synchronisation API
+
+Le déploiement compare l’empreinte du fichier d’environnement API avant synchronisation et au redémarrage. Un changement déclenche le remplacement de l’API et des workers, même sans changement de code ; aucune valeur du fichier n’est affichée.
 ### 2026-11-03 — Pilote e-mail : configuration staging
 
 - Dans le compte Resend Sokar, `sokar.tech` et `news.sokar.tech` sont Verified. Création du webhook staging avec seulement `email.sent`, `email.delivered`, `email.bounced`, `email.complained`, `email.failed` et `email.suppressed`; aucune livraison reçue. Le webhook de production n'a pas été modifié.
