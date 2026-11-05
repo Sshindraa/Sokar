@@ -583,7 +583,7 @@ describe('floorPlanRoutes', () => {
       });
 
       expect(res.statusCode).toBe(204);
-      expect(reallocateSpy).toHaveBeenCalledWith('res-1', 't-new');
+      expect(reallocateSpy).toHaveBeenCalledWith('test-rest-1', 'res-1', 't-new');
     });
 
     it('assign-table retourne 409 si la table est indisponible (TableAllocationError)', async () => {

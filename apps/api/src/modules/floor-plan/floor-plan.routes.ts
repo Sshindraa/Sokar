@@ -1007,13 +1007,18 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
       try {
         const reservation = await new TableAllocationService(db).reallocate(
+          req.restaurantId,
           reservationId,
           body.tableId,
         );
         return reply.send(reservation);
       } catch (err) {
         if (err instanceof TableAllocationError) {
-          return reply.status(409).send({ error: err.message });
+          const status = err.code.endsWith('_NOT_FOUND') ? 404 : 409;
+          return reply.status(status).send({ error: err.message });
+        }
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+          return reply.status(404).send({ error: 'Table ou réservation introuvable' });
         }
         throw err;
       }
@@ -1181,10 +1186,11 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
       const { tableId } = AssignTableSchema.parse(req.body);
 
       try {
-        await allocation.reallocate(reservationId, tableId);
+        await allocation.reallocate(req.restaurantId, reservationId, tableId);
       } catch (err) {
         if (err instanceof TableAllocationError) {
-          const status = err.code === 'TABLE_NOT_AVAILABLE' ? 409 : 400;
+          const status =
+            err.code === 'TABLE_NOT_AVAILABLE' ? 409 : err.code.endsWith('_NOT_FOUND') ? 404 : 400;
           return reply.status(status).send({ error: err.message });
         }
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
