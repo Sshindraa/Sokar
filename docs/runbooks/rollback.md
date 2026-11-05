@@ -45,6 +45,10 @@ bash scripts/deploy.sh --env prod --confirm-production rollback --with-db-rollba
 > Sans `--with-db-rollback`, un rollback applicatif ne restaure pas la base de données.
 > Planifier le rollback DB séparément si des migrations ont été appliquées.
 
+## Cache des visites CRM
+
+La migration `20261105020000_customer_visit_cache_revision` ajoute une table, une séquence et un déclencheur sur les réservations. Un rollback des seuls artefacts laisse ce déclencheur actif ; une ancienne API fonctionne avec lui. Avant toute suppression de la table lors d’un rollback de schéma planifié, retirer d’abord le déclencheur `reservation_visit_cache_revision`, puis sa fonction : sinon les écritures de réservations échoueront. Les clés Redis expirent au plus tard après cinq minutes ; changer leur préfixe de version si le format ou les règles de calcul du cache changent.
+
 ## Mesure du restore vierge
 
 Le test reproductible se lance depuis le VPS, via le wrapper privilégié (le

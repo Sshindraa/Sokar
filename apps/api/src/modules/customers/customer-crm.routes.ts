@@ -33,7 +33,11 @@ import {
   redactSensitiveCustomerFields,
   SENSITIVE_NOTE_ROLE_ORDER,
 } from './customer-privacy';
-import { filterCustomerIdsByVisits, withCustomerLifecycles } from './customer-lifecycle';
+import {
+  filterCustomerIdsByVisits,
+  loadComputedCustomerVisits,
+  withCustomerLifecycles,
+} from './customer-lifecycle';
 import { buildCustomerSearchFilter } from './customer.routes';
 
 /**
@@ -430,20 +434,24 @@ export async function customerCrmRoutes(app: FastifyInstance) {
 
     let page;
     let nextCursor: string | null = null;
+    const now = new Date();
+    let loadedStats: Awaited<ReturnType<typeof loadComputedCustomerVisits>> | undefined;
     if (query.lifecycle !== undefined || query.minHonored365d !== undefined) {
       // Status and visits come from the reservations, the same numbers the list then shows.
-      const now = new Date();
       const candidates = await db.customer.findMany({
         where: { ...where, restaurantId },
         orderBy,
         select: { id: true },
         take: CRM_COMPUTED_FILTER_SCAN_LIMIT,
       });
+      const candidateIds = candidates.map((candidate) => candidate.id);
+      loadedStats = await loadComputedCustomerVisits(restaurantId, candidateIds, now);
       const matching = await filterCustomerIdsByVisits(
         restaurantId,
-        candidates.map((candidate) => candidate.id),
+        candidateIds,
         query,
         now,
+        loadedStats,
       );
       const start = query.cursor ? matching.indexOf(query.cursor) + 1 : 0;
       const pageIds = matching.slice(start, start + query.limit);
@@ -466,7 +474,7 @@ export async function customerCrmRoutes(app: FastifyInstance) {
       page = hasNextPage ? customers.slice(0, query.limit) : customers;
       nextCursor = hasNextPage ? (page[page.length - 1]?.id ?? null) : null;
     }
-    const data = await withCustomerLifecycles(restaurantId, page);
+    const data = await withCustomerLifecycles(restaurantId, page, now, loadedStats);
     return reply.send({ data, nextCursor });
   });
 

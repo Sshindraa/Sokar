@@ -8,6 +8,8 @@
 
 ## TODOs actifs
 
+- [ ] CRM : cache local des calculs de visites et migration de révisions par client ; avant livraison, qualifier le déclencheur sur les écritures de réservation et la reprise Redis en staging, puis mesurer cache froid/chaud sous charge représentative.
+
 - [ ] Suppernote : migration de domaine livrée ; suivre `migration-suppernote.md` et vérifier l’état des webhooks fournisseurs. Monogramme, paquets `@suppernote/*` et nom de la démo en revue (PR #646). Appel vocal réel de bout en bout à faire après recharge OpenRouter.
 
 - [ ] Marketing : avant tout envoi réel, rouvrir l'effacement et l'opposition, et mentionner le ciblage selon l'historique dans la notice client (`privacy-client-annex.md`).

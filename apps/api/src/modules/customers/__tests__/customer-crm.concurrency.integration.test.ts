@@ -87,6 +87,50 @@ describeIntegration('CRM — PostgreSQL concurrency (P2_CRM)', () => {
     await prisma.$disconnect();
   });
 
+  it('invalidates both customer revisions transactionally when a reservation changes', async () => {
+    const first = await createCustomer('Profil cache A');
+    const second = await createCustomer('Profil cache B');
+    const reservation = await createHonouredReservation(first.id, 10);
+    const revision = async (customerId: string) =>
+      (await prisma.customerVisitCacheRevision.findUnique({ where: { customerId } }))?.version ??
+      0n;
+    const firstCreated = await revision(first.id);
+    expect(firstCreated).toBeGreaterThan(0n);
+    await prisma.reservation.update({
+      where: { id: reservation.id },
+      data: { customerName: 'Modifié' },
+    });
+    expect(await revision(first.id)).toBe(firstCreated);
+    await prisma.reservation.update({
+      where: { id: reservation.id },
+      data: { customerId: second.id },
+    });
+    expect(await revision(first.id)).toBeGreaterThan(firstCreated);
+    const secondAssigned = await revision(second.id);
+    expect(secondAssigned).toBeGreaterThan(0n);
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.reservation.update({ where: { id: reservation.id }, data: { state: 'NO_SHOW' } });
+        throw new Error('rollback');
+      }),
+    ).rejects.toThrow('rollback');
+    expect(await revision(second.id)).toBe(secondAssigned);
+    await prisma.reservation.update({ where: { id: reservation.id }, data: { state: 'NO_SHOW' } });
+    const secondChanged = await revision(second.id);
+    expect(secondChanged).toBeGreaterThan(secondAssigned);
+    await prisma.reservation.delete({ where: { id: reservation.id } });
+    expect(await revision(second.id)).toBeGreaterThan(secondChanged);
+    await createHonouredReservation(second.id, 2);
+    const beforeDelete = await revision(second.id);
+    await prisma.customer.delete({ where: { id: second.id } });
+    expect(await revision(second.id)).toBe(0n);
+    await prisma.customer.create({
+      data: { id: second.id, restaurantId, phone: second.phone },
+    });
+    await createHonouredReservation(second.id, 3);
+    expect(await revision(second.id)).toBeGreaterThan(beforeDelete);
+  });
+
   it('a merge replayed concurrently with one idempotency key runs once', async () => {
     const target = await createCustomer('Cible');
     const source = await createCustomer('Doublon');

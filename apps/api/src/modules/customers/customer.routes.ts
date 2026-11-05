@@ -28,6 +28,7 @@ import {
   filterCustomerIdsByVisits,
   withCustomerLifecycles,
   loadCustomerVisitStats,
+  loadComputedCustomerVisits,
 } from './customer-lifecycle';
 import { requireCapability } from '../entitlements/entitlement.guard';
 import { evaluateCapability } from '../entitlements/entitlement.service';
@@ -187,6 +188,8 @@ export async function customerRoutes(app: FastifyInstance) {
 
       let customers;
       let total: number;
+      const now = new Date();
+      let loadedStats: Awaited<ReturnType<typeof loadComputedCustomerVisits>> | undefined;
       if (
         query.lifecycle !== undefined ||
         query.minHonored365d !== undefined ||
@@ -202,11 +205,14 @@ export async function customerRoutes(app: FastifyInstance) {
           select: { id: true },
           take: COMPUTED_FILTER_SCAN_LIMIT,
         });
+        const candidateIds = candidates.map((candidate) => candidate.id);
+        loadedStats = await loadComputedCustomerVisits(restaurantId!, candidateIds, now);
         const matching = await filterCustomerIdsByVisits(
           restaurantId!,
-          candidates.map((candidate) => candidate.id),
+          candidateIds,
           { ...query, sort: computedSort },
-          new Date(),
+          now,
+          loadedStats,
         );
         total = matching.length;
         const pageIds = matching.slice(query.offset, query.offset + query.limit);
@@ -232,7 +238,7 @@ export async function customerRoutes(app: FastifyInstance) {
       });
 
       const canViewNotes = canViewSensitiveNotes(req.siteRole, restaurant?.crmSensitiveNoteRoles);
-      const withLifecycle = await withCustomerLifecycles(restaurantId, customers);
+      const withLifecycle = await withCustomerLifecycles(restaurantId, customers, now, loadedStats);
       return reply.send({
         data: withLifecycle.map((customer) =>
           canViewNotes ? customer : redactSensitiveCustomerFields(customer),
