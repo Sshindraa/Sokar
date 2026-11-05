@@ -975,6 +975,50 @@ describe('TableAllocationService', () => {
   });
 
   describe('reallocate', () => {
+    it("refuse une réservation d'un autre restaurant", async () => {
+      const startsAt = new Date('2026-07-02T19:00:00Z');
+      const endsAt = new Date('2026-07-02T21:00:00Z');
+      const { prisma, reservations } = makeMockPrisma({
+        tables: [
+          makeTable({ id: 't-1', floorPlanId, capacity: 2 }),
+          makeTable({ id: 't-2', floorPlanId, capacity: 2 }),
+        ],
+        reservations: [
+          makeReservation({
+            id: 'r-9',
+            restaurantId: 'r-2',
+            tableId: 't-1',
+            startsAt,
+            endsAt,
+            partySize: 2,
+          }),
+        ],
+      });
+      const service = new TableAllocationService(prisma);
+      const error = await service.reallocate('r-1', 'r-9', 't-2').catch((e) => e);
+      expect(error).toBeInstanceOf(TableAllocationError);
+      expect((error as TableAllocationError).code).toBe('RESERVATION_NOT_FOUND');
+      expect(reservations.get('r-9')?.tableId).toBe('t-1');
+    });
+
+    it("refuse une table d'un autre restaurant", async () => {
+      const startsAt = new Date('2026-07-02T19:00:00Z');
+      const endsAt = new Date('2026-07-02T21:00:00Z');
+      const { prisma, reservations } = makeMockPrisma({
+        tables: [
+          makeTable({ id: 't-1', floorPlanId, capacity: 2 }),
+          makeTable({ id: 't-9', floorPlanId, restaurantId: 'r-2', capacity: 2 }),
+        ],
+        reservations: [
+          makeReservation({ id: 'r-1', tableId: 't-1', startsAt, endsAt, partySize: 2 }),
+        ],
+      });
+      const service = new TableAllocationService(prisma);
+      const error = await service.reallocate('r-1', 'r-1', 't-9').catch((e) => e);
+      expect((error as TableAllocationError).code).toBe('TABLE_NOT_FOUND');
+      expect(reservations.get('r-1')?.tableId).toBe('t-1');
+    });
+
     it('change la table de la réservation', async () => {
       const startsAt = new Date('2026-07-02T19:00:00Z');
       const endsAt = new Date('2026-07-02T21:00:00Z');
@@ -989,7 +1033,7 @@ describe('TableAllocationService', () => {
       });
 
       const service = new TableAllocationService(prisma);
-      await service.reallocate('r-1', 't-2');
+      await service.reallocate('r-1', 'r-1', 't-2');
 
       expect(reservations.get('r-1')?.tableId).toBe('t-2');
     });
@@ -1008,7 +1052,7 @@ describe('TableAllocationService', () => {
       });
 
       const service = new TableAllocationService(prisma);
-      await expect(service.reallocate('r-1', 't-2')).rejects.toThrow(TableAllocationError);
+      await expect(service.reallocate('r-1', 'r-1', 't-2')).rejects.toThrow(TableAllocationError);
     });
 
     it("rejette une table d'un autre restaurant", async () => {
@@ -1025,9 +1069,9 @@ describe('TableAllocationService', () => {
       });
 
       const service = new TableAllocationService(prisma);
-      const error = await service.reallocate('r-1', 't-2').catch((e) => e);
+      const error = await service.reallocate('r-1', 'r-1', 't-2').catch((e) => e);
       expect(error).toBeInstanceOf(TableAllocationError);
-      expect(error.code).toBe('TABLE_RESTAURANT_MISMATCH');
+      expect(error.code).toBe('TABLE_NOT_FOUND');
     });
 
     it('rejette une table inactive', async () => {
@@ -1044,7 +1088,7 @@ describe('TableAllocationService', () => {
       });
 
       const service = new TableAllocationService(prisma);
-      const error = await service.reallocate('r-1', 't-2').catch((e) => e);
+      const error = await service.reallocate('r-1', 'r-1', 't-2').catch((e) => e);
       expect(error).toBeInstanceOf(TableAllocationError);
       expect(error.code).toBe('TABLE_NOT_ACTIVE');
     });
@@ -1063,7 +1107,7 @@ describe('TableAllocationService', () => {
       });
 
       const service = new TableAllocationService(prisma);
-      const error = await service.reallocate('r-1', 't-2').catch((e) => e);
+      const error = await service.reallocate('r-1', 'r-1', 't-2').catch((e) => e);
       expect(error).toBeInstanceOf(TableAllocationError);
       expect(error.code).toBe('TABLE_MIN_CAPACITY_TOO_HIGH');
     });
@@ -1087,7 +1131,7 @@ describe('TableAllocationService', () => {
       });
 
       const service = new TableAllocationService(prisma);
-      const error = await service.reallocate('r-1', 't-2').catch((e) => e);
+      const error = await service.reallocate('r-1', 'r-1', 't-2').catch((e) => e);
       expect(error).toBeInstanceOf(TableAllocationError);
       expect(error.code).toBe('RESERVATION_TIMES_MISSING');
     });
@@ -1113,7 +1157,7 @@ describe('TableAllocationService', () => {
       });
 
       const service = new TableAllocationService(prisma);
-      const error = await service.reallocate('r-1', 't-2').catch((e) => e);
+      const error = await service.reallocate('r-1', 'r-1', 't-2').catch((e) => e);
       expect(error).toBeInstanceOf(TableAllocationError);
       expect(error.code).toBe('TABLE_NOT_AVAILABLE');
     });
