@@ -288,6 +288,9 @@ export class ErasureService {
         experienceReservation?: {
           updateMany: (args: unknown) => Promise<{ count: number }>;
         };
+        waitingListEntry?: {
+          updateMany: (args: unknown) => Promise<{ count: number }>;
+        };
         eventOrder?: { updateMany: (args: unknown) => Promise<{ count: number }> };
         eventWaitlistEntry?: { updateMany: (args: unknown) => Promise<{ count: number }> };
       };
@@ -302,14 +305,36 @@ export class ErasureService {
               : []),
             { customer: { phone: args.subject } },
             { reservation: { customerPhone: args.subject } },
+            { customerPhone: args.subject },
           ],
         };
         experienceReservationsDetached = (
           await txWithCrm.experienceReservation.updateMany({
             where: experienceReservationWhere,
-            data: { customerId: null, reservationId: null },
+            data: {
+              customerId: null,
+              reservationId: null,
+              customerName: 'ANON',
+              customerEmail: null,
+              customerPhone: null,
+            },
           })
         ).count;
+      }
+      if (txWithCrm.waitingListEntry) {
+        await txWithCrm.waitingListEntry.updateMany({
+          where: {
+            OR: [{ customerPhone: args.subject }, { customerPhoneNormalized: args.subject }],
+          },
+          data: {
+            customerFirstName: 'ANON',
+            customerLastName: null,
+            customerPhone: 'erased',
+            customerPhoneNormalized: `erased:${subjectHash.slice(0, 12)}`,
+            customerEmail: null,
+            consents: {},
+          },
+        });
       }
       const result = await tx.reservation.updateMany({
         where: reservationWhere,
