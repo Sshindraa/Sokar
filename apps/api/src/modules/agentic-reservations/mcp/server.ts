@@ -167,6 +167,7 @@ export class McpServer {
             actor: `agent:${auth.clientId}`,
             credentialType: auth.credentialType,
             transport: 'mcp',
+            clientIp: req.ip,
             trustedRestaurantAccess:
               auth.credentialType === 'api_key' && auth.restaurantId !== null,
           };
