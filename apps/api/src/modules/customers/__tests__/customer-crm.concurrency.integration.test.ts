@@ -15,6 +15,7 @@ import { PrismaClient } from '@prisma/client';
 import { mergeCustomerProfiles } from '../customer-merge.service';
 import { ensureSystemCustomerSegments, previewCustomerSegment } from '../customer-segment.service';
 import { rebuildCustomerMetricSnapshot } from '../customer-crm.service';
+import { ReservationLifecycleService } from '../../reservations/reservation-lifecycle.service';
 
 const runIntegration = process.env.AGENTIC_INT_TESTS === '1';
 const describeIntegration = runIntegration ? describe : describe.skip;
@@ -129,6 +130,177 @@ describeIntegration('CRM — PostgreSQL concurrency (P2_CRM)', () => {
     });
     await createHonouredReservation(second.id, 3);
     expect(await revision(second.id)).toBeGreaterThan(beforeDelete);
+  });
+
+  it('invalidates only the non-test sides when reservations enter or leave the CRM scope', async () => {
+    const a = await createCustomer('Scope A');
+    const b = await createCustomer('Scope B');
+    const date = new Date('2026-01-01T12:00:00Z');
+    const revision = async (customerId: string) =>
+      (await prisma.customerVisitCacheRevision.findUnique({ where: { customerId } }))?.version ??
+      0n;
+    const reservation = await prisma.reservation.create({
+      data: {
+        restaurantId,
+        customerId: a.id,
+        customerName: 'Test',
+        partySize: 2,
+        reservedAt: date,
+        isTest: true,
+      },
+    });
+    expect(await revision(a.id)).toBe(0n);
+    await prisma.reservation.update({
+      where: { id: reservation.id },
+      data: { customerId: b.id, state: 'NO_SHOW' },
+    });
+    expect(await revision(a.id)).toBe(0n);
+    expect(await revision(b.id)).toBe(0n);
+    await prisma.reservation.update({
+      where: { id: reservation.id },
+      data: { isTest: false, customerId: a.id },
+    });
+    const realA = await revision(a.id);
+    expect(realA).toBeGreaterThan(0n);
+    expect(await revision(b.id)).toBe(0n);
+    await prisma.reservation.update({
+      where: { id: reservation.id },
+      data: { isTest: true, customerId: b.id },
+    });
+    expect(await revision(a.id)).toBeGreaterThan(realA);
+    expect(await revision(b.id)).toBe(0n);
+    const after = await revision(a.id);
+    await prisma.reservation.delete({ where: { id: reservation.id } });
+    expect(await revision(a.id)).toBe(after);
+    expect(await revision(b.id)).toBe(0n);
+  });
+
+  it('measures concurrent real lifecycle transactions for one or distinct customers', async () => {
+    const lifecycle = new ReservationLifecycleService(prisma);
+    // Audits are append-only; this tenant lives only in the disposable integration database.
+    const benchRestaurantId = `crm-contention-${randomUUID()}`;
+    await prisma.restaurant.create({
+      data: {
+        id: benchRestaurantId,
+        name: 'CRM contention',
+        slug: benchRestaurantId,
+        managerPhone: 'test',
+        managerEmail: 'test@example.invalid',
+        phoneNumber: benchRestaurantId,
+        openingHours: {},
+      },
+    });
+    const customer = (index: number) =>
+      prisma.customer.create({
+        data: { restaurantId: benchRestaurantId, phone: `bench-${index}`, name: 'Test' },
+      });
+    const same = await customer(0);
+    const distinct = await Promise.all(
+      Array.from({ length: 8 }, (_, index) => customer(index + 1)),
+    );
+    const run = async (customers: string[], confirm = false) => {
+      const reservations = await Promise.all(
+        customers.map((customerId) =>
+          prisma.reservation.create({
+            data: {
+              restaurantId: benchRestaurantId,
+              customerId,
+              customerName: 'Test',
+              partySize: 2,
+              reservedAt: new Date('2026-01-01T12:00:00Z'),
+              state: confirm ? 'PENDING' : 'CONFIRMED',
+              status: 'CONFIRMED',
+              ...(confirm ? { channel: 'WEB', customerEmail: 'test@example.invalid' } : {}),
+            },
+          }),
+        ),
+      );
+      const durations: number[] = [];
+      let maxWaiters = 0;
+      let samples = 0;
+      let polling = false;
+      let pollError: unknown;
+      const timer = setInterval(() => {
+        if (polling) return;
+        polling = true;
+        prisma.$queryRaw<
+          Array<{ waiters: number }>
+        >`SELECT count(*)::int AS waiters FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND state='active'`
+          .then((rows) => {
+            samples++;
+            maxWaiters = Math.max(maxWaiters, rows[0].waiters);
+          })
+          .catch((error: unknown) => {
+            pollError = error;
+          })
+          .finally(() => {
+            polling = false;
+          });
+      }, 2);
+      try {
+        await Promise.all(
+          reservations.map(async (reservation) => {
+            const args = {
+              reservationId: reservation.id,
+              restaurantId: benchRestaurantId,
+              toState: confirm ? ('CONFIRMED' as const) : ('NO_SHOW' as const),
+              actor: 'test:contention',
+              ...(confirm ? { auditEvent: 'reservation_confirmed' } : {}),
+            };
+            const start = performance.now();
+            const result = await prisma.$transaction((tx) =>
+              lifecycle.transitionInTransaction(tx, args),
+            );
+            durations.push(performance.now() - start);
+            await lifecycle.finalizeTransition(args, result);
+          }),
+        );
+      } finally {
+        clearInterval(timer);
+      }
+      if (pollError) throw pollError;
+      expect(
+        await prisma.reservationAuditLog.count({
+          where: {
+            reservationId: { in: reservations.map((r) => r.id) },
+            event: confirm ? 'reservation_confirmed' : 'reservation_no_show',
+          },
+        }),
+      ).toBe(8);
+      if (confirm) {
+        expect(
+          await prisma.outboxEvent.count({
+            where: {
+              aggregateId: { in: reservations.map((r) => r.id) },
+              topic: 'reservation-confirmation-email',
+            },
+          }),
+        ).toBe(8);
+      }
+      durations.sort((a, b) => a - b);
+      return {
+        minMs: +durations[0].toFixed(1),
+        maxMs: +durations[7].toFixed(1),
+        maxWaiters,
+        samples,
+      };
+    };
+    const sameCustomer = await run(Array(8).fill(same.id));
+    const distinctCustomers = await run(distinct.map((customer) => customer.id));
+    const sameCustomerWithOutbox = await run(Array(8).fill(same.id), true);
+    const distinctCustomersWithOutbox = await run(
+      distinct.map((customer) => customer.id),
+      true,
+    );
+    console.info(
+      'lifecycle contention',
+      JSON.stringify({
+        sameCustomer,
+        distinctCustomers,
+        sameCustomerWithOutbox,
+        distinctCustomersWithOutbox,
+      }),
+    );
   });
 
   it('a merge replayed concurrently with one idempotency key runs once', async () => {
