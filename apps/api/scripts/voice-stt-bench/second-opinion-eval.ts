@@ -7,7 +7,7 @@
  * par type, la valeur retenue par A, celle retenue par B et la valeur attendue.
  *
  * Usage :
- *   pnpm --filter @sokar/api exec tsx scripts/voice-stt-bench/second-opinion-eval.ts \
+ *   pnpm --filter @suppernote/api exec tsx scripts/voice-stt-bench/second-opinion-eval.ts \
  *     phrases.json second-opinion.json [phrases2.json second-opinion2.json …]
  * `BENCH_VERBOSE=1` liste tous les désaccords.
  */

@@ -18,12 +18,12 @@ présent. Le détail de l'alerte pointe vers ce runbook.
 Les commandes se lancent depuis `apps/api` (elles lisent son `.env`) :
 
 ```zsh
-pnpm --filter @sokar/api ops:dead-letter list
-pnpm --filter @sokar/api ops:dead-letter list --queue outbox-dispatcher --limit 50
-pnpm --filter @sokar/api ops:dead-letter stats
-pnpm --filter @sokar/api ops:dead-letter show <deadLetterJobId>
-pnpm --filter @sokar/api ops:dead-letter replay <deadLetterJobId> --confirm
-pnpm --filter @sokar/api ops:dead-letter discard <deadLetterJobId> --reason "<motif>" --confirm
+pnpm --filter @suppernote/api ops:dead-letter list
+pnpm --filter @suppernote/api ops:dead-letter list --queue outbox-dispatcher --limit 50
+pnpm --filter @suppernote/api ops:dead-letter stats
+pnpm --filter @suppernote/api ops:dead-letter show <deadLetterJobId>
+pnpm --filter @suppernote/api ops:dead-letter replay <deadLetterJobId> --confirm
+pnpm --filter @suppernote/api ops:dead-letter discard <deadLetterJobId> --reason "<motif>" --confirm
 ```
 
 Sur le VPS, la même commande fonctionne dans `/opt/sokar/apps/api`. Si `.env` n'est pas présent,

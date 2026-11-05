@@ -56,7 +56,7 @@ export interface ReportJobDeps {
   reserveSlot?(): Promise<boolean>;
   releaseSlot?(): Promise<void>;
   transcribe: Transcriber;
-  store(storageKey: string, body: string, contentType: string): Promise<void>;
+  store(storageKey: string, body: string, contentType: string, call: ReportCallRow): Promise<void>;
   log: {
     info(fields: Record<string, unknown>, message: string): void;
     warn(fields: Record<string, unknown>, message: string): void;
@@ -116,8 +116,8 @@ export async function buildCallReportJob(
       { transcribe: deps.transcribe },
     );
     const keys = reportStorageKeys(call.recordingStorageKey);
-    await deps.store(keys.json, JSON.stringify(report, null, 1), 'application/json');
-    await deps.store(keys.markdown, renderMarkdown(report), 'text/markdown');
+    await deps.store(keys.json, JSON.stringify(report, null, 1), 'application/json', call);
+    await deps.store(keys.markdown, renderMarkdown(report), 'text/markdown', call);
     // Comptes et mesures seulement : jamais de texte d'appel dans les journaux.
     deps.log.info(
       {

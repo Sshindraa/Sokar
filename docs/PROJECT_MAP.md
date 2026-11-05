@@ -1,4 +1,4 @@
-# Sokar Project Map
+# Suppernote Project Map
 
 Carte d'orientation haut niveau. Ce n'est pas une source de vérité absolue. Pour le détail, voir `docs/runbooks/` et `docs/architecture/`.
 
@@ -7,9 +7,11 @@ Carte d'orientation haut niveau. Ce n'est pas une source de vérité absolue. Po
 > [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md), avec la réconciliation des audits dans
 > [`audits/2026-09-15-current-state.md`](./audits/2026-09-15-current-state.md).
 
-## Ce qu'est Sokar
+<a id="ce-quest-sokar"></a>
 
-Sokar est une plateforme française pour aider les restaurants à gérer leurs réservations, organiser
+## Ce qu'est Suppernote
+
+Suppernote est une plateforme française pour aider les restaurants à gérer leurs réservations, organiser
 leur service et entretenir la relation avec leurs clients. L'assistant téléphonique vocal est une
 fonction de cette plateforme, pas sa définition à lui seul.
 
@@ -34,7 +36,7 @@ qu'un parcours est qualifié. Les SMS de réservation et WhatsApp restent désac
 selon le suivi courant.
 
 - **Dashboard** : espace privé restaurateur (Next.js + Clerk).
-- **Sokar Connect** : site public et widget de réservation (Next.js).
+- **Suppernote Connect** : site public et widget de réservation (Next.js).
 - **Voice** : assistant vocal, une fonction de la plateforme (Telnyx + ElevenLabs + Cartesia TTS).
 - **MCP / OpenAI Reserve** : couche agentic pour ChatGPT, Claude, etc.
 
@@ -85,10 +87,10 @@ packages/
 
 ## Points d'entrée publics
 
-- **Dashboard** : `https://sokar.tech` (Next.js App Router, Clerk).
-- **Connect** : `https://sokar.tech/restaurant/<slug>`, `/restaurants/<city>`, `/widget/<slug>/gift-card`. Le formulaire `/widget/<slug>` et `/book/<slug>` vient du dashboard.
+- **Dashboard** : `https://suppernote.com` (Next.js App Router, Clerk).
+- **Connect** : `https://suppernote.com/restaurant/<slug>`, `/restaurants/<city>`, `/widget/<slug>/gift-card`. Le formulaire `/widget/<slug>` et `/book/<slug>` vient du dashboard.
 - **Widget** : `apps/widget/src/app/restaurant-reservation/`.
-- **API** : `https://api.sokar.tech`.
+- **API** : `https://api.suppernote.com`.
 - **Versioning API public** : `main.ts` réécrit `/public/v1/*` vers `/public/*` (transition progressive). Les routes publiques sont dans `connect.routes.ts`.
 
 Les routes CRM et marketing sont authentifiées par organisation via `requireOrg` et les capabilities
@@ -119,7 +121,7 @@ La fondation expériences est authentifiée par organisation via `requireOrg`, l
 `EXPERIENCES_ENABLED=false` par défaut. Les fiches restent en brouillon jusqu'à activation ; une
 réservation d'une session active acquiert un advisory lock PostgreSQL, vérifie la capacité et fige
 le prix. `EXPERIENCE_BOOKING_ENABLED=false` sépare l'ouverture publique : lorsqu'il est activé en
-plus du flag socle, Sokar Connect publie les dates, tient les places pendant Stripe Checkout et
+plus du flag socle, Suppernote Connect publie les dates, tient les places pendant Stripe Checkout et
 confirme uniquement après webhook signé. Remboursements complets à l'annulation restaurateur ; les
 conditions commerciales et notifications restent à qualifier avant production.
 
@@ -156,7 +158,7 @@ rollback reste possible.
 - `/onboarding/[step]` — onboarding restaurateur.
 - `/dashboard` — métriques, graphiques, sync org.
 - `/dashboard/usage` — ancienne surface opérateur conservée comme alias vers `/admin/margin` ; aucun coût interne n'est exposé au restaurant.
-- `/admin` — espace opérateur Sokar séparé du dashboard restaurant ; vue générale, coûts opérationnels, santé et provisioning.
+- `/admin` — espace opérateur Suppernote séparé du dashboard restaurant ; vue générale, coûts opérationnels, santé et provisioning.
 - `/admin/provisioning` — cockpit opérateur : numéro, webhook, renvoi et appel test avec confirmation avant activation. L'ancienne URL `/dashboard/admin/provisioning` redirige vers cet espace.
 - `/admin/margin` — cockpit opérateur du coût par établissement, du catalogue local, de la marge calculable, de la file des corrections et du téléchargement du suivi interne. Le script `usage:accounting:package` emballe ensuite cet export pour une éventuelle étape comptable, en séparant les devises.
 - `/dashboard/reservations` — liste réservations.
@@ -226,7 +228,7 @@ rollback reste possible.
 ### Connect / widget
 
 - Page publique → `connect.service.ts` (agrégateur) ; disponibilités via `CapacityAwareAvailabilityService` (floor-plan).
-- Widget de réservation : `apps/dashboard/src/components/reservation/reservation-widget.tsx`, servi par le dashboard sur `/widget/<slug>` et `/book/<slug>` (sokar.tech, sous-domaines et domaines personnalisés). Écran ChatGPT : `apps/widget/src/app/restaurant-reservation/` (non publié).
+- Widget de réservation : `apps/dashboard/src/components/reservation/reservation-widget.tsx`, servi par le dashboard sur `/widget/<slug>` et `/book/<slug>` (suppernote.com, sous-domaines et domaines personnalisés). Écran ChatGPT : `apps/widget/src/app/restaurant-reservation/` (non publié).
 - Cartes cadeaux : `widget/[slug]/gift-card/` et `gift-card-*` components.
 
 ### CRM / marketing
@@ -484,4 +486,4 @@ pnpm test:visual # régression visuelle
 - `docs/obsidian/` — specs, pipelines, contexte produit.
 - `docs/gift-cards-spec.md` — cartes cadeaux.
 - `docs/sokar-mcp-agentic-reservations-v3.2.md` — agentic reservations.
-- `docs/connect-v1.1.md` — Sokar Connect.
+- `docs/connect-v1.1.md` — Suppernote Connect.

@@ -19,14 +19,14 @@
 ## Vérification locale
 
 ```sh
-pnpm --filter @sokar/shared build
-pnpm --filter @sokar/config build
-pnpm --filter @sokar/agent-client build
-pnpm --filter @sokar/database exec prisma generate
-pnpm --filter @sokar/api test src/modules/billing/__tests__
-pnpm --filter @sokar/dashboard test src/features/billing src/app/dashboard/settings/page.test.tsx src/features/onboarding/onboarding-plan.test.tsx
-pnpm --filter @sokar/api typecheck
-pnpm --filter @sokar/dashboard typecheck
+pnpm --filter @suppernote/shared build
+pnpm --filter @suppernote/config build
+pnpm --filter @suppernote/agent-client build
+pnpm --filter @suppernote/database exec prisma generate
+pnpm --filter @suppernote/api test src/modules/billing/__tests__
+pnpm --filter @suppernote/dashboard test src/features/billing src/app/dashboard/settings/page.test.tsx src/features/onboarding/onboarding-plan.test.tsx
+pnpm --filter @suppernote/api typecheck
+pnpm --filter @suppernote/dashboard typecheck
 ```
 
 `billing.sandbox.test.ts` est ignoré par défaut. Pour l’exécuter, `SOKAR_BILLING_SANDBOX_FIXTURE` doit pointer vers un JSON privé hors dépôt contenant `key` (clé sandbox), `price` (Essential mensuel sandbox), `fixture.customerId` et `fixture.subscriptionId` d’une ancienne recette payée avec 4242. Il exige une clé test et le compte sandbox Sokar attendu. Il lit la facture payée de cette fixture, crée un client/essai jetable sans carte, vérifie le tarif et les quatre parcours du portail puis annule l’essai et supprime ce client en nettoyage. Ne jamais inclure le JSON, la clé ou les URL de session dans les journaux ou le dépôt.

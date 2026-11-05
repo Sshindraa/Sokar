@@ -15,7 +15,7 @@ import {
   MARKETING_CONSENT_VERSION,
   normalizeOpeningHours,
   type MarketingConsentChannel,
-} from '@sokar/shared';
+} from '@suppernote/shared';
 import {
   Calendar as CalendarIcon,
   Clock,

@@ -17,7 +17,7 @@ dépendent de restaurateurs, il prépare le protocole et les supports, indique p
 dépendance humaine et poursuit les travaux indépendants. Il ne remplace jamais une preuve terrain
 par une simulation ou un avis supposé.
 
-Décision du 15 octobre : l’accueil `https://sokar.tech/` est la page commerciale et SEO prioritaire.
+Décision du 15 octobre : l’accueil `https://suppernote.com/` est la page commerciale et SEO prioritaire.
 Conserver son UI ; retirer la landing dédiée du lot et rediriger son ancienne adresse vers `/`.
 LAND-01 conserve son identifiant de suivi, mais désigne désormais la consolidation de l’accueil.
 Aucune nouvelle landing n’est à créer dans ce lot.
@@ -563,7 +563,7 @@ Les témoignages et les gains chiffrés attendent leurs propres preuves.
 
 ### Page retenue
 
-`/`, canonical `https://sokar.tech/`. Conserver les sections, styles, polices, animations et CTA
+`/`, canonical `https://suppernote.com/`. Conserver les sections, styles, polices, animations et CTA
 existants. Réutiliser la FAQ pour les précisions utiles, sans ajouter de bloc ni refaire le hero.
 L’ancienne route `/solutions/assistant-telephonique-restaurant` redirige définitivement vers `/`
 et reste hors sitemap. Les mentions de sa préparation dans le rapport sont historiques.
@@ -635,8 +635,8 @@ dans le repo courant ; ne pas lancer une suite complète pour une simple correct
 ```sh
 pnpm node:check
 pnpm exec prettier --check docs/runbooks/seo-acquisition-execution-plan.md
-pnpm --filter @sokar/dashboard typecheck
-pnpm --filter @sokar/api typecheck
+pnpm --filter @suppernote/dashboard typecheck
+pnpm --filter @suppernote/api typecheck
 ```
 
 - UI : contrôle navigateur mobile/iPad/desktop ; build ou typecheck adapté ; tests de comportements

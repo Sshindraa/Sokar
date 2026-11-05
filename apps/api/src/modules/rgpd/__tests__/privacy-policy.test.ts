@@ -3,7 +3,7 @@ import {
   PRIVACY_ANONYMIZATION_REFERENCE,
   PRIVACY_DOCUMENT,
   PRIVACY_PROVIDERS,
-} from '@sokar/shared';
+} from '@suppernote/shared';
 import { ANONYMIZATION_GRACE_DAYS, ANONYMIZATION_RETENTION_DAYS } from '../anonymization.service';
 import { PRIVACY_POLICY_SUMMARY, PRIVACY_POLICY_TEXT } from '../privacy-policy';
 

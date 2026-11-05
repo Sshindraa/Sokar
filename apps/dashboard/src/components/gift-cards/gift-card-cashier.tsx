@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { formatEuro } from '@sokar/shared';
+import { formatEuro } from '@suppernote/shared';
 import { getErrorMessage } from '@/types/api';
 
 type Receipt = {

@@ -7,7 +7,7 @@
  * lit le WAV sur stdin et ne renvoie que la réponse de Deepgram). Sert à valider le rapport sur des
  * appels déjà enregistrés avant d'activer le déclenchement automatique.
  *
- *   pnpm --filter @sokar/api exec tsx scripts/call-report-local.ts <début-de-l-id-d-appel> [--out dossier] [--host deploy@sokar]
+ *   pnpm --filter @suppernote/api exec tsx scripts/call-report-local.ts <début-de-l-id-d-appel> [--out dossier] [--host deploy@sokar]
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';

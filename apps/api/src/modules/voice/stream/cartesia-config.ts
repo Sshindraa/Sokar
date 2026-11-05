@@ -1,4 +1,4 @@
-import { DEFAULT_CARTESIA_VOICE_ID, CARTESIA_MODEL } from '@sokar/config';
+import { DEFAULT_CARTESIA_VOICE_ID, CARTESIA_MODEL } from '@suppernote/config';
 import type { CallSession } from './types';
 
 export const CARTESIA_NORMALIZATION = 'auto' as const;

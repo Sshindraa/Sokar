@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CEREBRAS_BASE_URL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
+import { CEREBRAS_BASE_URL, VOICE_LLM_MODEL_DEFAULT } from '@suppernote/config';
 import {
   VoiceConfigSchema,
   VoiceDeepgramConfigSchema,

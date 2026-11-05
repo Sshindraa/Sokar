@@ -39,7 +39,7 @@ const webhookRouteOptions = {
   config: { rateLimit: RATE_LIMIT_PROVIDER_WEBHOOK },
 };
 import { MS_TO_SECONDS } from '../../shared/constants/time.js';
-import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { DEFAULT_MAX_PARTY_SIZE } from '@suppernote/config';
 import { recordPricedUsageEvent } from '../usage/usage-tariff.service';
 
 interface TelnyxCallPayload {

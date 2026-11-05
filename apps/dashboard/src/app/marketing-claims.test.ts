@@ -28,7 +28,7 @@ const PUBLIC_COPY_FILES = [
   './constants.ts',
   './solutions/assistant-telephonique-restaurant/page.tsx',
   './page.tsx',
-  './ScrollStoryboardSection.tsx',
+  './ServiceDaySection.tsx',
   './register/[[...slug]]/page.tsx',
   './login/[[...slug]]/page.tsx',
   './mcp/page.tsx',

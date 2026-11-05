@@ -2,7 +2,7 @@
  * Suppernote Connect — API client.
  *
  * En T4, on fetch l'API publique Fastify (apps/api) plutôt que d'importer
- * directement @sokar/database. Cf. spec connect-v1.1 §6.6 :
+ * directement @suppernote/database. Cf. spec connect-v1.1 §6.6 :
  *   "apps/connect appelle GET /public/sitemap-data plutôt que
  *    d'importer du code apps/api directement."
  *
@@ -18,7 +18,7 @@
  *   est 60s, (3) Cloudflare cache en edge.
  */
 
-import { fetchWithTimeout } from '@sokar/shared';
+import { fetchWithTimeout } from '@suppernote/shared';
 
 const API_URL = process.env.API_URL ?? 'http://localhost:3001';
 

@@ -5,7 +5,7 @@
  */
 
 import type { CSSProperties } from 'react';
-import { formatEuro } from '@sokar/shared';
+import { formatEuro } from '@suppernote/shared';
 
 export const reservationTheme: CSSProperties & Record<`--${string}`, string> = {
   '--reservation-bg': '34 32% 92%',

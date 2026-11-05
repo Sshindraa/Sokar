@@ -3,7 +3,7 @@
 import { useState, useEffect, FormEventHandler } from 'react';
 import { useAuth, useOrganization, useOrganizationList } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
-import { SokarLogo } from '@/components/SokarLogo';
+import { SuppernoteLogo } from '@/components/SuppernoteLogo';
 import { ArrowRight, ChefHat, Loader2, AlertCircle } from 'lucide-react';
 
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -115,7 +115,7 @@ function CreateRestaurantForm() {
       <div className="relative z-10 w-full max-w-md">
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center gap-3">
-          <SokarLogo className="h-12 w-12 text-foreground" />
+          <SuppernoteLogo className="h-12 w-12 text-foreground" />
           <span className="text-xl font-bold tracking-tight text-foreground font-display">
             Suppernote
           </span>

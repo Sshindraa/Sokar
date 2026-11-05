@@ -3,7 +3,7 @@ import {
   PRIVACY_DOCUMENT,
   PRIVACY_PROVIDERS,
   PRIVACY_RETENTION_RULES,
-} from '@sokar/shared';
+} from '@suppernote/shared';
 
 // New records reference the corrected disclosure; historical consent versions stay intact.
 // This does not change consent purposes, flags or introduce an automatic renewal workflow.

@@ -13,7 +13,7 @@ import { GiftCardTestBanner } from './gift-card-test-banner';
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Check, Download, PartyPopper, Calendar } from 'lucide-react';
-import { formatEuro } from '@sokar/shared';
+import { formatEuro } from '@suppernote/shared';
 import type { GiftCardPurchaseResult, GiftCardSlot } from '@/lib/api/gift-cards';
 import { suggestGiftCardSlots } from '@/lib/api/gift-cards';
 import { GiftCardSlotsPicker } from './gift-card-slots-picker';

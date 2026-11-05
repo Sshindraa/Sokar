@@ -36,7 +36,10 @@ function makeMockPrisma() {
     message: {
       updateMany: vi.fn(),
     },
+    $queryRaw: vi.fn(),
+    voiceDebugTurn: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     call: {
+      findFirst: vi.fn().mockResolvedValue(null),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       findMany: vi.fn().mockResolvedValue([]),
     },

@@ -594,6 +594,12 @@ detect_changed_apps() {
             echo "$changed_files" | grep -qE '^apps/dashboard/' && NEED_DASHBOARD=true
             echo "$changed_files" | grep -qE '^apps/connect/' && NEED_CONNECT=true
             echo "$changed_files" | grep -qE '^apps/api/' && NEED_API=true
+            # Config PM2 (env) et dépendances runtime de l'API : redémarrage requis.
+            echo "$changed_files" | grep -qE '^(infra/ecosystem|pnpm-lock\.yaml$|package\.json$|pnpm-workspace\.yaml$)' && NEED_API=true
+            # Les bundles Next embarquent les dépendances : une version changée impose de les reconstruire.
+            if echo "$changed_files" | grep -qE '^(pnpm-lock\.yaml|pnpm-workspace\.yaml)$'; then
+                NEED_DASHBOARD=true; NEED_CONNECT=true
+            fi
             # Prisma schema/migrations changent → generate + migrate
             if echo "$changed_files" | grep -qE '^packages/database/prisma/'; then
                 NEED_PRISMA=true
@@ -656,15 +662,15 @@ build_packages_api() {
 
     if [ "$need_packages" = true ] || [ "$need_api" = true ]; then
         # config imports the shared catalogue; database imports config.
-        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/shared build
-        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/config build
-        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database build
+        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @suppernote/shared build
+        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @suppernote/config build
+        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @suppernote/database build
     fi
     if [ "$need_api" = true ]; then
         # `tsc` sur l'API consomme ~2 Go de mémoire (mesuré le 27/09/2026 avec
         # --extendedDiagnostics) : avec 1536 Mo le build échouait au hasard du GC
         # (OOM, exit 134). Le VPS a ~5,7 Go disponibles pendant le build.
-        NODE_OPTIONS="--max-old-space-size=3072" pnpm --filter @sokar/api build
+        NODE_OPTIONS="--max-old-space-size=3072" pnpm --filter @suppernote/api build
         if [ ! -f "$SOKAR_ROOT/apps/api/dist/main.js" ]; then
             log_error "API build terminé sans apps/api/dist/main.js (entrypoint PM2 manquant)."
             return 1
@@ -697,10 +703,10 @@ build_dashboard_connect() {
     local build_dash_cmd=""
     local build_connect_cmd=""
     if [ "$need_dash" = true ]; then
-        build_dash_cmd="NODE_OPTIONS='--max-old-space-size=2048' NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_ALLOW_DEV=1 NEXT_DIST_DIR='$NEXT_DIST_DIR_DASHBOARD' SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1 pnpm --filter @sokar/dashboard build"
+        build_dash_cmd="NODE_OPTIONS='--max-old-space-size=2048' NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_ALLOW_DEV=1 NEXT_DIST_DIR='$NEXT_DIST_DIR_DASHBOARD' SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1 pnpm --filter @suppernote/dashboard build"
     fi
     if [ "$need_connect" = true ]; then
-        build_connect_cmd="NODE_OPTIONS='--max-old-space-size=1024' NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_ALLOW_DEV=1 NEXT_DIST_DIR='$NEXT_DIST_DIR_CONNECT' pnpm --filter @sokar/connect build"
+        build_connect_cmd="NODE_OPTIONS='--max-old-space-size=1024' NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_ALLOW_DEV=1 NEXT_DIST_DIR='$NEXT_DIST_DIR_CONNECT' pnpm --filter @suppernote/connect build"
     fi
 
     # Les services restent actifs pendant le build : les sorties sont écrites
@@ -823,6 +829,14 @@ validate_nginx_config() {
     log info "   ✅ Nginx catch-all default_server 443 — OK"
 }
 
+api_env_fingerprint() {
+    if [ -f "$1" ]; then
+        sha256sum "$1" | cut -d ' ' -f 1
+    else
+        printf '%s\n' missing
+    fi
+}
+
 # Redémarrer les services PM2 + Nginx (+ LocalStack en prod)
 restart_services() {
     log info ""
@@ -837,14 +851,30 @@ restart_services() {
         pm2 stop "$PM2_CONNECT" 2>/dev/null || true
     fi
 
-    pm2 start "$ECOSYSTEM_FILE"
-
-    # L'API n'est redémarrée que si son artefact ou son schéma a changé. Les
-    # déploiements purement Dashboard/Connect ne provoquent ainsi aucun arrêt
-    # du backend.
-    if [ "${NEED_API:-false}" = true ]; then
-        pm2 restart "$PM2_API" "$PM2_WORKERS" 2>/dev/null || true
+    # `pm2 start <ecosystem>` redémarre aussi les apps déjà en ligne : on ne le
+    # lance qu'app par app, pour celles qui sont réellement remplacées, une seule
+    # fois. Un déploiement Dashboard/Connect ne coupe donc pas le backend.
+    local TO_START=""
+    if [ "${NEXT_BUILD_ACTIVATED_DASHBOARD:-false}" = true ]; then
+        TO_START="$PM2_DASH"
     fi
+    if [ "${NEXT_BUILD_ACTIVATED_CONNECT:-false}" = true ]; then
+        TO_START="$TO_START $PM2_CONNECT"
+    fi
+    if [ "${NEED_API:-false}" = true ] || { [ -n "${SOKAR_API_ENV_BEFORE:-}" ] && [ "$SOKAR_API_ENV_BEFORE" != "$(api_env_fingerprint "$SOKAR_ROOT/apps/api/.env")" ]; }; then
+        TO_START="$TO_START $PM2_API $PM2_WORKERS"
+    fi
+    # Une app absente ou arrêtée (pm2 delete, plantage) est aussi relancée : l'ancien
+    # `pm2 start <ecosystem>` la remontait, et le runbook impose un `pm2 delete`.
+    local APP PID
+    for APP in "$PM2_API" "$PM2_WORKERS" "$PM2_DASH" "$PM2_CONNECT"; do
+        PID="$(pm2 pid "$APP" 2>/dev/null | tr -d '[:space:]' || true)"
+        case " $TO_START " in
+            *" $APP "*) ;;
+            *) if [ -n "$PID" ] && [ "$PID" != 0 ]; then continue; fi ;;
+        esac
+        pm2 start "$ECOSYSTEM_FILE" --only "$APP"
+    done
     pm2 save
     sudo "$PRIVILEGED_WRAPPER" reload-nginx "$DEPLOY_ENV"
 

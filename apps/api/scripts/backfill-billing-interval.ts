@@ -4,8 +4,8 @@
  * Run after migration 20260921164000_subscription_billing_interval. The dry
  * run is the default; --apply is required for database writes.
  *
- *   pnpm --filter @sokar/api ops:billing-interval-backfill
- *   pnpm --filter @sokar/api ops:billing-interval-backfill -- --apply
+ *   pnpm --filter @suppernote/api ops:billing-interval-backfill
+ *   pnpm --filter @suppernote/api ops:billing-interval-backfill -- --apply
  */
 
 import Stripe from 'stripe';

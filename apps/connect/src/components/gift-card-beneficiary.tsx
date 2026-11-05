@@ -2,7 +2,7 @@
 import { GiftCardTestBanner } from './gift-card-test-banner';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { formatEuro } from '@sokar/shared';
+import { formatEuro } from '@suppernote/shared';
 import { getGiftCardBeneficiary, type GiftCardBeneficiary } from '@/lib/api/gift-cards';
 
 export function GiftCardBeneficiaryPage({ code }: { code: string }) {

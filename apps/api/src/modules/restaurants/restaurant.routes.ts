@@ -3,7 +3,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { clerkClient } from '@clerk/fastify';
 import type { Prisma } from '@prisma/client';
-import { normalizePhone } from '@sokar/shared';
+import { normalizePhone, SUPPERNOTE_DEMO_SLUG } from '@suppernote/shared';
 import { requireOrg, requireSokarOperator } from '../../plugins/clerk';
 import { publicReadMax } from '../../plugins/rate-limit';
 import { trackOnboardingEvent, type OnboardingAnalyticsEvent } from '../analytics/events.service';
@@ -60,7 +60,7 @@ import {
   getCartesiaVoiceId,
 } from '../voice/stream/cartesia-config';
 import { normalizeVoiceLocale } from '../voice/stream/voice-language';
-import { CARTESIA_MODEL } from '@sokar/config';
+import { CARTESIA_MODEL } from '@suppernote/config';
 import { redisCache } from '../../shared/redis/client';
 import { isVoicePipelineEnabled } from '../../shared/configcat';
 import {
@@ -1334,6 +1334,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
     const body = UpdateConnectSchema.parse(req.body ?? {});
 
+    if (body.slug === SUPPERNOTE_DEMO_SLUG) {
+      return reply.status(409).send({ error: 'Ce slug est réservé à la démonstration.' });
+    }
+
     // 1. Check slug uniqueness if provided
     if (body.slug) {
       const existing = await app.db.restaurant.findUnique({
@@ -1560,7 +1564,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
     const existing = await app.db.restaurant.findUnique({
       where: { slug },
     });
-    const available = !existing || existing.id === req.restaurantId;
+    const available =
+      slug !== SUPPERNOTE_DEMO_SLUG && (!existing || existing.id === req.restaurantId);
     return reply.send({ available });
   };
 

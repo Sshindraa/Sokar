@@ -28,6 +28,7 @@ import { AuditLogService } from '../agentic-reservations/core/audit-log.service'
 import { trackRgpdEvent } from '../analytics/events.service';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
 import { normalizeCustomerPhone } from '../customers/customer-crm.service';
+import { IdentityVerificationError } from './identity-verification.service';
 import {
   isMarketingOptedOut,
   registerMarketingOptOut,
@@ -80,6 +81,7 @@ export class ErasureService {
     subject: string;
     reason: string;
     actor: string;
+    verificationJti?: string;
   }): Promise<ErasureResult> {
     const subjectHash = ConsentService.hashSubject(args.subject);
     const erasedAt = new Date();
@@ -89,6 +91,11 @@ export class ErasureService {
     // (le hash vit dans CustomerConsent).
     const sampleReservation = await this.prisma.reservation.findFirst({
       where: { customerPhone: args.subject },
+      select: { id: true },
+    });
+    // tenant-scoping: global — droit du sujet vérifié sur tous ses établissements.
+    const sampleCall = await this.prisma.call.findFirst({
+      where: { callerPhone: args.subject },
       select: { id: true },
     });
     const sampleConsent = await this.prisma.customerConsent.findFirst({
@@ -115,7 +122,7 @@ export class ErasureService {
       : [];
     const crmCustomerIds = crmCustomers.map((customer) => customer.id);
 
-    if (!sampleReservation && !sampleConsent && crmCustomers.length === 0) {
+    if (!sampleReservation && !sampleCall && !sampleConsent && crmCustomers.length === 0) {
       throw new ErasureSubjectNotFoundError(
         `No data found for subject hash ${subjectHash.slice(0, 8)}…`,
       );
@@ -141,6 +148,18 @@ export class ErasureService {
     let callsAnonymized = 0;
     let consentsRetained = 0;
     const reservationsAnonymized = await this.prisma.$transaction(async (tx) => {
+      if (args.verificationJti) {
+        try {
+          await tx.signedTokenUsage.create({
+            data: { jti: args.verificationJti, subject: args.subject, intent: 'erase' },
+          });
+        } catch (error) {
+          if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
+            throw new IdentityVerificationError('EXPIRED', 'Token already used (replay detected)');
+          }
+          throw error;
+        }
+      }
       for (const customer of [...crmCustomers].sort((a, b) => a.id.localeCompare(b.id))) {
         await tx.$queryRaw`SELECT id FROM customers WHERE id = ${customer.id} FOR UPDATE`;
       }
@@ -213,6 +232,39 @@ export class ErasureService {
         ? { OR: [{ customerPhone: args.subject }, { customerId: { in: crmCustomerIds } }] }
         : { customerPhone: args.subject };
 
+      // tenant-scoping: global — appels du sujet vérifié et de ses réservations.
+      const callWhere = {
+        OR: [{ callerPhone: args.subject }, { reservation: { is: reservationWhere } }],
+      };
+      const candidates = await tx.call.findMany({ where: callWhere, select: { id: true } });
+      for (const id of candidates.map((call) => call.id).sort()) {
+        await tx.$queryRaw`SELECT id FROM calls WHERE id = ${id} FOR UPDATE`;
+      }
+      // tenant-scoping: global — mêmes appels, relus après verrouillage.
+      const calls = await tx.call.findMany({
+        where: callWhere,
+        select: {
+          id: true,
+          recordingStatus: true,
+          recordingStorageKey: true,
+          recordingProviderId: true,
+        },
+      });
+      const lockedCallIds = new Set(candidates.map((call) => call.id));
+      if (calls.some((call) => !lockedCallIds.has(call.id)))
+        throw new Error('RGPD_CALL_SET_CHANGED');
+      if (
+        calls.some(
+          (call) =>
+            call.recordingStorageKey ||
+            call.recordingProviderId ||
+            !['NOT_REQUESTED', 'DELETED'].includes(call.recordingStatus),
+        )
+      ) {
+        // shortcut: recorded calls require manual erasure until every historical copy can be found.
+        throw new Error('RGPD_RECORDING_ERASURE_REQUIRES_MANUAL_REVIEW');
+      }
+      const callIds = calls.map((call) => call.id);
       // Keep aggregate timeline/metrics rows for auditability, but remove every
       // direct identity and preference before archiving the customer profile.
       const txWithCrm = tx as typeof tx & {
@@ -230,7 +282,9 @@ export class ErasureService {
         marketingConversion?: { deleteMany: (args: unknown) => Promise<{ count: number }> };
         marketingFrequencyWindow?: { deleteMany: (args: unknown) => Promise<{ count: number }> };
         marketingAttributionLink?: { deleteMany: (args: unknown) => Promise<{ count: number }> };
-        marketingAutomationDispatch?: { deleteMany: (args: unknown) => Promise<{ count: number }> };
+        marketingAutomationDispatch?: {
+          deleteMany: (args: unknown) => Promise<{ count: number }>;
+        };
         experienceReservation?: {
           updateMany: (args: unknown) => Promise<{ count: number }>;
         };
@@ -389,13 +443,24 @@ export class ErasureService {
         ).count;
       }
       const messageResult = await tx.message.updateMany({
-        where: { customerPhone: args.subject },
-        data: { customerPhone: null, customerName: 'ANON' },
+        where: { OR: [{ customerPhone: args.subject }, { callId: { in: callIds } }] },
+        data: { customerPhone: null, customerName: 'ANON', content: '[effacé]' },
       });
-      // tenant-scoping: global — effacement RGPD d'un sujet sur tous les restaurants.
+      // tenant-scoping: global — identifiants issus des appels du sujet vérifié.
+      await tx.voiceDebugTurn.deleteMany({ where: { callId: { in: callIds } } });
+      // tenant-scoping: global — identifiants issus des appels du sujet vérifié.
       const callResult = await tx.call.updateMany({
-        where: { callerPhone: args.subject },
-        data: { callerPhone: null },
+        where: { id: { in: callIds } },
+        data: {
+          callerPhone: null,
+          transcript: null,
+          recordingStatus: 'DELETED',
+          recordingStorageKey: null,
+          recordingProviderId: null,
+          recordingError: null,
+          recordingContentType: null,
+          recordingSizeBytes: null,
+        },
       });
       callsAnonymized = messageResult.count + callResult.count;
       // Les consentements restent comme preuve, mais ne doivent plus autoriser de marketing si une

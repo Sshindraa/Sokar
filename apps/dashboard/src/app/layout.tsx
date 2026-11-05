@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { BRAND_SLOGAN, BRAND_TITLE } from '@sokar/shared';
+import { BRAND_SLOGAN, BRAND_TITLE } from '@suppernote/shared';
 import { NextIntlClientProvider } from 'next-intl';
 import { setRequestLocale, getMessages } from 'next-intl/server';
 import { cookies } from 'next/headers';
@@ -13,8 +13,6 @@ import './globals.css';
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: 'cover',
   themeColor: '#030303',
 };

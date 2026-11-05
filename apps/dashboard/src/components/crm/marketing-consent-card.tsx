@@ -8,7 +8,7 @@ import {
   MARKETING_CONSENT_COLLECTION_METHODS,
   type MarketingConsentChannel,
   type MarketingConsentCollectionMethod,
-} from '@sokar/shared';
+} from '@suppernote/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

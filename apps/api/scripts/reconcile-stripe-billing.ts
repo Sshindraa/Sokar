@@ -6,9 +6,9 @@
  * docs/runbooks/stripe-billing.md, section « Réparer un dossier décalé ».
  *
  * Usage:
- *   pnpm --filter @sokar/api exec tsx scripts/reconcile-stripe-billing.ts --dry-run
- *   pnpm --filter @sokar/api exec tsx scripts/reconcile-stripe-billing.ts --apply
- *   pnpm --filter @sokar/api exec tsx scripts/reconcile-stripe-billing.ts --restaurant-id <id> --apply
+ *   pnpm --filter @suppernote/api exec tsx scripts/reconcile-stripe-billing.ts --dry-run
+ *   pnpm --filter @suppernote/api exec tsx scripts/reconcile-stripe-billing.ts --apply
+ *   pnpm --filter @suppernote/api exec tsx scripts/reconcile-stripe-billing.ts --restaurant-id <id> --apply
  *
  * Dry-run by default: --apply is required before any write. Applying re-projects the live
  * subscription without moving the webhook checkpoint. Output carries identifiers and statuses

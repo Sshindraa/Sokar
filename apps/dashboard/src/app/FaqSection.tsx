@@ -14,7 +14,7 @@ export default function FaqSection() {
   return (
     <section
       id="faq"
-      className="relative flex min-h-screen w-full scroll-mt-24 flex-col items-center justify-center overflow-hidden px-4 py-20 sm:px-6 lg:px-10"
+      className="relative flex w-full scroll-mt-24 flex-col items-center justify-center overflow-hidden px-4 py-10 sm:px-6 lg:px-10"
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(255,255,255,0.08),transparent_28rem)]" />
       <div className="text-center max-w-lg mb-8 sm:mb-10 px-2">
@@ -77,7 +77,7 @@ export default function FaqSection() {
           </div>
         </div>
         <a
-          href="mailto:hello@suppernote.com?subject=Question%20sur%20Sokar"
+          href="mailto:hello@suppernote.com?subject=Question%20sur%20Suppernote"
           className="inline-flex min-h-12 w-full items-center justify-center gap-3 rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-200 sm:text-base hover:-translate-y-0.5 hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 sm:w-auto"
         >
           Poser une question

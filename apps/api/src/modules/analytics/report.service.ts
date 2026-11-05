@@ -1,4 +1,4 @@
-import { THEFORK_COMMISSION_PER_PAX } from '@sokar/config';
+import { THEFORK_COMMISSION_PER_PAX } from '@suppernote/config';
 
 export interface ReportData {
   restaurantName: string;

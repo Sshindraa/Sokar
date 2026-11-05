@@ -102,7 +102,7 @@ Aucun lien inventé. Aucune réserve transformée en garantie de conformité ou 
 
 Utiliser `packageManager` du dépôt : **pnpm 10.33.3** (AGENTS mentionne encore 10.8), Node >=20 <23
 (local vérifié 22.23.2), `pnpm install --frozen-lockfile` et compilations des paquets workspace
-nécessaires selon CI/Turbo. `@sokar/shared` fournit catalogue/utilitaires ; aucun changement de
+nécessaires selon CI/Turbo. `@suppernote/shared` fournit catalogue/utilitaires ; aucun changement de
 version ou paquet supplémentaire. Polices locales, pas de téléchargement Google Fonts requis.
 Clerk : variables habituelles de chaque environnement présentes avant build, notamment
 `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, clé secrète seulement via l’environnement prévu. Ne jamais

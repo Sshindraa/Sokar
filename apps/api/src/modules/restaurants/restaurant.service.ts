@@ -8,13 +8,13 @@ import {
   DEFAULT_CARTESIA_VOICE_ID,
   INTERNAL_CALL_ALERT_THRESHOLD,
   REDIS_CTX_TTL_SECONDS,
-} from '@sokar/config';
+} from '@suppernote/config';
 import { voiceConfig } from '../../env';
 import { getRestaurantPlanOverride } from '../../shared/configcat';
 import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
 import { getVoiceLlmProvider, type VoiceLlmProvider } from '../voice/llm-provider';
 import { isPublicConnectPage } from '../connect/connect.types';
-import { normalizeOpeningHours, isConnectDemoSlug } from '@sokar/shared';
+import { normalizeOpeningHours, isConnectDemoSlug } from '@suppernote/shared';
 
 // Fixture synthétique de prisma/seed.ts : jamais une destination de transfert réelle.
 const DEMO_SEED_MANAGER_PHONE = '+33601020304';

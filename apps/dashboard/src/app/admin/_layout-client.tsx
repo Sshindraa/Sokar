@@ -17,7 +17,7 @@ import {
   Sun,
 } from 'lucide-react';
 import { AccountMenu } from '@/components/AccountMenu';
-import { SokarLogo } from '@/components/SokarLogo';
+import { SuppernoteLogo } from '@/components/SuppernoteLogo';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useApi } from '@/lib/api';
@@ -121,7 +121,7 @@ function AdminShell({ children }: { children: ReactNode }) {
           className="flex items-center gap-3 rounded-xl px-3 py-3 transition-all duration-200 hover:bg-accent"
         >
           <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-background/70">
-            <SokarLogo className="h-7 w-7 text-foreground" />
+            <SuppernoteLogo className="h-7 w-7 text-foreground" />
           </span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-black tracking-tight">

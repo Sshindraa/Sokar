@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../../shared/db/client';
 import { requireOrg } from '../../plugins/clerk';
-import { normalizeOpeningHours } from '@sokar/shared';
+import { normalizeOpeningHours } from '@suppernote/shared';
 import { summarizeReservationChannels } from './reservation-channels';
 import { COUNTED_RESERVATION_STATES } from '../../shared/reservations/reservation-state';
 

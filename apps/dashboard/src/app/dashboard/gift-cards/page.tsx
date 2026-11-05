@@ -23,7 +23,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useGiftCardApi } from '@/lib/api/gift-cards';
 import { useApi } from '@/lib/api';
 import { getErrorMessage, type Restaurant } from '@/types/api';
-import { formatEuro } from '@sokar/shared';
+import { formatEuro } from '@suppernote/shared';
 import type { GiftCardListItem, GiftCardPack, GiftCardStats } from '@/lib/api/gift-cards';
 import GiftCardList from '@/components/gift-cards/gift-card-list';
 import { giftCardStatusLabel } from '@/components/gift-cards/gift-card-labels';

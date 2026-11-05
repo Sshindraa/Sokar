@@ -1,5 +1,5 @@
 {
-  "name": "@sokar/connect",
+  "name": "@suppernote/connect",
   "version": "0.1.0",
   "private": true,
   "description": "Suppernote Connect — Agent-Ready Pages (Suppernote public pages for AI/SEO indexability)",
@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@sentry/nextjs": "^10.75.2",
-    "@sokar/shared": "workspace:*",
+    "@suppernote/shared": "workspace:*",
     "@stripe/react-stripe-js": "^6.7.0",
     "@stripe/stripe-js": "^9.9.0",
     "clsx": "^2.1.1",

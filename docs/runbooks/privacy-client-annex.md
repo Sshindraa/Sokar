@@ -84,7 +84,7 @@ Clauses à prévoir dans l'accord de traitement des données :
   procédure d'opposition, à définir dans l'accord de traitement des données.
 
 Cette annexe ne met en place ni portail client ni notification automatique.
-L'adresse `privacy@sokar.tech` reste le point de contact public ; la documentation
+L'adresse `privacy@suppernote.com` reste le point de contact public ; la documentation
 client doit être fournie et tenue à jour dans le cadre contractuel, pas seulement
 sur demande. Les durées et mécanismes techniques sont suivis dans
 `privacy-disclosures.md`, qui reste un document interne.

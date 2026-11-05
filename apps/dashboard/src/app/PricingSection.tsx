@@ -4,7 +4,7 @@ export default function PricingSection() {
   return (
     <section
       id="tarifs"
-      className="relative flex min-h-screen w-full scroll-mt-24 items-center overflow-hidden px-4 py-20 sm:px-6 lg:px-10"
+      className="relative flex w-full scroll-mt-24 items-center overflow-hidden px-4 pb-10 pt-16 sm:px-6 lg:px-10"
     >
       {/* Ambient glow behind cards */}
       <div

@@ -1,5 +1,5 @@
 import { Globe, Phone, Store } from 'lucide-react';
-import { SokarLogo } from '@/components/SokarLogo';
+import { SuppernoteLogo } from '@/components/SuppernoteLogo';
 import { cn } from '@/lib/utils';
 import styles from './onboarding-atmosphere.module.css';
 
@@ -10,7 +10,7 @@ export function RestaurantIllustration() {
       <div className="relative w-full max-w-80 px-3 pb-5">
         <div className={cn(styles.orb, styles.heroOrb, 'mx-auto flex items-center justify-center')}>
           <div className="flex flex-col items-center gap-3 px-8 text-center">
-            <SokarLogo className="size-8" aria-hidden="true" />
+            <SuppernoteLogo className="size-8" aria-hidden="true" />
             <p className="text-lg font-medium leading-snug tracking-tight">
               Votre accueil
               <br />

@@ -25,7 +25,7 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm lint
 pnpm test
-CI=1 pnpm turbo build --filter=@sokar/dashboard... --filter=@sokar/connect... --filter=@sokar/widget...
+CI=1 pnpm turbo build --filter=@suppernote/dashboard... --filter=@suppernote/connect... --filter=@suppernote/widget...
 ```
 
 `apps/dashboard/src/proxy.test.ts` contrôle les routes protégées sans session, la session

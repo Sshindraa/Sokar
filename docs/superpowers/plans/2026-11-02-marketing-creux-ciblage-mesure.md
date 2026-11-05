@@ -19,7 +19,7 @@
 - Routes `requireMarketingCampaigns` (direction seule).
 - Libellés fr, en, es, it dans `fillService` ; `vous` partout. Dashboard : tokens Tailwind, `cn()`, `transition-all duration-200`, états chargement, vide, erreur et données.
 - Valeurs posées à la main avec un commentaire `shortcut:` : seuils de suggestion, probabilités des paliers, prévision médiane.
-- Prettier : `semi`, `singleQuote`, `trailingComma=all`, `printWidth=100`. Tests itératifs : `pnpm --filter @sokar/api test -- <chemin> 2>&1 | tail -n 40`.
+- Prettier : `semi`, `singleQuote`, `trailingComma=all`, `printWidth=100`. Tests itératifs : `pnpm --filter @suppernote/api test -- <chemin> 2>&1 | tail -n 40`.
 
 ## Review Focus
 
@@ -74,7 +74,7 @@ Expected : changement de branche sans conflit, modifications locales non commit�
 
 - [ ] **Step 2: Vérifier l'échec**
 
-Run: `pnpm --filter @sokar/api test -- src/modules/marketing/__tests__/fill-forecast.test.ts 2>&1 | tail -n 40`
+Run: `pnpm --filter @suppernote/api test -- src/modules/marketing/__tests__/fill-forecast.test.ts 2>&1 | tail -n 40`
 Expected: FAIL, module introuvable.
 
 - [ ] **Step 3: Implémenter**
@@ -140,7 +140,7 @@ Routes :
 
 - [ ] **Step 2: Vérifier l'échec**
 
-Run: `pnpm --filter @sokar/api test -- src/modules/marketing/__tests__/fill-suggestions.service.test.ts src/modules/marketing/__tests__/marketing.routes.test.ts 2>&1 | tail -n 40`
+Run: `pnpm --filter @suppernote/api test -- src/modules/marketing/__tests__/fill-suggestions.service.test.ts src/modules/marketing/__tests__/marketing.routes.test.ts 2>&1 | tail -n 40`
 Expected: FAIL.
 
 - [ ] **Step 3: Implémenter**
@@ -189,7 +189,7 @@ Le mock `get` répond selon l'URL. Les tests existants restent valables quand `m
 
 - [ ] **Step 2: Vérifier l'échec**
 
-Run: `pnpm --filter @sokar/dashboard test -- src/app/dashboard/__tests__/EmptySlotsWidget.test.tsx 2>&1 | tail -n 40`.
+Run: `pnpm --filter @suppernote/dashboard test -- src/app/dashboard/__tests__/EmptySlotsWidget.test.tsx 2>&1 | tail -n 40`.
 Expected: FAIL.
 
 - [ ] **Step 3: Implémenter**
@@ -200,7 +200,7 @@ Dans `page.tsx`, sortir `<EmptySlotsWidget />` du `<details>`, toujours sous `!i
 
 - [ ] **Step 4: Vérifier le succès**
 
-Run: même commande, puis `pnpm --filter @sokar/dashboard test -- src/app/dashboard/__tests__/DashboardJourneys.test.tsx 2>&1 | tail -n 40`
+Run: même commande, puis `pnpm --filter @suppernote/dashboard test -- src/app/dashboard/__tests__/DashboardJourneys.test.tsx 2>&1 | tail -n 40`
 Expected: PASS.
 
 - [ ] **Step 5: Vérifier dans le navigateur**
@@ -247,7 +247,7 @@ git commit -m "feat(dashboard): montre les services creux probables à la direct
 
 - [ ] **Step 2: Vérifier l'échec**
 
-Run: `pnpm --filter @sokar/api test -- src/modules/marketing/__tests__/fill-targeting.test.ts 2>&1 | tail -n 40`
+Run: `pnpm --filter @suppernote/api test -- src/modules/marketing/__tests__/fill-targeting.test.ts 2>&1 | tail -n 40`
 Expected: FAIL.
 
 - [ ] **Step 3: Implémenter**
@@ -309,7 +309,7 @@ Page : `places vides probables et mention d'estimation affichées`, `composition
 
 - [ ] **Step 2: Vérifier l'échec**
 
-Run: `pnpm --filter @sokar/api test -- src/modules/marketing/__tests__/fill-service.service.test.ts src/modules/marketing/__tests__/marketing.routes.test.ts 2>&1 | tail -n 40`
+Run: `pnpm --filter @suppernote/api test -- src/modules/marketing/__tests__/fill-service.service.test.ts src/modules/marketing/__tests__/marketing.routes.test.ts 2>&1 | tail -n 40`
 Expected: FAIL sur les nouveaux tests.
 
 - [ ] **Step 3: Implémenter**
@@ -322,7 +322,7 @@ Les textes de composition sont produits à l'affichage, avec pluriels ICU ; `SAN
 
 - [ ] **Step 4: Vérifier le succès**
 
-Run: même commande, puis `pnpm --filter @sokar/dashboard test -- src/app/dashboard/marketing/fill-service/page.test.tsx 2>&1 | tail -n 40`
+Run: même commande, puis `pnpm --filter @suppernote/dashboard test -- src/app/dashboard/marketing/fill-service/page.test.tsx 2>&1 | tail -n 40`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -362,7 +362,7 @@ Page : `?channel=EMAIL ouvre l'aperçu en e-mail ; sans paramètre, reste en SMS
 
 - [ ] **Step 2: Vérifier l'échec**
 
-Run: `pnpm --filter @sokar/api test -- src/modules/marketing/__tests__/fill-suggestions.service.test.ts 2>&1 | tail -n 40`
+Run: `pnpm --filter @suppernote/api test -- src/modules/marketing/__tests__/fill-suggestions.service.test.ts 2>&1 | tail -n 40`
 Expected: FAIL.
 
 - [ ] **Step 3: Implémenter**
@@ -373,7 +373,7 @@ Page : `useState<Channel>(params?.get('channel') === 'EMAIL' ? 'EMAIL' : 'SMS')`
 
 - [ ] **Step 4: Vérifier le succès**
 
-Run: même commande, puis `pnpm --filter @sokar/dashboard test -- src/app/dashboard/__tests__/EmptySlotsWidget.test.tsx src/app/dashboard/marketing/fill-service/page.test.tsx 2>&1 | tail -n 40`
+Run: même commande, puis `pnpm --filter @suppernote/dashboard test -- src/app/dashboard/__tests__/EmptySlotsWidget.test.tsx src/app/dashboard/marketing/fill-service/page.test.tsx 2>&1 | tail -n 40`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -403,7 +403,7 @@ git commit -m "feat(marketing): chiffre les envois et le coût de chaque suggest
 
 - [ ] **Step 2: Vérifier l'échec**
 
-Run: `pnpm --filter @sokar/api test -- src/modules/marketing/__tests__/fill-service.service.test.ts 2>&1 | tail -n 40`
+Run: `pnpm --filter @suppernote/api test -- src/modules/marketing/__tests__/fill-service.service.test.ts 2>&1 | tail -n 40`
 Expected: FAIL.
 
 - [ ] **Step 3: Implémenter**
@@ -461,7 +461,7 @@ Composant :
 
 - [ ] **Step 2: Vérifier l'échec**
 
-Run: `pnpm --filter @sokar/api test -- src/modules/marketing/__tests__/marketing-report.service.test.ts 2>&1 | tail -n 40`
+Run: `pnpm --filter @suppernote/api test -- src/modules/marketing/__tests__/marketing-report.service.test.ts 2>&1 | tail -n 40`
 Expected: FAIL.
 
 - [ ] **Step 3: Implémenter**
@@ -474,7 +474,7 @@ Les types du composant restent optionnels pour les anciennes réponses. La preuv
 
 - [ ] **Step 4: Vérifier le succès**
 
-Run: même commande, puis `pnpm --filter @sokar/dashboard test -- src/app/dashboard/marketing 2>&1 | tail -n 40`
+Run: même commande, puis `pnpm --filter @suppernote/dashboard test -- src/app/dashboard/marketing 2>&1 | tail -n 40`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**

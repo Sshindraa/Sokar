@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PLAN_PRICES_EUR } from '@sokar/shared';
+import { PLAN_PRICES_EUR } from '@suppernote/shared';
 import { DEMO_METADATA, HOME_METADATA, PRICING_METADATA } from './marketing-metadata';
 
 const GENERIC_DESCRIPTION = 'Assistant vocal intelligent pour votre restaurant';

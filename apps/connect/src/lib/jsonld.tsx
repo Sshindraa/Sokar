@@ -5,7 +5,7 @@
  * Cf. spec connect-v1.1 §8.
  */
 
-import { buildPublicRestaurantJsonLd, type RestaurantJsonLd } from '@sokar/shared';
+import { buildPublicRestaurantJsonLd, type RestaurantJsonLd } from '@suppernote/shared';
 
 export type { RestaurantJsonLd };
 export { buildPublicRestaurantJsonLd };

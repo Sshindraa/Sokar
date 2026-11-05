@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { normalizePhone } from '@sokar/shared';
+import { normalizePhone } from '@suppernote/shared';
 import { useApi } from '../../../lib/api';
 import {
   getErrorMessage,

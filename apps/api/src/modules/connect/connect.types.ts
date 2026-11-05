@@ -12,7 +12,7 @@
 
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
-import { CONNECT_DEMO_SLUGS } from '@sokar/shared';
+import { CONNECT_DEMO_SLUGS } from '@suppernote/shared';
 import { BookingMarketingConsentSchema } from '../marketing/marketing-consent.schema';
 
 // ─── Slug (param URL) ─────────────────────────────────────────

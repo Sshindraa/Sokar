@@ -28,6 +28,26 @@ jobs:
       contents: read
     timeout-minutes: 20
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      # Dépôt privé et aucun accès GitHub sur le VPS : le runner lui envoie main en bundle.
+      # shortcut: bundle complet (~60 Mo) à chaque déploiement, à rendre incrémental s'il devient lent.
+      - name: Bundle main
+        run: git bundle create sokar-main.bundle refs/heads/main
+
+      - name: Copy bundle to production host
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: deploy
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          source: sokar-main.bundle
+          target: /tmp/
+          overwrite: true
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         env:
@@ -69,7 +89,8 @@ jobs:
             set -euo pipefail
             cd /opt/sokar
             git checkout main
-            git fetch origin main
+            git fetch /tmp/sokar-main.bundle +refs/heads/main:refs/remotes/origin/main
+            rm -f /tmp/sokar-main.bundle
             git reset --hard origin/main
             git clean -fd
             # Évite les déploiements redondants (incident 2026-09-27 : deux runs
@@ -100,6 +121,8 @@ jobs:
             printf 'GRAFANA_ADMIN_PASSWORD\t%s\n' "$GRAFANA_ADMIN_PASSWORD" | \
               sudo /usr/local/sbin/sokar-deploy-root configure-grafana prod
             sudo /usr/local/sbin/sokar-deploy-root validate-monitoring prod
+            source scripts/ops/deploy-common.sh
+            api_env_before="$(api_env_fingerprint apps/api/.env)"
             if [ -n "${SENTRY_DSN:-}${ALERT_EMAIL_TO:-}${ALERT_WEBHOOK_URL:-}${ALERT_SMS_TO:-}${RESEND_RATE_LIMIT_REDIS_URL:-}" ]; then
               bash scripts/ops/sync-env.sh alerting prod
             fi
@@ -118,7 +141,7 @@ jobs:
               } | sudo /usr/local/sbin/sokar-deploy-root configure-watchdog prod
             fi
             bash scripts/ops/sync-env.sh stripe-prices prod
-            bash scripts/deploy.sh --env prod --confirm-production
+            SOKAR_API_ENV_BEFORE="$api_env_before" SOKAR_SKIP_GIT_PULL=1 bash scripts/deploy.sh --env prod --confirm-production
             sudo /usr/local/sbin/sokar-deploy-root start-prometheus prod
             sudo /usr/local/sbin/sokar-deploy-root start-grafana prod
 

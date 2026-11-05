@@ -49,7 +49,9 @@ export default function BriefingPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Briefing du service</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+          Briefing du service
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Aujourd’hui, {format(new Date(), 'EEEE d MMMM', { locale: fr })}
         </p>
@@ -77,9 +79,9 @@ export default function BriefingPage() {
         </Card>
       ) : reservations === null ? (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
             {Array.from({ length: 6 }, (_, index) => (
-              <Skeleton key={index} className="h-20 rounded-2xl" />
+              <Skeleton key={index} className="h-24 rounded-2xl" />
             ))}
           </div>
           <Skeleton className="h-64 rounded-2xl" />
@@ -88,15 +90,19 @@ export default function BriefingPage() {
         <p className="text-sm text-muted-foreground">Aucune réservation à servir aujourd’hui.</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
             {tiles.map((tile) => (
               <Card
                 key={tile.label}
                 className={cn(tile.value > 0 && tile.alert && 'border-foreground bg-secondary')}
               >
-                <CardContent className="p-4">
-                  <p className="text-xs text-muted-foreground">{tile.label}</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">{tile.value}</p>
+                <CardContent className="flex h-full flex-col justify-between gap-2 p-4">
+                  <p className="text-sm font-medium leading-tight text-muted-foreground">
+                    {tile.label}
+                  </p>
+                  <p className="text-3xl font-semibold tabular-nums leading-none tracking-tight text-foreground">
+                    {tile.value}
+                  </p>
                 </CardContent>
               </Card>
             ))}
@@ -104,7 +110,7 @@ export default function BriefingPage() {
 
           <Card>
             <CardContent className="p-0">
-              <ol aria-label="Réservations du jour" className="divide-y divide-border">
+              <ol aria-label="Réservations du jour" className="divide-y divide-border text-sm">
                 {rows.map((reservation) => {
                   const customerId = serviceCards.cards.get(reservation.id)?.customerId;
                   return (

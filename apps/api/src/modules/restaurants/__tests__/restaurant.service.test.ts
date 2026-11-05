@@ -9,7 +9,7 @@
  *  - isOpen : pure function, ouvre/ferme selon openingHours, cas closed.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { REDIS_CTX_TTL_SECONDS } from '@sokar/config';
+import { REDIS_CTX_TTL_SECONDS } from '@suppernote/config';
 
 // Mock des dépendances AVANT l'import du service
 vi.mock('../../../shared/db/client', () => ({

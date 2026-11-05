@@ -125,7 +125,7 @@ export function evaluateQueueStates(
           detail: [
             `La file dead-letter contient ${counts.waiting} job(s) ayant épuisé toutes leurs tentatives.`,
             'Ces jobs ne seront jamais rejoués automatiquement : investigation manuelle requise.',
-            'Trier puis rejouer : pnpm --filter @sokar/api ops:dead-letter list (puis replay <jobId> --confirm).',
+            'Trier puis rejouer : pnpm --filter @suppernote/api ops:dead-letter list (puis replay <jobId> --confirm).',
             'Procédure complète : docs/runbooks/dead-letter.md. Logs API : grep "job failed".',
           ].join('\n'),
         });

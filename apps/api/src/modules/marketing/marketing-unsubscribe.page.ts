@@ -1,4 +1,4 @@
-import { buildMarketingConsentLabel } from '@sokar/shared';
+import { buildMarketingConsentLabel } from '@suppernote/shared';
 import type { MarketingChannelCode } from './marketing-permission.service';
 
 const CHANNEL_LABEL: Record<MarketingChannelCode, string> = {

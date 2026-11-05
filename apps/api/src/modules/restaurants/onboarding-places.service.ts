@@ -1,4 +1,4 @@
-import { normalizePhone } from '@sokar/shared';
+import { normalizePhone } from '@suppernote/shared';
 import { deriveDisplayName } from './place-display-name';
 
 const PLACES_API = 'https://places.googleapis.com/v1';

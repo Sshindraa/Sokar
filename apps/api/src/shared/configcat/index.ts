@@ -21,7 +21,7 @@
  */
 import * as configcat from 'configcat-node';
 import type { IConfigCatClient, User } from 'configcat-node';
-import { PLAN_VALUES, type Plan } from '@sokar/shared';
+import { PLAN_VALUES, type Plan } from '@suppernote/shared';
 import { createHash } from 'crypto';
 import { logger } from '../logger/pino';
 
