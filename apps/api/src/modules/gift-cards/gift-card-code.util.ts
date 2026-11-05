@@ -4,6 +4,8 @@
  * Format : SKR-XXXX-XX (ex: SKR-X7F2-9K)
  * Alphabet : ABCDEFGHJKMNPQRSTUVWXYZ23456789 (exclut 0, O, I, L pour éviter la confusion visuelle)
  */
+import { randomInt } from 'node:crypto';
+
 import type { PrismaClient } from '@prisma/client';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -15,9 +17,7 @@ const MAX_ATTEMPTS = 10;
  */
 export function generateShortCode(): string {
   const part = (len: number) =>
-    Array.from({ length: len }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join(
-      '',
-    );
+    Array.from({ length: len }, () => ALPHABET[randomInt(ALPHABET.length)]).join('');
   return `${PREFIX}-${part(4)}-${part(2)}`;
 }
 
