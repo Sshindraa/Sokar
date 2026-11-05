@@ -191,15 +191,25 @@ export class TableAllocationService {
    * Réassigne une réservation à une autre table.
    * Vérifie la disponibilité avant de mettre à jour.
    */
-  async reallocate(reservationId: string, newTableId: string): Promise<Reservation> {
+  async reallocate(
+    restaurantId: string,
+    reservationId: string,
+    newTableId: string,
+  ): Promise<Reservation> {
     const reservation = await this.prisma.reservation.findUniqueOrThrow({
       where: { id: reservationId },
     });
+    if (reservation.restaurantId !== restaurantId) {
+      throw new TableAllocationError('RESERVATION_NOT_FOUND', 'Reservation not found');
+    }
 
     const table = await this.prisma.table.findUniqueOrThrow({
       where: { id: newTableId },
       include: { floorPlan: true },
     });
+    if (table.floorPlan.restaurantId !== restaurantId) {
+      throw new TableAllocationError('TABLE_NOT_FOUND', 'Table not found');
+    }
 
     if (table.floorPlan.restaurantId !== reservation.restaurantId) {
       throw new TableAllocationError(
