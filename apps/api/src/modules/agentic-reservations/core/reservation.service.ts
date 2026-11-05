@@ -301,6 +301,7 @@ export class ReservationService {
             input.restaurantId,
             input.customerPhone,
             input.customerName,
+            { keepExistingName: true },
           )
         ).id;
       }
