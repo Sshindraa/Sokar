@@ -596,6 +596,10 @@ detect_changed_apps() {
             echo "$changed_files" | grep -qE '^apps/api/' && NEED_API=true
             # Config PM2 (env) et dépendances runtime de l'API : redémarrage requis.
             echo "$changed_files" | grep -qE '^(infra/ecosystem|pnpm-lock\.yaml$|package\.json$|pnpm-workspace\.yaml$)' && NEED_API=true
+            # Les bundles Next embarquent les dépendances : une version changée impose de les reconstruire.
+            if echo "$changed_files" | grep -qE '^(pnpm-lock\.yaml|pnpm-workspace\.yaml)$'; then
+                NEED_DASHBOARD=true; NEED_CONNECT=true
+            fi
             # Prisma schema/migrations changent → generate + migrate
             if echo "$changed_files" | grep -qE '^packages/database/prisma/'; then
                 NEED_PRISMA=true
