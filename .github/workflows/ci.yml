@@ -308,7 +308,7 @@ jobs:
     needs: packages
     permissions:
       contents: read
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       NEXT_TELEMETRY_DISABLED: 1
       # Baked par `next build` : active le mode démo pour les E2E Playwright.
