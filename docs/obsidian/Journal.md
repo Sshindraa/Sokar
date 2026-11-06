@@ -3120,6 +3120,15 @@ Production : routes RGPD bloquées en Nginx, workflow Deploy Production suspendu
 
 Vérification d’identité et export rouverts après qualification SMS en staging ; effacement et opposition marketing restent en 503 car leurs correctifs ne sont pas encore livrés. Configuration Nginx restrictive, liens non journalisés ; requêtes de contrôle sur les hôtes et le proxy. Les demandes concernées restent traitées manuellement via privacy@sokar.tech.
 
+### 2026-10-30 — RGPD : export et opposition manuelle en staging
+
+Export : réservation synthétique créée dans une transaction staging annulée ; confirmation du code synthétique, contenu exact de l’export et refus du rejeu vérifiés. Opposition : retrait manuel par canal, exclusion de campagne puis recréation du profil testés en transaction annulée. Échec simulé du registre : le retrait répond positivement et exclut la fiche existante, mais un profil recréé peut redevenir éligible ; routes RGPD sensibles restent fermées. La boîte privacy est consultée par Hamza.
+
+### 2026-10-30 — Réponses entrantes non corrélées : correctif local
+
+Les réponses Telnyx SMS et WhatsApp sont dirigées vers une revue non rejouable par identifiant fournisseur, sans numéro ni contenu en file, au lieu de modifier une réservation ; les statuts de livraison restent traités. Déduplication testée sur Redis local. Une panne de file ou l’absence d’identifiant renvoie 503. L’accès aux messages dans Telnyx et les délais de reprise restent à vérifier ; sans cette qualification aucune garantie de traitement manuel.
+
+- 2026-10-30 — Réponses entrantes : PR #619 mise en brouillon. La documentation Telnyx indique que le portail ne constitue pas une boîte de réception SMS ; la référence fournisseur seule ne garantit pas la consultation du contenu. Avant livraison, prévoir et tester une conservation sécurisée et un accès opérateur. Aucun webhook réel client consulté.
 2026-10-30 — Stripe Connect : qualification sandbox du parcours en deux phases : compte fictif vide, ajout de la configuration marchand par jeton v2, puis session embarquée sans authentification Stripe ; compte fermé. Intégration Sokar et test navigateur restent à réaliser avant activation ; conserver les comptes existants.
 
 2026-10-30 — Stripe Connect : prototype local sandbox avec acceptation explicite et jeton v2, compte en attente conservé par migration additive, verrou PostgreSQL et reprise après erreur. Tests ciblés API/dashboard et deux tests concurrents/reprise PostgreSQL local validés ; création de jeton vérifiée depuis un navigateur sur l’origine staging. Fonction désactivée par défaut, limitée aux clés et établissements de test ; CI, formulaire complet staging, coûts et activation production restent à qualifier.
@@ -3651,6 +3660,9 @@ Décision de Hamza : version 2 de `docs/superpowers/specs/2026-11-02-marketing-i
 
 Ajouts : `GET /marketing/fill-suggestions` et `POST /marketing/fill-suggestions/dismiss` (direction seule, cache et « Ignorer » dans Redis), prévision des places vides probables, paliers clients avec audience plafonnée au budget, témoin à 30 %, rapport avec marge d'erreur, résultat par palier et effet net à 30 jours. `TAUX_REPONSE` retiré. `EmptySlotsWidget` sort du bloc replié de l'accueil. Une visite compte dès qu'une réservation passée est confirmée, en salle ou honorée, car l'équipe ne marque pas toujours « honorée » (décision de Hamza) ; les clients sans aucune visite sur 12 mois ne sont pas contactés. Aucune mesure ne modifie l'audience. `MARKETING_SENDS_ENABLED` inchangé. Spec et plan dans `docs/superpowers/`.
 
+### 2026-11-02 — Réponses entrantes : reprise de la PR #619
+
+Conflit de contexte résolu avec les deux TODOs conservés ; tests des webhooks SMS/WhatsApp et déduplication sur Redis local réussis, et test Redis ajouté à la CI. La PR reste en brouillon : l'identifiant Telnyx seul ne permet pas de garantir la consultation du message ni son traitement par un opérateur ; conservation sécurisée et recette staging restent nécessaires avant déploiement.
 
 ### 2026-11-02 — Opposition marketing : repli atomique et qualification
 

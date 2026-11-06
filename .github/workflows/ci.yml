@@ -297,6 +297,11 @@ jobs:
           pnpm --filter @suppernote/database migrate:deploy
           pnpm --filter @suppernote/api exec vitest run src/modules/rgpd/__tests__/erasure.postgres.integration.test.ts src/modules/voice/__tests__/call-recording-lock.postgres.integration.test.ts src/modules/voice/__tests__/call-report-lock.postgres.integration.test.ts
 
+      - name: Test inbound review deduplication on Redis
+        env:
+          REDIS_INBOUND_REVIEW_TEST_URL: redis://127.0.0.1:6379/14
+        run: pnpm --filter @sokar/api exec vitest run src/modules/sms/__tests__/inbound-review.redis.integration.test.ts
+
   # ─────────────────────────────────────────────────────────────
   # Dashboard: ESLint CLI (flat config), TypeScript via tsc --noEmit,
   # and next build (catches server/client component boundary errors).

@@ -8,6 +8,7 @@
 
 ## TODOs actifs
 
+- [ ] Réponses SMS/WhatsApp Telnyx : protéger les réponses non corrélées ; revue par référence fournisseur en préparation, sans numéro ni contenu. La consultation Telnyx et le traitement opérateur restent à qualifier ; la disponibilité et la durée de reprise fournisseur ne sont pas garanties. Voir `docs/runbooks/inbound-reply-review.md`.
 - [ ] CRM #659 : révisions limitées au périmètre réel en local ; transactions métier locales concurrentes : attente observable pour un même client. Qualifier la migration additive en staging et décider avant promotion ; PR sans auto-merge.
 
 - [ ] Suppernote : migration de domaine livrée ; suivre `migration-suppernote.md` et vérifier l’état des webhooks fournisseurs. Monogramme, paquets `@suppernote/*` et nom de la démo en revue (PR #646). Appel vocal réel de bout en bout à faire après recharge OpenRouter.
