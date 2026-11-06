@@ -1,5 +1,6 @@
 import { db } from '../../shared/db/client';
 import { logger } from '../../shared/logger/pino';
+import { redisCache } from '../../shared/redis/client';
 import { isPastVisitState } from './customer-voice-profile';
 
 /**
@@ -60,6 +61,25 @@ export interface CustomerVisitSummary {
   visits365d: number;
   noShows365d: number;
   lastVisitAt: Date | null;
+}
+
+export interface ComputedCustomerVisits {
+  lifecycle: CustomerLifecycle;
+  summary: CustomerVisitSummary;
+}
+
+async function withCacheTimeout<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Visit cache timeout')), 250);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export function summarizeVisits(stats: CustomerVisitStats, now: Date): CustomerVisitSummary {
@@ -198,6 +218,123 @@ export async function loadCustomerVisitStats(
   return stats;
 }
 
+/** Cached per customer and database revision; thresholds still advance with time. */
+export async function loadComputedCustomerVisits(
+  restaurantId: string,
+  customerIds: string[],
+  now: Date,
+): Promise<Map<string, ComputedCustomerVisits>> {
+  const ids = [...new Set(customerIds)];
+  const results = new Map<string, ComputedCustomerVisits>();
+  if (!ids.length) return results;
+
+  let keys: string[] | undefined;
+  try {
+    const revisions = await db.customerVisitCacheRevision.findMany({
+      where: { customerId: { in: ids }, customer: { restaurantId } },
+      select: { customerId: true, version: true },
+    });
+    const versionById = new Map(revisions.map((row) => [row.customerId, row.version.toString()]));
+    keys = ids.map(
+      (id) =>
+        `crm:visits:v1:${encodeURIComponent(restaurantId)}:${encodeURIComponent(id)}:${versionById.get(id) ?? '0'}`,
+    );
+    const cached = await withCacheTimeout(redisCache.mget(...keys));
+    for (let i = 0; i < ids.length; i++) {
+      if (!cached[i]) continue;
+      const entry = JSON.parse(cached[i]!) as {
+        computedAt: number;
+        validUntil: number;
+        lifecycle: CustomerLifecycle;
+        summary: Omit<CustomerVisitSummary, 'lastVisitAt'> & { lastVisitAt: string | null };
+      };
+      if (
+        !entry.lifecycle ||
+        !entry.summary ||
+        !Number.isFinite(entry.computedAt) ||
+        !Number.isFinite(entry.validUntil)
+      )
+        throw new Error('Invalid visit cache entry');
+      if (entry.computedAt > now.getTime() || entry.validUntil <= now.getTime()) continue;
+      results.set(ids[i], {
+        lifecycle: entry.lifecycle,
+        summary: {
+          ...entry.summary,
+          lastVisitAt: entry.summary.lastVisitAt ? new Date(entry.summary.lastVisitAt) : null,
+        },
+      });
+    }
+  } catch {
+    // A failed revision or cache read must never serve a potentially stale entry.
+    keys = undefined;
+    results.clear();
+  }
+
+  const missing = ids.filter((id) => !results.has(id));
+  if (!missing.length) return results;
+  const reservations = await db.reservation.findMany({
+    where: { restaurantId, customerId: { in: missing } },
+    select: { customerId: true, state: true, status: true, startsAt: true, reservedAt: true },
+  });
+  const byCustomer = new Map<string, LifecycleReservation[]>();
+  for (const reservation of reservations) {
+    if (!reservation.customerId) continue;
+    const rows = byCustomer.get(reservation.customerId) ?? [];
+    rows.push(reservation);
+    byCustomer.set(reservation.customerId, rows);
+  }
+
+  let writes: ReturnType<typeof redisCache.pipeline> | undefined;
+  try {
+    writes = keys ? redisCache.pipeline() : undefined;
+  } catch {
+    // The database result remains authoritative when Redis is unavailable.
+  }
+  const keyById = new Map(ids.map((id, index) => [id, keys?.[index]]));
+  for (const id of missing) {
+    const rows = byCustomer.get(id) ?? [];
+    const stats = summarizeLifecycleReservations(rows, now);
+    const value = {
+      lifecycle: computeCustomerLifecycle(stats.visitDates, now),
+      summary: summarizeVisits(stats, now),
+    };
+    results.set(id, value);
+    if (!writes || !keys) continue;
+
+    const current = now.getTime();
+    let validUntil = current + 300_000;
+    const consider = (time: number) => {
+      if (time > current) validUntil = Math.min(validUntil, time);
+    };
+    for (const row of rows) {
+      const time = (row.startsAt ?? row.reservedAt).getTime();
+      consider(time + 1);
+      consider(time + LIFECYCLE_THRESHOLDS.regularWindowDays * DAY_MS + 1);
+      consider(time + LIFECYCLE_THRESHOLDS.noShowWindowDays * DAY_MS + 1);
+    }
+    const last = stats.visitDates.at(-1)?.getTime();
+    if (last !== undefined) consider(last + (Math.floor((current - last) / DAY_MS) + 1) * DAY_MS);
+    try {
+      writes.set(
+        keyById.get(id)!,
+        JSON.stringify({ ...value, computedAt: current, validUntil }),
+        'EX',
+        300,
+      );
+    } catch {
+      writes = undefined;
+    }
+  }
+  if (writes) {
+    try {
+      await withCacheTimeout(writes.exec());
+    } catch {
+      // The database result remains authoritative when Redis is unavailable.
+    }
+  }
+  return results;
+}
+
 export type CustomerVisitSort = 'visits365d' | 'lastVisit';
 
 /**
@@ -214,22 +351,19 @@ export async function filterCustomerIdsByVisits(
     sort?: CustomerVisitSort;
   },
   now: Date,
+  loadedStats?: Map<string, ComputedCustomerVisits>,
 ): Promise<string[]> {
-  const stats = await loadCustomerVisitStats(restaurantId, ids, now);
-  const summaryOf = (id: string) =>
-    summarizeVisits(stats.get(id) ?? { visitDates: [], noShows365d: 0 }, now);
+  const stats = loadedStats ?? (await loadComputedCustomerVisits(restaurantId, ids, now));
+  const summaryOf = (id: string) => stats.get(id)!.summary;
   const kept = ids.filter((id) => {
-    const customerStats = stats.get(id) ?? { visitDates: [], noShows365d: 0 };
+    const customerStats = stats.get(id)!;
     if (
       filters.minHonored365d !== undefined &&
-      summarizeVisits(customerStats, now).visits365d < filters.minHonored365d
+      customerStats.summary.visits365d < filters.minHonored365d
     ) {
       return false;
     }
-    return (
-      filters.lifecycle === undefined ||
-      computeCustomerLifecycle(customerStats.visitDates, now).status === filters.lifecycle
-    );
+    return filters.lifecycle === undefined || customerStats.lifecycle.status === filters.lifecycle;
   });
   if (!filters.sort) return kept;
   const key =
@@ -246,7 +380,7 @@ export async function countCustomersByLifecycle(
   ids: string[],
   now: Date,
 ): Promise<Record<CustomerLifecycleStatus, number>> {
-  const stats = await loadCustomerVisitStats(restaurantId, ids, now);
+  const stats = await loadComputedCustomerVisits(restaurantId, ids, now);
   const counts: Record<CustomerLifecycleStatus, number> = {
     new: 0,
     active: 0,
@@ -255,8 +389,7 @@ export async function countCustomersByLifecycle(
     dormant: 0,
   };
   for (const id of ids) {
-    const visitDates = stats.get(id)?.visitDates ?? [];
-    counts[computeCustomerLifecycle(visitDates, now).status] += 1;
+    counts[stats.get(id)!.lifecycle.status] += 1;
   }
   return counts;
 }
@@ -270,16 +403,19 @@ export async function withCustomerLifecycles<T extends { id: string }>(
   restaurantId: string,
   customers: T[],
   now = new Date(),
+  loadedStats?: Map<string, ComputedCustomerVisits>,
 ): Promise<
   Array<T & { lifecycle: CustomerLifecycle | null; visitSummary: CustomerVisitSummary | null }>
 > {
-  let stats: Map<string, CustomerVisitStats> | null = null;
+  let stats: Map<string, ComputedCustomerVisits> | null = null;
   try {
-    stats = await loadCustomerVisitStats(
-      restaurantId,
-      customers.map((customer) => customer.id),
-      now,
-    );
+    stats =
+      loadedStats ??
+      (await loadComputedCustomerVisits(
+        restaurantId,
+        customers.map((customer) => customer.id),
+        now,
+      ));
   } catch (error) {
     logger.warn(
       { err: error instanceof Error ? error.message : String(error), restaurantId },
@@ -287,11 +423,11 @@ export async function withCustomerLifecycles<T extends { id: string }>(
     );
   }
   return customers.map((customer) => {
-    const customerStats = stats?.get(customer.id) ?? { visitDates: [], noShows365d: 0 };
+    const customerStats = stats?.get(customer.id);
     return {
       ...customer,
-      lifecycle: stats ? computeCustomerLifecycle(customerStats.visitDates, now) : null,
-      visitSummary: stats ? summarizeVisits(customerStats, now) : null,
+      lifecycle: customerStats?.lifecycle ?? null,
+      visitSummary: customerStats?.summary ?? null,
     };
   });
 }

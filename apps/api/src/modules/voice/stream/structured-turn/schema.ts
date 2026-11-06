@@ -208,3 +208,61 @@ export function parseStructuredTurnOutput(raw: string): StructuredTurnOutput | n
     say: record.say,
   };
 }
+
+/** Résultat déjà obtenu : aucune donnée de réservation ni nouvelle action à générer. */
+export const AFTER_ACTION_SCHEMA_NAME = 'voice_action_reply';
+export const AFTER_ACTION_ACTIONS = ['none', 'end_call'] as const;
+
+export function buildAfterActionJsonSchema(options: { tone?: boolean } = {}) {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      awaiting: { type: 'string', enum: [...STRUCTURED_TURN_AWAITING] },
+      action: { type: 'string', enum: [...AFTER_ACTION_ACTIONS] },
+      confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+      ...(options.tone ? { tone: { type: 'string', enum: [...STRUCTURED_TURN_TONES] } } : {}),
+      say: { type: 'string' },
+    },
+    required: ['awaiting', 'action', 'confidence', ...(options.tone ? ['tone'] : []), 'say'],
+  } as const;
+}
+
+/** Adapte la formulation au moteur existant, sans laisser le modèle réécrire le brouillon vérifié. */
+export function parseAfterActionOutput(
+  raw: string,
+  draft: StructuredTurnDraft,
+  interpretation: StructuredTurnInterpretation = 'answer',
+): StructuredTurnOutput | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (
+    Object.keys(record).some(
+      (key) => !['awaiting', 'action', 'confidence', 'tone', 'say'].includes(key),
+    ) ||
+    !isOneOf(STRUCTURED_TURN_AWAITING, record.awaiting) ||
+    !isOneOf(AFTER_ACTION_ACTIONS, record.action) ||
+    !isOneOf(['high', 'medium', 'low'] as const, record.confidence) ||
+    (record.tone !== undefined && !isOneOf(STRUCTURED_TURN_TONES, record.tone)) ||
+    typeof record.say !== 'string'
+  )
+    return null;
+  return {
+    turnComplete: true,
+    understanding: 'clear',
+    interpretation: record.action === 'end_call' ? 'end_call' : interpretation,
+    draft: { ...draft },
+    awaiting: record.awaiting,
+    action: record.action,
+    message: '',
+    confidence: record.confidence,
+    ...(isOneOf(STRUCTURED_TURN_TONES, record.tone) ? { tone: record.tone } : {}),
+    say: record.say,
+  };
+}

@@ -85,9 +85,72 @@ import {
   constructWebhookEvent,
   createRefund,
   createConnectedAccountSession,
+  managedConnectTestEnabled,
+  createManagedTestAccount,
+  configureManagedTestAccount,
 } from '../stripe.service';
 
 describe('stripe.service', () => {
+  it('restricts managed onboarding to an allowlisted restaurant and Stripe test keys', async () => {
+    vi.stubEnv('STRIPE_MANAGED_CONNECT_TEST_ENABLED', 'true');
+    vi.stubEnv('STRIPE_MANAGED_CONNECT_TEST_RESTAURANTS', 'rest-1');
+    vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_example');
+    vi.stubEnv('STRIPE_PUBLISHABLE_KEY', 'pk_test_example');
+    try {
+      expect(managedConnectTestEnabled('rest-1')).toBe(true);
+      expect(managedConnectTestEnabled('rest-2')).toBe(false);
+      vi.stubEnv('STRIPE_SECRET_KEY', 'sk_live_example');
+      expect(managedConnectTestEnabled('rest-1')).toBe(false);
+      await expect(createManagedTestAccount('rest-1')).rejects.toThrow('indisponible');
+      expect(sdk.rawRequest).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('resumes a configured test account without consuming the token twice', async () => {
+    vi.stubEnv('STRIPE_MANAGED_CONNECT_TEST_ENABLED', 'true');
+    vi.stubEnv('STRIPE_MANAGED_CONNECT_TEST_RESTAURANTS', 'rest-1');
+    vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_example');
+    vi.stubEnv('STRIPE_PUBLISHABLE_KEY', 'pk_test_example');
+    sdk.rawRequest.mockResolvedValue({
+      livemode: false,
+      metadata: { restaurantId: 'rest-1', source: 'sokar_managed_test' },
+      applied_configurations: ['merchant'],
+    });
+    try {
+      await configureManagedTestAccount('rest-1', 'acct_test', 'accttok_test');
+      expect(sdk.rawRequest).toHaveBeenCalledTimes(1);
+      expect(sdk.rawRequest).toHaveBeenCalledWith(
+        'GET',
+        '/v2/core/accounts/acct_test',
+        undefined,
+        expect.any(Object),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('refuses a pending account belonging to another restaurant', async () => {
+    vi.stubEnv('STRIPE_MANAGED_CONNECT_TEST_ENABLED', 'true');
+    vi.stubEnv('STRIPE_MANAGED_CONNECT_TEST_RESTAURANTS', 'rest-1');
+    vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_example');
+    vi.stubEnv('STRIPE_PUBLISHABLE_KEY', 'pk_test_example');
+    sdk.rawRequest.mockResolvedValue({
+      livemode: false,
+      metadata: { restaurantId: 'other', source: 'sokar_managed_test' },
+      applied_configurations: [],
+    });
+    try {
+      await expect(
+        configureManagedTestAccount('rest-1', 'acct_test', 'accttok_test'),
+      ).rejects.toThrow('incompatible');
+      expect(sdk.rawRequest).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   it('grants an onboarding-only session without disabling Stripe authentication', async () => {
     vi.stubEnv('STRIPE_PUBLISHABLE_KEY', 'pk_test');
     sdk.accountSessionCreate.mockResolvedValue({ client_secret: 'mock' });
