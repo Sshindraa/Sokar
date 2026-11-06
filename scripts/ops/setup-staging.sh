@@ -21,7 +21,7 @@ if [ "$(hostname)" != "sokar" ]; then
 fi
 
 SOKAR_ROOT="/opt/sokar-staging"
-REPO_URL="https://github.com/Sshindraa/Sokar.git"
+REPO_URL="https://github.com/Sshindraa/Suppernote.git"
 WEBROOT="/var/www/certbot"
 DB_NAME="sokar_staging"
 STAGING_HOST="staging.suppernote.com"
