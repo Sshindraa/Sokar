@@ -60,6 +60,7 @@ model Restaurant {
   giftCardCommissionRate     Decimal                @default(0.05) @map("gift_card_commission_rate") @db.Decimal(5, 4)
   giftCardEnabled            Boolean                @default(false) @map("gift_card_enabled")
   giftCardStripeAccountId    String?                @unique @map("gift_card_stripe_account_id")
+  giftCardStripePendingAccountId String?             @unique @map("gift_card_stripe_pending_account_id")
   experienceStripeAccountId  String?                @unique @map("experience_stripe_account_id")
   experienceCommissionRate   Decimal?               @map("experience_commission_rate") @db.Decimal(5, 4)
   /// CSV de rôles autorisés à lire les notes CRM et les métadonnées de chronologie.
