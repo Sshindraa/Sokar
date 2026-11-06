@@ -26,3 +26,6 @@ ba34d9c83790f98cadf993f7ebe58698e01d7319:apps/api/src/modules/customers/customer
 57ea48b4dfacd48aad99b6f21f3e7a8e5488316b:scripts/dashboard.sh:generic-api-key:4
 57ea48b4dfacd48aad99b6f21f3e7a8e5488316b:scripts/dev.sh:generic-api-key:11
 fcaf5d4e2c84abea6b7aa611d835592ec9669698:docs/obsidian/Sprint 1 Gap Analysis.md:notion-api-token:16
+
+# - valeur d'exemple OPENAI_RESERVE_HMAC_KEY (apps/api/.env.example) : ne correspond ni à la production ni au staging (comparaison par empreinte, 2026-11-06).
+3df0c5234ede5683b5f2ea7184f7531b06938244:apps/api/.env.example:generic-api-key:27
