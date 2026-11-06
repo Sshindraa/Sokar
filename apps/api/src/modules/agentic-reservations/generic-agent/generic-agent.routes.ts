@@ -141,6 +141,7 @@ export async function genericAgentRoutes(app: FastifyInstance): Promise<void> {
           credentialType: auth.credentialType,
           transport: 'generic_agent' as const,
           channel: 'API' as ReservationChannel,
+          clientIp: req.ip,
         };
       } catch (err) {
         if (err instanceof McpAuthError) {

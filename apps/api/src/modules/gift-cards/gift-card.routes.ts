@@ -638,6 +638,9 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/public/gift-cards/check', async (req, reply) => {
+    if (!(await checkRateLimit(rateLimitKey('gift-card-code-lookup', getClientIp(req)), 20))) {
+      return reply.status(429).send({ error: 'Trop de demandes. Réessayez dans une minute.' });
+    }
     const body = CheckGiftCardSchema.parse(req.body);
     const result = await service.validateCode(body.code);
 
@@ -691,6 +694,9 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/public/gift-cards/:code/slots', async (req, reply) => {
+    if (!(await checkRateLimit(rateLimitKey('gift-card-code-lookup', getClientIp(req)), 20))) {
+      return reply.status(429).send({ error: 'Trop de demandes. Réessayez dans une minute.' });
+    }
     const code = (req.params as { code: string }).code;
     const body = SuggestSlotsSchema.parse(req.body);
 
@@ -705,6 +711,9 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/public/gift-cards/:code/book', async (req, reply) => {
+    if (!(await checkRateLimit(rateLimitKey('gift-card-code-lookup', getClientIp(req)), 20))) {
+      return reply.status(429).send({ error: 'Trop de demandes. Réessayez dans une minute.' });
+    }
     const code = (req.params as { code: string }).code;
     const body = BookSlotSchema.parse(req.body);
 
@@ -805,6 +814,9 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
 
   // ─── P2 — PDF download ───────────────────────────────────────────
   app.get('/public/gift-cards/:code/pdf', async (req, reply) => {
+    if (!(await checkRateLimit(rateLimitKey('gift-card-code-lookup', getClientIp(req)), 20))) {
+      return reply.status(429).send({ error: 'Trop de demandes. Réessayez dans une minute.' });
+    }
     const code = (req.params as { code: string }).code;
 
     // Accepter shortCode (SKR-...) ou code UUID

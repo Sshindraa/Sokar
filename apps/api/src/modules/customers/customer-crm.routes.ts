@@ -372,12 +372,24 @@ export async function customerCrmRoutes(app: FastifyInstance) {
       const { id } = CustomerIdParamsSchema.parse(request.params);
       const body = MergeSourcesSchema.parse(request.body);
       try {
+        const preview = await previewCustomerMerge({
+          restaurantId: request.restaurantId!,
+          targetCustomerId: id,
+          sourceCustomerIds: body.sourceCustomerIds,
+        });
+        const restaurant = await db.restaurant.findUnique({
+          where: { id: request.restaurantId! },
+          select: { crmSensitiveNoteRoles: true },
+        });
+        if (canViewSensitiveNotes(request.siteRole, restaurant?.crmSensitiveNoteRoles)) {
+          return reply.send({ data: preview });
+        }
         return reply.send({
-          data: await previewCustomerMerge({
-            restaurantId: request.restaurantId!,
-            targetCustomerId: id,
-            sourceCustomerIds: body.sourceCustomerIds,
-          }),
+          data: {
+            ...preview,
+            target: redactSensitiveCustomerFields(preview.target),
+            sources: preview.sources.map((source) => redactSensitiveCustomerFields(source)),
+          },
         });
       } catch (error) {
         const response = mergeErrorResponse(error, reply);
@@ -475,7 +487,17 @@ export async function customerCrmRoutes(app: FastifyInstance) {
       nextCursor = hasNextPage ? (page[page.length - 1]?.id ?? null) : null;
     }
     const data = await withCustomerLifecycles(restaurantId, page, now, loadedStats);
-    return reply.send({ data, nextCursor });
+    const restaurant = await db.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { crmSensitiveNoteRoles: true },
+    });
+    const canViewNotes = canViewSensitiveNotes(request.siteRole, restaurant?.crmSensitiveNoteRoles);
+    return reply.send({
+      data: data.map((customer) =>
+        canViewNotes ? customer : redactSensitiveCustomerFields(customer),
+      ),
+      nextCursor,
+    });
   });
 
   app.get('/crm/customers/:id', { preHandler: requireCrmBasic }, async (request, reply) => {
