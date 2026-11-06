@@ -28,6 +28,7 @@ import {
   filterCustomerIdsByVisits,
   withCustomerLifecycles,
   loadCustomerVisitStats,
+  loadComputedCustomerVisits,
 } from './customer-lifecycle';
 import { requireCapability } from '../entitlements/entitlement.guard';
 import { evaluateCapability } from '../entitlements/entitlement.service';
@@ -85,6 +86,17 @@ export function buildCustomerSearchFilter(search: string): Prisma.CustomerWhereI
 
 const COMPUTED_FILTER_SCAN_LIMIT = 5_000;
 const EXPORT_LIMIT = 10_000;
+
+async function canViewCustomerNotes(
+  restaurantId: string,
+  siteRole: string | undefined,
+): Promise<boolean> {
+  const restaurant = await db.restaurant.findUnique({
+    where: { id: restaurantId },
+    select: { crmSensitiveNoteRoles: true },
+  });
+  return canViewSensitiveNotes(siteRole, restaurant?.crmSensitiveNoteRoles);
+}
 
 export async function customerRoutes(app: FastifyInstance) {
   app.get(
@@ -187,6 +199,8 @@ export async function customerRoutes(app: FastifyInstance) {
 
       let customers;
       let total: number;
+      const now = new Date();
+      let loadedStats: Awaited<ReturnType<typeof loadComputedCustomerVisits>> | undefined;
       if (
         query.lifecycle !== undefined ||
         query.minHonored365d !== undefined ||
@@ -202,11 +216,14 @@ export async function customerRoutes(app: FastifyInstance) {
           select: { id: true },
           take: COMPUTED_FILTER_SCAN_LIMIT,
         });
+        const candidateIds = candidates.map((candidate) => candidate.id);
+        loadedStats = await loadComputedCustomerVisits(restaurantId!, candidateIds, now);
         const matching = await filterCustomerIdsByVisits(
           restaurantId!,
-          candidates.map((candidate) => candidate.id),
+          candidateIds,
           { ...query, sort: computedSort },
-          new Date(),
+          now,
+          loadedStats,
         );
         total = matching.length;
         const pageIds = matching.slice(query.offset, query.offset + query.limit);
@@ -232,7 +249,7 @@ export async function customerRoutes(app: FastifyInstance) {
       });
 
       const canViewNotes = canViewSensitiveNotes(req.siteRole, restaurant?.crmSensitiveNoteRoles);
-      const withLifecycle = await withCustomerLifecycles(restaurantId, customers);
+      const withLifecycle = await withCustomerLifecycles(restaurantId, customers, now, loadedStats);
       return reply.send({
         data: withLifecycle.map((customer) =>
           canViewNotes ? customer : redactSensitiveCustomerFields(customer),
@@ -397,7 +414,13 @@ export async function customerRoutes(app: FastifyInstance) {
           // must not roll back an otherwise valid legacy customer upsert.
         }
         await redisCache.del(`customer:${restaurantId}:${normalizedPhone ?? body.phone}`);
-        return reply.status(201).send(customer);
+        return reply
+          .status(201)
+          .send(
+            (await canViewCustomerNotes(restaurantId, req.siteRole))
+              ? customer
+              : redactSensitiveCustomerFields(customer),
+          );
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')
           return reply.status(409).send({ error: 'Customer already exists' });
@@ -466,7 +489,11 @@ export async function customerRoutes(app: FastifyInstance) {
       await redisCache.del(
         `customer:${updated.restaurantId}:${normalizeCustomerPhone(updated.phone) ?? updated.phone}`,
       );
-      return reply.send(updated);
+      return reply.send(
+        (await canViewCustomerNotes(updated.restaurantId, req.siteRole))
+          ? updated
+          : redactSensitiveCustomerFields(updated),
+      );
     },
   );
 
@@ -484,7 +511,11 @@ export async function customerRoutes(app: FastifyInstance) {
       await redisCache.del(
         `customer:${updated.restaurantId}:${normalizeCustomerPhone(updated.phone) ?? updated.phone}`,
       );
-      return reply.send(updated);
+      return reply.send(
+        (await canViewCustomerNotes(updated.restaurantId, req.siteRole))
+          ? updated
+          : redactSensitiveCustomerFields(updated),
+      );
     },
   );
 }

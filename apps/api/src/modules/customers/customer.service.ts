@@ -40,8 +40,12 @@ export class CustomerService {
     restaurantId: string,
     phone: string,
     rawName?: string,
+    options?: { keepExistingName?: boolean },
   ): Promise<CustomerContext> {
     const name = rawName?.trim() || undefined;
+    // Chemins non vérifiés (Connect public, MCP) : le nom saisi ne remplace jamais un nom déjà
+    // enregistré, sinon n'importe qui connaissant un numéro réécrit l'identité de ce client.
+    const keepExistingName = options?.keepExistingName === true;
     const normalizedPhone = normalizeCustomerPhone(phone);
     const cachePhone = normalizedPhone ?? phone;
     const cacheKey = `customer:${restaurantId}:${cachePhone}`;
@@ -52,7 +56,8 @@ export class CustomerService {
     if (cached) return cached;
 
     const existingId = (await findCustomerForPhone(restaurantId, phone, normalizedPhone))?.id;
-    const touch = name ? { name, lastSeenAt: new Date() } : { lastSeenAt: new Date() };
+    const touch =
+      name && !keepExistingName ? { name, lastSeenAt: new Date() } : { lastSeenAt: new Date() };
     // New profiles are stored in E.164 so a dashboard « 06… » and a caller « +336… » share one.
     const storedPhone = normalizedPhone ?? phone;
     const customer = existingId
@@ -62,6 +67,13 @@ export class CustomerService {
           create: { restaurantId, phone: storedPhone, name: name ?? null },
           update: touch,
         });
+    if (keepExistingName && name && existingId) {
+      // Remplit seulement un nom absent : jamais d'écrasement d'un nom déjà connu.
+      await db.customer.updateMany({
+        where: { id: existingId, restaurantId, name: null },
+        data: { name },
+      });
+    }
 
     if (normalizedPhone) {
       try {

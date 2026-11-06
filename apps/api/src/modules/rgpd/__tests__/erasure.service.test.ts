@@ -263,6 +263,7 @@ describe('ErasureService.eraseSubject', () => {
       marketingAttributionLink: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       marketingAutomationDispatch: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       experienceReservation: { updateMany: vi.fn().mockResolvedValue({ count: 2 }) },
+      waitingListEntry: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       eventOrder: { updateMany: vi.fn().mockResolvedValue({ count: 3 }) },
       eventWaitlistEntry: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       message: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -317,7 +318,19 @@ describe('ErasureService.eraseSubject', () => {
       data: {
         customerId: null,
         reservationId: null,
+        customerName: 'ANON',
+        customerEmail: null,
+        customerPhone: null,
       },
+    });
+    expect(crmPrisma.waitingListEntry.updateMany).toHaveBeenCalledWith({
+      where: { OR: expect.any(Array) },
+      data: expect.objectContaining({
+        customerFirstName: 'ANON',
+        customerLastName: null,
+        customerEmail: null,
+        consents: {},
+      }),
     });
     expect(crmPrisma.eventOrder.updateMany).toHaveBeenCalledWith({
       where: { customerId: { in: ['customer-1'] } },

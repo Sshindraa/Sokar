@@ -239,6 +239,24 @@ describe('CustomerService', () => {
       expect(result.id).toBe('legacy-1');
     });
 
+    it('chemin non vérifié : un nom saisi ne remplace jamais un nom déjà enregistré', async () => {
+      vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'legacy-1' } as never);
+      vi.mocked(db.customer.update).mockResolvedValue({ ...row, id: 'legacy-1' } as never);
+      vi.mocked(db.customer.updateMany).mockResolvedValue({ count: 0 } as never);
+
+      await CustomerService.lookupOrCreate('r1', '+33612345678', 'Attaquant', {
+        keepExistingName: true,
+      });
+
+      expect(db.customer.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { lastSeenAt: expect.any(Date) } }),
+      );
+      expect(db.customer.updateMany).toHaveBeenCalledWith({
+        where: { id: 'legacy-1', restaurantId: 'r1', name: null },
+        data: { name: 'Attaquant' },
+      });
+    });
+
     it("un nom vide n'efface rien et sert la mémoire", async () => {
       const result = await CustomerService.lookupOrCreate('r1', '+33600000000', '   ');
       expect(result).toBe(cachedWithoutName);

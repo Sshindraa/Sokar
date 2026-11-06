@@ -3,9 +3,10 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { telnyxWebhookGuard } from '../voice/telnyx.guard';
 import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
-import { handleReply } from './reply-handler';
 import { telnyxMessagingEventsTotal } from '../../shared/observability/metrics';
 import { applyMarketingProviderEvent } from '../marketing/marketing-provider.service';
+import { queueInboundReplyReview } from './inbound-review';
+import { handleReply } from './reply-handler';
 import { applyMarketingSmsStop, isMarketingStopKeyword } from './sms-marketing-stop';
 
 const TelnyxFromSchema = z.union([z.string(), z.object({ phone_number: z.string() })]);
@@ -66,8 +67,7 @@ function normalizeMessagingStatus(eventType: string, status?: string): Messaging
 /**
  * Handler pour les SMS entrants de Telnyx (réponses clients).
  *
- * Délègue le parsing OUI/NON et la logique métier à reply-handler.ts,
- * partagé avec le webhook WhatsApp inbound.
+ * Suspend les réponses tant que leur réservation ne peut pas être identifiée.
  */
 
 export async function smsInboundRoutes(app: FastifyInstance) {
@@ -119,35 +119,47 @@ export async function smsInboundRoutes(app: FastifyInstance) {
       return reply.send({ result: 'ignored' });
     }
 
-    // Telnyx SMS: from est un objet avec phone_number
+    if (!data.payload.id) {
+      req.log.warn('sms inbound: missing message ID');
+      return reply.status(503).send({ result: 'temporarily_unavailable' });
+    }
+
     const fromObj = data.payload.from;
     const from = typeof fromObj === 'string' ? fromObj : fromObj?.phone_number;
     const text = data.payload.text;
 
-    if (!from || !text || !data.payload.id) {
-      req.log.warn(
-        { hasFrom: Boolean(from), hasText: !!text, hasId: Boolean(data.payload.id) },
-        'sms inbound: missing from, text or message ID',
-      );
-      return reply.send({ result: 'ok' });
+    // Sans expéditeur ni texte, rien ne peut être rattaché à une réservation : relecture manuelle.
+    let uncorrelated = !from || !text;
+
+    if (from && text) {
+      req.log.info({ hasFrom: true, textLength: text.length }, 'sms inbound received');
+
+      // STOP d'un SMS marketing : désinscription seulement, jamais de réponse de réservation.
+      if (isMarketingStopKeyword(text)) {
+        try {
+          if (await applyMarketingSmsStop(from)) return reply.send({ result: 'ok' });
+        } catch (error) {
+          if (error instanceof Error && error.message === 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE') {
+            req.log.warn('sms stop: opt-out register unavailable, Telnyx should retry');
+            return reply.status(503).send({ error: 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE' });
+          }
+          throw error;
+        }
+      }
+
+      const outcome = await handleReply(from, text, 'sms', data.payload.id);
+      uncorrelated = outcome.action === 'uncorrelated';
     }
 
-    req.log.info({ hasFrom: true, textLength: text.length }, 'sms inbound received');
-
-    // STOP d'un SMS marketing : désinscription seulement, jamais de réponse de réservation.
-    if (isMarketingStopKeyword(text)) {
+    if (uncorrelated) {
+      // Réponse non rattachable à une seule réservation : relecture manuelle, référence opaque.
       try {
-        if (await applyMarketingSmsStop(from)) return reply.send({ result: 'ok' });
-      } catch (error) {
-        if (error instanceof Error && error.message === 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE') {
-          req.log.warn('sms stop: opt-out register unavailable, Telnyx should retry');
-          return reply.status(503).send({ error: 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE' });
-        }
-        throw error;
+        await queueInboundReplyReview('sms', data.payload.id);
+      } catch {
+        req.log.error('sms inbound: review queue unavailable');
+        return reply.status(503).send({ result: 'temporarily_unavailable' });
       }
     }
-
-    await handleReply(from, text, 'sms', data.payload.id);
 
     return reply.send({ result: 'ok' });
   });

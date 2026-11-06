@@ -67,13 +67,13 @@ describe('inbound replies', () => {
     expect(parseReply('non')).toBe('CANCELLED');
   });
 
-  it('never selects a reservation when more than one is eligible', async () => {
+  it('never selects a reservation when more than one is eligible, and flags it as uncorrelated', async () => {
     state.findMany.mockResolvedValue([
       reservation,
       { ...reservation, id: 'res-2', restaurantId: 'rest-2' },
     ]);
     expect(await handleReply('customer', 'NON', 'sms', 'message-1')).toMatchObject({
-      action: 'no_reservation',
+      action: 'uncorrelated',
     });
     expect(state.cancel).not.toHaveBeenCalled();
   });

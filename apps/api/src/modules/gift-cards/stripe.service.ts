@@ -279,6 +279,106 @@ export async function retrieveConnectedAccount(accountId: string) {
 // Pin Accounts v2 only: billing and payment APIs retain the SDK's existing version.
 const CONNECT_ACCOUNTS_API_VERSION = '2026-08-26.dahlia';
 
+// This experimental path is restricted to explicitly selected sandbox restaurants.
+export function managedConnectTestEnabled(restaurantId: string): boolean {
+  return (
+    process.env.STRIPE_MANAGED_CONNECT_TEST_ENABLED === 'true' &&
+    process.env.STRIPE_SECRET_KEY?.startsWith('sk_test_') === true &&
+    process.env.STRIPE_PUBLISHABLE_KEY?.startsWith('pk_test_') === true &&
+    (process.env.STRIPE_MANAGED_CONNECT_TEST_RESTAURANTS ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .includes(restaurantId)
+  );
+}
+
+export function managedConnectTestPublicKey(restaurantId: string): string {
+  if (!managedConnectTestEnabled(restaurantId)) throw new Error('Configuration indisponible.');
+  return process.env.STRIPE_PUBLISHABLE_KEY!.trim();
+}
+
+export async function createManagedTestAccount(restaurantId: string): Promise<string> {
+  if (!managedConnectTestEnabled(restaurantId)) throw new Error('Configuration indisponible.');
+  const account = (await getStripe().rawRequest(
+    'POST',
+    '/v2/core/accounts',
+    { identity: { country: 'FR' }, metadata: { restaurantId, source: 'sokar_managed_test' } },
+    {
+      apiVersion: CONNECT_ACCOUNTS_API_VERSION,
+      idempotencyKey: `gift-card-managed-test:${restaurantId}`,
+    },
+  )) as unknown as { id?: unknown };
+  if (typeof account.id !== 'string' || !/^acct_[A-Za-z0-9]+$/.test(account.id)) {
+    throw new Error('Stripe n’a pas retourné de compte connecté valide.');
+  }
+  return account.id;
+}
+
+export async function configureManagedTestAccount(
+  restaurantId: string,
+  accountId: string,
+  accountToken: string,
+): Promise<void> {
+  if (!managedConnectTestEnabled(restaurantId)) throw new Error('Configuration indisponible.');
+  const stripe = getStripe();
+  const account = (await stripe.rawRequest('GET', `/v2/core/accounts/${accountId}`, undefined, {
+    apiVersion: CONNECT_ACCOUNTS_API_VERSION,
+  })) as unknown as {
+    livemode?: boolean;
+    metadata?: Record<string, string>;
+    applied_configurations?: string[];
+  };
+  if (
+    account.metadata?.restaurantId !== restaurantId ||
+    account.metadata?.source !== 'sokar_managed_test' ||
+    account.livemode !== false
+  ) {
+    throw new Error('Compte de test incompatible.');
+  }
+  if (account.applied_configurations?.includes('merchant')) return;
+  await stripe.rawRequest(
+    'POST',
+    `/v2/core/accounts/${accountId}`,
+    {
+      account_token: accountToken,
+      dashboard: 'none',
+      configuration: { merchant: { capabilities: { card_payments: { requested: true } } } },
+      defaults: {
+        currency: 'eur',
+        locales: ['fr-FR'],
+        responsibilities: { fees_collector: 'application', losses_collector: 'application' },
+      },
+    },
+    { apiVersion: CONNECT_ACCOUNTS_API_VERSION },
+  );
+}
+
+export async function createManagedTestSession(restaurantId: string, accountId: string) {
+  if (!managedConnectTestEnabled(restaurantId)) throw new Error('Configuration indisponible.');
+  const session = await getStripe().accountSessions.create({
+    account: accountId,
+    components: {
+      account_onboarding: { enabled: true, features: { disable_stripe_user_authentication: true } },
+    },
+  });
+  return {
+    clientSecret: session.client_secret,
+    publishableKey: managedConnectTestPublicKey(restaurantId),
+  };
+}
+
+export async function isManagedTestAccount(
+  restaurantId: string,
+  accountId: string,
+): Promise<boolean> {
+  if (!managedConnectTestEnabled(restaurantId)) return false;
+  const account = await getStripe().accounts.retrieve(accountId);
+  return (
+    account.metadata?.restaurantId === restaurantId &&
+    account.metadata?.source === 'sokar_managed_test'
+  );
+}
+
 export async function createConnectedAccount(restaurantId: string, _email: string) {
   // The pinned SDK supports raw v2 JSON requests but predates typed Accounts v2.
   // Account IDs remain interoperable with v1 Account Links and PaymentIntents.

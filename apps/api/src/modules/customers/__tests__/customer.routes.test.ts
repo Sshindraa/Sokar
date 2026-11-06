@@ -496,6 +496,7 @@ describe('customer.routes', () => {
       expect(body.total).toBe(1);
       expect(body.data).toHaveLength(1);
       expect(body.data[0]).toMatchObject({ id: 'c3', visitSummary: { visits365d: 3 } });
+      expect(db.reservation.findMany).toHaveBeenCalledTimes(1);
       expect(vi.mocked(db.customer.findMany).mock.calls[1][0]?.where).toEqual({
         restaurantId: 'test-rest-1',
         id: { in: ['c3'] },
