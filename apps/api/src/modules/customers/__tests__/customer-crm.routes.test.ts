@@ -269,6 +269,46 @@ describe('customer CRM routes', () => {
     expect(tag.statusCode).toBe(403);
   });
 
+  it('masque les notes dans la liste CRM pour un rôle en lecture seule', async () => {
+    const app = await getApp();
+    const row = {
+      id: 'customer-1',
+      restaurantId: 'test-rest-1',
+      notes: 'Allergie à confirmer',
+      specialOccasion: 'Anniversaire',
+      identities: [],
+      metricSnapshot: null,
+      preferences: [],
+      tagAssignments: [],
+      timelineEvents: [],
+    };
+    vi.mocked(db.customer.findMany).mockResolvedValue([row] as never);
+    vi.mocked(db.reservation.findMany).mockResolvedValue([] as never);
+
+    const readOnly = await app.inject({
+      method: 'GET',
+      url: '/crm/customers?limit=10',
+      headers: { authorization: 'Bearer test', 'x-test-site-role': 'READ_ONLY' },
+    });
+    expect(readOnly.statusCode).toBe(200);
+    expect(readOnly.json().data[0]).toMatchObject({
+      id: 'customer-1',
+      notes: null,
+      specialOccasion: null,
+    });
+
+    const manager = await app.inject({
+      method: 'GET',
+      url: '/crm/customers?limit=10',
+      headers: { authorization: 'Bearer test', 'x-test-site-role': 'MANAGER' },
+    });
+    expect(manager.statusCode).toBe(200);
+    expect(manager.json().data[0]).toMatchObject({
+      notes: 'Allergie à confirmer',
+      specialOccasion: 'Anniversaire',
+    });
+  });
+
   it('masque les notes et les métadonnées de chronologie pour un rôle non autorisé', async () => {
     const app = await getApp();
     vi.mocked(db.customer.findFirst).mockResolvedValue({
