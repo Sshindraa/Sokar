@@ -317,6 +317,8 @@ export type ServiceFillReport = {
   difference: number;
   /** Faux sous HOLDOUT_MIN_CUSTOMERS clients dans le témoin, ou si l'envoi a été tronqué. */
   conclusive: boolean;
+  /** Preuve d'effet : conclusif, non tronqué, marge à 95 % au-dessus de 0 et 5 réservants par groupe. */
+  proven: boolean;
   /** Part des clients qui ont réservé, destinataires moins témoin, en points (marge à 95 %). */
   effect: { difference: number; margin95: number } | null;
   /** Anciennes campagnes : les membres sans palier valide n'y figurent pas. */
@@ -332,6 +334,7 @@ export type ServiceFillReport = {
 };
 
 const NET_EFFECT_DAYS = 30;
+const MIN_RESERVED_FOR_PROOF = 5;
 
 function tierOfSnapshot(snapshot: unknown): FillTier | null {
   const tier = (snapshot as { tier?: unknown } | null)?.tier;
@@ -395,12 +398,14 @@ async function serviceFillReport(args: {
   const holdout = group(holdoutIds);
 
   let effect: ServiceFillReport['effect'] = null;
+  let aboveZero = false;
   // Brouillon (jamais envoyé) : aucun effet à mesurer, ni « entre 0 et 0 points ».
   if (startedAt && treated.customers > 0 && holdout.customers > 0) {
     const p1 = treated.reservedCustomers / treated.customers;
     const p2 = holdout.reservedCustomers / holdout.customers;
     const margin =
       1.96 * Math.sqrt((p1 * (1 - p1)) / treated.customers + (p2 * (1 - p2)) / holdout.customers);
+    aboveZero = (p1 - p2) * 100 - margin * 100 > 0;
     effect = {
       difference: Number(((p1 - p2) * 100).toFixed(1)),
       margin95: Number((margin * 100).toFixed(1)),
@@ -456,12 +461,18 @@ async function serviceFillReport(args: {
     }
   }
 
+  const conclusive = holdout.customers >= HOLDOUT_MIN_CUSTOMERS && !args.truncated;
   return {
     service: { start, end },
     treated,
     holdout,
     difference: Number((treated.coversPerCustomer - holdout.coversPerCustomer).toFixed(2)),
-    conclusive: holdout.customers >= HOLDOUT_MIN_CUSTOMERS && !args.truncated,
+    conclusive,
+    proven:
+      conclusive &&
+      aboveZero &&
+      treated.reservedCustomers >= MIN_RESERVED_FOR_PROOF &&
+      holdout.reservedCustomers >= MIN_RESERVED_FOR_PROOF,
     effect,
     byTier,
     netEffect30d,

@@ -17,17 +17,17 @@ pnpm typecheck  # per-app tsc --noEmit
 
 Ces suites vérifient que la grille Essential 199 € / Pro 299 € reste cohérente entre la
 configuration, le calcul de marge et les surfaces publiques. Elles ne créent ni prix Stripe ni
-abonnement. Le test ROI charge le `dist` de `@sokar/config` dans le workspace actuel ; reconstruire
+abonnement. Le test ROI charge le `dist` de `@suppernote/config` dans le workspace actuel ; reconstruire
 ce package avant la suite si le dossier a été nettoyé.
 
 ```zsh
-pnpm --filter @sokar/config run build
-pnpm --filter @sokar/shared exec vitest run src/__tests__/plan.test.ts
-pnpm --filter @sokar/api exec vitest run \
+pnpm --filter @suppernote/config run build
+pnpm --filter @suppernote/shared exec vitest run src/__tests__/plan.test.ts
+pnpm --filter @suppernote/api exec vitest run \
   src/modules/analytics/__tests__/roi.service.test.ts \
   src/modules/billing/__tests__/billing.routes.test.ts \
   src/modules/billing/__tests__/billing.service.test.ts
-pnpm --filter @sokar/dashboard exec vitest run src/app/PricingSection.test.tsx
+pnpm --filter @suppernote/dashboard exec vitest run src/app/PricingSection.test.tsx
 ```
 
 La promesse client Essential/Pro est sans quota. `/usage/current` affiche donc uniquement la
@@ -38,7 +38,7 @@ L'import du catalogue fournisseur est vérifiable sans provider ni écriture en 
 suite dédiée :
 
 ```zsh
-pnpm --filter @sokar/api exec vitest run \
+pnpm --filter @suppernote/api exec vitest run \
   src/modules/usage/__tests__/usage-tariff-import.service.test.ts
 ```
 
@@ -51,9 +51,9 @@ un environnement contrôlé. Aucun fichier de facture ou taux réel ne doit êtr
 Le rapprochement d'un export de facture avec le ledger est également local et en lecture seule :
 
 ```zsh
-pnpm --filter @sokar/api exec vitest run \
+pnpm --filter @suppernote/api exec vitest run \
   src/modules/usage/__tests__/usage-reconciliation.service.test.ts
-pnpm --filter @sokar/api exec tsx apps/api/scripts/reconcile-usage-invoice.ts \
+pnpm --filter @suppernote/api exec tsx apps/api/scripts/reconcile-usage-invoice.ts \
   --file ./private/provider-invoice-2026-09.csv \
   --cost-tolerance 0.01 \
   --output ./private/reports/provider-invoice-2026-09.json
@@ -88,13 +88,13 @@ passée en argument de ligne de commande ni écrite dans un fichier de preuve.
 
 ```zsh
 # Le mode liste ne récupère que les métadonnées non signées des factures du mois.
-TELNYX_API_KEY="<key>" pnpm --filter @sokar/api usage:telnyx:fetch \
+TELNYX_API_KEY="<key>" pnpm --filter @suppernote/api usage:telnyx:fetch \
   --month 2026-09 \
   --list-invoices \
   --output ./private/telnyx-invoices-2026-09.json
 
 # Après avoir choisi l'invoice_id dans cette liste, récupérer l'usage et les métadonnées.
-TELNYX_API_KEY="<key>" pnpm --filter @sokar/api usage:telnyx:fetch \
+TELNYX_API_KEY="<key>" pnpm --filter @suppernote/api usage:telnyx:fetch \
   --month 2026-09 \
   --product messaging \
   --product sip-trunking \
@@ -104,14 +104,14 @@ TELNYX_API_KEY="<key>" pnpm --filter @sokar/api usage:telnyx:fetch \
 
 # Si Telnyx retourne zéro ligne pour un produit, l'opt-in explicite conserve
 # une ligne quantité/coût à zéro afin de pouvoir rapprocher cette absence.
-TELNYX_API_KEY="<key>" pnpm --filter @sokar/api usage:telnyx:fetch \
+TELNYX_API_KEY="<key>" pnpm --filter @suppernote/api usage:telnyx:fetch \
   --month 2026-09 \
   --product messaging \
   --allow-empty \
   --output ./private/telnyx-usage-2026-09.json
 
 # Rapprocher ensuite l'export avec le ledger local.
-pnpm --filter @sokar/api exec node --import tsx scripts/reconcile-usage-invoice.ts \
+pnpm --filter @suppernote/api exec node --import tsx scripts/reconcile-usage-invoice.ts \
   --file ./private/telnyx-usage-2026-09.json \
   --cost-tolerance 0.01 \
   --output ./private/reports/telnyx-usage-2026-09.json
@@ -134,7 +134,7 @@ volontairement réservé à une commande mono-produit afin d'éviter d'appliquer
 Les tests du connecteur utilisent des réponses simulées et ne contactent aucun fournisseur :
 
 ```zsh
-pnpm --filter @sokar/api exec vitest run \
+pnpm --filter @suppernote/api exec vitest run \
   src/modules/usage/__tests__/telnyx-billing.service.test.ts
 ```
 
@@ -145,7 +145,7 @@ aval, le constructeur de paquet conserve séparément l'usage EUR et les lignes 
 dans leur devise d'origine (MRC Telnyx en USD) :
 
 ```zsh
-pnpm --filter @sokar/api usage:accounting:package -- \
+pnpm --filter @suppernote/api usage:accounting:package -- \
   --month 2026-08 \
   --usage-csv ./private/sokar-usage-accounting-2026-08.csv \
   --invoice ./private/telnyx-invoice-2026-08.json \
@@ -171,7 +171,7 @@ réécrit jamais le ledger. La file se consulte avec `GET /admin/usage/reconcili
 La concurrence réelle se vérifie dans une base PostgreSQL jetable après application des migrations :
 
 ```zsh
-AGENTIC_INT_TESTS=1 pnpm --filter @sokar/api exec vitest run \
+AGENTIC_INT_TESTS=1 pnpm --filter @suppernote/api exec vitest run \
   src/modules/usage/__tests__/usage-adjustment.concurrency.integration.test.ts
 ```
 
@@ -181,7 +181,7 @@ supprime. Il reste ignoré dans la suite unitaire.
 L'évaluateur local des seuils de suivi interne est vérifiable sans provider :
 
 ```zsh
-pnpm --filter @sokar/api exec vitest run \
+pnpm --filter @suppernote/api exec vitest run \
   src/modules/usage/__tests__/usage-alerts.service.test.ts \
   src/modules/usage/__tests__/usage-alert-budget.service.test.ts \
   src/shared/queue/workers/__tests__/usage-alerts.worker.test.ts
@@ -204,11 +204,11 @@ pnpm test:e2e   # Playwright dashboard
 ### Connect E2E (API réelle, base seedée)
 
 ```zsh
-pnpm --filter @sokar/connect test:e2e   # Playwright Connect
+pnpm --filter @suppernote/connect test:e2e   # Playwright Connect
 ```
 
 Le job CI `connect-e2e` fournit Postgres 16 et Redis 7 éphémères, applique les migrations, seed le
-restaurant de démo puis son plan de salle (`pnpm --filter @sokar/database seed` puis
+restaurant de démo puis son plan de salle (`pnpm --filter @suppernote/database seed` puis
 `seed:floor-plan`), démarre l'API sur `:4000` et lance les trois parcours publics (fiche restaurant,
 widget de réservation, carte cadeau). `API_URL` est lu par le serveur Next de Connect pour ses
 fetches SSR : sans cette variable, Connect appellerait `:3001`.
@@ -224,7 +224,7 @@ des anciennes URLs `/dashboard/admin/*` et renvoi d'un compte non opérateur ver
 
 La CI exécute également le job `api-integration` sur Postgres 16 et Redis 7
 éphémères. Il applique les migrations versionnées, active `AGENTIC_INT_TESTS=1`
-et lance `pnpm --filter @sokar/api test:int`. Ce job ne contacte aucun provider
+et lance `pnpm --filter @suppernote/api test:int`. Ce job ne contacte aucun provider
 réel ; son objectif est de rendre la preuve transactionnelle reproductible à
 chaque livraison.
 
@@ -285,7 +285,7 @@ dédié, appliquer les migrations déjà versionnées avec
 ```zsh
 DATABASE_URL='postgresql://<local-user>@127.0.0.1:5432/<dedicated-db>' \
   AGENTIC_INT_TESTS=1 \
-  pnpm --filter @sokar/api test:int
+  pnpm --filter @suppernote/api test:int
 ```
 
 La base doit être isolée d'une base de développement/staging/production. Après
@@ -307,7 +307,7 @@ psql -d sokar_parity_test -c \
   "CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS cube; \
    CREATE EXTENSION IF NOT EXISTS earthdistance; CREATE EXTENSION IF NOT EXISTS btree_gist;"
 DATABASE_URL='postgresql://sokar:…@localhost:5432/sokar_parity_test' \
-  pnpm --filter @sokar/database migrate:deploy
+  pnpm --filter @suppernote/database migrate:deploy
 ```
 
 ### Parité des deux entrées de réservation (R1-4)
@@ -347,7 +347,7 @@ providers et un Redis fakes. Ils ne nécessitent ni Telnyx, ni WhatsApp, ni
 Resend, ni une base staging/production :
 
 ```zsh
-pnpm --filter @sokar/api exec vitest run \
+pnpm --filter @suppernote/api exec vitest run \
   src/shared/queue/__tests__/notification-idempotency.test.ts \
   src/shared/queue/workers/__tests__/outbound-confirm.worker.test.ts \
   src/shared/queue/workers/__tests__/confirmation-sms.worker.test.ts \
@@ -381,7 +381,7 @@ certain, jamais après `unknown`.
 La campagne Phase 3E reste entièrement déterministe et sans appel externe :
 
 ```zsh
-pnpm --filter @sokar/api exec vitest run \
+pnpm --filter @suppernote/api exec vitest run \
   src/shared/queue/__tests__/notification-idempotency.test.ts \
   src/shared/queue/__tests__/notification-repair.test.ts \
   src/shared/queue/__tests__/provider-adapters.contract.test.ts \
@@ -403,7 +403,7 @@ pas livraison au destinataire.
 Le contrôle marketing ajoute les suites ciblées suivantes :
 
 ```zsh
-pnpm --filter @sokar/api exec vitest run \
+pnpm --filter @suppernote/api exec vitest run \
   src/modules/marketing/__tests__/marketing-provider.service.test.ts \
   src/modules/marketing/__tests__/marketing-provider.routes.test.ts \
   src/modules/marketing/__tests__/marketing-provider-reconciliation.worker.test.ts
@@ -420,7 +420,7 @@ Les fondations POS, paiement de réservation et CRM groupe se vérifient de la m
 contacter de fournisseur :
 
 ```zsh
-pnpm --filter @sokar/api exec vitest run \
+pnpm --filter @suppernote/api exec vitest run \
   src/modules/pos/__tests__ \
   src/modules/reservation-payments/__tests__ \
   src/modules/customer-groups/__tests__
@@ -435,7 +435,7 @@ nécessite ensuite une preuve sandbox séparée.
 La fondation réputation se vérifie sans provider ni Redis réel :
 
 ```zsh
-pnpm --filter @sokar/api exec vitest run \
+pnpm --filter @suppernote/api exec vitest run \
   src/modules/reputation/__tests__/reputation.service.test.ts \
   src/modules/reputation/__tests__/reputation.routes.test.ts \
   src/modules/reputation/__tests__/reputation-feedback-expiry.worker.test.ts

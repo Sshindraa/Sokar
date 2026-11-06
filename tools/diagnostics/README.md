@@ -35,7 +35,7 @@ Non exécutés en CI — usage développeur local uniquement.
 
 ## Notes
 
-- Les scripts MCP (`test-mcp-client.ts`, `sokar-mcp-stdio.ts`) nécessitent le contexte `apps/api` pour résoudre `@modelcontextprotocol/sdk`. Les commandes `pnpm test:mcp:*` gèrent cela automatiquement via `pnpm --filter @sokar/api exec`.
+- Les scripts MCP (`test-mcp-client.ts`, `sokar-mcp-stdio.ts`) nécessitent le contexte `apps/api` pour résoudre `@modelcontextprotocol/sdk`. Les commandes `pnpm test:mcp:*` gèrent cela automatiquement via `pnpm --filter @suppernote/api exec`.
 - Voir `docs/sokar-mcp-integrator-guide.md` pour le guide d'intégration MCP complet.
 - `test-stt-tts.mjs` charge `.env.local` via `node --env-file` (Node 20+), et utilise
   les clés `*_BENCH_API_KEY`, avec repli Cartesia sur `CARTESIA_API_KEY`. Il refuse

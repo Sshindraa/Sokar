@@ -3,7 +3,7 @@
  * résultat, hors horaires d'ouverture et durée moyenne. Ne lit que la date, l'intention, le résultat
  * et la durée : jamais le numéro de l'appelant ni la transcription.
  */
-import { normalizeOpeningHours } from '@sokar/shared';
+import { normalizeOpeningHours } from '@suppernote/shared';
 import { db } from '../../shared/db/client';
 import { periodStart } from '../dashboard/dashboard.routes';
 

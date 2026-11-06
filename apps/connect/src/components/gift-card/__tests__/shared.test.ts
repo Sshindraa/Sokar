@@ -90,7 +90,7 @@ describe('crowdfundingContributionUrl', () => {
     const { crowdfundingContributionUrl } = await import('../shared');
     const url = new URL(
       crowdfundingContributionUrl(
-        'https://sokar.tech/widget/demo/gift-card?embedded=1&source=restaurant&crowdfund=old',
+        'https://suppernote.com/widget/demo/gift-card?embedded=1&source=restaurant&crowdfund=old',
         'new-code',
       ),
     );

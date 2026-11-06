@@ -46,7 +46,7 @@ export function buildReputationEmail(
   restaurantName: string,
   token: string,
 ): { subject: string; html: string } {
-  const base = new URL(process.env.API_URL || 'https://api.sokar.tech');
+  const base = new URL(process.env.API_URL || 'https://api.suppernote.com');
   if (
     base.username ||
     base.password ||

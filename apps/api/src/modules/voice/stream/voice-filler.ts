@@ -23,7 +23,7 @@
  */
 import crypto from 'node:crypto';
 import { WebSocket } from 'ws';
-import { FILLER_CACHE_TTL_SECONDS } from '@sokar/config';
+import { FILLER_CACHE_TTL_SECONDS } from '@suppernote/config';
 import { logger } from '../../../shared/logger/pino';
 import { redisCache } from '../../../shared/redis/client';
 import { splitTelnyxAudioFrames } from './audio-frames';

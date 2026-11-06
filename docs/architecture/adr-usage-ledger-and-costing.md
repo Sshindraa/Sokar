@@ -114,9 +114,9 @@ opérations ; aucun tarif ne doit être déduit d'une page publique ou d'une est
 Exemple de contrôle (sans taux réel dans le dépôt) :
 
 ```zsh
-pnpm --filter @sokar/api exec tsx apps/api/scripts/import-usage-tariffs.ts \
+pnpm --filter @suppernote/api exec tsx apps/api/scripts/import-usage-tariffs.ts \
   --file ./private/provider-tariffs-2026-09.csv --dry-run
-pnpm --filter @sokar/api exec tsx apps/api/scripts/import-usage-tariffs.ts \
+pnpm --filter @suppernote/api exec tsx apps/api/scripts/import-usage-tariffs.ts \
   --file ./private/provider-tariffs-2026-09.csv --apply
 ```
 

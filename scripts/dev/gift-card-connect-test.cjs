@@ -25,7 +25,7 @@ try {
   );
   process.exit(1);
 }
-const child = spawn('pnpm', ['--filter', '@sokar/connect', 'dev'], {
+const child = spawn('pnpm', ['--filter', '@suppernote/connect', 'dev'], {
   cwd: root,
   stdio: 'inherit',
   env: {

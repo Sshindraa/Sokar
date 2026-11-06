@@ -11,7 +11,7 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fetchWithTimeout } from '@sokar/shared';
+import { fetchWithTimeout } from '@suppernote/shared';
 
 // ---------------------------------------------------------------------------
 // Types

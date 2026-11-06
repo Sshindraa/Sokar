@@ -368,7 +368,7 @@ export default function AdminProvisioningPage() {
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between border-b border-border pb-6">
         <div>
           <div className="flex items-center gap-2 text-primary font-semibold text-sm tracking-wide uppercase">
-            <Zap className="h-4 w-4" /> Administration Sokar
+            <Zap className="h-4 w-4" /> Administration Suppernote
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground mt-1">
             Préparer un pilote restaurant
@@ -511,7 +511,7 @@ export default function AdminProvisioningPage() {
 
               <div className="flex items-center gap-3">
                 <div className="text-right">
-                  <p className="text-xs text-muted-foreground">Numéro Sokar attribué</p>
+                  <p className="text-xs text-muted-foreground">Numéro Suppernote attribué</p>
                   <p className="text-base font-semibold font-mono text-foreground">
                     {selectedStatus.hasAssignedPhone
                       ? selectedStatus.phoneNumber
@@ -689,7 +689,7 @@ export default function AdminProvisioningPage() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    S&apos;assure que la route d&apos;accueil d&apos;appels Sokar réagit
+                    S&apos;assure que la route d&apos;accueil d&apos;appels Suppernote réagit
                     correctement.
                   </p>
 
@@ -745,7 +745,7 @@ export default function AdminProvisioningPage() {
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">
                     Code USSD à composer sur le téléphone du restaurant pour router les appels vers
-                    Sokar :
+                    Suppernote :
                   </p>
 
                   <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 text-center">

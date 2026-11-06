@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { EntitlementCapability } from '@sokar/config';
+import type { EntitlementCapability } from '@suppernote/config';
 import { evaluateCapability } from './entitlement.service';
 
 /** Runtime flags default open outside production so local contract tests and

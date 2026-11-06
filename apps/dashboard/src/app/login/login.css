@@ -426,7 +426,7 @@
   animation: sokar-login-message 240ms ease-out both;
 }
 
-.sokar-login-call__message[data-speaker='Sokar'] {
+.sokar-login-call__message[data-speaker='Suppernote'] {
   align-self: flex-start;
 }
 
@@ -444,7 +444,7 @@
   background: hsl(var(--secondary) / 0.7);
 }
 
-.sokar-login-call__message[data-speaker='Sokar'] > p {
+.sokar-login-call__message[data-speaker='Suppernote'] > p {
   background: hsl(var(--foreground) / 0.09);
   border-color: hsl(var(--foreground) / 0.14);
 }

@@ -1,7 +1,7 @@
 /**
  * Test de charge du pipeline vocal (R1-3).
  *
- * Mesure ce que Sokar contrôle réellement quand N appels arrivent en même temps :
+ * Mesure ce que Suppernote contrôle réellement quand N appels arrivent en même temps :
  * acceptation WebSocket, traitement des trames média, mémoire et CPU du process.
  * Les fournisseurs (Telnyx, ElevenLabs, Cartesia) sont neutralisés par des clés
  * factices : leurs latences sont externes et ne se mesurent pas ici.

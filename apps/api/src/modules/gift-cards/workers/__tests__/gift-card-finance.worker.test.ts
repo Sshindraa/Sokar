@@ -39,6 +39,19 @@ describe('gift card finance reconciliation', () => {
       expect.objectContaining({ orderBy: { updatedAt: 'asc' } }),
     );
   });
+  it('parks a checkout whose connected account is unreachable instead of failing every scan', async () => {
+    vi.mocked(db.giftCardCheckout.findMany).mockResolvedValue([
+      { id: 'orphan', stripePaymentIntentId: 'pi_x', stripeAccountId: 'acct_gone' },
+    ] as never);
+    vi.mocked(retrievePaymentIntent).mockRejectedValue(
+      Object.assign(new Error('no access'), { code: 'account_invalid' }),
+    );
+    await expect(reconcileGiftCardFinance()).rejects.toThrow('1 failures');
+    expect(db.giftCardCheckout.update).toHaveBeenCalledWith({
+      where: { id: 'orphan' },
+      data: { status: 'RECOVERY_REQUIRED' },
+    });
+  });
   it('recovers a captured purchase and retries every persisted refund despite one failure', async () => {
     vi.mocked(db.giftCardRefundRequest.findMany).mockResolvedValue([
       { id: 'refund-1' },

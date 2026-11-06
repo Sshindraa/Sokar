@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Page restaurant publique (T5 complète).
+ * Suppernote Connect — Page restaurant publique (T5 complète).
  *
  * URL : /restaurant/[slug]
  *
@@ -17,7 +17,7 @@
  */
 
 import type { Metadata } from 'next';
-import { isConnectDemoSlug } from '@sokar/shared';
+import { isConnectDemoSlug } from '@suppernote/shared';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -31,7 +31,7 @@ import { isValidSlug } from '@/lib/widget-colors';
 import { todayInTimezone } from '@/lib/restaurant-day';
 import { parseTestBookingToken, TEST_BOOKING_BANNER } from '@/lib/test-booking';
 
-const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
+const SITE_URL = process.env.SITE_URL ?? 'https://suppernote.com';
 
 export const dynamicParams = true;
 // Rendue à chaque visite : la page lit `?preview`, `?testBooking` et `?source`, et affiche les
@@ -87,15 +87,15 @@ export async function generateMetadata({
   const canonical = `${SITE_URL}/restaurant/${restaurant.slug}`;
   const isDemo = isConnectDemoSlug(restaurant.slug);
   const title = isDemo
-    ? `${restaurant.name} — Démonstration Sokar`
+    ? `${restaurant.name} — Démonstration Suppernote`
     : `${restaurant.name} — Réservation en ligne à ${restaurant.address.city}`;
   const description = isDemo
-    ? 'Établissement fictif de démonstration Sokar. Les réservations servent uniquement aux essais.'
-    : `Réservez une table chez ${restaurant.name}, restaurant ${cuisine.toLowerCase()} à ${restaurant.address.city}. Horaires, adresse et réservation en ligne via Sokar.`;
+    ? 'Établissement fictif de démonstration Suppernote. Les réservations servent uniquement aux essais.'
+    : `Réservez une table chez ${restaurant.name}, restaurant ${cuisine.toLowerCase()} à ${restaurant.address.city}. Horaires, adresse et réservation en ligne via Suppernote.`;
 
   return {
-    // La marque est ajoutée par le template du layout (`%s | Sokar`) : la
-    // répéter ici produisait « … | Sokar | Sokar » sur chaque fiche.
+    // La marque est ajoutée par le template du layout (`%s | Suppernote`) : la
+    // répéter ici produisait « … | Suppernote | Suppernote » sur chaque fiche.
     title,
     description,
     alternates: { canonical },
@@ -182,7 +182,7 @@ export default async function RestaurantPage({
   // PageViewTracker est un composant client qui track au mount — chaque visite est comptée
 
   const jsonLd = buildPublicRestaurantJsonLd({
-    siteUrl: process.env.SITE_URL ?? 'https://sokar.tech',
+    siteUrl: process.env.SITE_URL ?? 'https://suppernote.com',
     restaurant,
   });
 
@@ -255,7 +255,7 @@ export default async function RestaurantPage({
         name: `${restaurant.name} accepte-t-il les réservations ?`,
         acceptedAnswer: {
           '@type': 'Answer',
-          text: `Oui, vous pouvez réserver une table en ligne chez ${restaurant.name} via Sokar.`,
+          text: `Oui, vous pouvez réserver une table en ligne chez ${restaurant.name} via Suppernote.`,
         },
       },
     ],
@@ -521,7 +521,7 @@ export default async function RestaurantPage({
                 {restaurant.name} accepte-t-il les réservations ?
               </summary>
               <p className="mt-2 text-ink">
-                Oui, vous pouvez réserver une table en ligne via Sokar.
+                Oui, vous pouvez réserver une table en ligne via Suppernote.
                 {restaurant.connectAgentic
                   ? ' Les assistants IA (ChatGPT, Perplexity) peuvent aussi vous y envoyer directement.'
                   : ''}

@@ -18,7 +18,7 @@ import { db } from '../../../shared/db/client';
 import { sendSms } from '../../../shared/telnyx/client';
 import { sendEmail } from '../../../shared/email';
 import { redisCache } from '../../../shared/redis/client';
-import { PRIVACY_DOCUMENT, PRIVACY_PROVIDERS, PRIVACY_RETENTION_RULES } from '@sokar/shared';
+import { PRIVACY_DOCUMENT, PRIVACY_PROVIDERS, PRIVACY_RETENTION_RULES } from '@suppernote/shared';
 
 // Mocks Telnyx et Brevo (hoisted pour être dispo dans le mock factory)
 const { sendSmsMock, sendEmailMock } = vi.hoisted(() => ({
@@ -63,8 +63,11 @@ function setupPrismaMocks() {
   vi.mocked(db.$transaction).mockImplementation(async (fn) =>
     (fn as unknown as (tx: unknown) => unknown)({
       customerConsent: db.customerConsent,
+      $queryRaw: db.$queryRaw,
       call: db.call,
+      voiceDebugTurn: db.voiceDebugTurn,
       reservationAuditLog: db.reservationAuditLog,
+      signedTokenUsage: db.signedTokenUsage,
       message: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
       reservation: { updateMany: vi.fn().mockResolvedValue({ count: 3 }) },
     }),
@@ -295,6 +298,20 @@ describe('RGPD routes (with identity verification)', () => {
       expect(body.anonymized.reservations).toBe(3);
     });
 
+    it('refuse le rejeu du jeton après un effacement réussi', async () => {
+      setupPrismaMocks();
+      const app = await getApp();
+      const token = await getVerifiedToken(app, '+33****0001', 'erase');
+      const request = {
+        method: 'POST' as const,
+        url: '/api/rgpd/erase',
+        headers: { 'x-identity-token': token },
+        payload: { subject: '+33****0001' },
+      };
+      expect((await app.inject(request)).statusCode).toBe(200);
+      expect((await app.inject(request)).statusCode).toBe(401);
+    });
+
     it("répond par une erreur si l'effacement échoue", async () => {
       setupPrismaMocks();
       vi.mocked(db.call.updateMany).mockRejectedValueOnce(new Error('database unavailable'));
@@ -429,7 +446,7 @@ describe('RGPD routes (with identity verification)', () => {
       for (const rule of PRIVACY_RETENTION_RULES) expect(body.text).toContain(rule.description);
       for (const provider of PRIVACY_PROVIDERS) expect(body.text).toContain(provider.name);
       expect(body.text).not.toMatch(
-        /Sokar SAS|Twilio|Brevo|Postmark|2 ans à compter de la dernière interaction/,
+        /Suppernote SAS|Twilio|Brevo|Postmark|2 ans à compter de la dernière interaction/,
       );
     });
   });

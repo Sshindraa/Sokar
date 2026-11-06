@@ -1,6 +1,9 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { MARKETING_CONSENT_CHANNELS, MARKETING_CONSENT_COLLECTION_METHODS } from '@sokar/shared';
+import {
+  MARKETING_CONSENT_CHANNELS,
+  MARKETING_CONSENT_COLLECTION_METHODS,
+} from '@suppernote/shared';
 import { MarketingCampaignStatus } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { queues } from '../../shared/queue/queues';
@@ -55,6 +58,7 @@ import {
   renderUnsubscribeConfirmPage,
   renderUnsubscribeDonePage,
   renderUnsubscribeInvalidPage,
+  renderUnsubscribeRetryPage,
 } from './marketing-unsubscribe.page';
 import {
   getMarketingCampaignReport,
@@ -220,6 +224,10 @@ const requireMarketingCampaigns = [requireOrg(), requireCapability('marketing.ca
 const requireMarketingAutomations = [requireOrg(), requireCapability('marketing.automations')];
 const requireMarketingAttribution = [requireOrg(), requireCapability('marketing.attribution')];
 
+function isOppositionRegistered(error: unknown): boolean {
+  return error instanceof Error && error.message === 'MARKETING_OPPOSITION_REGISTERED';
+}
+
 function statusForError(error: unknown): number {
   if (!(error instanceof Error)) return 500;
   if (error.message === 'CUSTOMER_NOT_FOUND' || error.message === 'SEGMENT_NOT_FOUND') return 404;
@@ -357,6 +365,9 @@ export async function marketingRoutes(app: FastifyInstance) {
         });
         return reply.send({ data: permission });
       } catch (error) {
+        if (isOppositionRegistered(error)) {
+          return reply.status(409).send({ error: 'MARKETING_OPPOSITION_REGISTERED' });
+        }
         const status = statusForError(error);
         if (status === 404) return reply.status(status).send({ error: 'CUSTOMER_NOT_FOUND' });
         throw error;
@@ -385,6 +396,9 @@ export async function marketingRoutes(app: FastifyInstance) {
         }
         if (error instanceof Error && error.message === 'CUSTOMER_EMAIL_REQUIRED') {
           return reply.status(409).send({ error: 'CUSTOMER_EMAIL_REQUIRED' });
+        }
+        if (isOppositionRegistered(error)) {
+          return reply.status(409).send({ error: 'MARKETING_OPPOSITION_REGISTERED' });
         }
         throw error;
       }
@@ -961,6 +975,11 @@ export async function marketingRoutes(app: FastifyInstance) {
       if (error instanceof Error && error.message === 'CUSTOMER_NOT_FOUND') {
         if (fromBrowserForm) return sendUnsubscribePage(reply, 404, renderUnsubscribeInvalidPage());
         return reply.status(404).send({ error: 'CUSTOMER_NOT_FOUND' });
+      }
+      // Le jeton est signé et sans état : le même lien permet de réessayer.
+      if (error instanceof Error && error.message === 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE') {
+        if (fromBrowserForm) return sendUnsubscribePage(reply, 503, renderUnsubscribeRetryPage());
+        return reply.status(503).send({ error: 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE' });
       }
       throw error;
     }

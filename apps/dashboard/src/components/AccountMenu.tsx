@@ -8,6 +8,12 @@ import { CreditCard, LogOut, Settings as SettingsIcon } from 'lucide-react';
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 const isDemoMode = Boolean(
@@ -27,7 +33,7 @@ const brandClassName =
 
 function RestaurantLink() {
   return (
-    <Link href="/dashboard" aria-label="Sokar" title="Sokar" className={brandClassName}>
+    <Link href="/dashboard" aria-label="Suppernote" title="Suppernote" className={brandClassName}>
       <Image
         src="/sokar-restaurant-mark.png"
         alt=""
@@ -38,15 +44,49 @@ function RestaurantLink() {
     </Link>
   );
 }
-export function AccountMenu() {
-  // Sans clé Clerk ou en démo, pas de session à ouvrir : l'icône reste, sans menu.
-  // On ne peut pas appeler useUser()/useClerk() sans ClerkProvider
-  // monté — donc on court-circuite avant tout hook Clerk.
-  if (!hasClerkKey || isDemoMode) return <RestaurantLink />;
-  return <AccountMenuInner />;
+export function AccountMenu({ showSettings = true }: { showSettings?: boolean } = {}) {
+  // Sans ClerkProvider, seul le menu des réglages autorisés reste disponible.
+  if (!hasClerkKey || isDemoMode) {
+    return showSettings ? <RestaurantSettingsMenu /> : <RestaurantLink />;
+  }
+  return <AccountMenuInner showSettings={showSettings} />;
 }
 
-function AccountMenuInner() {
+function RestaurantSettingsMenu() {
+  const t = useTranslations('account');
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-label={t('label')}
+          title={t('label')}
+          className={brandClassName}
+        >
+          <Image
+            src="/sokar-restaurant-mark.png"
+            alt=""
+            width={44}
+            height={44}
+            className="dashboard-brand-logo h-9 w-9 object-contain"
+          />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={8}>
+        <DropdownMenuItem asChild>
+          <Link href="/dashboard/settings" className="flex items-center gap-2">
+            <SettingsIcon size={14} aria-hidden="true" />
+            {t('settings')}
+          </Link>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function AccountMenuInner({ showSettings }: { showSettings: boolean }) {
   const t = useTranslations('account');
   const { isSignedIn, user } = useUser();
   const { signOut } = useClerk();
@@ -135,18 +175,20 @@ function AccountMenuInner() {
             <CreditCard size={15} aria-hidden />
             Mon abonnement
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              router.push('/dashboard/settings');
-            }}
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors duration-150 hover:bg-accent/50 hover:text-foreground"
-          >
-            <SettingsIcon size={14} aria-hidden />
-            {t('settings')}
-          </button>
+          {showSettings && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                router.push('/dashboard/settings');
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors duration-150 hover:bg-accent/50 hover:text-foreground"
+            >
+              <SettingsIcon size={14} aria-hidden />
+              {t('settings')}
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"

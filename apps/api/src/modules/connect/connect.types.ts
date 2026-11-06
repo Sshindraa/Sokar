@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Types publics et schémas Zod.
+ * Suppernote Connect — Types publics et schémas Zod.
  *
  * Pas d'auth Clerk sur ces endpoints. Les données sont publiées
  * volontairement par le restaurateur (connectPublished=true).
@@ -12,7 +12,7 @@
 
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
-import { CONNECT_DEMO_SLUGS } from '@sokar/shared';
+import { CONNECT_DEMO_SLUGS } from '@suppernote/shared';
 import { BookingMarketingConsentSchema } from '../marketing/marketing-consent.schema';
 
 // ─── Slug (param URL) ─────────────────────────────────────────
@@ -95,10 +95,10 @@ export function normalizeConnectSource(requestedSource: Source, connectAgentic: 
 
 // ─── Invariant de publication ─────────────────────────────────
 /**
- * Source de vérité unique de « ce restaurant a une page Sokar Connect publique ».
+ * Source de vérité unique de « ce restaurant a une page Suppernote Connect publique ».
  *
  *   canPublicPageRender = connectPublished && slug && publishedAt
- *   (cf. docs/obsidian/Sokar Connect P0.md §Gating)
+ *   (cf. docs/obsidian/Suppernote Connect P0.md §Gating)
  *
  * `agenticOptIn` en fait partie : la page Connect est une surface de
  * réservation, et non une simple fiche vitrine. Un restaurant qui n'accepte pas

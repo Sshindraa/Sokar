@@ -1,5 +1,5 @@
 {
-  "name": "@sokar/database",
+  "name": "@suppernote/database",
   "version": "0.0.1",
   "private": true,
   "main": "./dist/index.js",
@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
-    "@sokar/config": "workspace:*"
+    "@suppernote/config": "workspace:*"
   },
   "devDependencies": {
     "prisma": "^6.0.0",

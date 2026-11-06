@@ -21,6 +21,7 @@ import {
   remainingDailyEmailBudget,
   TARGET_SERVICE_FULL,
   renderMarketingTemplate,
+  marketingEmailFooter,
   toMarketingHtml,
 } from './marketing-campaign.service';
 import { isTargetServiceFull } from './fill-service.service';
@@ -139,6 +140,31 @@ export async function reserveMarketingFrequencySlot(
   }
 }
 
+/**
+ * Rend le créneau réservé pour un message dont on est certain qu'il n'est pas parti. Un résultat
+ * incertain (délai dépassé) garde son créneau : mieux vaut un envoi de moins qu'un de trop.
+ */
+export async function releaseMarketingFrequencySlot(
+  input: {
+    restaurantId: string;
+    customerId: string;
+    channel: MarketingChannelCode;
+    now: Date;
+  },
+  writer: Pick<PrismaClient, 'marketingFrequencyWindow'>,
+): Promise<void> {
+  await writer.marketingFrequencyWindow.updateMany({
+    where: {
+      restaurantId: input.restaurantId,
+      customerId: input.customerId,
+      channel: input.channel,
+      windowStart: dayWindow(input.now).start,
+      sendCount: { gt: 0 },
+    },
+    data: { sendCount: { decrement: 1 } },
+  });
+}
+
 function hashPhone(phone: string): string {
   return createHash('sha256').update(phone.trim().toLowerCase()).digest('hex');
 }
@@ -158,10 +184,20 @@ async function legacyOptedIn(
 function safeErrorCode(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   const normalized = raw
+    .replace(/[^\s@]+@[^\s@]+/g, 'EMAIL')
     .toUpperCase()
     .replace(/[^A-Z0-9_:-]+/g, '_')
     .slice(0, 80);
   return normalized || 'PROVIDER_ERROR';
+}
+
+function messageWasNotSent(errorCode: string): boolean {
+  return (
+    errorCode === 'PROVIDER_REFUSED' ||
+    errorCode === 'RECIPIENT_NOT_ALLOWLISTED' ||
+    errorCode === 'NO_CONTACT' ||
+    errorCode.startsWith('RESEND_API_ERROR:')
+  );
 }
 
 async function markMessage(
@@ -234,7 +270,7 @@ export function buildMarketingReservationLink(
     process.env.DASHBOARD_URL?.trim() ||
     process.env.SITE_URL?.trim() ||
     process.env.PUBLIC_URL?.trim() ||
-    'https://sokar.tech';
+    'https://suppernote.com';
   const path = slug ? `/book/${encodeURIComponent(slug)}` : '/';
   try {
     const url = new URL(path, base);
@@ -361,7 +397,12 @@ async function sendOne(
     channel: MarketingChannelCode;
     subject: string | null;
     bodyTemplate: string;
-    restaurant: { name: string; slug: string | null; managerEmail: string };
+    restaurant: {
+      name: string;
+      slug: string | null;
+      managerEmail: string;
+      formattedAddress?: string | null;
+    };
   },
   message: {
     id: string;
@@ -421,7 +462,10 @@ async function sendOne(
         await deps.sendEmail({
           to: message.customer.emailNormalized,
           subject: campaign.subject ?? campaign.restaurant.name,
-          html: toMarketingHtml(rendered),
+          html: toMarketingHtml(`${rendered}\n\n${marketingEmailFooter(campaign.restaurant)}`, {
+            [context.reservationLink]: 'Réserver une table',
+            [context.unsubscribeUrl]: 'Se désinscrire',
+          }),
           from: marketingFromHeader(campaign.restaurant.name, deps.marketingEmailFrom),
           replyTo: normalizeCustomerEmail(campaign.restaurant.managerEmail),
           // Désinscription en un clic (RFC 8058) : Gmail et Outlook affichent un bouton natif.
@@ -471,7 +515,11 @@ export async function processMarketingCampaignJob(
   const now = validNow(dependencies.now());
   const campaign = await dependencies.db.marketingCampaign.findFirst({
     where: { id: job.data.campaignId, restaurantId: job.data.restaurantId },
-    include: { restaurant: { select: { name: true, slug: true, managerEmail: true } } },
+    include: {
+      restaurant: {
+        select: { name: true, slug: true, managerEmail: true, formattedAddress: true },
+      },
+    },
   });
   if (!campaign) return { processed: 0, accepted: 0, failed: 0 };
   if (
@@ -674,7 +722,9 @@ export async function processMarketingCampaignJob(
         const result = sent.result;
         if (result.outcome !== 'success') {
           throw new Error(
-            result.outcome === 'unknown' ? 'PROVIDER_RESULT_UNKNOWN' : 'PROVIDER_REFUSED',
+            result.outcome === 'unknown'
+              ? 'PROVIDER_RESULT_UNKNOWN'
+              : (result.reason ?? 'PROVIDER_REFUSED'),
           );
         }
         const transitioned = await markMessage(
@@ -710,6 +760,26 @@ export async function processMarketingCampaignJob(
           });
           await markCampaignCounter(dependencies, campaign.id, 'failedCount');
           failed++;
+          if (messageWasNotSent(errorCode)) {
+            await releaseMarketingFrequencySlot(
+              {
+                restaurantId: campaign.restaurantId,
+                customerId: currentCustomer.id,
+                channel: campaign.channel,
+                now,
+              },
+              dependencies.db,
+            ).catch((releaseError) => {
+              log.warn(
+                {
+                  campaignId: campaign.id,
+                  messageId: message.id,
+                  err: safeErrorCode(releaseError),
+                },
+                'marketing frequency slot not released',
+              );
+            });
+          }
         }
         log.warn(
           { campaignId: campaign.id, messageId: message.id, errorCode },

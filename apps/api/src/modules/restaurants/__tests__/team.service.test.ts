@@ -28,7 +28,7 @@ const invite = (overrides: Partial<Parameters<typeof inviteMember>[0]> = {}) =>
     inviterUserId: 'user_owner',
     email: 'Serveur@Example.com ',
     role: 'STAFF',
-    redirectUrl: 'https://sokar.tech/register',
+    redirectUrl: 'https://suppernote.com/register',
     ...overrides,
   });
 
@@ -93,7 +93,7 @@ describe('claimInvitedMembership', () => {
 });
 
 describe('inviteMember', () => {
-  it('envoie une invitation Clerk qui porte le rôle Sokar choisi', async () => {
+  it('envoie une invitation Clerk qui porte le rôle Suppernote choisi', async () => {
     const result = await invite();
 
     expect(clerk.createOrganizationInvitation).toHaveBeenCalledWith({
@@ -102,7 +102,7 @@ describe('inviteMember', () => {
       emailAddress: 'serveur@example.com',
       role: 'org:member',
       publicMetadata: { sokarRole: 'STAFF' },
-      redirectUrl: 'https://sokar.tech/register',
+      redirectUrl: 'https://suppernote.com/register',
     });
     expect(result).toEqual({
       id: 'inv_1',
@@ -159,7 +159,7 @@ describe('inviteMember', () => {
 });
 
 describe('listTeam', () => {
-  it('relie les rôles Sokar aux noms de Clerk et marque l’utilisateur courant', async () => {
+  it('relie les rôles Suppernote aux noms de Clerk et marque l’utilisateur courant', async () => {
     vi.mocked(db.restaurantAccountMembership.findMany).mockResolvedValue([
       { clerkUserId: 'user_owner', role: 'OWNER' },
       { clerkUserId: 'user_staff', role: 'STAFF' },
@@ -383,7 +383,7 @@ describe('removeMember', () => {
     actingUserId: 'user_owner',
   };
 
-  it('retire l’appartenance Clerk avant les accès Sokar', async () => {
+  it('retire l’appartenance Clerk avant les accès Suppernote', async () => {
     vi.mocked(db.restaurantAccountMembership.findFirst).mockResolvedValue({
       id: 'm1',
       role: 'STAFF',
@@ -409,7 +409,7 @@ describe('removeMember', () => {
     });
   });
 
-  it('ne retire rien de Sokar si Clerk échoue : il pourrait être rattaché de nouveau', async () => {
+  it('ne retire rien de Suppernote si Clerk échoue : il pourrait être rattaché de nouveau', async () => {
     vi.mocked(db.restaurantAccountMembership.findFirst).mockResolvedValue({
       id: 'm1',
       role: 'STAFF',

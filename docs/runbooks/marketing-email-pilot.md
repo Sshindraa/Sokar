@@ -116,7 +116,7 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
 3. **Conservation** : fichier de prospection 3 ans après le dernier contact venant du client (une réservation
    en est un) ; preuve du consentement tant que la permission est active, puis 5 ans après le retrait
    (prescription civile) ; registre d'opposition 3 ans (décision du 23/10). Le code applique les deux premières durées depuis le 28/10 (purge marketing du worker de réconciliation).
-4. **Expéditeur** : sous-domaine dédié `news.sokar.tech`, nom affiché = restaurant, `Reply-To` = adresse
+4. **Expéditeur** : sous-domaine dédié `news.suppernote.com`, nom affiché = restaurant, `Reply-To` = adresse
    du restaurant. Les e-mails transactionnels gardent leur domaine.
 5. **Resend** : plan Free pour l'instant (pas encore de volume) ; passage au plan supérieur dès les premiers
    clients. D'ici là, le marketing ne doit jamais consommer le quota des transactionnels.
@@ -168,10 +168,32 @@ Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jo
   l'effacement. Il gagne sur un accord en base (exclusion `OPTED_OUT_REGISTER` dans l'aperçu et au dernier
   contrôle avant envoi, y compris pour les automatisations). Une nouvelle case cochée par la personne le lève
   (le journal garde les deux actes). Sans `MARKETING_OPTOUT_HASH_SECRET`, aucun message n'est envoyé. Les
+  **STOP par SMS** (`sms/sms-marketing-stop.ts`) : un message entier « STOP », « STOP SMS » ou « ARRÊT »
+  (sans casse, accents ni espaces) retire l'accord SMS marketing dans le restaurant du **dernier SMS marketing
+  accepté à ce numéro** (`source` `SMS_STOP`, motif `UNSUBSCRIBE`), puis inscrit le registre. Il ne touche ni
+  aux réservations ni aux consentements transactionnels, et n'envoie aucun SMS. Sans SMS marketing à ce numéro,
+  le message suit le flux de réponse habituel. Un échec du registre répond 503 (Telnyx doit rejouer).
+  Limite : un expéditeur alphanumérique « SOKAR » ne reçoit aucune réponse ; le STOP n'arrive que si
+  l'expéditeur est un numéro. Les filtres STOP propres à Telnyx ne sont pas vérifiés dans ce dépôt.
   retraits antérieurs à la migration se reprennent avec
-  `pnpm --filter @sokar/api exec tsx scripts/backfill-marketing-opt-out-register.ts --dry-run` puis `--apply`
+  `pnpm --filter @suppernote/api exec tsx scripts/backfill-marketing-opt-out-register.ts --dry-run` puis `--apply`
   (comptes seulement, jamais d'adresse). Le registre est une donnée personnelle pseudonymisée : il doit
   figurer dans la politique et l'annexe client (**non fait**).
+
+- **Protections du registre (03/11/2026)** : la clé d'empreinte est dérivée par restaurant, et seul le geste de
+  la personne (case de réservation, lien de confirmation) lève une opposition. Un accord saisi par l'équipe
+  sur une adresse opposée est refusé (`MARKETING_OPPOSITION_REGISTERED`). Si l'accord passe par une autre adresse,
+  ou une case cochée pour autrui, cette limite ne le détecte pas.
+- **Limites acceptées (Hamza, 03/11/2026)** :
+  - **Fiches partageant une adresse** : une nouvelle case cochée sur l'une lève l'opposition pour cette
+    adresse dans le restaurant, donc aussi pour une autre fiche déjà inscrite avant le retrait. Il s'agit de la
+    même personne, qui vient de redonner son accord.
+  - **Plainte reçue après l'effacement** : la fiche n'existe plus, l'événement part en rapprochement et rien
+    n'est inscrit au registre. Une fiche recréée à cette adresse n'est pas contactée sans nouvel accord
+    explicite ; si la personne le redonne, la plainte n'est pas opposée.
+
+  L'effacement retire aussi `marketingOptIn` des consentements conservés. La ligne reste, sans la trace de
+  l'accord marketing initial.
 
 - **Preuve : ce qui est conservé** : l'empreinte de `version|canal|phrase` seule ne prouve pas que le
   titulaire de l'adresse a accepté. Chaque ligne du journal `MarketingPermissionEvent` conserve donc
@@ -198,10 +220,10 @@ Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jo
   transferts hors UE doivent être documentés. Une réutilisation par Sokar pour ses propres finalités exige une
   analyse distincte.
 - **Expéditeur** : le message doit rendre identifiable le restaurant pour lequel il est envoyé. Un e-mail
-  marketing part de `MARKETING_EMAIL_FROM` (par exemple `bonjour@news.sokar.tech`), avec le nom du restaurant
+  marketing part de `MARKETING_EMAIL_FROM` (par exemple `bonjour@news.suppernote.com`), avec le nom du restaurant
   comme nom affiché et son adresse en `Reply-To` (`managerEmail`, la seule adresse e-mail du restaurant dans le
   schéma). Sans `MARKETING_EMAIL_FROM`, le worker refuse l'envoi (`MARKETING_EMAIL_FROM_MISSING`) et ne se rabat
-  jamais sur `EMAIL_FROM` (`noreply@sokar.tech`), réservé aux transactionnels.
+  jamais sur `EMAIL_FROM` (`noreply@suppernote.com`), réservé aux transactionnels.
 - **Pas de double confirmation** : l'adresse saisie n'est pas vérifiée par un e-mail de confirmation. Ce
   n'est pas une obligation générale pour toute newsletter, mais une mesure recommandée ici pour réduire les
   inscriptions avec l'adresse d'autrui et renforcer la preuve. Une personne peut cocher la case avec l'adresse
@@ -220,7 +242,7 @@ Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jo
   d'opposition). Sans `MARKETING_OPTOUT_HASH_SECRET` ou `MARKETING_UNSUBSCRIBE_SECRET`, la confirmation part
   sans la ligne.
 - **Où les cases apparaissent** : sur le formulaire de réservation en ligne du dashboard, servi sur
-  `sokar.tech`, les sous-domaines et les domaines personnalisés (`/widget/<slug>`, `/book/<slug>`,
+  `suppernote.com`, les sous-domaines et les domaines personnalisés (`/widget/<slug>`, `/book/<slug>`,
   `embed.js`). Uniquement sous le formulaire de coordonnées, après l'adresse (case e-mail) ou le
   téléphone (case SMS) saisis. Le consentement n'est jamais une condition pour réserver. Le texte
   « Facultatif, sans effet sur votre réservation. Désinscription possible à tout moment. » est affiché sous les cases.
@@ -238,15 +260,15 @@ production la fenêtre d'envoi.
 
 ### Étape A — Configuration (aucun envoi)
 
-| #   | Action                                                                                                                                                                                                                                                                                                                                                        | Critère de réussite                                                                                                                 |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| A1  | Resend : domaine `sokar.tech` vérifié (DKIM `resend._domainkey`, retour `send.sokar.tech`), clé d'envoi présente dans `RESEND_API_KEY`, `EMAIL_FROM` = `noreply@sokar.tech`, `MARKETING_EMAIL_FROM` = `bonjour@news.sokar.tech` (domaine `news.sokar.tech` vérifié)                                                                                           | Tableau de bord Resend : domaine « Verified » ; `readiness.email.missing` vide                                                      |
-| A2  | DNS : SPF racine avec Google, DMARC `_dmarc.sokar.tech` (voir `email-sms-deliverability.md`, absents à la date du 17/10, à reconfirmer)                                                                                                                                                                                                                       | `dig TXT sokar.tech` et `dig TXT _dmarc.sokar.tech` renvoient les valeurs attendues                                                 |
-| A3  | Resend → Webhooks : endpoint `https://api.sokar.tech/marketing/webhooks/resend` (staging : `api-staging.sokar.tech`), événements `email.sent`, `delivered`, `bounced`, `complained`, `failed`, `suppressed` (**pas** `opened` ni `clicked` : voir §4, suivi des ouvertures et des clics). Copier le secret de signature dans `RESEND_WEBHOOK_SECRET`          | `readiness.email.callbackConfigured` = `true` ; l'historique du webhook Resend montre des réponses 200 (et aucune 403 de signature) |
-| A4  | Poser `MARKETING_UNSUBSCRIBE_SECRET` (≥ 32 caractères, distinct de l'attribution), `MARKETING_ATTRIBUTION_SECRET`, `MARKETING_OPTOUT_HASH_SECRET` (≥ 32 caractères, **à sauvegarder** : sans elle aucun envoi, et la perdre rend le registre d'opposition inutilisable), et `MARKETING_UNSUBSCRIBE_BASE_URL` = `https://api.sokar.tech/marketing/unsubscribe` | `GET` d'un lien généré affiche la page de confirmation sur le bon domaine                                                           |
-| A5  | `MARKETING_WHATSAPP_ENABLED=false`, `MARKETING_SENDS_ENABLED=false`                                                                                                                                                                                                                                                                                           | `GET /marketing/providers/readiness` : `sendsEnabled=false`, `whatsapp.configured=false`                                            |
-| A6  | `MARKETING_RECIPIENT_ALLOWLIST=<adresse-1>,<adresse-2>` (vos adresses de test, en minuscules)                                                                                                                                                                                                                                                                 | `readiness.recipientAllowlistActive=true` (la liste elle-même n'est jamais renvoyée)                                                |
-| A7  | Chez Sokar a la capacité `marketing.campaigns` (plan Pro)                                                                                                                                                                                                                                                                                                     | Le menu Marketing du dashboard s'ouvre sans message de plan                                                                         |
+| #   | Action                                                                                                                                                                                                                                                                                                                                                            | Critère de réussite                                                                                                                 |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| A1  | Resend : domaine `suppernote.com` vérifié (DKIM `resend._domainkey`, retour `send.suppernote.com`), clé d'envoi présente dans `RESEND_API_KEY`, `EMAIL_FROM` = `noreply@suppernote.com`, `MARKETING_EMAIL_FROM` = `bonjour@news.suppernote.com` (domaine `news.suppernote.com` vérifié)                                                                           | Tableau de bord Resend : domaine « Verified » ; `readiness.email.missing` vide                                                      |
+| A2  | DNS : SPF racine avec Google, DMARC `_dmarc.suppernote.com` (voir `email-sms-deliverability.md`, absents à la date du 17/10, à reconfirmer)                                                                                                                                                                                                                       | `dig TXT suppernote.com` et `dig TXT _dmarc.suppernote.com` renvoient les valeurs attendues                                         |
+| A3  | Resend → Webhooks : endpoint `https://api.suppernote.com/marketing/webhooks/resend` (staging : `api-staging.suppernote.com`), événements `email.sent`, `delivered`, `bounced`, `complained`, `failed`, `suppressed` (**pas** `opened` ni `clicked` : voir §4, suivi des ouvertures et des clics). Copier le secret de signature dans `RESEND_WEBHOOK_SECRET`      | `readiness.email.callbackConfigured` = `true` ; l'historique du webhook Resend montre des réponses 200 (et aucune 403 de signature) |
+| A4  | Poser `MARKETING_UNSUBSCRIBE_SECRET` (≥ 32 caractères, distinct de l'attribution), `MARKETING_ATTRIBUTION_SECRET`, `MARKETING_OPTOUT_HASH_SECRET` (≥ 32 caractères, **à sauvegarder** : sans elle aucun envoi, et la perdre rend le registre d'opposition inutilisable), et `MARKETING_UNSUBSCRIBE_BASE_URL` = `https://api.suppernote.com/marketing/unsubscribe` | `GET` d'un lien généré affiche la page de confirmation sur le bon domaine                                                           |
+| A5  | `MARKETING_WHATSAPP_ENABLED=false`, `MARKETING_SENDS_ENABLED=false`                                                                                                                                                                                                                                                                                               | `GET /marketing/providers/readiness` : `sendsEnabled=false`, `whatsapp.configured=false`                                            |
+| A6  | `MARKETING_RECIPIENT_ALLOWLIST=<adresse-1>,<adresse-2>` (vos adresses de test, en minuscules)                                                                                                                                                                                                                                                                     | `readiness.recipientAllowlistActive=true` (la liste elle-même n'est jamais renvoyée)                                                |
+| A7  | Chez Sokar a la capacité `marketing.campaigns` (plan Pro)                                                                                                                                                                                                                                                                                                         | Le menu Marketing du dashboard s'ouvre sans message de plan                                                                         |
 
 ### Étape B — Destinataires de test et consentement
 
@@ -260,7 +282,7 @@ production la fenêtre d'envoi.
 Équivalent par API, sans interface (jeton de session Clerk d'un Owner/Manager dans `$TOKEN`, ne le collez nulle part) :
 
 ```bash
-curl -sS -X PUT "https://api.sokar.tech/crm/customers/<id-client>/marketing-permissions/EMAIL" \
+curl -sS -X PUT "https://api.suppernote.com/crm/customers/<id-client>/marketing-permissions/EMAIL" \
   -H "authorization: Bearer $TOKEN" -H "content-type: application/json" \
   -d '{"status":"OPTED_IN","source":"PILOT_INTERNAL","proofVersion":"pilote-interne-2026-10","proof":"Accord donné par le titulaire de l'\''adresse pour recevoir de Chez Sokar (envoi opéré par Sokar) les e-mails de test du pilote marketing, du <début> au <fin>, sans offre commerciale réelle, retirable à tout moment"}'
 ```
@@ -278,13 +300,13 @@ curl -sS -X PUT "https://api.sokar.tech/crm/customers/<id-client>/marketing-perm
 
 ### Étape D — Fenêtre d'envoi (action de votre part uniquement)
 
-| #   | Action                                                                                                                                                                        | Critère de réussite                                                                                                                                           |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Vérifiez `recipientAllowlistActive=true`, puis passez `MARKETING_SENDS_ENABLED=true` et rechargez API et workers. **Production : aucun déploiement pendant la fenêtre (§3).** | `readiness.sendsEnabled=true`                                                                                                                                 |
-| D2  | Lancez l'envoi de la campagne `READY` (bouton Envoyer ou `POST /marketing/campaigns/:id/send`)                                                                                | Statut `SENDING` puis `SENT` ; `acceptedCount` = nombre de testeurs ; zéro `FAILED`                                                                           |
-| D3  | Contrôlez les boîtes de réception (et le dossier spam)                                                                                                                        | Chaque testeur reçoit **un** message, expéditeur « Sokar », réponse vers `hello@sokar.tech`, lien de désinscription cliquable, bouton natif « Se désabonner » |
-| D4  | Contrôlez les callbacks                                                                                                                                                       | Messages en `DELIVERED` (`deliveredCount`) ; aucune ligne `OPEN` dans `/api/internal/marketing/reconciliation` (avec `SOKAR_INTERNAL_MARKETING_TOKEN`)        |
-| D5  | **Remettez aussitôt** `MARKETING_SENDS_ENABLED=false` et rechargez                                                                                                            | `readiness.sendsEnabled=false`                                                                                                                                |
+| #   | Action                                                                                                                                                                        | Critère de réussite                                                                                                                                               |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Vérifiez `recipientAllowlistActive=true`, puis passez `MARKETING_SENDS_ENABLED=true` et rechargez API et workers. **Production : aucun déploiement pendant la fenêtre (§3).** | `readiness.sendsEnabled=true`                                                                                                                                     |
+| D2  | Lancez l'envoi de la campagne `READY` (bouton Envoyer ou `POST /marketing/campaigns/:id/send`)                                                                                | Statut `SENDING` puis `SENT` ; `acceptedCount` = nombre de testeurs ; zéro `FAILED`                                                                               |
+| D3  | Contrôlez les boîtes de réception (et le dossier spam)                                                                                                                        | Chaque testeur reçoit **un** message, expéditeur « Sokar », réponse vers `hello@suppernote.com`, lien de désinscription cliquable, bouton natif « Se désabonner » |
+| D4  | Contrôlez les callbacks                                                                                                                                                       | Messages en `DELIVERED` (`deliveredCount`) ; aucune ligne `OPEN` dans `/api/internal/marketing/reconciliation` (avec `SOKAR_INTERNAL_MARKETING_TOKEN`)            |
+| D5  | **Remettez aussitôt** `MARKETING_SENDS_ENABLED=false` et rechargez                                                                                                            | `readiness.sendsEnabled=false`                                                                                                                                    |
 
 ### Étape E — Désinscription de bout en bout
 

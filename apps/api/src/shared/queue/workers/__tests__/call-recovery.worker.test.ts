@@ -91,7 +91,7 @@ function makeReconciliationQueue() {
 describe('call-recovery.worker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.SITE_URL = 'https://sokar.tech';
+    process.env.SITE_URL = 'https://suppernote.com';
   });
 
   it('envoie un SMS avec le prénom du client quand customerName est fourni', async () => {
@@ -116,7 +116,7 @@ describe('call-recovery.worker', () => {
     await processCallRecoveryJob(makeJob({ restaurantSlug: 'chez-sokar-demo' }));
 
     const [, text] = vi.mocked(sendSms).mock.calls[0] as [string, string];
-    expect(text).toContain('https://sokar.tech/restaurant/chez-sokar-demo/book');
+    expect(text).toContain('https://suppernote.com/restaurant/chez-sokar-demo/book');
     expect(text).toContain('Réservez en ligne');
   });
 
@@ -140,11 +140,11 @@ describe('call-recovery.worker', () => {
   });
 
   it('utilise SITE_URL personnalisé pour le lien booking', async () => {
-    process.env.SITE_URL = 'https://staging.sokar.tech';
+    process.env.SITE_URL = 'https://staging.suppernote.com';
     await processCallRecoveryJob(makeJob({ restaurantSlug: 'chez-sokar-demo' }));
 
     const [, text] = vi.mocked(sendSms).mock.calls[0] as [string, string];
-    expect(text).toContain('https://staging.sokar.tech/restaurant/chez-sokar-demo/book');
+    expect(text).toContain('https://staging.suppernote.com/restaurant/chez-sokar-demo/book');
   });
 
   it('enregistre un event analytics call-recovery-sent', async () => {

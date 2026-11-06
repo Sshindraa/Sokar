@@ -53,9 +53,16 @@ export type FillSuggestion = {
   costEstimate: CostEstimate | null;
   /** Envois activés, budget restant et au moins un envoi : sinon le service est listé sans bouton. */
   canPrepare: boolean;
+  /** Pourquoi « Préparer » est absent ; null quand canPrepare est vrai. Absent des anciennes entrées du cache. */
+  prepareBlockedReason: PrepareBlockedReason | null;
 };
 
-type Base = Omit<FillSuggestion, 'sends' | 'tiers' | 'costEstimate' | 'canPrepare'>;
+export type PrepareBlockedReason = 'SENDS_DISABLED' | 'BUDGET_EXHAUSTED' | 'NO_AUDIENCE';
+
+type Base = Omit<
+  FillSuggestion,
+  'sends' | 'tiers' | 'costEstimate' | 'canPrepare' | 'prepareBlockedReason'
+>;
 type OpenRow = Base & { booked: number };
 type CostEstimate = Awaited<ReturnType<typeof estimateFillCost>>;
 
@@ -68,9 +75,27 @@ async function enrich(
   rows: OpenRow[],
   now: Date,
 ): Promise<Array<FillSuggestion & { score: number; estimateCost?: () => Promise<CostEstimate> }>> {
+  const sendsEnabled = process.env.MARKETING_SENDS_ENABLED === 'true';
+  // Une seule cause affichée : envois coupés, puis budget, puis aucun envoi.
+  const blockedReason = (budgetExhausted: boolean, sends: number): PrepareBlockedReason | null =>
+    !sendsEnabled
+      ? 'SENDS_DISABLED'
+      : budgetExhausted
+        ? 'BUDGET_EXHAUSTED'
+        : sends === 0
+          ? 'NO_AUDIENCE'
+          : null;
   const bare = (row: OpenRow) => {
     const { booked: _booked, ...base } = row;
-    return { ...base, sends: 0, tiers: {}, costEstimate: null, canPrepare: false, score: 0 };
+    return {
+      ...base,
+      sends: 0,
+      tiers: {},
+      costEstimate: null,
+      canPrepare: false,
+      prepareBlockedReason: blockedReason(false, 0),
+      score: 0,
+    };
   };
   if (rows.length === 0) return [];
   let context;
@@ -93,7 +118,6 @@ async function enrich(
     where: { id: restaurantId },
     select: { name: true },
   });
-  const sendsEnabled = process.env.MARKETING_SENDS_ENABLED === 'true';
   return rows.map((row) => {
     const plan = planOpenService(
       context,
@@ -123,6 +147,7 @@ async function enrich(
               })
           : undefined,
       canPrepare: sendsEnabled && !plan.budgetExhausted && sends > 0,
+      prepareBlockedReason: blockedReason(plan.budgetExhausted, sends),
       score: sends > 0 ? (expected * plan.groupSize * (1 - HOLDOUT_RATE)) / sends : 0,
     };
   });
@@ -250,6 +275,7 @@ export async function listFillSuggestions(args: {
         tiers,
         estimateCost,
         canPrepare,
+        prepareBlockedReason,
       }): Promise<FillSuggestion> => ({
         date,
         service,
@@ -261,6 +287,7 @@ export async function listFillSuggestions(args: {
         tiers,
         costEstimate: estimateCost ? await estimateCost() : null,
         canPrepare,
+        prepareBlockedReason,
       }),
     ),
   );

@@ -41,7 +41,7 @@ const restaurant: PublicRestaurantDto = {
   phone: '+33102030405',
   cuisineTypes: ['Bistrot'],
   openingHours: [],
-  reservationUrl: 'https://sokar.tech/book/chez-sokar-demo',
+  reservationUrl: 'https://suppernote.com/book/chez-sokar-demo',
   images: { gallery: [] },
   acceptsReservations: true,
   publishedAt: '2026-06-24T00:00:00.000Z',

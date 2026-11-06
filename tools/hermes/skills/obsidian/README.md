@@ -9,13 +9,13 @@ Le système d'automatisation Sokar élimine tout besoin de mise à jour manuelle
   │                   SOKAR AUTO-LOGGING SYSTEM                         │
   │                                                                      │
   │  ┌──────────────────┐    ┌──────────────┐    ┌──────────────────┐   │
-  │  │  mcp_serve.py    │    │ auto_sync.py │    │ notion_sync.py   │   │
-  │  │  (MCP gateway)   │───▶│ (git watcher)│    │ (bidirectional)  │   │
+  │  │  mcp_serve.py    │    │ auto_sync.py │    │                  │   │
+  │  │  (MCP gateway)   │───▶│ (git watcher)│    │                  │   │
   │  │                  │    │              │    │                  │   │
-  │  │ Détecte le type  │    │ Surveille    │    │ Obsidian ↔ Notion│   │
+  │  │ Détecte le type  │    │ Surveille    │    │                  │   │
   │  │ de tâche         │    │ git diff     │    │ sync automatique │   │
   │  │ Met à jour la    │    │ Met à jour   │    │ Mapping carte    │   │
-  │  │ note ciblée      │    │ les notes    │    │ (.notion_map.json│   │
+  │  │ note ciblée      │    │ les notes    │    │                   │   │
   │  └────────┬─────────┘    └──────┬───────┘    └────────┬─────────┘   │
   │           │                     │                      │            │
   │           └──────────┬──────────┴──────────┬───────────┘            │
@@ -88,46 +88,11 @@ Surveille les changements dans le code source et met à jour le vault Obsidian.
 | `packages/`                              | Architecture.md    | `packages`  |
 | `tools/hermes/`                          | Hermes Agent.md    | `agent`     |
 
-### 3. `notion_sync.py` (Bidirectional Sync)
-
-**Chemin** : `~/Projects/Sokar/tools/hermes/skills/obsidian/notion_sync.py`
-
-Synchronisation bidirectionnelle entre Notion et Obsidian.
-
-**Prérequis** : Variable d'environnement `NOTION_TOKEN` (token d'intégration Notion).
-
-**Commandes** :
-
-- `push` — Obsidian → Notion
-- `pull` — Notion → Obsidian
-- `sync` — Bidirectionnel (pull puis push)
-- `daemon [interval]` — Boucle toutes les N secondes
-- `register <note> <page_id>` — Ajoute un mapping
-
-**Mapping** : Stocké dans `docs/obsidian/.notion_map.json`.
-
-## Flux complet (exemple)
-
-```
-1. Le client MCP envoie: "Ajoute une route GET /restaurants/:id"
-2. mcp_serve.py exécute la tâche via Hermes
-3. ↓ Classification: create_route → API Endpoints.md
-4. ↓ Log: Journal.md ligne + Context.md activité
-5. ↓ auto_sync.py diff: détecte restaurant.routes.ts modifié
-6. ↓ Mise à jour: API Endpoints.md section "Mises à jour automatiques"
-7. (Optionnel) notion_sync.py push → Notion
-```
-
-Résultat : **0 action manuelle** pour la documentation.
-
-## Démarrage
-
 ### Daemon complet (tout automatique)
 
 ```zsh
 # Démarrer les 3 daemons (recommandé)
 python3 tools/hermes/skills/obsidian/auto_sync.py daemon &
-python3 tools/hermes/skills/obsidian/notion_sync.py daemon &
 # mcp_serve.py est actif via le client MCP configuré
 ```
 
@@ -137,12 +102,9 @@ python3 tools/hermes/skills/obsidian/notion_sync.py daemon &
 # Tester auto_sync
 python3 tools/hermes/skills/obsidian/auto_sync.py diff
 
-# Tester notion_sync
-NOTION_TOKEN="ntn_..." python3 tools/hermes/skills/obsidian/notion_sync.py map
 
 # Voir les logs
 cat ~/.hermes/logs/auto_sync.log
-cat ~/.hermes/logs/notion_sync.log
 cat ~/.hermes/logs/mcp_serve.log
 ```
 
@@ -152,7 +114,5 @@ cat ~/.hermes/logs/mcp_serve.log
 | --------------------------------------------- | ------------------------------------------------------ |
 | `tools/hermes/scripts/mcp_serve.py`           | MCP Gateway + classification + auto-logging            |
 | `tools/hermes/skills/obsidian/auto_sync.py`   | Git/filesystem watcher                                 |
-| `tools/hermes/skills/obsidian/notion_sync.py` | Sync bidirectionnelle Notion                           |
 | `tools/hermes/skills/obsidian/auto_doc.py`    | Helpers de documentation (Context.md, décisions)       |
 | `tools/hermes/skills/obsidian/skill.py`       | Tools Hermes pour le vault (list, read, write, search) |
-| `docs/obsidian/.notion_map.json`              | Carte Obsidian → Notion                                |

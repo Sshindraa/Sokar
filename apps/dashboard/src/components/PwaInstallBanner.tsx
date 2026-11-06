@@ -73,7 +73,7 @@ export default function PwaInstallBanner() {
             <Sparkles size={14} className="animate-pulse" />
           </span>
           <div>
-            <h4 className="text-sm font-bold text-white tracking-wide">Installer Sokar AI</h4>
+            <h4 className="text-sm font-bold text-white tracking-wide">Installer Suppernote AI</h4>
             <p className="text-[11px] text-white/40">
               Ajoutez l&apos;app sur votre écran d&apos;accueil
             </p>

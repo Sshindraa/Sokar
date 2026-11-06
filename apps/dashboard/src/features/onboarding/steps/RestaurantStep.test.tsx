@@ -194,10 +194,10 @@ describe('RestaurantStep Google Places prefill', () => {
     fireEvent.blur(screen.getByLabelText('Mobile du responsable'));
 
     fireEvent.click(screen.getByRole('button', { name: 'Modifier l’email de gestion' }));
-    fireEvent.change(screen.getByLabelText('Email pour gérer Sokar'), {
+    fireEvent.change(screen.getByLabelText('Email pour gérer Suppernote'), {
       target: { value: 'restaurant@sokar.local' },
     });
-    fireEvent.blur(screen.getByLabelText('Email pour gérer Sokar'));
+    fireEvent.blur(screen.getByLabelText('Email pour gérer Suppernote'));
 
     expect(screen.getAllByRole('alert')).toHaveLength(4);
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer et continuer' }));
@@ -216,10 +216,10 @@ describe('RestaurantStep Google Places prefill', () => {
       target: { value: '06 11 11 22 22' },
     });
     fireEvent.blur(screen.getByLabelText('Mobile du responsable'));
-    fireEvent.change(screen.getByLabelText('Email pour gérer Sokar'), {
+    fireEvent.change(screen.getByLabelText('Email pour gérer Suppernote'), {
       target: { value: 'contact@sokar.fr' },
     });
-    fireEvent.blur(screen.getByLabelText('Email pour gérer Sokar'));
+    fireEvent.blur(screen.getByLabelText('Email pour gérer Suppernote'));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer et continuer' }));
@@ -240,7 +240,7 @@ describe('RestaurantStep Google Places prefill', () => {
     render(<RestaurantStep onComplete={complete} />);
     fireEvent.click(screen.getByRole('button', { name: 'Saisir mes informations manuellement' }));
     fireEvent.click(screen.getByRole('button', { name: 'Modifier l’email de gestion' }));
-    const email = screen.getByLabelText('Email pour gérer Sokar');
+    const email = screen.getByLabelText('Email pour gérer Suppernote');
     fireEvent.change(email, { target: { value: 'invalid' } });
     fireEvent.blur(email);
     expect(email).toHaveAttribute('aria-invalid', 'true');
@@ -263,7 +263,7 @@ describe('RestaurantStep Google Places prefill', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Saisir mes informations manuellement' }));
     expect(screen.getByText('owner@bistrot.fr')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Modifier l’email de gestion' }));
-    const email = screen.getByLabelText('Email pour gérer Sokar');
+    const email = screen.getByLabelText('Email pour gérer Suppernote');
     expect(email).toHaveValue('owner@bistrot.fr');
     fireEvent.change(email, { target: { value: 'gestion@bistrot.fr' } });
     mocks.accountEmail = 'updated@bistrot.fr';
@@ -321,7 +321,7 @@ describe('RestaurantStep Google Places prefill', () => {
     expect(screen.getByText(/Utilisé sur votre page et par l’assistant/)).toBeInTheDocument();
     expect(screen.queryByLabelText('Numéro appelé par vos clients')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Mobile du responsable')).toBeInTheDocument();
-    expect(screen.getByLabelText('Email pour gérer Sokar')).toBeInTheDocument();
+    expect(screen.getByLabelText('Email pour gérer Suppernote')).toBeInTheDocument();
     expect(screen.getByText('2 à compléter')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Modifier le téléphone' }));

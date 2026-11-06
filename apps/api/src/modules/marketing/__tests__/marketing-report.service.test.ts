@@ -185,6 +185,7 @@ describe('marketing campaign report', () => {
       holdout: { customers: 1, covers: 2, coversPerCustomer: 2, reservedCustomers: 1 },
       difference: 2,
       conclusive: false,
+      proven: false,
       truncated: false,
       effect: { difference: 0, margin95: 0 },
       byTier: {},
@@ -256,6 +257,69 @@ describe('marketing campaign report', () => {
       expect(fill.treated.reservedCustomers).toBe(18);
       expect(fill.holdout.reservedCustomers).toBe(1);
       expect(fill.effect).toEqual({ difference: 5, margin95: 10.5 });
+    });
+
+    describe('proven : la règle des 5 réservants', () => {
+      /** Réservants parmi les groupes : t0..t(n-1) côté destinataires, h0.. côté témoin. */
+      function reserved(treated: number, holdout: number) {
+        return [
+          ...Array.from({ length: treated }, (_, i) => ({ customerId: `t${i}`, partySize: 2 })),
+          ...Array.from({ length: holdout }, (_, i) => ({ customerId: `h${i}`, partySize: 2 })),
+        ] as never;
+      }
+
+      it('30/100 contre 5/50, conclusif : vrai', async () => {
+        mockCampaign();
+        vi.mocked(db.campaignAudienceMember.findMany).mockResolvedValueOnce(members(100, 50));
+        vi.mocked(db.reservation.findMany).mockResolvedValueOnce(reserved(30, 5));
+
+        const fill = await report();
+
+        expect(fill.effect).toEqual({ difference: 20, margin95: 12.2 });
+        expect(fill.proven).toBe(true);
+      });
+
+      it('4/40 contre 0/20 : faux même si la marge exclut 0', async () => {
+        mockCampaign();
+        vi.mocked(db.campaignAudienceMember.findMany).mockResolvedValueOnce(members(40, 20));
+        vi.mocked(db.reservation.findMany).mockResolvedValueOnce(reserved(4, 0));
+
+        const fill = await report();
+
+        expect(fill.effect!.difference - fill.effect!.margin95).toBeGreaterThan(0);
+        expect(fill.proven).toBe(false);
+      });
+
+      it('moins de 5 réservants côté témoin : faux', async () => {
+        mockCampaign();
+        vi.mocked(db.campaignAudienceMember.findMany).mockResolvedValueOnce(members(100, 50));
+        vi.mocked(db.reservation.findMany).mockResolvedValueOnce(reserved(30, 4));
+
+        expect((await report()).proven).toBe(false);
+      });
+
+      it('campagne tronquée : faux', async () => {
+        mockCampaign({ lastErrorCode: 'TARGET_SERVICE_FULL' });
+        vi.mocked(db.campaignAudienceMember.findMany).mockResolvedValueOnce(members(100, 50));
+        vi.mocked(db.reservation.findMany).mockResolvedValueOnce(reserved(30, 5));
+
+        expect((await report()).proven).toBe(false);
+      });
+
+      it('non concluant (témoin sous 20) : faux', async () => {
+        mockCampaign();
+        vi.mocked(db.campaignAudienceMember.findMany).mockResolvedValueOnce(members(100, 10));
+        vi.mocked(db.reservation.findMany).mockResolvedValueOnce(reserved(30, 5));
+
+        expect((await report()).proven).toBe(false);
+      });
+
+      it('brouillon sans effet : faux', async () => {
+        mockCampaign({ startedAt: null });
+        vi.mocked(db.campaignAudienceMember.findMany).mockResolvedValueOnce(members(100, 50));
+
+        expect((await report()).proven).toBe(false);
+      });
     });
 
     it('groupe vide → effect null', async () => {

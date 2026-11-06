@@ -62,7 +62,7 @@ l'API.
 - GitHub secrets: `PROD_SSH_KEY`, `PROD_HOST`, `PROD_USER` (or reuse `STAGING_*` if same VPS).
 - Script on VPS: `scripts/deploy.sh --env prod --confirm-production`.
 - Redundant runs are skipped (`workflow_run` only): the job exits 0 when the triggering staging run's `head_sha` is no longer the tip of `main` (a newer run will deploy it), or when `releases/.latest-hash` already equals the target SHA. `workflow_dispatch` always deploys. Runs are serialized by the `deploy-prod` concurrency group (`cancel-in-progress: false`).
-- The production smoke-test job also fetches `https://sokar.tech/pricing` and requires its CSS asset to return 200.
+- The production smoke-test job also fetches `https://suppernote.com/pricing` and requires its CSS asset to return 200.
 - Déploiement manuel (fallback, seulement si la chaîne automatique a échoué) :
   ```zsh
   # `workflow_dispatch` redéploie même si le SHA est déjà actif : vérifier releases/.latest-hash avant
@@ -91,7 +91,7 @@ En dry-run, le script ne fait ni `git pull` ni `checkout` (il construit le check
 
 ## Smoke tests
 
-- `curl /health` and `/livez` on `api-staging.sokar.tech` (staging) / `api.sokar.tech` (prod) → 200.
+- `curl /health` and `/livez` on `api-staging.suppernote.com` (staging) / `api.suppernote.com` (prod) → 200.
 - `curl /dashboard` → 200 or 302 (Clerk redirect).
 - `curl /` and `/restaurant/chez-sokar-demo` → 200.
 - Playwright E2E functional tests on staging are blocking: Dashboard smoke plus

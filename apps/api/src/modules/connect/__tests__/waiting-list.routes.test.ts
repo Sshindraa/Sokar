@@ -1,5 +1,5 @@
 /**
- * Tests routes Sokar Connect — Waiting list.
+ * Tests routes Suppernote Connect — Waiting list.
  *
  * Couvre :
  * - POST /public/r/:slug/waiting-list (join)
@@ -90,7 +90,7 @@ function mockRestaurantAndSettings(settings: Record<string, unknown> | null = ba
 
 let app: FastifyInstance;
 
-describe('Sokar Connect — Waiting list routes', () => {
+describe('Suppernote Connect — Waiting list routes', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     // Les créneaux de ces tests sont fixes (29 juin) : l'horloge est figée avant eux, sinon la liste

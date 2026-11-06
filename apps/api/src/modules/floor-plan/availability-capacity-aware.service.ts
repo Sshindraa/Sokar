@@ -10,7 +10,7 @@
  */
 
 import { PrismaClient, type Prisma } from '@prisma/client';
-import { bookingSlotsOf, normalizeOpeningHours } from '@sokar/shared';
+import { bookingSlotsOf, normalizeOpeningHours } from '@suppernote/shared';
 import type { AvailabilityDto, AvailabilitySlot } from './floor-plan.types';
 import { resolveServiceDurationMinutes } from './floor-plan.types';
 import { TableAllocationService } from './table-allocation.service';

@@ -2,8 +2,7 @@
 
 > **Dernière mise à jour** : 2026-06-24
 > **Statut** : **fonctionnel** via skill `obsidian` (filesystem-first).
-> Le système "auto-sync" décrit en 2025 (mcp_serve.py, auto_sync.py,
-> notion_sync.py) **n'a jamais été livré en prod**. Cette note décrit
+> Le système "auto-sync" décrit en 2025 (mcp_serve.py, auto_sync.py) **n'a jamais été livré en prod**. Cette note décrit
 > l'état réel.
 
 ---
@@ -22,7 +21,7 @@ L'agent Hermes lit/écrit dans le vault via la **skill `obsidian`** :
 | Édition ciblée   | `patch` (old_string → new_string)                       |
 | Wikilinks        | `[[Note Name]]` (markdown standard Obsidian)            |
 
-**Pas de daemon**, **pas de classification auto**, **pas de sync Notion
+**Pas de daemon**, **pas de classification auto**, **pas de sync externe
 auto**. C'est l'agent qui appelle les outils à chaque modif
 significative, en suivant la skill `obsidian-doc` (règle absolue :
 "Ne PAS attendre qu'on te demande").
@@ -125,7 +124,6 @@ version originale de cette note :
 | ---------------------------------------------------- | ------------------------------------------------------- |
 | `agent/scripts/mcp_serve.py` (gateway)               | **N'existe plus**                                       |
 | `agent/skills/obsidian/auto_sync.py` (git watcher)   | **N'existe plus**                                       |
-| `agent/skills/obsidian/notion_sync.py` (Notion sync) | **N'existe plus**                                       |
 | `agent/skills/obsidian/auto_doc.py` (helpers)        | **N'existe plus**                                       |
 | `agent/skills/obsidian/skill.py` (tools Hermes)      | **Remplacé** par la skill `obsidian` (filesystem-first) |
 | Windsurf Cascade MCP `obsidian-vault`                | **N'utilise plus Windsurf**                             |

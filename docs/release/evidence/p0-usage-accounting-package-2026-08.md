@@ -8,7 +8,7 @@ requête réseau ni écriture de base n'est effectuée par le constructeur.
 Commande exécutée :
 
 ```zsh
-pnpm --filter @sokar/api usage:accounting:package -- \
+pnpm --filter @suppernote/api usage:accounting:package -- \
   --month 2026-08 \
   --usage-csv ./private/sokar-usage-accounting-2026-08.csv \
   --invoice ./private/telnyx-invoice-2026-08.json \

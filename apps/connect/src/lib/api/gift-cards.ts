@@ -1,11 +1,11 @@
 /**
- * Sokar Connect — Gift card API client.
+ * Suppernote Connect — Gift card API client.
  *
  * Fonctions pour appeler les routes publiques des cartes cadeaux.
  * Utilise fetchWithTimeout pour tous les appels.
  */
 
-import { fetchWithTimeout } from '@sokar/shared';
+import { fetchWithTimeout } from '@suppernote/shared';
 
 function getApiUrl(): string {
   if (typeof window === 'undefined') {

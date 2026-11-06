@@ -32,7 +32,7 @@ export const BusinessSchema = z.object({
   phone_number: z.string(),
   website_url: z.string().url().optional().nullable(),
   platform_url: z.string().url(),
-  // Métadonnées Sokar (optionnel dans la spec mais utile pour le widget)
+  // Métadonnées Suppernote (optionnel dans la spec mais utile pour le widget)
   cuisine_type: z.array(z.string()).optional().nullable(),
   price_range: z.number().int().min(1).max(4).optional().nullable(),
   opening_hours: z.record(z.string(), z.array(z.string())).optional().nullable(),

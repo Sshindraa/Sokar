@@ -28,7 +28,7 @@ const request = async (headers: Record<string, string> = { authorization: 'Beare
 describe('restaurant.routes — POST /restaurant/onboarding/live-demo', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.PUBLIC_URL = 'https://api.sokar.tech';
+    process.env.PUBLIC_URL = 'https://api.suppernote.com';
     mocks.unavailableReason.mockReturnValue(null);
     mocks.voiceEnabled.mockResolvedValue(true);
     mocks.issueTicket.mockResolvedValue({ ok: true, ticket: 'ticket-ticket-ticket-1' });
@@ -50,7 +50,7 @@ describe('restaurant.routes — POST /restaurant/onboarding/live-demo', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       ticket: 'ticket-ticket-ticket-1',
-      wsUrl: 'wss://api.sokar.tech/voice/demo-stream/ticket-ticket-ticket-1',
+      wsUrl: 'wss://api.suppernote.com/voice/demo-stream/ticket-ticket-ticket-1',
       maxDurationSec: 180,
     });
     expect(mocks.issueTicket).toHaveBeenCalledWith(expect.anything(), 'test-rest-1');

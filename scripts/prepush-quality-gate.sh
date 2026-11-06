@@ -84,28 +84,28 @@ if [ "$run_all" = true ]; then
 fi
 
 if [ "$run_packages" = true ]; then
-  pnpm turbo typecheck --filter=@sokar/config --filter=@sokar/database --filter=@sokar/shared
-  pnpm turbo test --filter=@sokar/config --filter=@sokar/database --filter=@sokar/shared
+  pnpm turbo typecheck --filter=@suppernote/config --filter=@suppernote/database --filter=@suppernote/shared
+  pnpm turbo test --filter=@suppernote/config --filter=@suppernote/database --filter=@suppernote/shared
 fi
 
 if [ "$run_api" = true ]; then
   # Un seul appel turbo pour typecheck + lint + test (économise 2 startups pnpm)
-  pnpm turbo run typecheck lint --filter=@sokar/api...
+  pnpm turbo run typecheck lint --filter=@suppernote/api...
 
   # On skip les tests voice si aucun fichier voice n'a changé
   # (119 tests voice, isolation pour gagner du temps prepush)
   if printf '%s\n' "$ALL_CHANGED" | grep -Eq '^apps/api/src/modules/voice/'; then
-    pnpm turbo test --filter=@sokar/api...
+    pnpm turbo test --filter=@suppernote/api...
   else
     echo "prepush-quality-gate: voice tests unchanged, running API tests without voice..."
-    pnpm turbo test --filter=@sokar/api -- --exclude '**/voice/**'
+    pnpm turbo test --filter=@suppernote/api -- --exclude '**/voice/**'
   fi
 fi
 
 if [ "$run_dashboard" = true ]; then
-  pnpm turbo typecheck --filter=@sokar/dashboard...
-  pnpm --filter @sokar/dashboard lint
-  pnpm turbo test --filter=@sokar/dashboard...
+  pnpm turbo typecheck --filter=@suppernote/dashboard...
+  pnpm --filter @suppernote/dashboard lint
+  pnpm turbo test --filter=@suppernote/dashboard...
 fi
 
 echo "prepush-quality-gate: PASS"

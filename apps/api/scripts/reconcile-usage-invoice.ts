@@ -2,7 +2,7 @@
  * Reconcile an immutable usage ledger slice with a provider invoice export.
  *
  * Usage:
- *   pnpm --filter @sokar/api exec tsx apps/api/scripts/reconcile-usage-invoice.ts \
+ *   pnpm --filter @suppernote/api exec tsx apps/api/scripts/reconcile-usage-invoice.ts \
  *     --file ./private/telnyx-2026-09.csv
  *
  * The command is read-only and fails when a row is not MATCH. Provider

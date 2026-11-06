@@ -1,9 +1,9 @@
 name: Deploy Widget (Cloudflare Pages)
 
-# Publie l'écran ChatGPT (apps/widget, export statique) sur widget.sokar.tech.
+# Publie l'écran ChatGPT (apps/widget, export statique) sur widget.suppernote.com.
 # Manuel uniquement : l'écran doit être en ligne avant d'activer OpenAI Reserve,
 # mais rien ne le republie automatiquement. Le projet Cloudflare Pages `sokar-widget`
-# et le domaine widget.sokar.tech sont créés côté Cloudflare (voir apps/widget/README.md).
+# et le domaine widget.suppernote.com sont créés côté Cloudflare (voir apps/widget/README.md).
 on:
   workflow_dispatch:
 
@@ -26,12 +26,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile --filter @sokar/widget...
-      - run: pnpm --filter @sokar/shared build
+      - run: pnpm install --frozen-lockfile --filter @suppernote/widget...
+      - run: pnpm --filter @suppernote/shared build
       - name: Build (export statique)
         env:
-          NEXT_PUBLIC_API_URL: https://api.sokar.tech
-        run: pnpm --filter @sokar/widget build
+          NEXT_PUBLIC_API_URL: https://api.suppernote.com
+        run: pnpm --filter @suppernote/widget build
       - name: Vérifier la page attendue par l'API
         run: test -f apps/widget/out/restaurant-reservation.html
       - name: Publier sur Cloudflare Pages
@@ -42,9 +42,9 @@ jobs:
       - name: Smoke test public
         run: |
           for i in 1 2 3 4 5 6; do
-            code=$(curl -sSL -o /dev/null -w '%{http_code}' https://widget.sokar.tech/restaurant-reservation.html || true)
+            code=$(curl -sSL -o /dev/null -w '%{http_code}' https://widget.suppernote.com/restaurant-reservation.html || true)
             [ "$code" = "200" ] && exit 0
             sleep 10
           done
-          echo "widget.sokar.tech/restaurant-reservation.html → $code" >&2
+          echo "widget.suppernote.com/restaurant-reservation.html → $code" >&2
           exit 1

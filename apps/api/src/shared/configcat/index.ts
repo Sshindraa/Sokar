@@ -21,7 +21,7 @@
  */
 import * as configcat from 'configcat-node';
 import type { IConfigCatClient, User } from 'configcat-node';
-import { PLAN_VALUES, type Plan } from '@sokar/shared';
+import { PLAN_VALUES, type Plan } from '@suppernote/shared';
 import { createHash } from 'crypto';
 import { logger } from '../logger/pino';
 
@@ -201,7 +201,7 @@ export async function isFlagEnabledWithRollout(
 }
 
 /**
- * Liste des flags utilisés dans Sokar.
+ * Liste des flags utilisés dans Suppernote.
  * Ajouter chaque nouveau flag ici + dans le dashboard ConfigCat.
  */
 export const FLAGS = {

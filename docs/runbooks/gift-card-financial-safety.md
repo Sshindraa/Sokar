@@ -113,6 +113,8 @@ pas l'onboarding, le virement bancaire ou les notifications réelles.
   enregistrée depuis plus de 23 heures. Vérifier Stripe avec la référence checkout,
   rattacher le paiement existant via une procédure de support revue ; ne pas recréer
   une charge après expiration de la garantie d'idempotence Stripe.
+  Le même statut est posé quand Stripe répond `account_invalid` (compte connecté inaccessible
+  pour la clé courante) : sans cela, le checkout restait OPEN et échouait à chaque scan.
 - Une cagnotte déjà partiellement consommée exige un remboursement contrôlé : le lot A
   ne choisit pas arbitrairement quels contributeurs rembourser.
 - Les notifications sont persistées dans la transaction financière et traitées via outbox.
@@ -127,7 +129,7 @@ appliquer le schéma de référence puis la migration et lancer :
 
 ```sh
 GIFT_CARD_FINANCE_TEST_DATABASE_URL=postgresql://sokar_test@127.0.0.1:55439/sokar_gift_card_finance \
-  pnpm --filter @sokar/api exec vitest run src/modules/gift-cards
+  pnpm --filter @suppernote/api exec vitest run src/modules/gift-cards
 ```
 
 La suite transactionnelle refuse tout autre hôte/nom de base. Sans cette variable,

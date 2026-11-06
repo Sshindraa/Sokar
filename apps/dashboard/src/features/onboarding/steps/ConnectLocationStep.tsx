@@ -100,7 +100,7 @@ export function ConnectLocationStep({ onComplete }: StepProps) {
         const query = `${formattedAddress}, ${postalCode} ${city}, France`;
         const res = await fetch(
           `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
-          { headers: { 'User-Agent': 'Sokar-Dashboard/1.0' } },
+          { headers: { 'User-Agent': 'Suppernote-Dashboard/1.0' } },
         );
         if (res.ok) {
           const data = await res.json();

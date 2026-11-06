@@ -1,4 +1,4 @@
-import { buildMarketingConsentLabel } from '@sokar/shared';
+import { buildMarketingConsentLabel } from '@suppernote/shared';
 import type { MarketingChannelCode } from './marketing-permission.service';
 
 const CHANNEL_LABEL: Record<MarketingChannelCode, string> = {
@@ -58,6 +58,15 @@ export function renderUnsubscribeDonePage(channel: MarketingChannelCode): string
     'Désinscription confirmée',
     `<h1>Vous êtes désinscrit</h1>
 <p>Vous ne recevrez plus de messages promotionnels de ce restaurant ${CHANNEL_LABEL[channel]}. Vos confirmations de réservation ne sont pas concernées.</p>`,
+  );
+}
+
+/** Échec technique : on ne prétend pas que la désinscription est faite, le même lien reste valable. */
+export function renderUnsubscribeRetryPage(): string {
+  return page(
+    'Désinscription non terminée',
+    `<h1>Votre désinscription n’a pas pu être terminée</h1>
+<p>Un incident technique est survenu. Veuillez réessayer dans quelques instants avec le même lien. Si le problème persiste, répondez au message reçu ou contactez directement le restaurant.</p>`,
   );
 }
 

@@ -1,4 +1,4 @@
-import { CARTESIA_MODEL } from '@sokar/config';
+import { CARTESIA_MODEL } from '@suppernote/config';
 
 /**
  * Synthèse vocale ElevenLabs pour le téléphone (chemin HTTP, un segment par requête).

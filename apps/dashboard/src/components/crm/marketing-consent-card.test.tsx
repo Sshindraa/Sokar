@@ -64,7 +64,7 @@ describe('MarketingConsentCard', () => {
     const email = within(await waitFor(() => rowFor('E-mail')));
     expect(email.getByText('Accord donné')).toBeInTheDocument();
     expect(
-      email.getByText(/Donné le 20 octobre 2026 · Page de réservation Sokar Connect/),
+      email.getByText(/Donné le 20 octobre 2026 · Page de réservation Suppernote Connect/),
     ).toBeInTheDocument();
     const sms = within(rowFor('SMS'));
     expect(sms.getByText('Accord retiré')).toBeInTheDocument();
@@ -117,6 +117,20 @@ describe('MarketingConsentCard', () => {
     expect(
       within(rowFor('SMS')).getByRole('button', { name: 'Enregistrer un accord' }),
     ).toBeEnabled();
+  });
+
+  it('explains why an opposition cannot be lifted by the team', async () => {
+    apiMocks.post.mockRejectedValue(toApiError(409, { error: 'MARKETING_OPPOSITION_REGISTERED' }));
+    render(<MarketingConsentCard customerId="customer-1" email="alice@example.com" />);
+    await screen.findAllByText('Jamais demandé');
+
+    fireEvent.click(
+      within(rowFor('E-mail')).getByRole('button', { name: 'Enregistrer un accord' }),
+    );
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer l’accord' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/seul son propre accord/i);
   });
 
   it('shows the server refusal when recording fails', async () => {

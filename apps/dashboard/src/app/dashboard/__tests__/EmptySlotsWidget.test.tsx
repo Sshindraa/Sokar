@@ -2,11 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '../../../../messages/fr.json';
+import en from '../../../../messages/en.json';
+import es from '../../../../messages/es.json';
+import it_ from '../../../../messages/it.json';
 import EmptySlotsWidget from '../EmptySlotsWidget';
 
-function renderWidget() {
+const BY_LOCALE = { fr: messages, en, es, it: it_ } as const;
+
+function renderWidget(locale: keyof typeof BY_LOCALE = 'fr') {
   return render(
-    <NextIntlClientProvider locale="fr" messages={messages}>
+    <NextIntlClientProvider locale={locale} messages={BY_LOCALE[locale]}>
       <EmptySlotsWidget />
     </NextIntlClientProvider>,
   );
@@ -73,6 +78,7 @@ function makeSuggestion(overrides: Record<string, unknown> = {}) {
     tiers: { CRENEAU: 1, REGULIER: 9, CONNU: 5 },
     costEstimate: { amount: 0.56, status: 'PRICED' },
     canPrepare: true,
+    prepareBlockedReason: null,
     ...overrides,
   };
 }
@@ -224,7 +230,7 @@ describe('EmptySlotsWidget', () => {
 
       expect(await screen.findByText('Midi')).toBeInTheDocument();
       expect(screen.getByText(/18 places vides/)).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'Préparer' })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: 'Préparer mercredi 4 nov. midi' })).toHaveAttribute(
         'href',
         '/dashboard/marketing/fill-service?date=2026-11-04&service=midi&channel=EMAIL',
       );
@@ -253,7 +259,7 @@ describe('EmptySlotsWidget', () => {
 
       expect(await screen.findByText('Midi')).toBeInTheDocument();
       expect(screen.getByText(/18 places vides/)).toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'Préparer' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /Préparer/ })).not.toBeInTheDocument();
       expect(screen.queryByText(/messages? à envoyer/)).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Ignorer/ })).toBeInTheDocument();
     });
@@ -357,6 +363,106 @@ describe('EmptySlotsWidget', () => {
         'Impossible d’ignorer ce service pour le moment. Réessayez.',
       );
       expect(screen.getByText('Midi')).toBeInTheDocument();
+    });
+
+    it.each([
+      ['en', 'Dismiss Tuesday Nov 3 lunch', 'Prepare Tuesday Nov 3 lunch'],
+      ['es', 'Ignorar martes 3 nov mediodía', 'Preparar martes 3 nov mediodía'],
+      ['it', 'Ignorare martedì 3 nov pranzo', 'Preparare martedì 3 nov pranzo'],
+    ] as const)('jour et date dans la langue choisie (%s)', async (locale, dismiss, prepare) => {
+      routeGet({
+        suggestions: { data: [makeSuggestion({ date: '2026-11-03', service: 'midi' })] },
+        emptySlots: makeResponse([]),
+      });
+      const { container } = renderWidget(locale);
+
+      expect(await screen.findByRole('button', { name: dismiss })).toBeVisible();
+      expect(screen.getByRole('link', { name: prepare })).toBeVisible();
+      expect(container.textContent).not.toMatch(/mardi|mercredi|nov\./i);
+    });
+
+    it.each([
+      ['SENDS_DISABLED', 'Les envois marketing ne sont pas encore activés.'],
+      ['BUDGET_EXHAUSTED', 'Le budget d’e-mails du jour est épuisé.'],
+      ['NO_AUDIENCE', 'Aucun client à contacter pour ce service.'],
+    ])('canPrepare faux, raison %s : affiche la phrase', async (reason, text) => {
+      routeGet({
+        suggestions: {
+          data: [makeSuggestion({ canPrepare: false, prepareBlockedReason: reason })],
+        },
+        emptySlots: makeResponse([]),
+      });
+      renderWidget();
+
+      const sentence = await screen.findByText(text);
+      expect(sentence).toHaveClass('text-xs', 'text-muted-foreground');
+      expect(screen.queryByRole('link', { name: /Préparer/ })).not.toBeInTheDocument();
+    });
+
+    it('aucune phrase sans raison (null, absente d’une ancienne entrée) ni quand canPrepare est vrai', async () => {
+      const legacy = makeSuggestion({ canPrepare: false });
+      delete (legacy as Record<string, unknown>).prepareBlockedReason;
+      routeGet({
+        suggestions: {
+          data: [
+            legacy,
+            makeSuggestion({ date: '2026-11-05', service: 'soir' }),
+            makeSuggestion({ date: '2026-11-06', canPrepare: false, prepareBlockedReason: null }),
+          ],
+        },
+        emptySlots: makeResponse([]),
+      });
+      const { container } = renderWidget();
+
+      await screen.findByText('Soir');
+      expect(container.textContent).not.toMatch(/envois marketing|budget d’e-mails|Aucun client/);
+    });
+
+    it('Ignorer et Préparer nomment leur ligne', async () => {
+      routeGet({
+        suggestions: {
+          data: [
+            makeSuggestion({ date: '2026-11-03', service: 'midi' }),
+            makeSuggestion({ date: '2026-11-04', service: 'soir' }),
+          ],
+        },
+        emptySlots: makeResponse([]),
+      });
+      renderWidget();
+
+      expect(
+        await screen.findByRole('button', { name: 'Ignorer mardi 3 nov. midi' }),
+      ).toBeVisible();
+      expect(screen.getByRole('link', { name: 'Préparer mardi 3 nov. midi' })).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Ignorer mercredi 4 nov. soir' })).toBeVisible();
+      expect(screen.getByRole('link', { name: 'Préparer mercredi 4 nov. soir' })).toBeVisible();
+    });
+
+    it('Ignorer est désactivé pendant l’appel, puis rétabli après un échec', async () => {
+      routeGet({
+        suggestions: {
+          data: [
+            makeSuggestion({ date: '2026-11-03', service: 'midi' }),
+            makeSuggestion({ date: '2026-11-04', service: 'soir' }),
+          ],
+        },
+        emptySlots: makeResponse([]),
+      });
+      let fail: (error: Error) => void = () => {};
+      mockPost.mockReturnValue(new Promise((_, reject) => (fail = reject)));
+      renderWidget();
+
+      const first = await screen.findByRole('button', { name: 'Ignorer mardi 3 nov. midi' });
+      fireEvent.click(first);
+      expect(first).toBeDisabled();
+      // Un second clic ne renvoie rien, et l'autre ligne reste active.
+      fireEvent.click(first);
+      expect(mockPost).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Ignorer mercredi 4 nov. soir' })).toBeEnabled();
+
+      fail(new Error('503'));
+      expect(await screen.findByRole('alert')).toBeInTheDocument();
+      await waitFor(() => expect(first).toBeEnabled());
     });
 
     it('source simple : mention « Estimation sans historique suffisant »', async () => {

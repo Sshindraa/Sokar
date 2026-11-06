@@ -9,7 +9,7 @@ export const metadata = AI_ASSISTANTS_METADATA;
 const STEPS = [
   {
     icon: Plug,
-    title: 'Ajoutez Sokar',
+    title: 'Ajoutez Suppernote',
     text: 'Une seule fois, en une minute.',
   },
   {
@@ -75,7 +75,7 @@ export default function AiAssistantsPage() {
 
       <section aria-labelledby="ajouter-title" className="mt-14">
         <h2 id="ajouter-title" className="mb-5 text-xl font-semibold tracking-tight">
-          Ajouter Sokar à votre assistant
+          Ajouter Suppernote à votre assistant
         </h2>
         <AssistantSetup />
       </section>
@@ -86,7 +86,7 @@ export default function AiAssistantsPage() {
         </h2>
         <p className="mt-3 text-muted-foreground">
           Votre nom et votre téléphone vont uniquement au restaurant choisi, jamais à des fins
-          publicitaires sans votre accord. Vous pouvez retirer Sokar de votre assistant à tout
+          publicitaires sans votre accord. Vous pouvez retirer Suppernote de votre assistant à tout
           moment.{' '}
           <Link
             href="/privacy"
@@ -100,10 +100,10 @@ export default function AiAssistantsPage() {
       <p className="mt-14 text-sm text-muted-foreground">
         Une question ?{' '}
         <a
-          href="mailto:hello@sokar.tech"
+          href="mailto:hello@suppernote.com"
           className="text-foreground underline underline-offset-4 transition-all duration-200 hover:opacity-70"
         >
-          hello@sokar.tech
+          hello@suppernote.com
         </a>
       </p>
 
@@ -120,7 +120,7 @@ export default function AiAssistantsPage() {
           <div>
             <h3 className="font-semibold text-foreground">Pour les restaurants</h3>
             <p className="mt-2">
-              La réservation par IA s’active dans votre espace Sokar, à l’étape de diffusion en
+              La réservation par IA s’active dans votre espace Suppernote, à l’étape de diffusion en
               ligne : taille de groupe maximale, délai minimum et validation manuelle restent à vos
               réglages. Seuls les restaurants qui l’ont activée apparaissent.
             </p>
@@ -132,11 +132,11 @@ export default function AiAssistantsPage() {
               <li>Serveur MCP (JSON-RPC 2.0 sur HTTPS) : {MCP_URL}</li>
               <li>OAuth 2.0 avec PKCE S256 et enregistrement dynamique des clients</li>
               <li>Autorisations : mcp:read, mcp:reserve, mcp:cancel</li>
-              <li>Découverte : https://api.sokar.tech/.well-known/oauth-protected-resource</li>
+              <li>Découverte : https://api.suppernote.com/.well-known/oauth-protected-resource</li>
             </ul>
             <div className="mt-4 overflow-x-auto rounded-xl border border-border">
               <table className="w-full border-collapse text-left">
-                <caption className="sr-only">Outils exposés par le connecteur Sokar</caption>
+                <caption className="sr-only">Outils exposés par le connecteur Suppernote</caption>
                 <thead>
                   <tr className="border-b border-border">
                     <th scope="col" className="p-3 font-semibold text-foreground">
@@ -164,12 +164,12 @@ export default function AiAssistantsPage() {
           <div lang="en">
             <h3 className="font-semibold text-foreground">In English</h3>
             <p className="mt-2">
-              Sokar lets you book a table at participating restaurants from Claude, ChatGPT or Le
-              Chat. Add a custom connector with the URL {MCP_URL} and sign in with OAuth. You can
+              Suppernote lets you book a table at participating restaurants from Claude, ChatGPT or
+              Le Chat. Add a custom connector with the URL {MCP_URL} and sign in with OAuth. You can
               search restaurants, check availability, book, modify or cancel a booking, and join a
               waiting list. Booking requires your name and phone number, shared only with the chosen
               restaurant; the phone number is also required to read, change or cancel a booking.
-              Support: hello@sokar.tech. Privacy policy: https://sokar.tech/privacy.
+              Support: hello@suppernote.com. Privacy policy: https://suppernote.com/privacy.
             </p>
           </div>
         </div>

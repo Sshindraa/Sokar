@@ -199,7 +199,7 @@ describe('marketing campaign control plane', () => {
   it('excludes an address found in the opt-out register even with a stored opt-in', async () => {
     vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
     vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([
-      { addressHash: marketingOptOutHash('SMS', '+33601020304') },
+      { addressHash: marketingOptOutHash('restaurant-1', 'SMS', '+33601020304') },
     ] as never);
 
     const preview = await previewMarketingAudience({
@@ -395,7 +395,7 @@ describe('marketing campaign control plane', () => {
     const remaining = await readRemainingDailyEmailBudget(BUDGET_NOW);
 
     expect(locked).toBeUndefined();
-    expect(remaining).toBeGreaterThanOrEqual(20);
+    expect(remaining).toBe(20);
     expect(db.$executeRaw).not.toHaveBeenCalled();
   });
 
@@ -641,10 +641,19 @@ describe('marketing campaign control plane', () => {
   it('rend les adresses cliquables dans l’e-mail sans laisser passer de balise', () => {
     expect(
       toMarketingHtml(
-        'Réservez : https://sokar.tech/book/chez-sokar?a=1&b=2.\n<script>x</script> (https://exemple.test/u?token=abc)',
+        'Réservez : https://suppernote.com/book/chez-sokar?a=1&b=2.\n<script>x</script> (https://exemple.test/u?token=abc)',
       ),
     ).toBe(
-      'Réservez : <a href="https://sokar.tech/book/chez-sokar?a=1&amp;b=2">https://sokar.tech/book/chez-sokar?a=1&amp;b=2</a>.<br>&lt;script&gt;x&lt;/script&gt; (<a href="https://exemple.test/u?token=abc">https://exemple.test/u?token=abc</a>)',
+      'Réservez : <a href="https://suppernote.com/book/chez-sokar?a=1&amp;b=2">https://suppernote.com/book/chez-sokar?a=1&amp;b=2</a>.<br>&lt;script&gt;x&lt;/script&gt; (<a href="https://exemple.test/u?token=abc">https://exemple.test/u?token=abc</a>)',
+    );
+
+    expect(
+      toMarketingHtml('Réservez : https://suppernote.com/book?a=1&b=2. Autre : https://ex.test', {
+        'https://suppernote.com/book?a=1&b=2': 'Réserver une table',
+      }),
+    ).toBe(
+      'Réservez : <a href="https://suppernote.com/book?a=1&amp;b=2">Réserver une table</a>. ' +
+        'Autre : <a href="https://ex.test">https://ex.test</a>',
     );
   });
 });

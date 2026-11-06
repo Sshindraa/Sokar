@@ -44,7 +44,9 @@ describe('marketing consent wording', () => {
   });
 
   it('describes known sources and keeps unknown ones readable as they are', () => {
-    expect(describeMarketingConsentSource('CONNECT')).toBe('Page de réservation Sokar Connect');
+    expect(describeMarketingConsentSource('CONNECT')).toBe(
+      'Page de réservation Suppernote Connect',
+    );
     expect(describeMarketingConsentSource('PILOT_INTERNAL')).toBe('PILOT_INTERNAL');
   });
 });

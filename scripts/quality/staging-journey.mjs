@@ -7,13 +7,16 @@
  * quelques minutes ; aucune réservation, aucun paiement, aucun SMS.
  *
  * Usage : node scripts/quality/staging-journey.mjs
- * Variables : JOURNEY_API_URL (défaut https://api-staging.sokar.tech),
- *             JOURNEY_SITE_URL (défaut https://staging.sokar.tech),
+ * Variables : JOURNEY_API_URL (défaut https://api-staging.suppernote.com),
+ *             JOURNEY_SITE_URL (défaut https://staging.suppernote.com),
  *             JOURNEY_RESTAURANT_SLUG (défaut chez-sokar-demo).
  */
 
-const API = (process.env.JOURNEY_API_URL ?? 'https://api-staging.sokar.tech').replace(/\/+$/, '');
-const SITE = (process.env.JOURNEY_SITE_URL ?? 'https://staging.sokar.tech').replace(/\/+$/, '');
+const API = (process.env.JOURNEY_API_URL ?? 'https://api-staging.suppernote.com').replace(
+  /\/+$/,
+  '',
+);
+const SITE = (process.env.JOURNEY_SITE_URL ?? 'https://staging.suppernote.com').replace(/\/+$/, '');
 const SLUG = process.env.JOURNEY_RESTAURANT_SLUG ?? 'chez-sokar-demo';
 const TIMEOUT_MS = 15_000;
 

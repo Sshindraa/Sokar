@@ -44,5 +44,11 @@ else
   echo "→ Reusing open pull request #$PR_NUMBER"
 fi
 
-# Pas d'auto-merge : la fusion reste une décision humaine.
+# Fusion automatique (squash) dès que les checks requis sont verts.
+# Pour une PR qui demande une relecture : PR_NO_AUTO_MERGE=1 pnpm pr:submit
+if [ "${PR_NO_AUTO_MERGE:-0}" != "1" ]; then
+  # La protection de main exige une branche à jour : sinon l'auto-merge reste bloqué.
+  gh pr update-branch "$PR_NUMBER" >/dev/null 2>&1 || true
+  gh pr merge "$PR_NUMBER" --auto --squash
+fi
 gh pr view "$PR_NUMBER" --json url,mergeStateStatus --jq '"PR: " + .url + " (" + .mergeStateStatus + ")"'

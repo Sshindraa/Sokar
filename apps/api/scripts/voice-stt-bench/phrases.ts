@@ -12,7 +12,7 @@
  * (`question`). Les voix de synthèse sont plus propres que de vrais appelants :
  * le banc compare des variantes, il n'annonce pas un taux de production.
  *
- * Usage : pnpm --filter @sokar/api exec tsx scripts/voice-stt-bench/phrases.ts validation > .data/validation-phrases.json
+ * Usage : pnpm --filter @suppernote/api exec tsx scripts/voice-stt-bench/phrases.ts validation > .data/validation-phrases.json
  */
 
 export type BenchSet = 'calibration' | 'validation' | 'hard-calibration' | 'hard-validation';

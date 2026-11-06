@@ -91,7 +91,7 @@ function stubNavigation() {
 }
 
 describe('Mon abonnement', () => {
-  it('shows real billing amount, masked card and downloadable invoice inside Sokar', async () => {
+  it('shows real billing amount, masked card and downloadable invoice inside Suppernote', async () => {
     render(<BillingPage />);
     expect(await screen.findByRole('heading', { name: 'Mon abonnement' })).toBeInTheDocument();
     expect(screen.getByText('visa ···· 4242')).toBeInTheDocument();

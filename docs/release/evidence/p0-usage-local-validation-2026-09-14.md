@@ -16,7 +16,7 @@ pas un rapprochement fournisseur et ne ferme pas la porte de production.
 ```text
 DATABASE_URL=postgresql://<local-test-role>@127.0.0.1:5432/sokar_test \
 AGENTIC_INT_TESTS=1 \
-pnpm --filter @sokar/api exec vitest run \
+pnpm --filter @suppernote/api exec vitest run \
   src/modules/usage/__tests__/usage-adjustment.concurrency.integration.test.ts
 
 Test Files  1 passed (1)

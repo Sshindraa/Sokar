@@ -146,8 +146,8 @@ export function SiteManagementCard() {
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            Indiquez la ligne actuelle du site. L’équipe Sokar lui attribuera ensuite son numéro
-            Sokar, vers lequel vous renverrez vos appels.
+            Indiquez la ligne actuelle du site. L’équipe Suppernote lui attribuera ensuite son
+            numéro Suppernote, vers lequel vous renverrez vos appels.
           </p>
           <Button type="submit" disabled={saving || !name.trim() || !phoneNumber.trim()}>
             {saving ? <Loader2 className="animate-spin" /> : <Plus />}

@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import type { PlanUsageLimits } from '@sokar/config';
+import type { PlanUsageLimits } from '@suppernote/config';
 import type { UsageQuantity } from './usage.types';
 
 export type UsageQuotaState = 'NOT_CONFIGURED' | 'WITHIN_LIMIT' | 'EXCEEDED';
@@ -54,7 +54,7 @@ function quota(
 
 /**
  * Convert immutable usage quantities into the legacy customer-facing shape.
- * A null limit means that Sokar applies no customer quota. The API keeps the
+ * A null limit means that Suppernote applies no customer quota. The API keeps the
  * `NOT_CONFIGURED` wire state for compatibility with existing consumers, but
  * the public route also exposes `customerUsagePolicy=UNLIMITED` and never
  * enforces a cap from this projection.

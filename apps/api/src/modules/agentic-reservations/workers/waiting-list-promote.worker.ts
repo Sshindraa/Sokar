@@ -6,7 +6,7 @@ import { db } from '../../../shared/db/client';
 import { queues } from '../../../shared/queue/queues';
 import { sendSms } from '../../../shared/telnyx/client';
 import { sendEmail } from '../../../shared/email';
-import { formatDate } from '@sokar/shared';
+import { formatDate } from '@suppernote/shared';
 import {
   buildWaitingListPromotionSms,
   buildWaitingListPromotionEmailHtml,

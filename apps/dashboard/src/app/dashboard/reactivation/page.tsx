@@ -30,7 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { formatDate } from '@sokar/shared';
+import { formatDate } from '@suppernote/shared';
 import { MS_PER_DAY } from '@/constants/ui';
 
 interface ReactivationCustomer {
