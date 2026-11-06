@@ -175,6 +175,7 @@ describe('customer CRM routes', () => {
       lifecycle: { status: 'regular' },
       visitSummary: { visits: 3, visits365d: 3 },
     });
+    expect(db.reservation.findMany).toHaveBeenCalledTimes(1);
     expect(vi.mocked(db.customer.findMany).mock.calls[1][0]).toMatchObject({
       where: { restaurantId: 'test-rest-1', id: { in: ['regular'] } },
     });

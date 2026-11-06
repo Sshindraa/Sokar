@@ -8,6 +8,8 @@
 
 ## TODOs actifs
 
+- [ ] CRM #659 : révisions limitées au périmètre réel en local ; transactions métier locales concurrentes : attente observable pour un même client. Qualifier la migration additive en staging et décider avant promotion ; PR sans auto-merge.
+
 - [ ] Suppernote : migration de domaine livrée ; suivre `migration-suppernote.md` et vérifier l’état des webhooks fournisseurs. Monogramme, paquets `@suppernote/*` et nom de la démo en revue (PR #646). Appel vocal réel de bout en bout à faire après recharge OpenRouter.
 
 - [ ] Marketing : avant tout envoi réel, rouvrir l'effacement et l'opposition, et mentionner le ciblage selon l'historique dans la notice client (`privacy-client-annex.md`).
@@ -25,7 +27,7 @@
 - [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23), essais exclus. France entière; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle; deux pilotes, recette avant activation.
 - [ ] Voix : #586–#588 livrés (`22546523`), staging/prod et 4566 tests API verts. Ink complet anticipé, silence épellation déduit ; seuil DG inchangé. #580 garde 160 ms en branche, rejeux verts ; qualification sur appel staging à finir (`voice-stt-qualification.md`) ; clients off.
 - [ ] Audit voix local : qualifier un appel et les retransmissions en staging avant livraison ; installer la protection des journaux Nginx avant l'API. Les sessions restent en mémoire : reprise après redémarrage et routage multiprocessus à résoudre avant de les garantir.
-- [ ] Naturel : phase 1 en branche, 1601 tests voix verts. Qualification Chez Sokar seul ; recette audio avant extension. Voir `voice-conversation-continuity.md`.
+- [ ] Naturel : phase 1 en branche, 1601 tests voix verts. Qualification Chez Sokar seul ; recette audio avant extension. Voir `voice-conversation-continuity.md`. #595 : choix phrase complète après écoute, règles communes et réponse après action réduite ; écouter prosodie, attente et résultat sur un appel avant extension.
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging; garder `EXPERIENCE_BOOKING_ENABLED=false`.
 - [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.

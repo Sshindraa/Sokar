@@ -60,6 +60,7 @@ model Restaurant {
   giftCardCommissionRate     Decimal                @default(0.05) @map("gift_card_commission_rate") @db.Decimal(5, 4)
   giftCardEnabled            Boolean                @default(false) @map("gift_card_enabled")
   giftCardStripeAccountId    String?                @unique @map("gift_card_stripe_account_id")
+  giftCardStripePendingAccountId String?             @unique @map("gift_card_stripe_pending_account_id")
   experienceStripeAccountId  String?                @unique @map("experience_stripe_account_id")
   experienceCommissionRate   Decimal?               @map("experience_commission_rate") @db.Decimal(5, 4)
   /// CSV de rôles autorisés à lire les notes CRM et les métadonnées de chronologie.
@@ -900,6 +901,7 @@ model Customer {
   identities                    CustomerIdentity[]
   timelineEvents                CustomerTimelineEvent[]
   metricSnapshot                CustomerMetricSnapshot?
+  visitCacheRevision            CustomerVisitCacheRevision?
   preferences                   CustomerPreference[]
   tagAssignments                CustomerTagAssignment[]
   marketingPermissions          MarketingPermission[]
@@ -1784,6 +1786,14 @@ model CustomerTimelineEvent {
   @@index([customerId, occurredAt(sort: Desc)], map: "customer_timeline_customer_occurred_idx")
   @@index([eventType, occurredAt], map: "customer_timeline_event_type_occurred_idx")
   @@map("customer_timeline_events")
+}
+
+model CustomerVisitCacheRevision {
+  customerId String   @id @map("customer_id")
+  version    BigInt   @default(autoincrement())
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("customer_visit_cache_revisions")
 }
 
 model CustomerMetricSnapshot {

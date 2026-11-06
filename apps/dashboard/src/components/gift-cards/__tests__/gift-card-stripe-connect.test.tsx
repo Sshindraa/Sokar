@@ -7,6 +7,10 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   initialize: vi.fn(),
   logout: vi.fn(),
+  reverify: vi.fn(),
+}));
+vi.mock('@clerk/nextjs', () => ({
+  useReverification: (fetcher: (...args: unknown[]) => Promise<unknown>) => mocks.reverify(fetcher),
 }));
 vi.mock('@/lib/api', () => ({
   useApi: () => ({ get: mocks.get, post: mocks.post, orgId: 'restaurant' }),
@@ -29,6 +33,65 @@ vi.mock('@stripe/react-connect-js', () => ({
 }));
 
 describe('embedded gift card onboarding', () => {
+  it('uses Clerk reverification for an existing managed account', async () => {
+    vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', 'pk_test_placeholder');
+    vi.stubEnv('NEXT_PUBLIC_DEMO_STAGING', '');
+    mocks.get.mockResolvedValue({
+      connected: true,
+      chargesEnabled: true,
+      payoutsEnabled: true,
+      canConfigure: true,
+      managedTest: true,
+    });
+    mocks.post.mockResolvedValue({ clientSecret: 'mock', publishableKey: 'pk_test' });
+    mocks.reverify.mockImplementation((fetcher) => fetcher);
+    try {
+      render(<GiftCardStripeConnect />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Gérer Stripe' }));
+      await screen.findByLabelText('Formulaire Stripe intégré');
+      expect(mocks.reverify).toHaveBeenCalled();
+      expect(mocks.post).toHaveBeenCalledWith(
+        'restaurants/restaurant/gift-cards/stripe-connect/session',
+        {},
+        expect.objectContaining({ allowReverificationHint: true }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it('asks for explicit consent before creating a sandbox account token', async () => {
+    mocks.get.mockResolvedValue({
+      connected: false,
+      chargesEnabled: false,
+      payoutsEnabled: false,
+      canConfigure: true,
+      managedTestPublishableKey: 'pk_test_example',
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: ['accttok', 'example'].join('_') }),
+    } as Response);
+    try {
+      render(<GiftCardStripeConnect />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Configurer Stripe' }));
+      const next = screen.getByRole('button', { name: 'Continuer' });
+      expect(next).toBeDisabled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('checkbox'));
+      fireEvent.click(next);
+      await screen.findByLabelText('Formulaire Stripe intégré');
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://api.stripe.com/v2/core/account_tokens',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(mocks.post).toHaveBeenCalledWith(
+        'restaurants/restaurant/gift-cards/stripe-connect/managed-test',
+        { accountToken: ['accttok', 'example'].join('_') },
+      );
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
   it('distinguishes active payments from payouts still being verified', async () => {
     mocks.get.mockResolvedValue({
       connected: true,

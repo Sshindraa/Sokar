@@ -33,6 +33,22 @@ afterEach(() => {
 });
 
 describe('useApi — lectures concurrentes', () => {
+  it('ne transmet le défi Clerk que si la revérification est explicitement demandée', async () => {
+    const { useApi } = await import('./api');
+    const { result } = renderHook(() => useApi());
+    const hint = {
+      clerk_error: {
+        type: 'forbidden',
+        reason: 'reverification-error',
+        metadata: { reverification: 'strict' },
+      },
+    };
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify(hint), { status: 403 }));
+    await expect(
+      result.current.post('sensitive', {}, { allowReverificationHint: true }),
+    ).resolves.toEqual(hint);
+    await expect(result.current.post('sensitive', {})).rejects.toThrow();
+  });
   it('ne double pas une lecture au rejeu des effets en StrictMode', async () => {
     const { useApi } = await import('./api');
     let complete!: (value: Response) => void;
