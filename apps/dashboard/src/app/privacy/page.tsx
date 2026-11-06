@@ -90,6 +90,15 @@ const DATA_CATEGORIES = [
     retention: PRIVACY_RETENTION.billing,
   },
   {
+    category: 'Registre d’opposition marketing',
+    examples:
+      'Empreinte de l’adresse e-mail ou du numéro (HMAC-SHA256), canal, motif, source et date.',
+    purpose: 'Ne pas solliciter de nouveau une personne qui s’est opposée à un message marketing.',
+    legalBasis:
+      'Intérêt légitime du restaurant à respecter durablement l’opposition et à pouvoir le démontrer.',
+    retention: PRIVACY_RETENTION.optOutRegister,
+  },
+  {
     category: 'Logs techniques',
     examples: 'Adresse IP, informations sur le navigateur et événements de sécurité.',
     purpose: 'Sécurité, débogage, détection des abus.',
@@ -117,7 +126,7 @@ const USER_RIGHTS = [
   },
   {
     title: "Droit d'opposition",
-    body: 'Vous pouvez vous opposer au traitement de vos données pour des raisons tenant à votre situation particulière, ou retirer votre consentement à tout moment.',
+    body: 'Vous pouvez vous opposer à la prospection à tout moment, sans donner de motif. Vous pouvez aussi vous opposer à un traitement fondé sur l’intérêt légitime pour des raisons tenant à votre situation particulière, et retirer votre consentement à tout moment.',
   },
   {
     title: 'Droit à la limitation',
@@ -193,6 +202,7 @@ export default function PrivacyPage() {
               </div>
             ))}
           </div>
+          <p className="mt-6 text-sm leading-7 text-white/72">{PRIVACY_DOCUMENT.optOutRegister}</p>
           <p className="mt-6 text-sm leading-7 text-white/72">{PRIVACY_RETENTION.backups}</p>
         </Section>
 

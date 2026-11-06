@@ -17,6 +17,9 @@ describe('dashboard privacy disclosure', () => {
     expect(container.textContent).toContain('hors de l’Espace économique européen');
     expect(container.textContent).toContain('liste nominative');
     expect(container.textContent).toContain(PRIVACY_DOCUMENT.reservationProcessing);
+    expect(container.textContent).toContain(PRIVACY_DOCUMENT.optOutRegister);
+    expect(container.textContent).not.toContain('à confirmer avant publication');
+    expect(container.textContent).toContain('sans donner de motif');
     expect(container.querySelector('a[href="mailto:privacy@suppernote.com"]')).not.toBeNull();
   });
 });

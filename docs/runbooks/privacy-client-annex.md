@@ -1,6 +1,6 @@
 # Annexe clients : prestataires et traitement des données
 
-Projet du 16 octobre 2026, non publié. Document destiné à préparer l'information
+Projet du 16 octobre 2026, révisé le 3 novembre 2026, non publié. Document destiné à préparer l'information
 contractuelle des restaurateurs, distinct de la politique publique et du dossier
 de preuves interne. Ne pas le présenter comme une annexe contractuelle validée.
 
@@ -40,6 +40,39 @@ Les services utilisés par Sokar pour ses propres finalités ne doivent pas êtr
 qualifiés automatiquement de sous-traitants ultérieurs du restaurant. Qualifier
 les rôles dans l'annexe contractuelle finale. Un fournisseur de modèles en aval
 ne peut pas rester non identifié si ses services traitent les données du client.
+
+## Registre d'opposition marketing
+
+Par restaurant et par canal (e-mail, SMS, WhatsApp), Sokar conserve pour le compte du restaurant une
+empreinte HMAC-SHA256 de l'adresse e-mail normalisée ou du numéro E.164 d'une personne qui se désinscrit,
+retire son accord ou se plaint d'un message marketing, avec le motif (`UNSUBSCRIBE`, `COMPLAINT`, `MANUAL`),
+la source et la date. L'empreinte est stockée dans la base de données de Sokar (hébergement : voir le tableau
+ci-dessus). Elle n'est pas enregistrée dans la fiche client, subsiste après l'effacement et sert uniquement à
+ne pas solliciter de nouveau la personne. Donnée personnelle pseudonymisée, pas anonyme.
+
+- **Conservation** : trois ans à compter de la dernière opposition, durée minimale recommandée par la CNIL
+  (pas une obligation légale), puis purge automatique. Suppression plus tôt si l'opposition est levée ou si
+  le restaurant est supprimé du service.
+- **Levée** : seul un nouvel accord donné en ligne par la personne lève l'opposition ; un accord enregistré
+  par l'équipe du restaurant ne la lève pas.
+- **Limite** : une plainte reçue après l'effacement de la fiche n'est pas inscrite ; une fiche recréée n'est
+  pas contactée sans nouvel accord.
+
+Position recommandée, à valider par un professionnel du droit (`docs/legal/registre-opposition-marketing.md`) :
+
+- **Base légale** : intérêt légitime du restaurant (art. 6(1)(f) RGPD), avec un test documenté.
+- **Rôles** : restaurant responsable de traitement, Sokar sous-traitant, à condition d'une instruction écrite
+  du restaurant.
+
+Clauses à prévoir dans l'accord de traitement des données :
+
+1. Instruction du restaurant : données, finalité unique, durée de trois ans.
+2. Interdiction de toute autre utilisation, y compris pour un autre restaurant.
+3. Survie de l'empreinte à l'effacement.
+4. Personnes habilitées à lever une opposition et preuve exigée.
+5. Traitement des demandes des personnes : transmission par Sokar, réponse par le restaurant.
+6. Fin de contrat : suppression et information sur la perte de la liste, inutilisable sans la clé.
+7. Sécurité : clé séparée de la base, accès limités, sauvegarde de la clé.
 
 ## Informations à fournir au client
 

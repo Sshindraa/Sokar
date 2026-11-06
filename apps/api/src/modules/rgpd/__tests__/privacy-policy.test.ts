@@ -34,6 +34,7 @@ describe('privacy disclosure compatibility', () => {
     expect(PRIVACY_POLICY_TEXT).toContain('privacy@suppernote.com');
     expect(PRIVACY_POLICY_TEXT).toContain('sans purge automatique');
     expect(PRIVACY_POLICY_TEXT).toContain(PRIVACY_DOCUMENT.reservationProcessing);
+    expect(PRIVACY_POLICY_TEXT).toContain(PRIVACY_DOCUMENT.optOutRegister);
     expect(PRIVACY_POLICY_TEXT).toContain('Demandes de démonstration : intérêt légitime');
   });
 });

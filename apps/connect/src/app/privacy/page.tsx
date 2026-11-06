@@ -308,6 +308,7 @@ export default function PrivacyPage() {
               </h2>
             </div>
             <p className="text-muted-foreground">{PRIVACY_DOCUMENT.reservationProcessing}</p>
+            <p className="mt-4 text-muted-foreground">{PRIVACY_DOCUMENT.optOutRegister}</p>
             <p className="mt-4 text-muted-foreground">
               La prévention des abus et la protection du service reposent sur l’intérêt légitime à
               assurer sa sécurité.

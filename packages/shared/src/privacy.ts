@@ -1,7 +1,7 @@
 /** Public notice only; technical checks and supplier evidence stay in the internal runbook. */
 export const PRIVACY_DOCUMENT = {
-  revision: '2026-10-16',
-  updatedLabel: '16 octobre 2026',
+  revision: '2026-11-03',
+  updatedLabel: '3 novembre 2026',
   contact: 'privacy@suppernote.com',
   hosting: 'OVHcloud',
   review:
@@ -10,6 +10,8 @@ export const PRIVACY_DOCUMENT = {
     'Suppernote détermine les finalités du traitement des demandes de démonstration, de la gestion de ses comptes et de la sécurité de son service. Pour la gestion des réservations et de la clientèle, le restaurant détermine les finalités et Suppernote traite les données sur ses instructions.',
   reservationProcessing:
     'La prise et la gestion d’une réservation reposent sur l’exécution du contrat avec le restaurant. Les confirmations suivent les choix de communication recueillis lors de la réservation. Le marketing nécessite un consentement distinct : une réservation ne vaut pas inscription à une campagne.',
+  optOutRegister:
+    'Lorsque vous vous désinscrivez d’un message marketing, que vous retirez votre accord auprès du restaurant ou que notre prestataire d’envoi nous signale votre plainte, Suppernote conserve pour le compte de ce restaurant une empreinte de votre adresse e-mail ou de votre numéro de téléphone, calculée avec une clé secrète (HMAC-SHA256), avec le canal, le motif, la source et la date de l’opposition. Cette empreinte n’est pas enregistrée dans votre fiche client et subsiste après l’effacement de vos données. Elle est comparée à vos coordonnées avant un envoi marketing de ce restaurant et sert uniquement à éviter de vous solliciter de nouveau. Il s’agit d’une donnée personnelle pseudonymisée, pas d’une donnée anonyme. Ce traitement repose sur l’intérêt légitime du restaurant à respecter durablement votre opposition et à pouvoir le démontrer. Vous pouvez y accéder et, pour des raisons tenant à votre situation particulière, vous opposer à cette conservation auprès du restaurant ou à privacy@suppernote.com. L’opposition est levée si vous donnez de nouveau votre accord en ligne.',
   transfers:
     'Selon les fonctionnalités utilisées, certains prestataires peuvent traiter des données hors de l’Espace économique européen. Les pays concernés et les garanties de transfert doivent être précisés dans la documentation applicable au service ; leur vérification est en cours.',
   supplierInformation:
@@ -64,6 +66,8 @@ export const PRIVACY_RETENTION = {
     'Les enregistrements et rapports sont limités aux appels de test autorisés. L’accès à l’audio expire dans un délai configuré de un à trente jours. La suppression effective et les copies conservées par les prestataires restent à vérifier.',
   debugDialogue:
     'Les textes de diagnostic des tests autorisés ont une échéance de quatorze jours. La suppression effective et les copies restent à vérifier.',
+  optOutRegister:
+    'L’empreinte du registre d’opposition est conservée trois ans à compter de la dernière opposition, durée minimale recommandée par la CNIL, puis purgée automatiquement. Elle est supprimée plus tôt si l’opposition est levée ou si le restaurant est supprimé du service.',
   billing:
     'Les pièces comptables et justificatifs soumis à cette obligation sont conservés dix ans à compter de la clôture de l’exercice. Cette durée ne s’applique pas à toutes les données de paiement.',
   logs: 'Les journaux techniques servent à la sécurité et au diagnostic des incidents. Leur durée effective de conservation reste à préciser.',
@@ -98,6 +102,11 @@ export const PRIVACY_RETENTION_RULES = [
     id: 'debugDialogue',
     category: 'Diagnostic des tests',
     description: PRIVACY_RETENTION.debugDialogue,
+  },
+  {
+    id: 'optOutRegister',
+    category: 'Registre d’opposition marketing',
+    description: PRIVACY_RETENTION.optOutRegister,
   },
   { id: 'billing', category: 'Facturation', description: PRIVACY_RETENTION.billing },
   { id: 'logs', category: 'Journaux techniques', description: PRIVACY_RETENTION.logs },
