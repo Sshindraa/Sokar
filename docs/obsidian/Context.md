@@ -8,6 +8,8 @@
 
 ## TODOs actifs
 
+- [ ] CRM #659 : révisions limitées au périmètre réel en local ; transactions métier locales concurrentes : attente observable pour un même client. Qualifier la migration additive en staging et décider avant promotion ; PR sans auto-merge.
+
 - [ ] Suppernote : migration de domaine livrée ; suivre `migration-suppernote.md` et vérifier l’état des webhooks fournisseurs. Monogramme, paquets `@suppernote/*` et nom de la démo en revue (PR #646). Appel vocal réel de bout en bout à faire après recharge OpenRouter.
 
 - [ ] Marketing : avant tout envoi réel, rouvrir l'effacement et l'opposition, et mentionner le ciblage selon l'historique dans la notice client (`privacy-client-annex.md`).
