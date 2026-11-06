@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/node';
 
 /**
- * Centralized Sentry client for the Sokar API.
+ * Centralized Sentry client for the Suppernote API.
  *
  * Why a wrapper?
  *

@@ -1,4 +1,4 @@
-import type { EntitlementCapability, PlanEntitlements } from '@sokar/config';
+import type { EntitlementCapability, PlanEntitlements } from '@suppernote/config';
 
 export type EffectiveEntitlements = PlanEntitlements & {
   readonly restaurantId: string;

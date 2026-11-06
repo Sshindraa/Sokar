@@ -9,11 +9,11 @@
  * messageries n'affichent pas le SVG).
  */
 
-import { BRAND_SLOGAN, BRAND_TITLE } from '@sokar/shared';
+import { BRAND_SLOGAN, BRAND_TITLE } from '@suppernote/shared';
 
 export type BillingNotificationKind = 'trial-ending' | 'service-suspended';
 
-/** Activité de Sokar pour le restaurant depuis le début de l'essai ou de l'abonnement. */
+/** Activité de Suppernote pour le restaurant depuis le début de l'essai ou de l'abonnement. */
 export type ActivityRecap = {
   /** Appels reçus par l'assistant. */
   calls: number;
@@ -70,10 +70,10 @@ function formatDate(date: Date, withWeekday = true): string {
 function recapSentence(recap: ActivityRecap): string | null {
   if (recap.calls === 0) return null;
   const calls = plural(recap.calls, 'appel', 'appels');
-  if (recap.reservations === 0) return `Sokar a décroché ${calls} pour vous.`;
+  if (recap.reservations === 0) return `Suppernote a décroché ${calls} pour vous.`;
   const reservations = plural(recap.reservations, 'réservation', 'réservations');
   const covers = plural(recap.covers, 'couvert', 'couverts');
-  return `Sokar a décroché ${calls} et pris ${reservations} pour vous (${covers}).`;
+  return `Suppernote a décroché ${calls} et pris ${reservations} pour vous (${covers}).`;
 }
 
 // ─── Dark header ────────────────────────────────────────────────────────────
@@ -87,8 +87,8 @@ function brandBar(args: { logoUrl: string; badge: string; badgeDot?: string }): 
           <tr>
             <td valign="middle">
               <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-                <td valign="middle"><img src="${escapeHtml(args.logoUrl)}" width="36" height="36" alt="Sokar" style="display:block;width:36px;height:36px;border:1px solid ${NIGHT_LINE};border-radius:10px"></td>
-                <td valign="middle" style="padding-left:12px;font-family:${FONT};font-size:17px;font-weight:800;letter-spacing:-0.2px;color:${CREAM}">Sokar</td>
+                <td valign="middle"><img src="${escapeHtml(args.logoUrl)}" width="36" height="36" alt="Suppernote" style="display:block;width:36px;height:36px;border:1px solid ${NIGHT_LINE};border-radius:10px"></td>
+                <td valign="middle" style="padding-left:12px;font-family:${FONT};font-size:17px;font-weight:800;letter-spacing:-0.2px;color:${CREAM}">Suppernote</td>
               </tr></table>
             </td>
             <td align="right" valign="middle">
@@ -229,9 +229,9 @@ function layout(args: {
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
         <tr><td align="center" style="padding:28px 16px 0">
           <img src="${escapeHtml(args.logoUrl)}" width="24" height="24" alt="" style="display:block;width:24px;height:24px;border-radius:7px;margin:0 auto 12px">
-          <p style="margin:0 0 2px;font-family:${FONT};font-size:13px;font-weight:600;color:${INK}">Sokar, ${BRAND_TITLE.charAt(0).toLowerCase()}${BRAND_TITLE.slice(1)}</p>
+          <p style="margin:0 0 2px;font-family:${FONT};font-size:13px;font-weight:600;color:${INK}">Suppernote, ${BRAND_TITLE.charAt(0).toLowerCase()}${BRAND_TITLE.slice(1)}</p>
           <p style="margin:0 0 10px;font-family:${FONT};font-size:12px;font-style:italic;color:${MUTED}">${BRAND_SLOGAN}</p>
-          <p style="margin:0 0 10px;font-family:${FONT};font-size:12px;line-height:1.6;color:${MUTED}">Vous recevez cet e-mail parce que vous avez un compte Sokar pour ${name}.</p>
+          <p style="margin:0 0 10px;font-family:${FONT};font-size:12px;line-height:1.6;color:${MUTED}">Vous recevez cet e-mail parce que vous avez un compte Suppernote pour ${name}.</p>
           <p style="margin:0;font-family:${FONT};font-size:12px;color:${MUTED}">
             <a href="${escapeHtml(args.dashboardUrl)}/dashboard" style="color:${MUTED};text-decoration:underline">Mon espace</a>
             &nbsp;·&nbsp;
@@ -260,7 +260,7 @@ export function buildTrialEndingEmail(args: {
   const endsOn = formatDate(args.trialEndsAt);
   const endsOnShort = formatDate(args.trialEndsAt, false);
   const recap = recapSentence(args.recap);
-  const subject = `${args.restaurantName} : votre essai Sokar se termine ${endsOn}`;
+  const subject = `${args.restaurantName} : votre essai Suppernote se termine ${endsOn}`;
   // Stripe warns three days ahead, but a retried job can leave later: count from the real end.
   const daysLeft = Math.max(
     0,
@@ -286,7 +286,7 @@ export function buildTrialEndingEmail(args: {
       html: layout({
         documentTitle: subject,
         preheader:
-          'Votre numéro Sokar n’a encore reçu aucun appel : vérifiez le renvoi de votre ligne.',
+          'Votre numéro Suppernote n’a encore reçu aucun appel : vérifiez le renvoi de votre ligne.',
         logoUrl,
         restaurantName: args.restaurantName,
         dashboardUrl: base,
@@ -296,14 +296,14 @@ export function buildTrialEndingEmail(args: {
           eyebrow: name,
           bigFigure,
           title: 'Votre assistant attend son premier appel',
-          lead: `Votre essai se termine ${endsOn}, et votre numéro Sokar n’a encore reçu aucun appel.`,
+          lead: `Votre essai se termine ${endsOn}, et votre numéro Suppernote n’a encore reçu aucun appel.`,
           daysLeft,
         }),
         body: [
           sectionLabel('À faire maintenant'),
           note({
             title: 'Activez le renvoi de votre ligne',
-            text: 'Le plus souvent, le renvoi de votre numéro vers Sokar n’est pas encore activé. Une fois fait, l’assistant décroche à votre place pendant le service, dès le premier appel.',
+            text: 'Le plus souvent, le renvoi de votre numéro vers Suppernote n’est pas encore activé. Une fois fait, l’assistant décroche à votre place pendant le service, dès le premier appel.',
           }),
           cta,
         ].join(''),
@@ -329,10 +329,10 @@ export function buildTrialEndingEmail(args: {
         daysLeft,
       }),
       body: [
-        sectionLabel('Ce que Sokar a fait pour vous'),
+        sectionLabel('Ce que Suppernote a fait pour vous'),
         recapPanel(args.recap),
         cta,
-        `<p style="margin:22px 0 0;padding-top:20px;border-top:1px solid ${LINE};font-family:${FONT};font-size:13px;line-height:1.6;color:${MUTED};text-align:center">Sans carte, l’assistant cessera de décrocher le ${endsOnShort} : pensez alors à désactiver le renvoi de votre ligne vers Sokar. Vos réglages restent conservés.</p>`,
+        `<p style="margin:22px 0 0;padding-top:20px;border-top:1px solid ${LINE};font-family:${FONT};font-size:13px;line-height:1.6;color:${MUTED};text-align:center">Sans carte, l’assistant cessera de décrocher le ${endsOnShort} : pensez alors à désactiver le renvoi de votre ligne vers Suppernote. Vos réglages restent conservés.</p>`,
       ].join(''),
     }),
   };
@@ -351,9 +351,9 @@ export function buildServiceSuspendedEmail(args: {
   const recap = recapSentence(args.recap);
   const ended = args.endedFromTrial
     ? 'Votre essai gratuit est terminé'
-    : 'Votre abonnement Sokar est terminé';
+    : 'Votre abonnement Suppernote est terminé';
   const period = args.endedFromTrial ? 'votre essai' : 'votre abonnement';
-  const subject = `${args.restaurantName} : votre assistant Sokar ne répond plus`;
+  const subject = `${args.restaurantName} : votre assistant Suppernote ne répond plus`;
 
   return {
     subject,
@@ -369,7 +369,7 @@ export function buildServiceSuspendedEmail(args: {
         badgeDot: ALERT,
         eyebrow: name,
         title: 'Votre assistant ne répond plus aux appels',
-        lead: `${ended} : l’assistant ne décroche plus et vos clients ne peuvent plus réserver par téléphone avec Sokar.`,
+        lead: `${ended} : l’assistant ne décroche plus et vos clients ne peuvent plus réserver par téléphone avec Suppernote.`,
       }),
       body: [
         ...(recap
@@ -380,7 +380,7 @@ export function buildServiceSuspendedEmail(args: {
             ]
           : []),
         note({
-          title: 'Votre ligne est-elle encore renvoyée vers Sokar ?',
+          title: 'Votre ligne est-elle encore renvoyée vers Suppernote ?',
           text: 'Si oui, vos clients entendent désormais un court message leur demandant de rappeler. Pour qu’ils vous joignent directement, désactivez ce renvoi chez votre opérateur, ou réactivez l’assistant.',
           accent: ALERT,
         }),

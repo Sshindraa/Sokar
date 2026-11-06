@@ -302,7 +302,7 @@ describe('Stripe Connect account creation', () => {
       details_submitted: true,
     });
     sdk.accountLinkCreate.mockResolvedValue({ url: 'https://connect.stripe.com/setup/test' });
-    vi.stubEnv('DASHBOARD_URL', 'https://staging.sokar.tech');
+    vi.stubEnv('DASHBOARD_URL', 'https://staging.suppernote.com');
     const { retrieveConnectedAccount, createConnectedAccountLink } =
       await import('../stripe.service');
     try {
@@ -319,8 +319,8 @@ describe('Stripe Connect account creation', () => {
       expect(sdk.accountLinkCreate).toHaveBeenCalledWith({
         account: 'acct_testMerchant',
         type: 'account_onboarding',
-        refresh_url: 'https://staging.sokar.tech/dashboard/gift-cards?stripeConnect=refresh',
-        return_url: 'https://staging.sokar.tech/dashboard/gift-cards?stripeConnect=return',
+        refresh_url: 'https://staging.suppernote.com/dashboard/gift-cards?stripeConnect=refresh',
+        return_url: 'https://staging.suppernote.com/dashboard/gift-cards?stripeConnect=return',
       });
     } finally {
       vi.unstubAllEnvs();

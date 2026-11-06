@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { BRAND_SLOGAN, BRAND_TITLE } from '@sokar/shared';
+import { BRAND_SLOGAN, BRAND_TITLE } from '@suppernote/shared';
 import { NextIntlClientProvider } from 'next-intl';
 import { setRequestLocale, getMessages } from 'next-intl/server';
 import { cookies } from 'next/headers';
@@ -13,17 +13,15 @@ import './globals.css';
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: 'cover',
   themeColor: '#030303',
 };
 
 export const metadata: Metadata = {
-  title: `Sokar — ${BRAND_TITLE}`,
+  title: `Suppernote — ${BRAND_TITLE}`,
   description: BRAND_SLOGAN,
   // Base absolue pour les canonical et Open Graph relatifs des pages marketing.
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://sokar.tech'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://suppernote.com'),
   manifest: '/manifest.json',
   icons: {
     icon: [
@@ -37,7 +35,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Sokar',
+    title: 'Suppernote',
   },
   other: {
     'mobile-web-app-capable': 'yes',

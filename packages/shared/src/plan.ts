@@ -30,7 +30,7 @@ export const PLAN_LABELS: Record<Plan, string> = {
 };
 
 /**
- * Sokar is a micro-entreprise under the VAT franchise: prices are charged without VAT and every
+ * Suppernote is a micro-entreprise under the VAT franchise: prices are charged without VAT and every
  * price display and invoice carries this legal mention. Change it only when the VAT status changes.
  */
 export const VAT_MENTION = 'TVA non applicable, art. 293 B du CGI';

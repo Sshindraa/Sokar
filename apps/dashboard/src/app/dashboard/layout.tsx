@@ -1,10 +1,19 @@
 import { ReactNode } from 'react';
 import { setRequestLocale } from 'next-intl/server';
 import { cookies } from 'next/headers';
+import localFont from 'next/font/local';
 import { DEFAULT_LOCALE, LOCALE_COOKIE, resolveLocale, type Locale } from '@/i18n/config';
 import DashboardLayoutClient from './_layout-client';
 
 export const dynamic = 'force-dynamic';
+
+// Police du mot-symbole, la même que sur la page d'accueil (classe `font-brand`).
+const fraunces = localFont({
+  src: '../fonts/fraunces-latin.woff2',
+  display: 'swap',
+  variable: '--font-brand',
+  weight: '400 700',
+});
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   // Resolve locale from cookie (same logic as root layout)
@@ -19,8 +28,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     .map((id) => id.trim())
     .filter((id) => id && id !== '*');
   return (
-    <DashboardLayoutClient crmQualificationRestaurantIds={crmQualificationRestaurantIds}>
-      {children}
-    </DashboardLayoutClient>
+    <div className={`${fraunces.variable} contents`}>
+      <DashboardLayoutClient crmQualificationRestaurantIds={crmQualificationRestaurantIds}>
+        {children}
+      </DashboardLayoutClient>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { PRICING_CATALOG } from '@sokar/shared';
+import { PRICING_CATALOG } from '@suppernote/shared';
 
 export const PLANS = {
   ESSENTIAL: { label: 'Essential', price: PRICING_CATALOG.essential.monthlyCents / 100 },

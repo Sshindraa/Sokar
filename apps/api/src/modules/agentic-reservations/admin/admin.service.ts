@@ -16,7 +16,7 @@ import type { PrismaClient, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { logger } from '../../../shared/logger/pino';
 import { hashApiKey } from '../../../shared/crypto/api-key-hash';
-import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { DEFAULT_MAX_PARTY_SIZE } from '@suppernote/config';
 import { PolicyValidationError, validateExposureSettings } from '../core/policies.service.js';
 import { AuditLogService } from '../core/audit-log.service.js';
 import {
@@ -94,7 +94,7 @@ export class AgenticAdminService {
       }
     }
 
-    // La publication Sokar Connect pose `agenticOptIn` sans `mcpEnabled` : on compare l'état
+    // La publication Suppernote Connect pose `agenticOptIn` sans `mcpEnabled` : on compare l'état
     // réellement actif (les deux drapeaux) pour qu'une activation resynchronise `mcpEnabled`.
     const currentMcp = await this.isMcpActive(args.restaurantId, current.agenticOptIn);
     const mcpChanged = args.input.mcp !== currentMcp;

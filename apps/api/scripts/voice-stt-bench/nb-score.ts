@@ -18,7 +18,7 @@
  * réussite et faisait varier le dénominateur de 69 à 93 selon la condition.
  *
  * Usage :
- *   pnpm --filter @sokar/api exec tsx scripts/voice-stt-bench/nb-score.ts .data/nb-results.json
+ *   pnpm --filter @suppernote/api exec tsx scripts/voice-stt-bench/nb-score.ts .data/nb-results.json
  */
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';

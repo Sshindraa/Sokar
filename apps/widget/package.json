@@ -1,5 +1,5 @@
 {
-  "name": "@sokar/widget",
+  "name": "@suppernote/widget",
   "version": "0.0.1",
   "private": true,
   "scripts": {
@@ -12,7 +12,7 @@
     "clean": "rm -rf .turbo .next"
   },
   "dependencies": {
-    "@sokar/shared": "workspace:*",
+    "@suppernote/shared": "workspace:*",
     "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",
     "next": "^16.4.2",

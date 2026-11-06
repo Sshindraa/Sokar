@@ -29,6 +29,7 @@ import { ReservationService } from '../../core/reservation.service';
 import { computeIdempotencyScope, hashPayload } from '../../core/idempotency.service';
 import { redactPiiInString, redactResponse } from '../response-redaction';
 import { McpRateLimiter } from '../rate-limit';
+import { canHoldSlot } from '../../core/hold-slot-limit';
 import { getToolOutputSchema } from './tool-definitions';
 import { formatMcpSuccessMessage } from '../presentation';
 import { assertNoPiiLeak } from '../../../../shared/observability/pii-leak';
@@ -72,6 +73,8 @@ export type ToolContext = {
   channel?: ReservationChannel;
   /** Restaurant-scoped API keys act as trusted staff; OAuth tokens do not. */
   trustedRestaurantAccess?: boolean;
+  /** IP du client HTTP : plafonne les holds par client et par créneau. */
+  clientIp?: string;
 };
 
 export type ToolResult<T = unknown> =
@@ -666,6 +669,16 @@ export class McpToolRegistry {
       if (kind === 'quote') {
         const quote = await this.holdService.createQuote(args);
         return ok({ quoteId: quote.id, expiresAt: quote.expiresAt.toISOString() });
+      }
+      if (
+        kind === 'hold' &&
+        !(await canHoldSlot({
+          restaurantId: input.restaurantId,
+          slotStart: range.start,
+          clientIp: ctx.clientIp ?? ctx.clientId,
+        }))
+      ) {
+        return toolError('Too many holds for this slot', 'RATE_LIMITED');
       }
       const hold = await this.holdService.createHold(args);
       return ok({ holdToken: hold.holdToken, expiresAt: hold.expiresAt.toISOString() });

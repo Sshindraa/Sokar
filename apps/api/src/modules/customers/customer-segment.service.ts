@@ -267,7 +267,7 @@ export const SYSTEM_CUSTOMER_SEGMENTS: readonly SystemCustomerSegment[] = [
   {
     key: 'vip_manual',
     name: 'VIP manuels',
-    description: 'Profils marqués VIP dans Sokar.',
+    description: 'Profils marqués VIP dans Suppernote.',
     definition: {
       version: 1,
       operator: 'AND',

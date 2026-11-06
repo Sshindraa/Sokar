@@ -2,7 +2,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import { RESPAN_BASE_URL } from '@sokar/config';
+import { RESPAN_BASE_URL } from '@suppernote/config';
 import {
   BEHAVIORS,
   BEHAVIOR_SET_VERSION,

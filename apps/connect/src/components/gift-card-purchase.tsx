@@ -2,7 +2,7 @@
 import { GiftCardTestBanner } from './gift-card-test-banner';
 
 /**
- * Sokar Connect — GiftCardPurchase.
+ * Suppernote Connect — GiftCardPurchase.
  *
  * Flow d'achat d'une carte cadeau en 6 étapes :
  *   1. Choix du type (montant libre ou pack expérience)
@@ -15,7 +15,7 @@ import { GiftCardTestBanner } from './gift-card-test-banner';
  * Orchestrator : délègue l'état au hook useGiftCardFlow et le rendu
  * aux sous-composants d'étape dans ./gift-card/.
  *
- * Design aligné avec le widget de réservation Sokar :
+ * Design aligné avec le widget de réservation Suppernote :
  *   - Background cream avec décorations gradient
  *   - Panneaux glassmorphism (backdrop-blur, border-white/70)
  *   - Boutons rounded-full avec hover lift et active scale
@@ -107,7 +107,7 @@ export function GiftCardPurchase({
         })}
       </div>
 
-      {/* Error — style Sokar avec icône Lucide */}
+      {/* Error — style Suppernote avec icône Lucide */}
       {flow.error && (
         <div className="flex items-start gap-2.5 rounded-2xl border border-red-200/80 bg-red-50/80 p-4 backdrop-blur-sm">
           <AlertCircle size={18} className="mt-0.5 shrink-0 text-red-600" />

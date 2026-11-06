@@ -98,7 +98,7 @@ export const COMPANION_TOOLS = [
     function: {
       name: 'monthly_roi',
       description:
-        'Retour sur investissement d’un mois : réservations, couverts, CA et économies de commission TheFork ESTIMÉS, coût mensuel Sokar.',
+        'Retour sur investissement d’un mois : réservations, couverts, CA et économies de commission TheFork ESTIMÉS, coût mensuel Suppernote.',
       parameters: {
         type: 'object',
         properties: {

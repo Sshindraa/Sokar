@@ -31,7 +31,7 @@ delegation:
 
 # skills_dir: doit pointer sur le repo Sokar (racine), PAS sur tools/hermes/skills.
 # Le repo-root charge .devin/skills/orchestrate (orchestration Devin).
-# Les scripts tools/hermes/skills/obsidian/ (auto_doc/auto_sync/notion_sync) sont
+# Les scripts tools/hermes/skills/obsidian/ (auto_doc/auto_sync) sont
 # invoqués par code via sys.path dans mcp_serve.py — ils ne sont PAS des skills Hermes
 # (aucun SKILL.md), donc un skills_dir dessus ne chargerait rien de plus.
 # Ne JAMAIS remettre un chemin iCloud (Library/Mobile Documents/...) : il est mort.

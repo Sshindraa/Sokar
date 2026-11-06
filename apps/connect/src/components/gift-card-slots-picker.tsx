@@ -1,17 +1,17 @@
 'use client';
 
 /**
- * Sokar Connect — GiftCardSlotsPicker.
+ * Suppernote Connect — GiftCardSlotsPicker.
  *
  * Affiche les 3 créneaux proposés par l'API. Au clic, demande les infos
  * du bénéficiaire puis appelle /book pour confirmer la réservation.
  *
- * Design aligné avec le widget de réservation Sokar.
+ * Design aligné avec le widget de réservation Suppernote.
  */
 
 import { useState, type CSSProperties } from 'react';
 import { Check, Calendar, AlertCircle, Loader2 } from 'lucide-react';
-import { formatDate } from '@sokar/shared';
+import { formatDate } from '@suppernote/shared';
 import type { GiftCardSlot, GiftCardBookResult } from '@/lib/api/gift-cards';
 import { bookGiftCardSlot } from '@/lib/api/gift-cards';
 

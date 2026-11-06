@@ -2,9 +2,9 @@
 description: Sokar project context for Hermes CLI agents
 ---
 
-# Sokar Agent Context
+# Suppernote Agent Context
 
-Sokar is a French-first restaurant platform: reservations on every channel (phone, web, widget, AI assistants via MCP), service organisation (floor plan, Service Copilot) and customer relationship (CRM, loyalty, gift cards, experiences). The AI voice agent is one feature, not the product definition. Brand: "Le chef de rang numérique de votre restaurant" (`packages/shared/src/brand.ts`); product scope and readiness: `docs/PROJECT_MAP.md#ce-quest-sokar`.
+Suppernote (formerly Sokar; private workspace packages use `@suppernote/*` and production still uses `/opt/sokar`) is a French-first restaurant platform: reservations on every channel (phone, web, widget, AI assistants via MCP), service organisation (floor plan, Service Copilot) and customer relationship (CRM, loyalty, gift cards, experiences). The AI voice agent is one feature, not the product definition. Brand: "Le chef de rang numérique de votre restaurant" (`packages/shared/src/brand.ts`); product scope and readiness: `docs/PROJECT_MAP.md#ce-quest-sokar`.
 Keep this file short. Detailed docs are in `docs/runbooks/` and `docs/architecture/`.
 
 ## Stack
@@ -45,7 +45,7 @@ sokar/
 6. Git can be unstable on this Mac when multiple IDEs are open. Before bulk git ops, inspect active git/IDE processes and prefer scoped staging.
 7. Session start: read the **`## TODOs actifs` section only** of `docs/obsidian/Context.md` (`sed -n '/^## TODOs actifs/,/^## Décisions récentes/p' docs/obsidian/Context.md`) plus the **last ~3 entries of `docs/obsidian/Journal.md`** (`tail -3`). Open the rest of `Context.md` only when you need a past decision, and never `cat` a whole vault file: these are append-only logs and reading them in full costs tens of thousands of tokens. The vault is cross-session memory; AGENTS.md is repo-specific, the vault is the running log.
 8. After any significant change (architecture, schema, provider, feature flag, API route, decision, legacy removal), update the vault. Do not wait to be asked. Append a dated entry to `docs/obsidian/Journal.md` (the full log). Touch `docs/obsidian/Context.md` only for a TODO or a current-state change, and only with a decision — **never** an activity entry, which belongs in `Journal.md`. Keep `Context.md` under ~8 Ko; `scripts/quality/check-vault-size.sh` warns at pre-push.
-9. After committing a change on a working branch, run `pnpm pr:submit`: it pushes the branch and creates or reuses its PR. It does not enable auto-merge; merging stays a human decision. Never push directly to `main`.
+9. After committing a change on a working branch, run `pnpm pr:submit`: it pushes the branch and creates or reuses its PR. It enables squash auto-merge: the PR merges by itself once the required checks are green (`PR_NO_AUTO_MERGE=1 pnpm pr:submit` to keep it open for review, e.g. DB migration, payment, auth). Never push directly to `main` (GitHub branch protection refuses it anyway).
 
 ## Token budget
 
@@ -78,7 +78,7 @@ pnpm db:studio  # Prisma Studio
 # Agent
 hermes          # interactive agent
 hermes -z "task" # one-shot task
-pnpm pr:submit  # push branch, create or reuse its PR (no auto-merge)
+pnpm pr:submit  # push branch, create or reuse its PR, squash auto-merge when CI is green
 ```
 
 ## Code conventions
@@ -147,7 +147,17 @@ Safe path: `redactPii()`.
 ## Environment
 
 - **Dev:** `.env.local` (root), `packages/database/.env`, per-app `.env`.
-- **Staging:** `https://staging.sokar.tech` / `api-staging.sokar.tech` on VPS `sokar`.
-- **Prod:** `https://sokar.tech` / `api.sokar.tech` on VPS `sokar`.
+- **Staging:** `https://staging.suppernote.com` / `api-staging.suppernote.com` on VPS `sokar`.
+- **Prod:** `https://suppernote.com` / `api.suppernote.com` on VPS `sokar`.
 - One `.env` per app, no `.env.prod`. `NEXT_PUBLIC_*` is baked at build time.
 - See `docs/runbooks/environment.md` for details.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues, through the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.

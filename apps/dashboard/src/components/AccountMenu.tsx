@@ -33,7 +33,7 @@ const brandClassName =
 
 function RestaurantLink() {
   return (
-    <Link href="/dashboard" aria-label="Sokar" title="Sokar" className={brandClassName}>
+    <Link href="/dashboard" aria-label="Suppernote" title="Suppernote" className={brandClassName}>
       <Image
         src="/sokar-restaurant-mark.png"
         alt=""

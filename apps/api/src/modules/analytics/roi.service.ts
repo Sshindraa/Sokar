@@ -1,5 +1,9 @@
 import { db } from '../../shared/db/client';
-import { THEFORK_COMMISSION_PER_PAX, DEFAULT_AVERAGE_TICKET, PLAN_PRICE_MAP } from '@sokar/config';
+import {
+  THEFORK_COMMISSION_PER_PAX,
+  DEFAULT_AVERAGE_TICKET,
+  PLAN_PRICE_MAP,
+} from '@suppernote/config';
 import { COUNTED_RESERVATION_STATES } from '../../shared/reservations/reservation-state';
 
 export interface RoiReport {

@@ -21,9 +21,9 @@ fournisseur, contrat, identité Clerk réelle ou pilote restaurant.
 Commandes exécutées depuis la racine :
 
 ```text
-pnpm --filter @sokar/api exec vitest run <fichiers ciblés>
-pnpm --filter @sokar/shared exec vitest run src/__tests__/plan.test.ts
-pnpm --filter @sokar/dashboard exec vitest run src/app/PricingSection.test.tsx
+pnpm --filter @suppernote/api exec vitest run <fichiers ciblés>
+pnpm --filter @suppernote/shared exec vitest run src/__tests__/plan.test.ts
+pnpm --filter @suppernote/dashboard exec vitest run src/app/PricingSection.test.tsx
 ```
 
 Les suites utilisent des mocks ou des fixtures locales sauf la preuve P0

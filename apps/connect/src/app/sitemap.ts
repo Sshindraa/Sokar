@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Sitemap dynamique Next.js.
+ * Suppernote Connect — Sitemap dynamique Next.js.
  *
  * Utilise les endpoints publics /public/sitemap-data et /public/cities
  * (apps/api) plutôt que Prisma direct. Cf. spec v1.1 §6.6 + §7.5.
@@ -15,10 +15,10 @@
  */
 
 import type { MetadataRoute } from 'next';
-import { isConnectDemoSlug } from '@sokar/shared';
+import { isConnectDemoSlug } from '@suppernote/shared';
 import { fetchSitemapSources } from '@/lib/api-client';
 
-const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
+const SITE_URL = process.env.SITE_URL ?? 'https://suppernote.com';
 
 // Rendu à la requête : le build n'appelle pas l'API (absente en CI). Les données restent en cache
 // 5 min via fetchSitemapSources (next.revalidate). Une panne de l'API fait échouer la requête au

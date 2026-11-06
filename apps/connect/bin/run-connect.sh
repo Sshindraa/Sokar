@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sokar Connect — Lance le serveur standalone en production.
+# Suppernote Connect — Lance le serveur standalone en production.
 #
 # Usage: bash bin/run-connect.sh
 #   - Copie les static assets (via copy-static.sh)
@@ -38,5 +38,5 @@ fi
 # 3. Lancer le serveur
 export PORT="${PORT:-4002}"
 export HOSTNAME="${HOSTNAME:-127.0.0.1}"
-echo "→ Starting Sokar Connect standalone on ${HOSTNAME}:${PORT}"
+echo "→ Starting Suppernote Connect standalone on ${HOSTNAME}:${PORT}"
 exec node .next/standalone/apps/connect/server.js

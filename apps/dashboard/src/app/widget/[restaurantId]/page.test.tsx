@@ -166,7 +166,9 @@ describe('origine du widget carte cadeau', () => {
   });
 
   it('conserve la même origine derrière le routage de production', () => {
-    expect(getGiftCardOrigin('https://sokar.tech', 'production')).toBe('https://sokar.tech');
+    expect(getGiftCardOrigin('https://suppernote.com', 'production')).toBe(
+      'https://suppernote.com',
+    );
   });
 });
 
@@ -704,7 +706,7 @@ describe('réservation publique sur le widget réellement servi par /book', () =
     const widget = render(<ReservationWidget />);
     fireEvent.click(await widget.findByRole('button', { name: /Continuer · 20h30/ }));
     fireEvent.change(await widget.findByLabelText('Nom complet *'), {
-      target: { value: 'Recette Sokar' },
+      target: { value: 'Recette Suppernote' },
     });
     fireEvent.change(widget.getByLabelText('Téléphone *'), { target: { value: '0600000000' } });
     fireEvent.click(widget.getByRole('button', { name: 'Valider la réservation' }));
@@ -725,7 +727,10 @@ describe('réservation publique sur le widget réellement servi par /book', () =
     expect(hold).not.toHaveProperty('testBookingToken');
     expect(confirmation).not.toHaveProperty('testBookingToken');
     expect(confirmation.marketingAttributionToken).toBe('a'.repeat(24));
-    expect(confirmation.customer).toEqual({ firstName: 'Recette Sokar', phone: '+33600000000' });
+    expect(confirmation.customer).toEqual({
+      firstName: 'Recette Suppernote',
+      phone: '+33600000000',
+    });
     expect(confirmation.holdToken).toBeTruthy();
     expect(widget.queryByText(/supprimée automatiquement sous 24 h/)).toBeNull();
   });

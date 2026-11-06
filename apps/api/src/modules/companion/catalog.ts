@@ -3,7 +3,7 @@
  * valide, calcule et décrit chaque requête à partir de ces fiches : ajouter une source, c'est ajouter
  * une fiche. Chaque lecture ne sélectionne que les champs listés dans `select`.
  */
-import type { EntitlementCapability } from '@sokar/config';
+import type { EntitlementCapability } from '@suppernote/config';
 import type { ReservationState } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { COUNTED_RESERVATION_STATES } from '../../shared/reservations/reservation-state';

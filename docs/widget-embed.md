@@ -15,7 +15,7 @@ HTML de votre site, à l'endroit où vous souhaitez afficher le formulaire :
 
 ```html
 <script
-  src="https://sokar.tech/embed.js"
+  src="https://suppernote.com/embed.js"
   data-slug="chez-sokar-demo"
   data-primary="#0f172a"
   data-accent="#f97316"
@@ -28,7 +28,7 @@ défaut le thème Sokar.
 
 ## Hôte personnalisé (local / staging)
 
-Par défaut le snippet charge le widget depuis `https://sokar.tech`. Pour tester en
+Par défaut le snippet charge le widget depuis `https://suppernote.com`. Pour tester en
 local ou sur un autre environnement, ajoutez `data-host` :
 
 ```html

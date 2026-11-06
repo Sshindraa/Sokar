@@ -1,10 +1,12 @@
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  GetBucketVersioningCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
 import { db } from '../../shared/db/client';
+import { LONG_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
 import { logger } from '../../shared/logger/pino';
 import { telnyxFetch } from '../../shared/telnyx/http-agent';
 import type { CallSession } from './stream/types';
@@ -94,6 +96,16 @@ export async function startTestCallRecording(session: CallSession): Promise<void
   const apiKey = process.env.TELNYX_API_KEY;
   if (!apiKey) throw new Error('TELNYX_API_KEY not configured');
 
+  const prepared = await db.call.updateMany({
+    where: {
+      callSid: session.callLegId,
+      restaurantId: session.restaurantId,
+      recordingStatus: { not: 'DELETED' },
+    },
+    data: { recordingStatus: 'PENDING', recordingError: null },
+  });
+  if (prepared.count !== 1) return;
+
   const response = await telnyxFetch(
     `/v2/calls/${encodeURIComponent(session.callControlId)}/actions/record_start`,
     {
@@ -109,7 +121,11 @@ export async function startTestCallRecording(session: CallSession): Promise<void
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 300);
     await db.call.updateMany({
-      where: { callSid: session.callLegId },
+      where: {
+        callSid: session.callLegId,
+        restaurantId: session.restaurantId,
+        recordingStatus: 'PENDING',
+      },
       data: {
         recordingStatus: 'FAILED',
         recordingError: `Telnyx record_start ${response.status}: ${detail}`.slice(0, 500),
@@ -117,14 +133,6 @@ export async function startTestCallRecording(session: CallSession): Promise<void
     });
     throw new Error(`Telnyx record_start failed: ${response.status}`);
   }
-
-  await db.call.updateMany({
-    where: { callSid: session.callLegId },
-    data: {
-      recordingStatus: 'PENDING',
-      recordingError: null,
-    },
-  });
 }
 
 export async function storeSavedRecording(data: SavedRecordingJobData): Promise<void> {
@@ -160,34 +168,49 @@ export async function storeSavedRecording(data: SavedRecordingJobData): Promise<
   const expiresAt = new Date(Date.now() + retentionDays() * 24 * 60 * 60 * 1000);
   const client = recordingClient();
 
-  await client.send(
-    new PutObjectCommand({
-      Bucket: bucket(),
-      Key: storageKey,
-      Body: bytes,
-      ContentType: contentType,
-      CacheControl: 'private, no-store',
-      ServerSideEncryption: 'AES256',
-      Metadata: { call_id: call.id, expires_at: expiresAt.toISOString() },
-    }),
-  );
+  await db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM calls WHERE id = ${call.id} AND restaurant_id = ${call.restaurantId} FOR UPDATE`;
+    const current = await tx.call.findFirst({
+      where: { id: call.id, restaurantId: call.restaurantId, recordingStatus: { not: 'DELETED' } },
+      select: { id: true, recordingProviderId: true, recordingStorageKey: true },
+    });
+    if (!current) throw new Error('CALL_RECORDING_NO_LONGER_AVAILABLE');
+    if (
+      (current.recordingProviderId && current.recordingProviderId !== data.recordingId) ||
+      (current.recordingStorageKey && current.recordingStorageKey !== storageKey)
+    ) {
+      throw new Error('CALL_RECORDING_REQUIRES_MANUAL_REVIEW');
+    }
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket(),
+        Key: storageKey,
+        Body: bytes,
+        ContentType: contentType,
+        CacheControl: 'private, no-store',
+        ServerSideEncryption: 'AES256',
+        Metadata: { call_id: call.id, expires_at: expiresAt.toISOString() },
+      }),
+      { abortSignal: AbortSignal.timeout(15000) },
+    );
 
-  await db.call.update({
-    where: { id: call.id },
-    data: {
-      recordingStatus: 'AVAILABLE',
-      recordingProviderId: data.recordingId,
-      recordingStorageKey: storageKey,
-      recordingContentType: contentType,
-      recordingSizeBytes: bytes.byteLength,
-      // Telnyx's recording timestamps are optional. Invalid provider values
-      // must not turn an otherwise usable recording into a failed DB write.
-      recordingStartedAt: parseRecordingDate(data.startedAt),
-      recordingEndedAt: parseRecordingDate(data.endedAt),
-      recordingExpiresAt: expiresAt,
-      recordingError: null,
-    },
-  });
+    await tx.call.update({
+      where: { id: call.id },
+      data: {
+        recordingStatus: 'AVAILABLE',
+        recordingProviderId: data.recordingId,
+        recordingStorageKey: storageKey,
+        recordingContentType: contentType,
+        recordingSizeBytes: bytes.byteLength,
+        // Telnyx's recording timestamps are optional. Invalid provider values
+        // must not turn an otherwise usable recording into a failed DB write.
+        recordingStartedAt: parseRecordingDate(data.startedAt),
+        recordingEndedAt: parseRecordingDate(data.endedAt),
+        recordingExpiresAt: expiresAt,
+        recordingError: null,
+      },
+    });
+  }, LONG_TRANSACTION_OPTIONS);
 }
 
 /**
@@ -247,8 +270,31 @@ export async function getPrivateRecording(storageKey: string, range?: string) {
   );
 }
 
+export async function assertRecordingBucketUnversioned(): Promise<void> {
+  const result = await recordingClient().send(
+    new GetBucketVersioningCommand({ Bucket: bucket() }),
+    {
+      abortSignal: AbortSignal.timeout(15000),
+    },
+  );
+  if (result.Status) throw new Error('CALL_RECORDING_BUCKET_VERSIONING_REQUIRES_MANUAL_REVIEW');
+}
+
+export async function deleteTelnyxRecording(recordingId: string): Promise<void> {
+  const apiKey = process.env.TELNYX_API_KEY;
+  if (!apiKey) throw new Error('TELNYX_API_KEY not configured');
+  const response = await telnyxFetch(`/v2/recordings/${encodeURIComponent(recordingId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!response.ok && response.status !== 404)
+    throw new Error(`Telnyx recording deletion failed: ${response.status}`);
+}
+
 export async function deletePrivateRecording(storageKey: string): Promise<void> {
-  await recordingClient().send(new DeleteObjectCommand({ Bucket: bucket(), Key: storageKey }));
+  await recordingClient().send(new DeleteObjectCommand({ Bucket: bucket(), Key: storageKey }), {
+    abortSignal: AbortSignal.timeout(15000),
+  });
 }
 
 /**
@@ -274,6 +320,7 @@ export async function putPrivateObject(
       CacheControl: 'private, no-store',
       ServerSideEncryption: 'AES256',
     }),
+    { abortSignal: AbortSignal.timeout(15000) },
   );
 }
 

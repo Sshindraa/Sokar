@@ -6,7 +6,7 @@
 # les .env avant de lancer le premier deploy.
 #
 # Prérequis (hors portée du script) :
-#   - DNS `staging.sokar.tech` et `api-staging.sokar.tech` pointent vers le VPS.
+#   - DNS `staging.suppernote.com` et `api-staging.suppernote.com` pointent vers le VPS.
 #   - Secrets GitHub `STAGING_HOST` et `STAGING_SSH_KEY` configurés.
 #   - Accès SSH root ou sudo sur sokar.
 #
@@ -21,11 +21,11 @@ if [ "$(hostname)" != "sokar" ]; then
 fi
 
 SOKAR_ROOT="/opt/sokar-staging"
-REPO_URL="https://github.com/Sshindraa/Sokar.git"
+REPO_URL="https://github.com/Sshindraa/Suppernote.git"
 WEBROOT="/var/www/certbot"
 DB_NAME="sokar_staging"
-STAGING_HOST="staging.sokar.tech"
-API_STAGING_HOST="api-staging.sokar.tech"
+STAGING_HOST="staging.suppernote.com"
+API_STAGING_HOST="api-staging.suppernote.com"
 
 # ─── 1. Répertoire de staging ───────────────────────────────────────────────
 echo "→ Création de ${SOKAR_ROOT}..."

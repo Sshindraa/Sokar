@@ -24,12 +24,12 @@ Origin: https://claude.ai
 Production:
 
 ```http
-POST https://api.sokar.tech/mcp
+POST https://api.suppernote.com/mcp
 Content-Type: application/json
 Authorization: Bearer sk_sokar_agent_xxx
 ```
 
-Staging : `POST https://api-staging.sokar.tech/mcp`. Ne pas mélanger les clients, tokens ni
+Staging : `POST https://api-staging.suppernote.com/mcp`. Ne pas mélanger les clients, tokens ni
 redirect URIs entre staging et production.
 
 Le body est un message JSON-RPC 2.0:
@@ -677,7 +677,7 @@ Terminal 1:
 ```zsh
 cd ~/Projects/Sokar/apps/api
 PATH="/usr/local/opt/node@22/bin:$PATH" \
-pnpm --filter @sokar/api exec tsx src/main.ts
+pnpm --filter @suppernote/api exec tsx src/main.ts
 ```
 
 Terminal 2:
@@ -691,7 +691,7 @@ pnpm db:seed
 cd ~/Projects/Sokar/apps/api
 SOKAR_MCP_KEY="${SOKAR_MCP_KEY:?Définissez une clé MCP locale générée par le dashboard}" \
 PATH="/usr/local/opt/node@22/bin:$PATH" \
-pnpm --filter @sokar/api exec tsx ../../tools/diagnostics/test-mcp-client.ts
+pnpm --filter @suppernote/api exec tsx ../../tools/diagnostics/test-mcp-client.ts
 ```
 
 Le client de test exécute:
@@ -716,7 +716,7 @@ cd ~/Projects/Sokar/apps/api
 SOKAR_API_BASE="http://localhost:4000" \
 SOKAR_MCP_KEY="${SOKAR_MCP_KEY:?Définissez une clé MCP locale générée par le dashboard}" \
 PATH="/usr/local/opt/node@22/bin:$PATH" \
-pnpm --filter @sokar/api exec tsx ../../tools/diagnostics/sokar-mcp-stdio.ts
+pnpm --filter @suppernote/api exec tsx ../../tools/diagnostics/sokar-mcp-stdio.ts
 ```
 
 Exemple `claude_desktop_config.json`:

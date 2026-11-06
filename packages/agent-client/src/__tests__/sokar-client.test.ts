@@ -26,7 +26,7 @@ describe('SokarAgentClient', () => {
 
   it('getTools fetches tools with default openai format', async () => {
     const client = new SokarAgentClient({
-      baseUrl: 'https://api-staging.sokar.tech',
+      baseUrl: 'https://api-staging.suppernote.com',
       apiKey: 'x',
     });
 
@@ -35,7 +35,7 @@ describe('SokarAgentClient', () => {
     const tools = await client.getTools();
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://api-staging.sokar.tech/v1/agents/tools?format=openai',
+      'https://api-staging.suppernote.com/v1/agents/tools?format=openai',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(tools).toEqual([{ name: 'search_restaurants' }]);
@@ -43,7 +43,7 @@ describe('SokarAgentClient', () => {
 
   it('executeTool posts tool and returns result', async () => {
     const client = new SokarAgentClient({
-      baseUrl: 'https://api-staging.sokar.tech',
+      baseUrl: 'https://api-staging.suppernote.com',
       apiKey: 'x',
     });
 
@@ -57,7 +57,7 @@ describe('SokarAgentClient', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://api-staging.sokar.tech/v1/agents',
+      'https://api-staging.suppernote.com/v1/agents',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
@@ -76,7 +76,7 @@ describe('SokarAgentClient', () => {
 
   it('executeTool throws on error response', async () => {
     const client = new SokarAgentClient({
-      baseUrl: 'https://api-staging.sokar.tech',
+      baseUrl: 'https://api-staging.suppernote.com',
       apiKey: 'x',
     });
 

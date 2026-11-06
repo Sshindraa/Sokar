@@ -120,7 +120,7 @@ export default function ReservationChannels({ stats }: { stats: ReservationChann
 
           <div
             aria-hidden="true"
-            className="mt-3 hidden grid-cols-[minmax(0,1fr)_6rem_5rem_3rem] gap-3 pb-2 text-right text-xs font-medium text-muted-foreground sm:grid"
+            className="mt-3 hidden grid-cols-[minmax(0,1fr)_5.5rem_3.75rem_2.75rem] gap-2 pb-2 text-right text-xs font-medium text-muted-foreground sm:grid"
           >
             <span className="text-left">Canal</span>
             <span>Réservations</span>
@@ -135,7 +135,7 @@ export default function ReservationChannels({ stats }: { stats: ReservationChann
                 <li
                   key={row.channel}
                   className={cn(
-                    'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2 transition-all duration-200 sm:grid-cols-[minmax(0,1fr)_6rem_5rem_3rem]',
+                    'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 py-2 transition-all duration-200 sm:grid-cols-[minmax(0,1fr)_5.5rem_3.75rem_2.75rem]',
                     empty && 'text-muted-foreground',
                   )}
                 >

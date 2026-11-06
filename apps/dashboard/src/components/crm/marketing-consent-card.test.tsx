@@ -64,7 +64,7 @@ describe('MarketingConsentCard', () => {
     const email = within(await waitFor(() => rowFor('E-mail')));
     expect(email.getByText('Accord donné')).toBeInTheDocument();
     expect(
-      email.getByText(/Donné le 20 octobre 2026 · Page de réservation Sokar Connect/),
+      email.getByText(/Donné le 20 octobre 2026 · Page de réservation Suppernote Connect/),
     ).toBeInTheDocument();
     const sms = within(rowFor('SMS'));
     expect(sms.getByText('Accord retiré')).toBeInTheDocument();

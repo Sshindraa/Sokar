@@ -4,7 +4,7 @@ import {
   PLAN_ENTITLEMENTS,
   hasPlanCapability,
   normalizeCommercialPlan,
-} from '@sokar/config';
+} from '@suppernote/config';
 import { isRuntimeFlagEnabled } from '../entitlement.guard';
 
 describe('entitlement contract', () => {

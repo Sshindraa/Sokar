@@ -1,4 +1,4 @@
-# @sokar/widget — OpenAI Reserve Widget
+# @suppernote/widget — OpenAI Reserve Widget
 
 ## État au 13 septembre 2026
 
@@ -21,7 +21,7 @@ Deux conditions restent ouvertes avant une activation commerciale :
    `apps/api/src/modules/agentic-reservations/openai-reserve/`, mais l’accès
    partenaire externe n’est pas encore accordé.
 2. **Publication CDN vérifiée** (workflow `deploy-widget.yml`, voir « Publication »). `next.config.js` produit un export statique
-   dans `out/` et `WIDGET_PUBLIC_URL` pointe vers `widget.sokar.tech`, mais le
+   dans `out/` et `WIDGET_PUBLIC_URL` pointe vers `widget.suppernote.com`, mais le
    DNS/CDN et un smoke test public doivent encore être validés sur un
    environnement de staging.
 
@@ -31,9 +31,9 @@ Définir `NEXT_PUBLIC_API_URL` au moment du build (par exemple
 `http://localhost:3001` en local), puis lancer :
 
 ```bash
-pnpm --filter @sokar/widget dev
-pnpm --filter @sokar/widget test
-pnpm --filter @sokar/widget typecheck
+pnpm --filter @suppernote/widget dev
+pnpm --filter @suppernote/widget test
+pnpm --filter @suppernote/widget typecheck
 ```
 
 Le fallback standalone accepte `?slug=...`. Dans ChatGPT, le slug est lu
@@ -44,7 +44,7 @@ depuis `window.openai.toolInput`.
 - Next.js 15 avec `output: export` ;
 - Tailwind CSS ;
 - OpenAI Apps SDK (`window.openai` pour l’état du widget) ;
-- API Sokar pour les disponibilités, holds et confirmations.
+- API Suppernote pour les disponibilités, holds et confirmations.
 
 ## Publication (Cloudflare Pages)
 
@@ -54,11 +54,11 @@ depuis `window.openai.toolInput`.
 Avant le premier déploiement, côté Cloudflare / GitHub :
 
 1. Créer le projet Pages `sokar-widget` (mode « Direct Upload »).
-2. Y rattacher le domaine `widget.sokar.tech` (le DNS suit automatiquement).
+2. Y rattacher le domaine `widget.suppernote.com` (le DNS suit automatiquement).
 3. Ajouter les secrets GitHub `CLOUDFLARE_API_TOKEN` (droit Pages : Edit) et
    `CLOUDFLARE_ACCOUNT_ID`.
-4. Vérifier que `CORS_ORIGINS` de l'API de prod contient `https://widget.sokar.tech`
-   (l'écran appelle `api.sokar.tech` depuis ce domaine).
+4. Vérifier que `CORS_ORIGINS` de l'API de prod contient `https://widget.suppernote.com`
+   (l'écran appelle `api.suppernote.com` depuis ce domaine).
 
 Puis lancer le workflow **Deploy Widget (Cloudflare Pages)** à la main : il construit,
 publie et vérifie que l'adresse répond 200.

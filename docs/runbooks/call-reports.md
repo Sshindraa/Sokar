@@ -104,7 +104,7 @@ Ces commandes lisent le stockage privé **depuis le VPS** (code compilé déploy
 qu'après le déploiement de cette phase). Pour un appel déjà enregistré, avant ou sans déclencheur :
 
 ```bash
-pnpm --filter @sokar/api exec tsx scripts/call-report-local.ts <id> [--refresh]
+pnpm --filter @suppernote/api exec tsx scripts/call-report-local.ts <id> [--refresh]
 ```
 
 Le script lit l'enregistrement, le dialogue et les journaux par SSH ; la clé Deepgram ne quitte pas le
@@ -115,8 +115,10 @@ Sans SSH (session Claude cloud), le rapport JSON se lit en HTTPS, pour les resta
 `Authorization` (voir `environment.md`) ; ailleurs, passer `-H "Authorization: Bearer <jeton>"` :
 
 ```bash
-curl -sS "https://api.sokar.tech/api/internal/voice/calls/latest?restaurantId=<id>"
-curl -sS "https://api.sokar.tech/api/internal/voice/calls/<début-de-l-id>/report"
+curl -sS -H "Authorization: Bearer $SOKAR_VOICE_READ_TOKEN" \
+  "https://api.suppernote.com/api/internal/voice/calls/latest?restaurantId=<id>"
+curl -sS -H "Authorization: Bearer $SOKAR_VOICE_READ_TOKEN" \
+  "https://api.suppernote.com/api/internal/voice/calls/<début-de-l-id>/report"
 ```
 
 L'audio n'est pas exposé par cette voie : l'écoute (`voice_call_audio.py --listen`) reste sur le Mac.

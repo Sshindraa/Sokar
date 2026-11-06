@@ -17,13 +17,13 @@ Le script ne modifie rien par défaut. Il utilise l'identifiant historique du re
 3. Exécuter la simulation sur l'environnement ciblé :
 
 ```sh
-pnpm --filter @sokar/database backfill:restaurant-accounts
+pnpm --filter @suppernote/database backfill:restaurant-accounts
 ```
 
 Pour limiter la simulation à quelques lignes :
 
 ```sh
-pnpm --filter @sokar/database backfill:restaurant-accounts -- --limit=2
+pnpm --filter @suppernote/database backfill:restaurant-accounts -- --limit=2
 ```
 
 ## Application
@@ -31,7 +31,7 @@ pnpm --filter @sokar/database backfill:restaurant-accounts -- --limit=2
 L'application est une action séparée, effectuée après revue du nombre de candidats :
 
 ```sh
-pnpm --filter @sokar/database backfill:restaurant-accounts -- --apply
+pnpm --filter @suppernote/database backfill:restaurant-accounts -- --apply
 ```
 
 Le script traite chaque restaurant dans une transaction et affiche uniquement le mode, le nombre de candidats et le nombre migré. Il est relançable : les restaurants déjà rattachés sont ignorés.

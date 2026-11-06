@@ -1,5 +1,5 @@
 /**
- * Tests for the Sokar Connect completeness score (pure function, no DB).
+ * Tests for the Suppernote Connect completeness score (pure function, no DB).
  *
  * Score = somme des poids (0-100) des items complétés. Chaque item est
  * vérifié via `isItemDone(key, input)`. Le score alimente la barre de

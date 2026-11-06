@@ -44,9 +44,9 @@ vi.mock('../plugins/clerk', () => ({
       if (!authHeader) {
         return reply.status(401).send({ error: 'Authentication required' });
       }
-      // Un restaurateur connecté mais hors de la liste des opérateurs Sokar.
+      // Un restaurateur connecté mais hors de la liste des opérateurs Suppernote.
       if (req.headers?.['x-test-not-operator']) {
-        return reply.status(403).send({ error: 'Sokar operator access required' });
+        return reply.status(403).send({ error: 'Suppernote operator access required' });
       }
       req.userId = 'test-operator-1';
     };
@@ -946,6 +946,7 @@ vi.mock('../shared/db/client', () => {
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       delete: vi.fn(),
     },
+    voiceDebugTurn: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     call: {
       create: vi.fn(),
       findFirst: vi.fn(),

@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
 /**
- * Configuration Playwright pour Sokar Connect.
+ * Configuration Playwright pour Suppernote Connect.
  *
  * Tests E2E des flows critiques de Connect (pages publiques) :
  *  - restaurant-page.spec.ts : page restaurant publique (/restaurant/[slug])
@@ -55,7 +55,7 @@ export default defineConfig({
     ? {}
     : {
         webServer: {
-          command: 'pnpm --filter @sokar/connect dev',
+          command: 'pnpm --filter @suppernote/connect dev',
           url: 'http://localhost:4002',
           timeout: 60_000,
           reuseExistingServer: !process.env.CI,

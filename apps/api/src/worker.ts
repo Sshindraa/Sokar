@@ -57,7 +57,7 @@ async function shutdown(signal: string): Promise<void> {
 }
 
 async function start(): Promise<void> {
-  logger.info('Sokar workers starting');
+  logger.info('Suppernote workers starting');
 
   // Endpoint de métriques (R1-6) : sans lui, les jauges de files et de SLO
   // publiées par ce process ne sont lisibles par personne.
@@ -67,7 +67,7 @@ async function start(): Promise<void> {
   // Battement lu par l'API : sans lui pendant 3 minutes, alerte « workers arrêtés ».
   startWorkerHeartbeat();
 
-  logger.info('Sokar workers ready');
+  logger.info('Suppernote workers ready');
   // PM2 `wait_ready` attend ce signal avant de considérer le process démarré.
   if (typeof process.send === 'function') {
     process.send('ready');

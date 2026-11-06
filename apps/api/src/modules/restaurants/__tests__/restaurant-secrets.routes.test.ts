@@ -8,7 +8,7 @@ const restaurantRow = {
   id: 'test-rest-1',
   name: 'Le Bistrot',
   managerPhone: '+33612345678',
-  managerEmail: 'restaurant@sokar.tech',
+  managerEmail: 'restaurant@suppernote.com',
   phoneNumber: '+33451221999',
   phoneE164: '+33611112222',
   openingHours: { tue: { open: '12:00', close: '22:00' } },
@@ -28,7 +28,7 @@ const OPENING_HOURS = {
   sun: null,
 };
 
-describe('fiche restaurant : numéro Sokar', () => {
+describe('fiche restaurant : numéro Suppernote', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -37,7 +37,7 @@ describe('fiche restaurant : numéro Sokar', () => {
     await closeApp();
   });
 
-  describe('le numéro Sokar ne se modifie pas depuis la fiche', () => {
+  describe('le numéro Suppernote ne se modifie pas depuis la fiche', () => {
     it('PATCH /restaurants/:id ignore un phoneNumber envoyé par le restaurateur', async () => {
       const app = await getApp();
       vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
@@ -58,7 +58,7 @@ describe('fiche restaurant : numéro Sokar', () => {
       expect(call?.data).toEqual(expect.objectContaining({ name: 'Le Bistrot' }));
     });
 
-    it('POST /restaurants est refusé à un restaurateur qui n’est pas opérateur Sokar', async () => {
+    it('POST /restaurants est refusé à un restaurateur qui n’est pas opérateur Suppernote', async () => {
       const app = await getApp();
 
       const res = await app.inject({

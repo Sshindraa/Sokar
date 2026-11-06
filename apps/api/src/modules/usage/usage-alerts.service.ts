@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import type { PlanUsageLimits } from '@sokar/config';
+import type { PlanUsageLimits } from '@suppernote/config';
 import type { UsageQuantity } from './usage.types';
 
 export const USAGE_ALERT_THRESHOLDS = [70, 90, 100] as const;

@@ -9,7 +9,7 @@
  * `getVoiceLlmModel()`. Un mélange modèle/provider rend les compteurs
  * mensuels inexploitables.
  */
-import type { VoiceLlmProviderName } from '@sokar/config';
+import type { VoiceLlmProviderName } from '@suppernote/config';
 import { voiceConfig } from '../../env';
 
 export type VoiceLlmProvider = VoiceLlmProviderName;

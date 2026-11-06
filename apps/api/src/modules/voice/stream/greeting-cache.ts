@@ -25,7 +25,7 @@ import { db } from '../../../shared/db/client';
 import { logger } from '../../../shared/logger/pino';
 import { getTtsCached, setTtsCached } from '../tts-cache';
 import { cleanTextForTts, addNaturalPauses } from './tts-handler';
-import { CARTESIA_MODEL, DEFAULT_CARTESIA_VOICE_ID } from '@sokar/config';
+import { CARTESIA_MODEL, DEFAULT_CARTESIA_VOICE_ID } from '@suppernote/config';
 import { buildCartesiaCacheVariant, CARTESIA_NORMALIZATION } from './cartesia-config';
 import {
   buildElevenLabsCacheVariant,

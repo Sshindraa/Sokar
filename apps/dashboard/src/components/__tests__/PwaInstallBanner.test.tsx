@@ -58,7 +58,7 @@ describe('PwaInstallBanner', () => {
       vi.advanceTimersByTime(2000);
     });
 
-    expect(screen.queryByText('Installer Sokar AI')).not.toBeInTheDocument();
+    expect(screen.queryByText('Installer Suppernote AI')).not.toBeInTheDocument();
   });
 
   it("s'affiche sur iOS Safari après le délai", () => {
@@ -70,13 +70,13 @@ describe('PwaInstallBanner', () => {
     render(<PwaInstallBanner />);
 
     // Pas encore affiché (délai 1.5s)
-    expect(screen.queryByText('Installer Sokar AI')).not.toBeInTheDocument();
+    expect(screen.queryByText('Installer Suppernote AI')).not.toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(1600);
     });
 
-    expect(screen.getByText('Installer Sokar AI')).toBeInTheDocument();
+    expect(screen.getByText('Installer Suppernote AI')).toBeInTheDocument();
   });
 
   it("ne s'affiche pas sur desktop (non-iOS)", () => {
@@ -85,7 +85,7 @@ describe('PwaInstallBanner', () => {
     act(() => {
       vi.advanceTimersByTime(2000);
     });
-    expect(screen.queryByText('Installer Sokar AI')).not.toBeInTheDocument();
+    expect(screen.queryByText('Installer Suppernote AI')).not.toBeInTheDocument();
   });
 
   it('ne recouvre pas les écrans opérationnels secondaires', () => {
@@ -100,7 +100,7 @@ describe('PwaInstallBanner', () => {
       vi.advanceTimersByTime(2000);
     });
 
-    expect(screen.queryByText('Installer Sokar AI')).not.toBeInTheDocument();
+    expect(screen.queryByText('Installer Suppernote AI')).not.toBeInTheDocument();
   });
 
   it("ne s'affiche pas si déjà en standalone (PWA installée)", () => {
@@ -117,10 +117,10 @@ describe('PwaInstallBanner', () => {
     act(() => {
       vi.advanceTimersByTime(2000);
     });
-    expect(screen.queryByText('Installer Sokar AI')).not.toBeInTheDocument();
+    expect(screen.queryByText('Installer Suppernote AI')).not.toBeInTheDocument();
   });
 
-  it("ne s'affiche pas dans l'appli iOS Sokar", () => {
+  it("ne s'affiche pas dans l'appli iOS Suppernote", () => {
     Object.defineProperty(window.navigator, 'userAgent', {
       value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 SokarIOS',
       configurable: true,
@@ -130,7 +130,7 @@ describe('PwaInstallBanner', () => {
     act(() => {
       vi.advanceTimersByTime(2000);
     });
-    expect(screen.queryByText('Installer Sokar AI')).not.toBeInTheDocument();
+    expect(screen.queryByText('Installer Suppernote AI')).not.toBeInTheDocument();
   });
 
   it('clic dismiss sauvegarde dans localStorage', () => {
@@ -145,7 +145,7 @@ describe('PwaInstallBanner', () => {
       vi.advanceTimersByTime(1600);
     });
 
-    expect(screen.getByText('Installer Sokar AI')).toBeInTheDocument();
+    expect(screen.getByText('Installer Suppernote AI')).toBeInTheDocument();
     expect(localStorage.getItem('sokar_pwa_dismissed')).toBeNull();
 
     const dismissBtn = screen.getByRole('button', { name: 'Dismiss banner' });
@@ -153,6 +153,6 @@ describe('PwaInstallBanner', () => {
     fireEvent.click(dismissBtn);
 
     expect(localStorage.getItem('sokar_pwa_dismissed')).toBe('true');
-    expect(screen.queryByText('Installer Sokar AI')).not.toBeInTheDocument();
+    expect(screen.queryByText('Installer Suppernote AI')).not.toBeInTheDocument();
   });
 });

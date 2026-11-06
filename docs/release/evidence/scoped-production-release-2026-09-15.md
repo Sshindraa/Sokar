@@ -56,8 +56,8 @@ accident pendant la qualification P1.
 ```sh
 node scripts/verify-product-gates.mjs
 bash -n scripts/deploy.sh scripts/ops/sync-stripe-prices.sh
-pnpm --filter @sokar/api typecheck
-pnpm --filter @sokar/api exec vitest run
+pnpm --filter @suppernote/api typecheck
+pnpm --filter @suppernote/api exec vitest run
 ```
 
 La promotion suit ensuite le chemin habituel : CI verte, déploiement staging,

@@ -15,7 +15,7 @@
 ## Démarrer un run
 
 ```zsh
-pnpm --filter @sokar/database mcp:sandbox start
+pnpm --filter @suppernote/database mcp:sandbox start
 ```
 
 La commande ne crée aucune donnée. Elle affiche un manifeste à conserver :
@@ -34,7 +34,7 @@ La commande ne crée aucune donnée. Elle affiche un manifeste à conserver :
 Pour rejouer exactement le même scénario plusieurs fois, fixez le `run-id` :
 
 ```zsh
-pnpm --filter @sokar/database mcp:sandbox start --run-id=chatgpt-20260929
+pnpm --filter @suppernote/database mcp:sandbox start --run-id=chatgpt-20260929
 ```
 
 ## Scénario de test
@@ -60,7 +60,7 @@ Parcours minimal :
 ## Consulter l’état
 
 ```zsh
-pnpm --filter @sokar/database mcp:sandbox status \
+pnpm --filter @suppernote/database mcp:sandbox status \
   --run-id=chatgpt-20260929 \
   --started-at=2026-09-29T10:00:00.000Z
 ```
@@ -71,7 +71,7 @@ La purge est d’abord simulée. Le résultat sépare les réservations anonymis
 journaux d’audit et les consentements conservés des artefacts opérationnels à retirer :
 
 ```zsh
-pnpm --filter @sokar/database mcp:sandbox reset \
+pnpm --filter @suppernote/database mcp:sandbox reset \
   --run-id=chatgpt-20260929 \
   --started-at=2026-09-29T10:00:00.000Z
 ```
@@ -79,7 +79,7 @@ pnpm --filter @sokar/database mcp:sandbox reset \
 Vérifier les compteurs, puis ajouter `--apply` :
 
 ```zsh
-pnpm --filter @sokar/database mcp:sandbox reset \
+pnpm --filter @suppernote/database mcp:sandbox reset \
   --run-id=chatgpt-20260929 \
   --started-at=2026-09-29T10:00:00.000Z \
   --apply

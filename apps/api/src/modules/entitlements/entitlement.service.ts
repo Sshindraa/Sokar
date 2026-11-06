@@ -2,7 +2,7 @@ import {
   PLAN_ENTITLEMENTS,
   normalizeCommercialPlan,
   type EntitlementCapability,
-} from '@sokar/config';
+} from '@suppernote/config';
 import { db } from '../../shared/db/client';
 import { getRestaurantPlanOverride } from '../../shared/configcat';
 import type { CapabilityDecision, EffectiveEntitlements } from './entitlement.types';

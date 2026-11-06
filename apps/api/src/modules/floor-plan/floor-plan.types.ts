@@ -1,5 +1,5 @@
 /**
- * Sokar Floor Plan — Types partagés pour l'allocation de tables et la
+ * Suppernote Floor Plan — Types partagés pour l'allocation de tables et la
  * disponibilité capacité-aware.
  */
 

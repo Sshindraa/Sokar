@@ -181,9 +181,9 @@ nom ambigu, question pratique, reprise, dégradation) restent à qualifier avec 
 | Sécurité des migrations                                            | `scripts/quality/check-migration-safety.mjs`                                                   | OK (1 migration ajoutée, aucune destructive)                                                      |
 | Scoping tenant                                                     | `scripts/quality/check-tenant-scoping.mjs`                                                     | OK (avertissements de baisse de baseline, informatifs)                                            |
 | Taille du vault                                                    | `scripts/quality/check-vault-size.sh`                                                          | OK (Context.md à 7 755 octets)                                                                    |
-| Tests API complets                                                 | `pnpm --filter @sokar/api test`                                                                | 354 fichiers OK, 5 ignorés ; 3 779 tests OK, 54 ignorés                                           |
-| Tests dashboard complets                                           | `pnpm --filter @sokar/dashboard test`                                                          | 77 fichiers, 584 tests OK                                                                         |
-| Tests connect complets                                             | `pnpm --filter @sokar/connect test`                                                            | 20 fichiers, 136 tests OK                                                                         |
+| Tests API complets                                                 | `pnpm --filter @suppernote/api test`                                                           | 354 fichiers OK, 5 ignorés ; 3 779 tests OK, 54 ignorés                                           |
+| Tests dashboard complets                                           | `pnpm --filter @suppernote/dashboard test`                                                     | 77 fichiers, 584 tests OK                                                                         |
+| Tests connect complets                                             | `pnpm --filter @suppernote/connect test`                                                       | 20 fichiers, 136 tests OK                                                                         |
 | Typecheck                                                          | `tsc` API, dashboard, connect                                                                  | OK, 0 erreur                                                                                      |
 | Lint                                                               | `eslint` (API) ; `next lint` (dashboard, connect) sur les fichiers modifiés                    | OK, 0 avertissement                                                                               |
 | Format                                                             | `prettier --check` sur les fichiers modifiés                                                   | OK                                                                                                |
@@ -682,7 +682,7 @@ renvoie `[]`. Les neuf autres slugs explicites du script historique
 `packages/database/scripts/unpublish-demo-restaurants.ts` répondent tous 404 sur
 `/public/r/:slug`. Aucun établissement réel n’est disponible pour un échantillon de
 fiches réelles : ne pas inventer un inventaire. Liste exacte portée par
-`@sokar/shared/connect-demo` ; aucun filtre par nom ou préfixe. Ce lot applique
+`@suppernote/shared/connect-demo` ; aucun filtre par nom ou préfixe. Ce lot applique
 `noindex, follow` (robots et Googlebot), titre/description de démonstration et bandeau
 visible sur les fiches explicites ; retire leurs données structurées Restaurant/FAQ
 et leur présence dans le sitemap, les listes paginées et les comptes/pages locales.
@@ -1249,12 +1249,12 @@ Le décompte de la section 10.30 concerne le catalogue d'avant cette fusion. Le 
 
 La décision de `main` remplace les montants de la section 10.30 : remise annuelle de 10 % (et non 20 %), base Multi-site de 299 € HT/mois, établissement supplémentaire inchangé à 99 € HT/mois. Les montants de la section 10.30 (20 %, 249 €, centimes sur les mensualités) ne sont plus valables.
 
-- Source unique : le calcul local de la branche est retiré. `@sokar/shared` fournit le catalogue, les montants exacts et l'arrondi d'affichage.
+- Source unique : le calcul local de la branche est retiré. `@suppernote/shared` fournit le catalogue, les montants exacts et l'arrondi d'affichage.
 - Affichage public : mensualités arrondies à l'euro (annuel : 179 € Essential, 269 € Pro et Multi-site de base, 89 € par établissement supplémentaire). La carte n'affiche plus de total annuel : « Facturé annuellement ». Le montant exact est indiqué avant paiement.
 - Montants exacts (inscription et Stripe) : 2 149,20 € HT par an pour Essential ; 3 229,20 € pour Pro et Multi-site de base ; Multi-site à 2 établissements 4 298,40 € HT par an, à 3 établissements 5 367,60 € HT par an.
 - Statuts et tableau comparatif : inchangés.
 
-**Vérifié.** Typage du dashboard et de l'API (après reconstruction de `@sokar/shared`), Prettier ; dashboard 83 fichiers et 621 tests verts ; paquet partagé 71 tests verts ; captures `/pricing` régénérées, 3/3 verts. Dans le navigateur (port 3107) : 179, 269 et 358 € s'affichent, « Découvrir Pro » et « Découvrir Multi-site » sont présents, console sans erreur.
+**Vérifié.** Typage du dashboard et de l'API (après reconstruction de `@suppernote/shared`), Prettier ; dashboard 83 fichiers et 621 tests verts ; paquet partagé 71 tests verts ; captures `/pricing` régénérées, 3/3 verts. Dans le navigateur (port 3107) : 179, 269 et 358 € s'affichent, « Découvrir Pro » et « Découvrir Multi-site » sont présents, console sans erreur.
 
 ### 10.33 Réserves après livraison SEO : staging et confidentialité (15/10/2026)
 

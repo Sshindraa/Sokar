@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { ArrowUpRight, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { FEATURES } from '@/app/features';
 
 interface MobileNavProps {
   buttonStyle?: 'standalone' | 'flat';
@@ -30,8 +31,7 @@ export default function MobileNav({ buttonStyle = 'standalone' }: MobileNavProps
   }, [open]);
 
   const links = [
-    { label: 'Services', href: '/#services' },
-    { label: "Cas d'usage", href: '/#demo' },
+    { label: 'La journée', href: '/#services' },
     { label: 'Tarifs', href: '/pricing' },
     { label: "S'inscrire", href: '/register' },
   ];
@@ -64,6 +64,19 @@ export default function MobileNav({ buttonStyle = 'standalone' }: MobileNavProps
             />
             {/* Panel */}
             <nav className="absolute right-0 top-0 h-full w-72 bg-background border-l border-white/10 p-6 pt-24 flex flex-col gap-2 shadow-2xl animate-in slide-in-from-right duration-300">
+              <p className="px-4 pt-1 text-sm text-white/40">Fonctionnalités</p>
+              {FEATURES.map((feature) => (
+                <Link
+                  key={feature.id}
+                  href={`/#${feature.id}`}
+                  onClick={() => setOpen(false)}
+                  className="flex min-h-[44px] items-center justify-between rounded-xl px-4 py-2 text-base text-white/70 transition-all duration-200 hover:bg-white/5 hover:text-white"
+                >
+                  {feature.label}
+                  <span className="text-sm text-white/40">{feature.hour}</span>
+                </Link>
+              ))}
+              <hr className="my-2 border-white/10" />
               {links.map((item) => (
                 <Link
                   key={item.href}

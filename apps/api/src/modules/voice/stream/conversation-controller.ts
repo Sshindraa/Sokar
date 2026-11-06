@@ -12,7 +12,7 @@ import type {
   SpellingToken,
   VoiceSpeechAct,
 } from './types';
-import { normalizeOpeningHours } from '@sokar/shared';
+import { normalizeOpeningHours } from '@suppernote/shared';
 import {
   EXPECTED_ANSWER_THRESHOLDS,
   rankExpectedAnswers,

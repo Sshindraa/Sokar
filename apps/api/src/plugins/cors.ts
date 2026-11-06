@@ -3,7 +3,7 @@ import corsPlugin from '@fastify/cors';
 import { env } from '../env';
 
 function parseCorsOrigins(): string | string[] {
-  // 1. Allowlist explicite via CORS_ORIGINS (ex: "https://sokar.tech,https://www.sokar.tech")
+  // 1. Allowlist explicite via CORS_ORIGINS (ex: "https://suppernote.com,https://www.suppernote.com")
   //    En production, CORS_ORIGINS est validé par EnvSchema (fail-fast si absent).
   if (env.CORS_ORIGINS) {
     const origins = env.CORS_ORIGINS.split(',')

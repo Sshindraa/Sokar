@@ -89,7 +89,7 @@ Complément minimisation : 28 tests du module démo et TypeScript API réussis.
 Les tests vérifient notamment l'absence de coordonnées dans la charge envoyée
 au SDK, le lien sans jeton ni identifiant et l'échappement HTML de la référence.
 
-- `pnpm --filter @sokar/shared build` : réussi.
+- `pnpm --filter @suppernote/shared build` : réussi.
 - TypeScript API, Dashboard et Connect : réussi.
 - Tous les tests du répertoire RGPD API : 83 réussis, 8 fichiers.
 - Dashboard confidentialité, affirmations marketing et formulaire démo : 16 réussis.

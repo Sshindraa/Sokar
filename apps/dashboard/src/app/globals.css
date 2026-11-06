@@ -290,6 +290,10 @@
   font-family: var(--font-display), sans-serif;
 }
 
+.font-brand {
+  font-family: var(--font-brand), serif;
+}
+
 .font-sans {
   font-family: var(--font-sans), sans-serif;
 }
@@ -1236,7 +1240,7 @@ body {
 }
 
 /* Reflets statiques : le verre reste lisible sans animation permanente ni
-   couleur étrangère à la palette minérale de Sokar. */
+   couleur étrangère à la palette minérale de Suppernote. */
 .dashboard-mobile-nav__inner::before,
 .dashboard-mobile-nav__inner::after {
   position: absolute;

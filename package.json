@@ -8,8 +8,8 @@
     "lint:css": "stylelint --config packages/config/.stylelintrc.json \"apps/*/src/**/*.css\"",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
-    "test:e2e": "pnpm --filter @sokar/dashboard test:e2e",
-    "test:visual": "pnpm --filter @sokar/dashboard test:visual",
+    "test:e2e": "pnpm --filter @suppernote/dashboard test:e2e",
+    "test:visual": "pnpm --filter @suppernote/dashboard test:visual",
     "clean": "turbo clean",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,md,json}\"",
@@ -17,13 +17,13 @@
     "db:generate": "cd packages/database && prisma generate --no-hints",
     "db:push": "node scripts/quality/check-db-push-target.mjs && cd packages/database && prisma db push",
     "db:studio": "cd packages/database && prisma studio",
-    "db:seed": "pnpm --filter @sokar/database seed",
+    "db:seed": "pnpm --filter @suppernote/database seed",
     "infra:up": "docker compose --env-file .env.local -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "infra:logs": "docker compose -f infra/docker-compose.yml logs -f",
     "test:diagnostic": "node --env-file=.env.local tools/diagnostics/test-stt-tts.mjs",
-    "test:mcp:client": "pnpm --filter @sokar/api exec tsx ../../tools/diagnostics/test-mcp-client.ts",
-    "test:mcp:stdio": "pnpm --filter @sokar/api exec tsx ../../tools/diagnostics/sokar-mcp-stdio.ts",
+    "test:mcp:client": "pnpm --filter @suppernote/api exec tsx ../../tools/diagnostics/test-mcp-client.ts",
+    "test:mcp:stdio": "pnpm --filter @suppernote/api exec tsx ../../tools/diagnostics/sokar-mcp-stdio.ts",
     "tunnel:status": "cloudflared tunnel info sokar",
     "tunnel:logs": "tail -n 50 -f ~/Library/Logs/com.cloudflare.cloudflared.err.log",
     "redis:start": "brew services start redis",
@@ -50,7 +50,7 @@
     "stylelint": "^16.26.1",
     "turbo": "^2.11.9",
     "typescript": "^5.8.0",
-    "zod": "^3.25.76"
+    "zod": "^4.6.6"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
