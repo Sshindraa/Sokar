@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CEREBRAS_BASE_URL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
+import { CEREBRAS_BASE_URL, VOICE_LLM_MODEL_DEFAULT } from '@suppernote/config';
 import {
   VoiceConfigSchema,
   VoiceDeepgramConfigSchema,
@@ -43,15 +43,15 @@ describe('optionalEmailAddressSchema', () => {
   });
 
   it('accepte une adresse seule et retire les espaces', () => {
-    expect(optionalEmailAddressSchema.parse(' bonjour@news.sokar.tech ')).toBe(
-      'bonjour@news.sokar.tech',
+    expect(optionalEmailAddressSchema.parse(' bonjour@news.suppernote.com ')).toBe(
+      'bonjour@news.suppernote.com',
     );
   });
 
   it('refuse le format « Nom <adresse> » : le nom affiché vient du restaurant', () => {
-    expect(optionalEmailAddressSchema.safeParse('Sokar <bonjour@news.sokar.tech>').success).toBe(
-      false,
-    );
+    expect(
+      optionalEmailAddressSchema.safeParse('Suppernote <bonjour@news.suppernote.com>').success,
+    ).toBe(false);
   });
 });
 

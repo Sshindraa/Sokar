@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { REDIS_CTX_TTL_SECONDS, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
+import { REDIS_CTX_TTL_SECONDS, VOICE_LLM_MODEL_DEFAULT } from '@suppernote/config';
 import { voiceConfig } from '../../../env';
 
 vi.mock('../../../shared/db/client', () => ({

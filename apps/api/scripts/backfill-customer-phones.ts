@@ -5,8 +5,8 @@
  * default; --apply writes. A remote database also needs --allow-remote. Customers whose target
  * number is already taken are left alone and listed: they are duplicates to merge in the CRM.
  *
- *   pnpm --filter @sokar/api ops:customer-phones-backfill
- *   pnpm --filter @sokar/api ops:customer-phones-backfill -- --apply [--allow-remote]
+ *   pnpm --filter @suppernote/api ops:customer-phones-backfill
+ *   pnpm --filter @suppernote/api ops:customer-phones-backfill -- --apply [--allow-remote]
  */
 
 import { upsertCustomerIdentity } from '../src/modules/customers/customer-crm.service';

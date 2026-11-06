@@ -174,7 +174,7 @@ Pas de colonne NOT NULL forcée tant que <100% des restos ont la valeur.
 ```
 apps/
 ├── connect/                          # NOUVELLE APP
-│   ├── package.json                  # @sokar/connect
+│   ├── package.json                  # @suppernote/connect
 │   ├── next.config.js                # output: 'export', basePath: '/r'
 │   ├── tailwind.config.js
 │   ├── tsconfig.json
@@ -685,7 +685,7 @@ Le `RGPD Phase 5` (juin 2026) a déjà codé `/api/rgpd/erase`. Le
 endpoint public `/public/r/:slug/erase-request` n'existe pas. **À
 ne pas exposer publiquement** (cf. memory RGPD: erase téléphone seul
 = OK MVP interne, BLOQUANT pilote/prod). Le client qui veut effacer
-ses données contacte `dpo@sokar.tech`.
+ses données contacte `dpo@suppernote.com`.
 
 ### 9.6 Sous-traitants
 
@@ -804,8 +804,8 @@ ses données contacte `dpo@sokar.tech`.
 
 **Scope** :
 - Nouvelle app Next.js 14 App Router
-- `package.json` `@sokar/connect` + workspace dep sur
-  `@sokar/shared` (pour les types)
+- `package.json` `@suppernote/connect` + workspace dep sur
+  `@suppernote/shared` (pour les types)
 - `next.config.js` avec `output: 'export'`, `basePath: '/r'`,
   `images: { unoptimized: true }`
 - `tailwind.config.js` (réutilise les design tokens du dashboard —
@@ -817,10 +817,10 @@ ses données contacte `dpo@sokar.tech`.
 - Lint config cohérente avec le reste
 
 **Acceptance** :
-- [ ] `pnpm --filter @sokar/connect dev` lance l'app sur :4002
-- [ ] `pnpm --filter @sokar/connect build` produit un dossier
+- [ ] `pnpm --filter @suppernote/connect dev` lance l'app sur :4002
+- [ ] `pnpm --filter @suppernote/connect build` produit un dossier
       `apps/connect/out/` (output: export)
-- [ ] `pnpm --filter @sokar/connect typecheck` passe
+- [ ] `pnpm --filter @suppernote/connect typecheck` passe
 - [ ] `pnpm turbo build` global passe
 
 ### Ticket 6 — Page `/r/[slug]` (P0)

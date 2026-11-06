@@ -558,7 +558,7 @@ Deux boutons : "Montant libre" / "Pack expérience".
 - [x] Le dashboard expose les cartes cadeaux et les packs.
 - [x] Le widget permet de choisir entre montant libre et pack.
 - [x] Le copy est en français avec `vous`.
-- [x] Les tests passent : `pnpm --filter @sokar/api test` et `pnpm --filter @sokar/api typecheck`.
+- [x] Les tests passent : `pnpm --filter @suppernote/api test` et `pnpm --filter @suppernote/api typecheck`.
 
 ---
 

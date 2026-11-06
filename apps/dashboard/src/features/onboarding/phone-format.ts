@@ -1,4 +1,4 @@
-import { normalizePhone } from '@sokar/shared';
+import { normalizePhone } from '@suppernote/shared';
 
 /** Numéro saisi par un restaurateur : chiffres et séparateurs usuels, E.164 plausible, pas de 00000000. */
 export function isValidPhoneInput(raw: string) {

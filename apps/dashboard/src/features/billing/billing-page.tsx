@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ANNUAL_DISCOUNT_PERCENT, VAT_MENTION } from '@sokar/shared';
+import { ANNUAL_DISCOUNT_PERCENT, VAT_MENTION } from '@suppernote/shared';
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -254,7 +254,7 @@ function BillingWorkspace({ owner }: { owner: boolean }) {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Votre espace Sokar
+              Votre espace Suppernote
             </p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight">Mon abonnement</h1>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -358,7 +358,7 @@ function BillingWorkspace({ owner }: { owner: boolean }) {
                   ? 'Vérification du moyen de paiement…'
                   : details?.hasPaymentMethod
                     ? 'Un moyen de paiement est enregistré pour la fin de l’essai.'
-                    : 'Ajoutez un moyen de paiement avant la fin de l’essai pour continuer à utiliser Sokar.'}
+                    : 'Ajoutez un moyen de paiement avant la fin de l’essai pour continuer à utiliser Suppernote.'}
               </p>
             )}
             {state === 'past_due' && (
@@ -368,7 +368,7 @@ function BillingWorkspace({ owner }: { owner: boolean }) {
             )}
             {status?.suspended && !['active', 'trialing'].includes(state ?? '') && (
               <p role="alert" className="text-sm text-destructive">
-                Votre abonnement est terminé : Sokar ne répond plus aux appels. Choisissez une
+                Votre abonnement est terminé : Suppernote ne répond plus aux appels. Choisissez une
                 formule pour le réactiver.
               </p>
             )}
@@ -558,9 +558,9 @@ function BillingWorkspace({ owner }: { owner: boolean }) {
       <section aria-labelledby="plans-title" className="space-y-5">
         {subscribed && current && !current.canUpdatePlan && (
           <p className="rounded-2xl bg-muted/40 p-4 text-sm text-muted-foreground">
-            La modification de cette formule nécessite l’intervention de l’équipe Sokar, notamment
-            lorsqu’elle regroupe plusieurs établissements. Vous pouvez toujours consulter son
-            contrat et gérer son paiement dans Stripe.
+            La modification de cette formule nécessite l’intervention de l’équipe Suppernote,
+            notamment lorsqu’elle regroupe plusieurs établissements. Vous pouvez toujours consulter
+            son contrat et gérer son paiement dans Stripe.
           </p>
         )}
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -568,7 +568,7 @@ function BillingWorkspace({ owner }: { owner: boolean }) {
             <h2 id="plans-title" className="text-xl font-semibold">
               Une formule pour chaque étape
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">Comparez les offres Sokar.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Comparez les offres Suppernote.</p>
           </div>
           <div
             role="group"

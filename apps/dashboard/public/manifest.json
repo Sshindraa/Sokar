@@ -1,6 +1,6 @@
 {
-  "name": "Sokar — Dashboard Restaurant",
-  "short_name": "Sokar",
+  "name": "Suppernote — Dashboard Restaurant",
+  "short_name": "Suppernote",
   "description": "Assistant vocal intelligent pour votre restaurant",
   "start_url": "/dashboard",
   "display": "standalone",
@@ -9,13 +9,13 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/logo-nav.png",
+      "src": "/logo-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/logo-nav.png",
+      "src": "/logo-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

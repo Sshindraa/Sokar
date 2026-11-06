@@ -3,7 +3,7 @@ import {
   PRIVACY_DOCUMENT,
   PRIVACY_PROVIDERS,
   PRIVACY_RETENTION_RULES,
-} from '@sokar/shared';
+} from '@suppernote/shared';
 
 // New records reference the corrected disclosure; historical consent versions stay intact.
 // This does not change consent purposes, flags or introduce an automatic renewal workflow.
@@ -14,7 +14,7 @@ export const PRIVACY_POLICY_SUMMARY = {
   effectiveAt: PRIVACY_DOCUMENT.revision,
   // Preserve the public numeric field; additive fields below explicitly qualify its scope.
   retentionDays: PRIVACY_ANONYMIZATION_REFERENCE.reservationAgeDays,
-  dataController: 'Sokar — nom commercial d’une entreprise individuelle',
+  dataController: 'Suppernote — nom commercial d’une entreprise individuelle',
   hosting: PRIVACY_DOCUMENT.hosting,
   dpo: PRIVACY_DOCUMENT.contact,
   contactEmail: PRIVACY_DOCUMENT.contact,
@@ -33,10 +33,10 @@ export const PRIVACY_POLICY_SUMMARY = {
  * GET /api/rgpd/privacy-policy pour que les agents IA puissent le lire.
  */
 export const PRIVACY_POLICY_TEXT = `
-# Politique de confidentialité Sokar
+# Politique de confidentialité Suppernote
 
 ## Responsable du traitement
-Sokar, nom commercial d’une entreprise individuelle. L’identification complète du responsable reste à compléter. Contact données personnelles : ${PRIVACY_DOCUMENT.contact}
+Suppernote, nom commercial d’une entreprise individuelle. L’identification complète du responsable reste à compléter. Contact données personnelles : ${PRIVACY_DOCUMENT.contact}
 
 Révision documentaire : ${PRIVACY_DOCUMENT.revision}.
 ${PRIVACY_DOCUMENT.review}

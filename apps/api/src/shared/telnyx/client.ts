@@ -48,7 +48,7 @@ export default telnyx;
 
 /**
  * Expéditeur des SMS. `TELNYX_SMS_FROM` accepte un numéro rattaché à un profil de messagerie ou un
- * identifiant alphanumérique (« SOKAR », envoi sans réponse possible) ; à défaut, le numéro d'appel.
+ * identifiant alphanumérique (« SUPPERNOTE », envoi sans réponse possible) ; à défaut, le numéro d'appel.
  * Un numéro fixe sans profil de messagerie ne peut pas envoyer de SMS : c'est l'état constaté en
  * production le 17/10/2026, d'où cette variable distincte de `TELNYX_FROM_NUMBER`.
  */

@@ -267,4 +267,27 @@ describe('gift-card-email.service', () => {
       expect(call.html).toContain('SKR-TEST-02');
     });
   });
+
+  describe('échappement HTML des textes saisis', () => {
+    it("neutralise le balisage saisi par le visiteur dans le corps de l'e-mail", async () => {
+      await sendRecipientGiftCard({
+        ...BASE_DATA,
+        message: '<a href="https://attacker.example/verify">Cliquez</a>',
+        senderName: '<img src=x onerror=alert(1)>',
+      });
+      const html = (mockSendEmail.mock.calls[0]?.[0] as { html: string }).html;
+      expect(html).not.toContain('<a href="https://attacker.example/verify">');
+      expect(html).toContain(
+        '&lt;a href=&quot;https://attacker.example/verify&quot;&gt;Cliquez&lt;/a&gt;',
+      );
+      expect(html).not.toContain('<img src=x');
+    });
+
+    it("encode le nom du restaurant dans le corps mais le laisse brut dans l'objet", async () => {
+      await sendRecipientGiftCard({ ...BASE_DATA, restaurantName: "L'Arbre" });
+      const call = mockSendEmail.mock.calls[0]?.[0] as { subject: string; html: string };
+      expect(call.subject).toContain("L'Arbre");
+      expect(call.html).toContain('L&#39;Arbre');
+    });
+  });
 });

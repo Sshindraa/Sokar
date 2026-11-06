@@ -128,7 +128,7 @@ export async function usageRoutes(app: FastifyInstance) {
     const month = currentMonthKey();
     const usage = await getCurrentUsage(restaurantId, month);
 
-    // Sokar sells an unlimited customer experience. The usage ledger remains
+    // Suppernote sells an unlimited customer experience. The usage ledger remains
     // visible to the restaurant for transparency, while cost monitoring and
     // any operator budgets stay on the internal margin surface. Keep the
     // legacy `included`/`quotas` fields for compatible clients, but always
@@ -196,7 +196,7 @@ export async function usageRoutes(app: FastifyInstance) {
   /**
    * Lightweight capability probe for the dashboard shell. It deliberately
    * returns no role, user or tenant information: a successful response only
-   * means that the authenticated session belongs to the Sokar operator
+   * means that the authenticated session belongs to the Suppernote operator
    * allowlist. Non-operators are rejected by the same guard as every other
    * internal route.
    */

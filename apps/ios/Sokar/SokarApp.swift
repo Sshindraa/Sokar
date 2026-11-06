@@ -1,7 +1,7 @@
 import SwiftUI
 import WebKit
 
-let sokarDashboardURL = URL(string: "https://sokar.tech/dashboard")!
+let sokarDashboardURL = URL(string: "https://suppernote.com/dashboard")!
 
 @main
 struct SokarApp: App {
@@ -21,7 +21,7 @@ struct SokarRootView: View {
             Color(red: 3/255, green: 3/255, blue: 3/255).ignoresSafeArea()
             if failed {
                 ContentUnavailableView {
-                    Text("Impossible de charger Sokar.")
+                    Text("Impossible de charger Suppernote.")
                 } description: {
                     Text("Vérifiez votre connexion.")
                 } actions: {
@@ -58,7 +58,7 @@ struct SokarWebView: UIViewRepresentable {
             if navigationAction.shouldPerformDownload { decisionHandler(.download); return }
             guard let url = navigationAction.request.url else { decisionHandler(.allow); return }
             let host = url.host ?? ""
-            let isInternal = host == "sokar.tech" || host.hasSuffix(".sokar.tech")
+            let isInternal = host == "suppernote.com" || host.hasSuffix(".suppernote.com")
             // Seul un clic sortant quitte l'appli : une redirection de connexion reste dedans.
             // targetFrame nil = target="_blank" : sans fenêtre à ouvrir, on passe par Safari.
             let opensOutside = ["tel", "mailto", "sms"].contains(url.scheme ?? "")

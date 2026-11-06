@@ -4,7 +4,7 @@ import {
   buildMarketingConsentLabel,
   buildMarketingConsentProof,
   MARKETING_CONSENT_VERSION,
-} from '@sokar/shared';
+} from '@suppernote/shared';
 import { db } from '../../../shared/db/client';
 import { upsertCustomerIdentity } from '../../customers/customer-crm.service';
 import { upsertMarketingPermission } from '../marketing-permission.service';

@@ -13,6 +13,15 @@ import { logger } from '../../shared/logger/pino';
 import type { NotificationSendResult } from '../../shared/queue/notification-idempotency';
 import type { MessagingUsageContext } from '../usage/messaging-usage.service';
 
+function escapeHtml(value: string | null | undefined): string {
+  return (value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 type GiftCardEmailData = {
   giftCardId: string;
   restaurantId?: string;
@@ -63,8 +72,8 @@ export async function sendSenderReceipt(
   const html = `
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
       <h1 style="color: #0F172A;">Reçu de votre achat</h1>
-      <p>Bonjour ${data.senderName ?? ''},</p>
-      <p>Nous confirmons l'achat de votre carte cadeau chez <strong>${data.restaurantName}</strong>.</p>
+      <p>Bonjour ${escapeHtml(data.senderName)},</p>
+      <p>Nous confirmons l'achat de votre carte cadeau chez <strong>${escapeHtml(data.restaurantName)}</strong>.</p>
       <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
         <tr>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Montant</td>
@@ -72,13 +81,13 @@ export async function sendSenderReceipt(
         </tr>
         <tr>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Destinataire</td>
-          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${data.recipientName ?? ''}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${escapeHtml(data.recipientName)}</td>
         </tr>
-        ${data.occasion ? `<tr><td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Occasion</td><td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${data.occasion}</td></tr>` : ''}
+        ${data.occasion ? `<tr><td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Occasion</td><td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${escapeHtml(data.occasion)}</td></tr>` : ''}
       </table>
-      ${data.message ? `<p><em>Message : « ${data.message} »</em></p>` : ''}
+      ${data.message ? `<p><em>Message : « ${escapeHtml(data.message)} »</em></p>` : ''}
       <p>Merci pour votre achat.</p>
-      <p style="color: #64748b; font-size: 12px;">Sokar — Plateforme de réservation pour restaurants</p>
+      <p style="color: #64748b; font-size: 12px;">Suppernote — Plateforme de réservation pour restaurants</p>
     </div>
   `;
 
@@ -107,9 +116,9 @@ export async function sendRecipientGiftCard(
   const html = `
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
       <h1 style="color: #0F172A;">Vous avez reçu une carte cadeau ! 🎁</h1>
-      <p>Bonjour ${data.recipientName ?? ''},</p>
-      <p>${data.senderName ?? "Quelqu'un"} vous offre une carte cadeau de <strong>${data.amount}€</strong> chez <strong>${data.restaurantName}</strong>.</p>
-      ${data.message ? `<p><em>« ${data.message} »</em></p>` : ''}
+      <p>Bonjour ${escapeHtml(data.recipientName)},</p>
+      <p>${escapeHtml(data.senderName ?? "Quelqu'un")} vous offre une carte cadeau de <strong>${data.amount}€</strong> chez <strong>${escapeHtml(data.restaurantName)}</strong>.</p>
+      ${data.message ? `<p><em>« ${escapeHtml(data.message)} »</em></p>` : ''}
       <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
         <p style="margin: 0; color: #64748b; font-size: 14px;">Votre code cadeau</p>
         <p style="margin: 8px 0; font-size: 28px; font-weight: bold; letter-spacing: 3px; color: #0F172A;">${data.shortCode ?? data.code}</p>
@@ -118,7 +127,7 @@ export async function sendRecipientGiftCard(
       ${data.pdfUrl ? `<p><a href="${data.pdfUrl}" style="color: #EA580C;">Télécharger la carte cadeau (PDF)</a></p>` : ''}
       ${giftCardBeneficiaryUrl(data.shortCode ?? data.code) ? `<p><a href="${giftCardBeneficiaryUrl(data.shortCode ?? data.code)}">Consulter votre solde et réserver une table</a></p>` : ''}
       <p>La réservation ne débite pas votre carte. Présentez ce code au restaurant pour régler votre addition.</p>
-      <p style="color: #64748b; font-size: 12px;">Sokar — Plateforme de réservation pour restaurants</p>
+      <p style="color: #64748b; font-size: 12px;">Suppernote — Plateforme de réservation pour restaurants</p>
     </div>
   `;
 
@@ -160,14 +169,14 @@ export async function sendRestaurantSaleNotification(input: {
   const html = `
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
       <h1 style="color: #0F172A;">Nouvelle vente de carte cadeau</h1>
-      <p>Une carte cadeau a été vendue sur votre restaurant <strong>${input.restaurantName}</strong>.</p>
+      <p>Une carte cadeau a été vendue sur votre restaurant <strong>${escapeHtml(input.restaurantName)}</strong>.</p>
       <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
         <tr>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Montant vendu</td>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;"><strong>${input.amount}€</strong></td>
         </tr>
         <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Commission Sokar</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Commission Suppernote</td>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${input.commissionAmount}€</td>
         </tr>
         <tr>
@@ -176,11 +185,11 @@ export async function sendRestaurantSaleNotification(input: {
         </tr>
         <tr>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Expéditeur</td>
-          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${input.senderName ?? ''}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${escapeHtml(input.senderName)}</td>
         </tr>
         <tr>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Destinataire</td>
-          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${input.recipientName ?? ''}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${escapeHtml(input.recipientName)}</td>
         </tr>
       </table>
     </div>
@@ -224,12 +233,12 @@ export async function sendContributionConfirmation(input: {
   const html = `
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
       <h1 style="color: #0F172A;">Merci pour votre contribution ! 🎁</h1>
-      <p>Bonjour ${input.contributorName},</p>
+      <p>Bonjour ${escapeHtml(input.contributorName)},</p>
       <p>Nous confirmons votre contribution de <strong>${input.amount}€</strong> à la cagnotte
-      « <strong>${input.title}</strong> » pour ${input.recipientName} chez ${input.restaurantName}.</p>
+      « <strong>${escapeHtml(input.title)}</strong> » pour ${escapeHtml(input.recipientName)} chez ${escapeHtml(input.restaurantName)}.</p>
       <p>Le créateur de la cagnotte décidera quand la clôturer. À ce moment, le montant total
-      collecté sera transformé en carte cadeau utilisable par ${input.recipientName}.</p>
-      <p style="color: #64748b; font-size: 12px;">Sokar — Plateforme de réservation pour restaurants</p>
+      collecté sera transformé en carte cadeau utilisable par ${escapeHtml(input.recipientName)}.</p>
+      <p style="color: #64748b; font-size: 12px;">Suppernote — Plateforme de réservation pour restaurants</p>
     </div>
   `;
 
@@ -272,11 +281,11 @@ export async function sendCrowdfundingContributionNotification(input: {
   const html = `
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
       <h1 style="color: #0F172A;">Nouvelle contribution à votre cagnotte ! 🎉</h1>
-      <p>Bonjour ${input.creatorName},</p>
-      <p><strong>${input.contributorName}</strong> vient de contribuer <strong>${input.amount}€</strong>
-      à votre cagnotte « <strong>${input.title}</strong> » pour ${input.recipientName}.</p>
-      <p>Vous pouvez clôturer la cagnotte à tout moment depuis votre dashboard Sokar.</p>
-      <p style="color: #64748b; font-size: 12px;">Sokar — Plateforme de réservation pour restaurants</p>
+      <p>Bonjour ${escapeHtml(input.creatorName)},</p>
+      <p><strong>${escapeHtml(input.contributorName)}</strong> vient de contribuer <strong>${input.amount}€</strong>
+      à votre cagnotte « <strong>${escapeHtml(input.title)}</strong> » pour ${escapeHtml(input.recipientName)}.</p>
+      <p>Vous pouvez clôturer la cagnotte à tout moment depuis votre dashboard Suppernote.</p>
+      <p style="color: #64748b; font-size: 12px;">Suppernote — Plateforme de réservation pour restaurants</p>
     </div>
   `;
 
@@ -322,15 +331,15 @@ export async function sendCrowdfundingClosed(input: {
   const html = `
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
       <h1 style="color: #0F172A;">Votre cagnotte est prête ! 🎁</h1>
-      <p>Bonjour ${input.recipientName},</p>
-      <p>La cagnotte « <strong>${input.title}</strong> » a été clôturée.</p>
+      <p>Bonjour ${escapeHtml(input.recipientName)},</p>
+      <p>La cagnotte « <strong>${escapeHtml(input.title)}</strong> » a été clôturée.</p>
       <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
         <tr>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Total collecté</td>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${input.totalCollected}€</td>
         </tr>
         <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Commission Sokar</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Commission Suppernote</td>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${input.commissionAmount}€</td>
         </tr>
         <tr>
@@ -346,7 +355,7 @@ export async function sendCrowdfundingClosed(input: {
       <p><a href="${input.pdfUrl}" style="color: #EA580C;">Télécharger la carte cadeau (PDF)</a></p>
       ${giftCardBeneficiaryUrl(input.shortCode ?? input.code) ? `<p><a href="${giftCardBeneficiaryUrl(input.shortCode ?? input.code)}">Consulter votre solde et réserver une table</a></p>` : ''}
       <p>La réservation ne débite pas votre carte. Présentez ce code au restaurant pour régler votre addition.</p>
-      <p style="color: #64748b; font-size: 12px;">Sokar — Plateforme de réservation pour restaurants</p>
+      <p style="color: #64748b; font-size: 12px;">Suppernote — Plateforme de réservation pour restaurants</p>
     </div>
   `;
 
@@ -406,8 +415,8 @@ export async function sendExpirationReminder(
   const html = `
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
       <h1 style="color: #0F172A;">Votre carte cadeau expire bientôt</h1>
-      <p>Bonjour${data.recipientName ? ` ${data.recipientName}` : ''},</p>
-      <p>Nous vous rappelons que votre carte cadeau chez <strong>${data.restaurantName}</strong> expire le <strong>${expiryDate}</strong>.</p>
+      <p>Bonjour${data.recipientName ? ` ${escapeHtml(data.recipientName)}` : ''},</p>
+      <p>Nous vous rappelons que votre carte cadeau chez <strong>${escapeHtml(data.restaurantName)}</strong> expire le <strong>${expiryDate}</strong>.</p>
       <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
         <tr>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Solde restant</td>
@@ -490,8 +499,8 @@ export async function sendRefundNotificationSender(
   const html = `
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
       <h1 style="color: #0F172A;">Remboursement de votre carte cadeau</h1>
-      <p>Bonjour${data.senderName ? ` ${data.senderName}` : ''},</p>
-      <p>Nous vous confirmons le remboursement de votre carte cadeau chez <strong>${data.restaurantName}</strong>.</p>
+      <p>Bonjour${data.senderName ? ` ${escapeHtml(data.senderName)}` : ''},</p>
+      <p>Nous vous confirmons le remboursement de votre carte cadeau chez <strong>${escapeHtml(data.restaurantName)}</strong>.</p>
       <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
         <tr>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Carte</td>
@@ -552,7 +561,7 @@ export async function sendRefundNotificationRestaurant(
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
       <h1 style="color: #0F172A;">Carte cadeau annulée</h1>
       <p>Bonjour,</p>
-      <p>Une carte cadeau chez <strong>${data.restaurantName}</strong> a été annulée et remboursée.</p>
+      <p>Une carte cadeau chez <strong>${escapeHtml(data.restaurantName)}</strong> a été annulée et remboursée.</p>
       <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
         <tr>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Carte</td>

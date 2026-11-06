@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toApiError } from '@/lib/api-error';
 import { openTestBooking } from './test-booking';
 
-const PUBLIC_URL = 'https://sokar.tech/restaurant/chez-emile';
-const TEST_URL = 'https://sokar.tech/restaurant/chez-emile?testBooking=abc';
+const PUBLIC_URL = 'https://suppernote.com/restaurant/chez-emile';
+const TEST_URL = 'https://suppernote.com/restaurant/chez-emile?testBooking=abc';
 
 function fakeTab() {
   return { opener: 'parent' as unknown, location: { href: 'about:blank' }, close: vi.fn() };

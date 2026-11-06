@@ -583,7 +583,7 @@ describe('marketing campaign worker', () => {
   });
 
   it('refuse l’envoi e-mail sans MARKETING_EMAIL_FROM, sans jamais se rabattre sur EMAIL_FROM', async () => {
-    vi.stubEnv('EMAIL_FROM', 'noreply@sokar.tech');
+    vi.stubEnv('EMAIL_FROM', 'noreply@suppernote.com');
     const { db, deps } = makeDependencies();
     mockEmailCampaign(db, 'manager@chez-sokar.test');
     deps.marketingEmailFrom = null;

@@ -65,7 +65,7 @@ export async function processBillingNotification(
   if (!recipient) return 'no-email';
 
   const recap = await loadActivityRecap(restaurant.id, new Date(data.since));
-  const dashboardUrl = process.env.DASHBOARD_URL ?? 'https://sokar.tech';
+  const dashboardUrl = process.env.DASHBOARD_URL ?? 'https://suppernote.com';
   const email =
     data.kind === 'trial-ending'
       ? buildTrialEndingEmail({

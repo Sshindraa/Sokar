@@ -1,7 +1,7 @@
 /**
  * Confidence service : calcule la qualité d'un attribut d'un restaurant.
  *
- * Les implémentations pures sont dans `@sokar/shared` pour être réutilisées
+ * Les implémentations pures sont dans `@suppernote/shared` pour être réutilisées
  * par le builder JSON-LD (partagé entre API et Connect).
  */
 
@@ -14,4 +14,4 @@ export {
   type AttributeInput,
   computeAttributeConfidence,
   computeRestaurantConfidence,
-} from '@sokar/shared';
+} from '@suppernote/shared';

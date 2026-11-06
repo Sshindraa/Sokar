@@ -72,12 +72,12 @@ export async function notifyDemoRequest(record: Pick<DemoRequest, 'id'>): Promis
 
   const dashboardUrl = new URL(
     '/admin/demo-requests',
-    process.env.DASHBOARD_URL ?? 'https://sokar.tech',
+    process.env.DASHBOARD_URL ?? 'https://suppernote.com',
   );
   // Les coordonnées restent dans le suivi authentifié, pas dans les copies e-mail.
   const html = [
     `<p>Nouvelle demande de démonstration (réf. ${escapeHtml(record.id)}).</p>`,
-    `<p><a href="${escapeHtml(dashboardUrl.href)}">Consulter les demandes dans Sokar</a></p>`,
+    `<p><a href="${escapeHtml(dashboardUrl.href)}">Consulter les demandes dans Suppernote</a></p>`,
     '<p>Une connexion avec un compte administrateur autorisé est nécessaire.</p>',
   ].join('');
 
@@ -86,7 +86,7 @@ export async function notifyDemoRequest(record: Pick<DemoRequest, 'id'>): Promis
     try {
       const result = await sendEmail({
         to,
-        subject: 'Nouvelle demande de démonstration Sokar',
+        subject: 'Nouvelle demande de démonstration Suppernote',
         html,
       });
       // Un retour vide ou sans `success` n'est pas une acceptation : on ne renseigne jamais notifiedAt sans preuve.

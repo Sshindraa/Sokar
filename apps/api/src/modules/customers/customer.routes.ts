@@ -86,6 +86,17 @@ export function buildCustomerSearchFilter(search: string): Prisma.CustomerWhereI
 const COMPUTED_FILTER_SCAN_LIMIT = 5_000;
 const EXPORT_LIMIT = 10_000;
 
+async function canViewCustomerNotes(
+  restaurantId: string,
+  siteRole: string | undefined,
+): Promise<boolean> {
+  const restaurant = await db.restaurant.findUnique({
+    where: { id: restaurantId },
+    select: { crmSensitiveNoteRoles: true },
+  });
+  return canViewSensitiveNotes(siteRole, restaurant?.crmSensitiveNoteRoles);
+}
+
 export async function customerRoutes(app: FastifyInstance) {
   app.get(
     '/customers/suggestions',
@@ -397,7 +408,13 @@ export async function customerRoutes(app: FastifyInstance) {
           // must not roll back an otherwise valid legacy customer upsert.
         }
         await redisCache.del(`customer:${restaurantId}:${normalizedPhone ?? body.phone}`);
-        return reply.status(201).send(customer);
+        return reply
+          .status(201)
+          .send(
+            (await canViewCustomerNotes(restaurantId, req.siteRole))
+              ? customer
+              : redactSensitiveCustomerFields(customer),
+          );
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')
           return reply.status(409).send({ error: 'Customer already exists' });
@@ -466,7 +483,11 @@ export async function customerRoutes(app: FastifyInstance) {
       await redisCache.del(
         `customer:${updated.restaurantId}:${normalizeCustomerPhone(updated.phone) ?? updated.phone}`,
       );
-      return reply.send(updated);
+      return reply.send(
+        (await canViewCustomerNotes(updated.restaurantId, req.siteRole))
+          ? updated
+          : redactSensitiveCustomerFields(updated),
+      );
     },
   );
 
@@ -484,7 +505,11 @@ export async function customerRoutes(app: FastifyInstance) {
       await redisCache.del(
         `customer:${updated.restaurantId}:${normalizeCustomerPhone(updated.phone) ?? updated.phone}`,
       );
-      return reply.send(updated);
+      return reply.send(
+        (await canViewCustomerNotes(updated.restaurantId, req.siteRole))
+          ? updated
+          : redactSensitiveCustomerFields(updated),
+      );
     },
   );
 }

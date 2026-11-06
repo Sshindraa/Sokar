@@ -1,7 +1,7 @@
 import { VOICE_CONVERSATION_RULES } from './conversation-rules';
-import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { DEFAULT_MAX_PARTY_SIZE } from '@suppernote/config';
 import { AGENT_NAME, AGENT_TITLE } from './agent-identity';
-import { normalizeOpeningHours } from '@sokar/shared';
+import { normalizeOpeningHours } from '@suppernote/shared';
 
 type DaySlot = {
   open: string;

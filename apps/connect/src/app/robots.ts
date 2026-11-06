@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — robots.txt dynamique.
+ * Suppernote Connect — robots.txt dynamique.
  *
  * Cf. spec connect-v1.1 §11.
  *
@@ -29,11 +29,11 @@
 
 import type { MetadataRoute } from 'next';
 
-const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
+const SITE_URL = process.env.SITE_URL ?? 'https://suppernote.com';
 
 // Bots IA explicitement allowed pour le web crawl discovery.
 // On les liste explicitement (même si * allow / déjà) pour signaler
-// aux opérateurs IA que Sokar est volontairement crawlable.
+// aux opérateurs IA que Suppernote est volontairement crawlable.
 const AI_BOTS = [
   'OAI-SearchBot', // ChatGPT Search
   'GPTBot', // OpenAI

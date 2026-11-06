@@ -1,5 +1,5 @@
 /**
- * @sokar/shared — types, enums, and labels shared between API and dashboard.
+ * @suppernote/shared — types, enums, and labels shared between API and dashboard.
  *
  * Rules of engagement:
  * - NO runtime dependencies on server-only packages (Prisma, Fastify, BullMQ).

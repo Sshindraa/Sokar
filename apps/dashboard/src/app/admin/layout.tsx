@@ -7,7 +7,7 @@ import AdminLayoutClient from './_layout-client';
 export const dynamic = 'force-dynamic';
 
 /**
- * Layout dédié aux opérations Sokar.
+ * Layout dédié aux opérations Suppernote.
  *
  * Il ne monte volontairement ni le sélecteur d'établissement ni l'onboarding
  * restaurant. L'autorisation opérateur est vérifiée côté client pour le rendu

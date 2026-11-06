@@ -83,7 +83,7 @@ describe('CopilotQualityPage', () => {
     });
   });
 
-  it('permet de qualifier après service une recommandation que Sokar ne peut pas observer', async () => {
+  it('permet de qualifier après service une recommandation que Suppernote ne peut pas observer', async () => {
     apiMocks.get.mockImplementation((path: string) =>
       Promise.resolve(
         path.includes('telemetry-review')

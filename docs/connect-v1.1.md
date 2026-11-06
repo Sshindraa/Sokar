@@ -13,9 +13,9 @@
 
 - Auteur: Hermes (review Hamza)
 - Cible Sokar: monorepo Fastify 5 + Prisma 6 + Next.js 15 (Next.js 14 à la rédaction)
-- Domaine public: `sokar.tech` (corrigé depuis `sokar.app` du brief)
+- Domaine public: `suppernote.com` (anciennement `sokar.tech`, avant le passage à Suppernote du 3 novembre 2026 ; corrigé depuis `sokar.app` du brief)
 - v1 → v1.1 corrections: cf. §15 (changelog)
-- Décisions v1.1: `apps/connect` Next standalone · `agentic_reuse` · `sokar.tech` · `phase_1_seed_puis_attendre` · `redis_prometheus` · `optin_double_volet` corrigé · VPS + Nginx + Cloudflare proxy cache
+- Décisions v1.1: `apps/connect` Next standalone · `agentic_reuse` · `suppernote.com` · `phase_1_seed_puis_attendre` · `redis_prometheus` · `optin_double_volet` corrigé · VPS + Nginx + Cloudflare proxy cache
 
 ---
 
@@ -102,9 +102,9 @@ moche. À la place :
 
 - `apps/connect` sert nativement `/r/*`, `/restaurants/*`,
   `/sitemap.xml`, `/robots.txt`
-- Le reverse proxy route `sokar.tech/{r,restaurants,sitemap.xml,robots.txt}`
+- Le reverse proxy route `suppernote.com/{r,restaurants,sitemap.xml,robots.txt}`
   vers `apps/connect`
-- `apps/dashboard` reste sur `sokar.tech/{login,dashboard,onboarding,pricing,...}`
+- `apps/dashboard` reste sur `suppernote.com/{login,dashboard,onboarding,pricing,...}`
 
 ---
 
@@ -231,7 +231,7 @@ Pas de colonne NOT NULL forcée tant que <100% des restos ont la valeur.
 ```
 apps/
 ├── connect/                          # NOUVELLE APP
-│   ├── package.json                  # @sokar/connect
+│   ├── package.json                  # @suppernote/connect
 │   ├── next.config.js                # output: 'standalone', PAS basePath
 │   ├── tailwind.config.js            # design tokens Shadcn
 │   ├── tsconfig.json                 # strict
@@ -313,7 +313,7 @@ module.exports = nextConfig;
 
 ```json
 {
-  "name": "@sokar/connect",
+  "name": "@suppernote/connect",
   "version": "0.0.1",
   "private": true,
   "scripts": {
@@ -325,8 +325,8 @@ module.exports = nextConfig;
     "test": "vitest run"
   },
   "dependencies": {
-    "@sokar/shared": "workspace:*",
-    "@sokar/types": "workspace:*",
+    "@suppernote/shared": "workspace:*",
+    "@suppernote/types": "workspace:*",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.460.0",
@@ -344,9 +344,9 @@ La configuration canonique est `infra/nginx/sokar.conf` :
 
 - `/r/*`, `/restaurants/*`, `/sitemap.xml`, `/robots.txt` → Sokar Connect `:4002`
 - `/api/proxy/*`, `/api/auth/sync` → route handlers Next.js `:3000`
-- `/api/*` et `api.sokar.tech/*` → Fastify `:4000`
+- `/api/*` et `api.suppernote.com/*` → Fastify `:4000`
 - `/widget/*` → dashboard `:3000` avec politique iframe dédiée
-- le reste de `sokar.tech` → dashboard `:3000`
+- le reste de `suppernote.com` → dashboard `:3000`
 - TLS origine Let’s Encrypt sur `:443`, accès direct filtré par UFW
 
 `apps/dashboard` et `apps/widget` continuent d'exister tels quels.
@@ -721,7 +721,7 @@ export async function GET() {
 
 Inclut : pages `/r/[slug]` publiées, pages `/restaurants/[city]`
 indexables, pages `/restaurants/[city]/[cuisine]` indexables, homepage
-sokar.tech. `lastmod` basé sur `Restaurant.updatedAt` et
+suppernote.com. `lastmod` basé sur `Restaurant.updatedAt` et
 `connectPublishedAt`. `changefreq=daily` pour pages resto, `weekly`
 pour locales.
 
@@ -740,7 +740,7 @@ Allow: /
 User-agent: GPTBot
 Allow: /
 
-Sitemap: https://sokar.tech/sitemap.xml
+Sitemap: https://suppernote.com/sitemap.xml
 ```
 
 ### 7.7 `/llms.txt` (Phase 5)
@@ -761,7 +761,7 @@ LLMs qui le liraient. Phase 5 — pas en P0.
 ### 8.2 Transport hardening
 
 - HTTPS obligatoire (Cloudflare + Nginx avec certificat d'origine)
-- HSTS sur `sokar.tech`
+- HSTS sur `suppernote.com`
 - CORS: origines autorisées (cf. §8.7, **pas de `Origin: null` en P0**)
 - `Content-Security-Policy`: `default-src 'self'; img-src 'self' https: data:;`
 - `X-Content-Type-Options: nosniff`
@@ -821,8 +821,8 @@ que les compteurs Redis ne sachent déjà compter.
 **Origins autorisées P0** (côté `apps/api` et `apps/connect`) :
 
 ```
-https://sokar.tech
-https://www.sokar.tech
+https://suppernote.com
+https://www.suppernote.com
 ```
 
 **Pas de `Origin: null` en P0.** Un fetch server-side n'a pas besoin
@@ -904,7 +904,7 @@ Le `RGPD Phase 5` (juin 2026) a déjà codé `/api/rgpd/erase`. Le
 endpoint public `/public/r/:slug/erase-request` n'existe pas. **À
 ne pas exposer publiquement** (cf. memory RGPD: erase téléphone seul
 = OK MVP interne, BLOQUANT pilote/prod). Le client qui veut effacer
-ses données contacte `dpo@sokar.tech`.
+ses données contacte `dpo@suppernote.com`.
 
 ### 9.6 Sous-traitants
 
@@ -975,7 +975,7 @@ ses données contacte `dpo@sokar.tech`.
 - Cache Redis sur `/public/r/:slug` (60s TTL, 300s SWR)
 - `Idempotency-Key` header obligatoire sur POST confirm
 - Tests Vitest (route-level + service-level)
-- CORS: origines `https://sokar.tech`, `https://www.sokar.tech` (cf. §8.7)
+- CORS: origines `https://suppernote.com`, `https://www.suppernote.com` (cf. §8.7)
 
 **Acceptance** :
 
@@ -1022,8 +1022,8 @@ ses données contacte `dpo@sokar.tech`.
 **Scope** :
 
 - Nouvelle app Next.js 14 App Router
-- `package.json` `@sokar/connect` + workspace dep sur
-  `@sokar/shared` (pour les types)
+- `package.json` `@suppernote/connect` + workspace dep sur
+  `@suppernote/shared` (pour les types)
 - `next.config.js` avec `output: 'standalone'`, **PAS de basePath**,
   `images: { unoptimized: true }`
 - `tailwind.config.js` (réutilise les design tokens du dashboard —
@@ -1036,16 +1036,16 @@ ses données contacte `dpo@sokar.tech`.
 - `infra/nginx/sokar.conf` mis à jour pour router
   `/r/*`, `/restaurants/*`, `/sitemap.xml`, `/robots.txt` vers
   `apps/connect` (cf. §3.3)
-- HSTS sur sokar.tech
+- HSTS sur suppernote.com
 
 **Acceptance** :
 
-- [ ] `pnpm --filter @sokar/connect dev` lance l'app sur :4002
-- [ ] `pnpm --filter @sokar/connect build` produit
+- [ ] `pnpm --filter @suppernote/connect dev` lance l'app sur :4002
+- [ ] `pnpm --filter @suppernote/connect build` produit
       `apps/connect/.next/standalone/`
-- [ ] `pnpm --filter @sokar/connect typecheck` passe
+- [ ] `pnpm --filter @suppernote/connect typecheck` passe
 - [ ] `pnpm turbo build` global passe
-- [ ] `curl -I https://sokar.tech/r/chez-sokar-demo` (après deploy)
+- [ ] `curl -I https://suppernote.com/r/chez-sokar-demo` (après deploy)
       répond 200 avec HSTS
 
 ### Ticket 5 — Page `/r/[slug]` (P0)
@@ -1136,9 +1136,9 @@ ses données contacte `dpo@sokar.tech`.
   depuis l'API ou réimplémentés côté Next ? — **ré-export depuis
   l'API** pour éviter la duplication, on appelle
   `apps/api/src/modules/connect/sitemap.service.ts` directement
-  depuis le route handler Next via `@sokar/api` workspace dep)
+  depuis le route handler Next via `@suppernote/api` workspace dep)
 - Pas d'inclusion des pages `noindex`
-- Sitemap par défaut `https://sokar.tech/sitemap.xml`
+- Sitemap par défaut `https://suppernote.com/sitemap.xml`
 - Robots référence le sitemap
 - `OAI-SearchBot` explicit allow (sera conditionnel P5)
 
@@ -1189,8 +1189,8 @@ ses données contacte `dpo@sokar.tech`.
 - Rate limits implémentés (cf. §8.3)
 - Redaction tokens dans pino (extend `redact` patterns)
 - Privacy policy link dans le footer de chaque page publique
-- CORS: origines autorisées `https://sokar.tech`,
-  `https://www.sokar.tech` (cf. §8.7 — **PAS de `Origin: null`**)
+- CORS: origines autorisées `https://suppernote.com`,
+  `https://www.suppernote.com` (cf. §8.7 — **PAS de `Origin: null`**)
 
 **Acceptance** :
 
@@ -1199,7 +1199,7 @@ ses données contacte `dpo@sokar.tech`.
 - [ ] Phone `+000000` refusé en validation
 - [ ] Pas de `holdToken` dans les logs
 - [ ] Test CORS: requête avec `Origin: null` → refusée
-- [ ] Test CORS: requête avec `Origin: https://sokar.tech` → OK
+- [ ] Test CORS: requête avec `Origin: https://suppernote.com` → OK
 
 ---
 
@@ -1293,7 +1293,7 @@ en production. Le seed ne le fait jamais.
 | `attributeConfidence` < 0.5 partout                          | Pages maigres             | Onboarding force la saisie; minimum 4 champs requis pour publier                           |
 | Drain SEO par pages locales pauvres                          | Pénalité Google           | `noindex` strict si <seuil; pas d'URLs en double                                           |
 | Faux restos seed en prod                                     | Pollution index           | `NODE_ENV=production` skip le seed 5 restos Lyon (§11.1)                                   |
-| VPS down                                                     | Tout Sokar Connect down   | On est sur `sokar.tech` qui est déjà monitoré                                              |
+| VPS down                                                     | Tout Sokar Connect down   | On est sur `suppernote.com` qui est déjà monitoré                                          |
 | Vitest suite timeout sur 10 fichiers                         | CI rouge                  | Background + notify_on_complete pattern (cf. skill)                                        |
 | `aggregateRating` inventé par erreur                         | Pénalité Google           | Test unitaire strict, lint custom qui refuse le mot `aggregateRating` hors contexte        |
 
@@ -1301,10 +1301,10 @@ en production. Le seed ne le fait jamais.
 
 ## 13. Décisions en attente (à acter avant Phase 0)
 
-1. **Domaine final**: `sokar.tech` confirmé.
+1. **Domaine final**: `suppernote.com` confirmé.
    - Action: mettre à jour `openai-reserve.service.ts` ligne 172
-     (`https://app.sokar.com/r/${slug}` → `https://sokar.tech/r/${slug}`)
-   - Action: Nginx `sokar.tech` avec HSTS et certificat d'origine
+     (`https://app.sokar.com/r/${slug}` → `https://suppernote.com/r/${slug}`)
+   - Action: Nginx `suppernote.com` avec HSTS et certificat d'origine
    - **Mon avis**: cleanup, pas une nouvelle décision.
 
 2. **Phase 1 seed Lyon ≥5 restos**: oui, mais noindex par défaut et
@@ -1320,7 +1320,7 @@ en production. Le seed ne le fait jamais.
 5. **Opt-in UI côté dashboard**: nouvelle page
    `apps/dashboard/src/app/dashboard/connect/page.tsx` dans la nav
    latérale, avec toggle `connectPublished` et `connectAgentic` +
-   preview de la page publique (iframe sur `https://sokar.tech/r/[slug]?preview=...`).
+   preview de la page publique (iframe sur `https://suppernote.com/r/[slug]?preview=...`).
    - **Mon avis**: à faire en P0.5 (semaine 4-5) — pas bloquant
      pour le GO Phase 0, mais bloquant pour le pilote.
 
@@ -1386,7 +1386,7 @@ archivée dans `connect-v1.md.archived`.
    une table analytics. Page views = Redis uniquement. Audit log
    uniquement pour les transitions métier hold/reservation.
 8. **CORS durci** : `Origin: null` retiré de la liste P0. Seules
-   `https://sokar.tech` et `https://www.sokar.tech` sont
+   `https://suppernote.com` et `https://www.suppernote.com` sont
    autorisées en P0.
 
 ### v1 (initiale)

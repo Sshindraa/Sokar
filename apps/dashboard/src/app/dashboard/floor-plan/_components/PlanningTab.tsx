@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { normalizeOpeningHours } from '@sokar/shared';
+import { normalizeOpeningHours } from '@suppernote/shared';
 import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { AlertCircle, Calendar, Clock, Users, UtensilsCrossed } from 'lucide-react';
@@ -276,8 +276,30 @@ export function PlanningTab({ orgId }: PlanningTabProps) {
     setLoading(true);
     loadData(true);
 
-    const interval = setInterval(() => loadData(false), 30_000);
-    return () => clearInterval(interval);
+    // Un onglet caché ne relit pas : le planning se recharge au retour au premier plan.
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const startPolling = () => {
+      if (!interval) interval = setInterval(() => loadData(false), 30_000);
+    };
+    const stopPolling = () => {
+      if (interval) clearInterval(interval);
+      interval = null;
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        loadData(false);
+        startPolling();
+      }
+    };
+
+    if (!document.hidden) startPolling();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [orgId, date, loadData]);
 
   const {

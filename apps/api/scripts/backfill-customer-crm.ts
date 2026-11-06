@@ -2,8 +2,8 @@
  * Backfill M03 CRM projections (identities, reservation timeline, metrics).
  *
  * Usage:
- *   pnpm --filter @sokar/api exec tsx apps/api/scripts/backfill-customer-crm.ts --dry-run
- *   pnpm --filter @sokar/api exec tsx apps/api/scripts/backfill-customer-crm.ts --apply
+ *   pnpm --filter @suppernote/api exec tsx apps/api/scripts/backfill-customer-crm.ts --dry-run
+ *   pnpm --filter @suppernote/api exec tsx apps/api/scripts/backfill-customer-crm.ts --apply
  *
  * The script is resumable: it prints the last processed customer id. Pass it
  * back with --after-id after an interrupted run. It is deliberately dry-run

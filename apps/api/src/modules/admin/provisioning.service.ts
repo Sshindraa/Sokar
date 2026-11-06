@@ -26,8 +26,8 @@ export interface TelnyxNumberItem {
 export type AvailableNumbersSource = 'telnyx' | 'dev-fallback' | 'unavailable';
 
 /**
- * État du lien entre le numéro et l'application voix Telnyx (celle qui envoie les appels à Sokar).
- * Sans lien, le numéro est attribué dans Sokar mais le restaurant ne reçoit aucun appel.
+ * État du lien entre le numéro et l'application voix Telnyx (celle qui envoie les appels à Suppernote).
+ * Sans lien, le numéro est attribué dans Suppernote mais le restaurant ne reçoit aucun appel.
  */
 export type VoiceAppLinkState =
   | 'linked'
@@ -275,7 +275,7 @@ export class ProvisioningService {
     // Invalider le nouveau cache Redis
     await invalidateRestaurantContextCache(formattedPhone);
 
-    // Relier le numéro à l'application voix Telnyx : sans ce lien, le numéro est attribué dans Sokar
+    // Relier le numéro à l'application voix Telnyx : sans ce lien, le numéro est attribué dans Suppernote
     // mais les appels n'arrivent pas. Un échec ne bloque pas l'attribution ; l'état est enregistré
     // pour que l'écran de l'opérateur l'affiche.
     const voiceAppLink = await this.linkVoiceApp(restaurantId, telnyxPhoneNumberId);
@@ -397,7 +397,7 @@ export class ProvisioningService {
 
     if (!hasUsablePhone(restaurant.phoneNumber)) {
       throw new Error(
-        "Aucun numéro Sokar attribué. Attribuez un numéro avant de lancer l'appel test.",
+        "Aucun numéro Suppernote attribué. Attribuez un numéro avant de lancer l'appel test.",
       );
     }
 
@@ -418,7 +418,7 @@ export class ProvisioningService {
       throw new Error('Numéro E.164 du gérant invalide (ex: +33612345678).');
     }
 
-    const baseUrl = process.env.PUBLIC_API_URL ?? 'https://api.sokar.tech';
+    const baseUrl = process.env.PUBLIC_API_URL ?? 'https://api.suppernote.com';
     const webhookUrl = `${baseUrl}/voice/telnyx`;
 
     const { callControlId } = await placeOutboundCall(formattedTarget, {
@@ -484,7 +484,7 @@ export class ProvisioningService {
     }
     if (!hasUsablePhone(restaurant.phoneNumber)) {
       throw new ProvisioningTestCallNotPendingError(
-        "Aucun numéro Sokar attribué pour valider l'appel test.",
+        "Aucun numéro Suppernote attribué pour valider l'appel test.",
       );
     }
 
@@ -581,7 +581,7 @@ export class ProvisioningService {
     });
 
     const isAssigned = hasUsablePhone(restaurant.phoneNumber);
-    const baseUrl = process.env.PUBLIC_API_URL ?? 'https://api.sokar.tech';
+    const baseUrl = process.env.PUBLIC_API_URL ?? 'https://api.suppernote.com';
     const webhookUrl = `${baseUrl}/voice/telnyx`;
 
     const ussdCode = isAssigned ? `*21*${restaurant.phoneNumber}#` : null;

@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Type étendu pour les pages locales (T7).
+ * Suppernote Connect — Type étendu pour les pages locales (T7).
  * Réutilise PublicRestaurantDto + ajoute les champs villes/cuisines.
  */
 import type { PublicRestaurantDto } from './api-client';

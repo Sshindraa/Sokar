@@ -1,5 +1,5 @@
 import { Prisma, UsageAdjustmentStatus, type UsageCategory } from '@prisma/client';
-import { PLAN_PRICE_MAP } from '@sokar/config';
+import { PLAN_PRICE_MAP } from '@suppernote/config';
 import { db } from '../../shared/db/client';
 import { monthBounds } from './usage.service';
 

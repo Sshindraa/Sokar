@@ -16,7 +16,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      '@sokar/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
+      '@suppernote/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
     },
   },
 });

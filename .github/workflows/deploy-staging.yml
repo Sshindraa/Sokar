@@ -60,6 +60,24 @@ jobs:
       contents: read
     timeout-minutes: 20
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # Dépôt privé et aucun accès GitHub sur le VPS : le runner lui envoie l'archive du commit.
+      - name: Archive source
+        run: git archive --format=tar.gz --prefix=source/ -o sokar-staging-source.tar.gz "$GITHUB_SHA"
+
+      - name: Copy source to staging host
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: deploy
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          source: sokar-staging-source.tar.gz
+          target: /tmp/
+          overwrite: true
+
       - name: Prepare Clerk secret transfer
         env:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -136,18 +154,14 @@ jobs:
             test "${NEXT_PUBLIC_DEMO_STAGING:-}" = "1"
             [[ "${NEXT_PUBLIC_DEMO_RESTAURANT_ID:-}" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]]
             git checkout main
-            # Le VPS ne peut pas utiliser son helper GitHub pour le fetch HTTPS.
-            # On transfère donc une archive publique du commit exact depuis
-            # codeload.github.com, sans token ni clé GitHub sur le VPS, puis on
-            # crée un snapshot Git local pour conserver les rollbacks/hash.
+            # Le VPS n'a aucun accès GitHub : le runner a copié l'archive du commit exact
+            # dans /tmp. On en crée un snapshot Git local pour conserver les rollbacks/hash.
             SOURCE_SHA="${{ github.sha }}"
             [[ "$SOURCE_SHA" =~ ^[[:xdigit:]]{40}$ ]]
             git reset --hard
             git clean -fd -e releases/
             SOURCE_TMP=$(mktemp -d /tmp/sokar-staging-source.XXXXXX)
-            curl --fail --silent --show-error --location --retry 3 --max-time 120 \
-              "https://codeload.github.com/Sshindraa/Sokar/tar.gz/${SOURCE_SHA}" \
-              -o "$SOURCE_TMP/source.tar.gz"
+            mv /tmp/sokar-staging-source.tar.gz "$SOURCE_TMP/source.tar.gz"
             mkdir "$SOURCE_TMP/tree"
             tar -xzf "$SOURCE_TMP/source.tar.gz" --strip-components=1 -C "$SOURCE_TMP/tree"
             while IFS= read -r -d '' tracked_path; do
@@ -163,7 +177,7 @@ jobs:
               # contrôler, et leur heuristique anti-secret bloquait le
               # déploiement sur les clés factices des tests.
               HUSKY=0 git -c user.name='Sokar staging snapshot' \
-                -c user.email='deploy@sokar.tech' \
+                -c user.email='deploy@suppernote.com' \
                 commit --no-verify -m "chore(staging): snapshot ${SOURCE_SHA}"
             fi
             git status --short
@@ -171,6 +185,8 @@ jobs:
               sudo install -o root -g root -m 0755 \
                 scripts/ops/sokar-deploy-root.sh /usr/local/sbin/sokar-deploy-root
             fi
+            source scripts/ops/deploy-common.sh
+            api_env_before="$(api_env_fingerprint apps/api/.env)"
             if [ -n "${SENTRY_DSN:-}${ALERT_EMAIL_TO:-}${ALERT_WEBHOOK_URL:-}${ALERT_SMS_TO:-}${RESEND_RATE_LIMIT_REDIS_URL:-}" ]; then
               bash scripts/ops/sync-env.sh alerting staging
             fi
@@ -191,7 +207,7 @@ jobs:
             export CLERK_SECRET_KEY
             bash scripts/ops/sync-env.sh clerk staging
             bash scripts/ops/sync-env.sh stripe-prices staging
-            SOKAR_SKIP_GIT_PULL=1 bash scripts/deploy.sh --env staging
+            SOKAR_API_ENV_BEFORE="$api_env_before" SOKAR_SKIP_GIT_PULL=1 bash scripts/deploy.sh --env staging
 
       - name: Remove remote Clerk secret transport file
         if: always()
@@ -222,8 +238,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          STAGING_URL="https://staging.sokar.tech"
-          API_STAGING_URL="https://api-staging.sokar.tech"
+          STAGING_URL="https://staging.suppernote.com"
+          API_STAGING_URL="https://api-staging.suppernote.com"
 
           echo "=== Health checks ==="
 
@@ -235,16 +251,16 @@ jobs:
           done
 
 
-          # /health via api-staging.sokar.tech
+          # /health via api-staging.suppernote.com
           HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$API_STAGING_URL/health" || echo "FAIL")
-          echo "api-staging.sokar.tech/health → $HEALTH_STATUS"
+          echo "api-staging.suppernote.com/health → $HEALTH_STATUS"
           [ "$HEALTH_STATUS" = "200" ] || exit 1
 
-          # /livez via api-staging.sokar.tech
+          # /livez via api-staging.suppernote.com
           LIVEZ_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$API_STAGING_URL/livez" || echo "FAIL")
-          echo "api-staging.sokar.tech/livez → $LIVEZ_STATUS"
+          echo "api-staging.suppernote.com/livez → $LIVEZ_STATUS"
           [ "$LIVEZ_STATUS" = "200" ] || exit 1
 
           # La route legacy doit rester protégée et refuser avant toute
@@ -252,26 +268,26 @@ jobs:
           LEGACY_RESERVATION_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 -X POST -H "content-type: application/json" -d '{}' \
             "$API_STAGING_URL/reservations" || echo "FAIL")
-          echo "api-staging.sokar.tech/reservations sans jeton → $LEGACY_RESERVATION_STATUS"
+          echo "api-staging.suppernote.com/reservations sans jeton → $LEGACY_RESERVATION_STATUS"
           [ "$LEGACY_RESERVATION_STATUS" = "401" ] || exit 1
 
           # /dashboard — peut rediriger vers Clerk (302) ou répondre 200.
           # On accepte 200 et 302 comme valides.
           DASH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 -L "$STAGING_URL/dashboard" || echo "FAIL")
-          echo "staging.sokar.tech/dashboard → $DASH_STATUS"
+          echo "staging.suppernote.com/dashboard → $DASH_STATUS"
           [ "$DASH_STATUS" = "200" ] || [ "$DASH_STATUS" = "302" ] || exit 1
 
           # Page d'accueil
           HOME_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$STAGING_URL/" || echo "FAIL")
-          echo "staging.sokar.tech/ → $HOME_STATUS"
+          echo "staging.suppernote.com/ → $HOME_STATUS"
           [ "$HOME_STATUS" = "200" ] || exit 1
 
           # Sokar Connect page
           CONNECT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$STAGING_URL/restaurant/chez-sokar-demo" || echo "FAIL")
-          echo "staging.sokar.tech/restaurant/chez-sokar-demo → $CONNECT_STATUS"
+          echo "staging.suppernote.com/restaurant/chez-sokar-demo → $CONNECT_STATUS"
           [ "$CONNECT_STATUS" = "200" ] || exit 1
 
           echo ""
@@ -294,7 +310,7 @@ jobs:
         if: always() && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
         run: |
           sleep 5
-          curl -fsS https://api-staging.sokar.tech/livez || exit 1
+          curl -fsS https://api-staging.suppernote.com/livez || exit 1
 
       - name: Restore current staging release
         if: always() && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
@@ -330,7 +346,7 @@ jobs:
 
       - name: Playwright version
         id: playwright
-        run: echo "version=$(pnpm --filter @sokar/dashboard exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(pnpm --filter @suppernote/dashboard exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
       # Navigateur Playwright en cache (clé = version), partagé avec la CI : environ 1 min de téléchargement en moins.
       - name: Cache Playwright browsers
@@ -342,15 +358,15 @@ jobs:
 
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter @sokar/dashboard exec playwright install --with-deps chromium
+        run: pnpm --filter @suppernote/dashboard exec playwright install --with-deps chromium
 
       - name: Install Playwright system dependencies
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: pnpm --filter @sokar/dashboard exec playwright install-deps chromium
+        run: pnpm --filter @suppernote/dashboard exec playwright install-deps chromium
 
       - name: Run E2E against staging
         env:
-          PLAYWRIGHT_BASE_URL: https://staging.sokar.tech
+          PLAYWRIGHT_BASE_URL: https://staging.suppernote.com
         run: |
           cd apps/dashboard
           # Run only the functional E2E tests (not visual regression) against
@@ -361,12 +377,12 @@ jobs:
           echo "Dashboard E2E smoke test completed (blocking)"
 
       - name: Install Connect Playwright browsers
-        run: pnpm --filter @sokar/connect exec playwright install --with-deps chromium
+        run: pnpm --filter @suppernote/connect exec playwright install --with-deps chromium
 
       - name: Run Connect E2E smoke against staging
         env:
-          PLAYWRIGHT_BASE_URL: https://staging.sokar.tech
-          API_URL: https://api-staging.sokar.tech
+          PLAYWRIGHT_BASE_URL: https://staging.suppernote.com
+          API_URL: https://api-staging.suppernote.com
         run: |
           cd apps/connect
           # La fiche publique est servie par Connect. Le widget de réservation

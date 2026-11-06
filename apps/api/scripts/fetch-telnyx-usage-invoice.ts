@@ -2,12 +2,12 @@
  * Read-only Telnyx billing export for the usage reconciliation gate.
  *
  * Examples:
- *   TELNYX_API_KEY=... pnpm --filter @sokar/api usage:telnyx:fetch \
+ *   TELNYX_API_KEY=... pnpm --filter @suppernote/api usage:telnyx:fetch \
  *     --month 2026-09 --product messaging \
  *     --invoice-id 48eff763-ea80-4345-b688-78249eb165a8 \
  *     --output ./private/telnyx-usage-2026-09.json
  *
- * The command never writes to Sokar or Telnyx. It writes a normalized invoice
+ * The command never writes to Suppernote or Telnyx. It writes a normalized invoice
  * file plus a sidecar manifest containing hashes and non-sensitive invoice
  * metadata. The signed download_url returned by Telnyx is never persisted;
  * --invoice-file may copy the bounded file to a local path when requested.
@@ -58,8 +58,8 @@ const log = (message: string): void => {
 
 function usage(): void {
   log(`Usage:
-  TELNYX_API_KEY=... pnpm --filter @sokar/api usage:telnyx:fetch --month YYYY-MM --product <product> --output <path> [options]
-  TELNYX_API_KEY=... pnpm --filter @sokar/api usage:telnyx:fetch --month YYYY-MM --list-invoices --output <path>
+  TELNYX_API_KEY=... pnpm --filter @suppernote/api usage:telnyx:fetch --month YYYY-MM --product <product> --output <path> [options]
+  TELNYX_API_KEY=... pnpm --filter @suppernote/api usage:telnyx:fetch --month YYYY-MM --list-invoices --output <path>
 
 Options:
   --month <YYYY-MM>             UTC month to export (required).
@@ -68,7 +68,7 @@ Options:
   --invoice-file <path>         Download the invoice PDF/file locally (requires --invoice-id).
   --quantity-field <metric>     Override quantity metric (only with one product; defaults parts/billed_sec).
   --allow-empty                 Represent a provider report with zero rows as zero usage.
-  --currency EUR                 Sokar reconciliation accepts EUR only (default: EUR).
+  --currency EUR                 Suppernote reconciliation accepts EUR only (default: EUR).
   --dimensions <csv>            Telnyx dimensions (default: currency).
   --filter <key=value>          Repeatable Telnyx filter, for example direction=outbound.
   --page-size <n>               Telnyx page size (default: 1000).

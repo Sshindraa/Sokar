@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Redirect permanent vers /book/[slug].
+ * Suppernote Connect — Redirect permanent vers /book/[slug].
  *
  * L'URL canonique de réservation est maintenant /book/[slug] (widget dashboard).
  * Cette route est conservée pour la rétrocompatibilité des liens existants.

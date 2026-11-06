@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { redisCache } from '../../shared/redis/client';
-import { TTS_CACHE_TTL_SECONDS, TTS_CACHE_MIN_LENGTH } from '@sokar/config';
+import { TTS_CACHE_TTL_SECONDS, TTS_CACHE_MIN_LENGTH } from '@suppernote/config';
 
 function cacheKey(text: string, voiceId: string): string {
   const hash = crypto

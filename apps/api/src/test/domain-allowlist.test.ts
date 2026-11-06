@@ -5,7 +5,7 @@
  * (exclut __tests__, node_modules, .next, dist, out) et vérifie qu'aucune
  * occurrence de `sokar.com` ou `sokar.app` n'apparaît dans le code source.
  *
- * `sokar.tech` est le domaine canonique de production. `sokar.app` était
+ * `suppernote.com` est le domaine canonique de production. `sokar.app` était
  * l'ancien nom du brief initial (cf. docs/connect-v1.1.md ligne 8).
  * `sokar.com` n'est pas possédé par l'entreprise.
  *
@@ -23,8 +23,8 @@
  *
  * Si ce test échoue : un nouveau `sokar.com` ou `sokar.app` a été introduit
  * dans le code source. Le message d'erreur liste les fichiers et lignes en
- * faute. Remplacer par `sokar.tech` (ou un sous-domaine : api.sokar.tech,
- * app.sokar.tech, widget.sokar.tech) selon le contexte.
+ * faute. Remplacer par `suppernote.com` (ou un sous-domaine : api.suppernote.com,
+ * app.suppernote.com, widget.suppernote.com) selon le contexte.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -41,7 +41,7 @@ const EXCLUDE_DIRS = ['node_modules', '.next', 'dist', 'out', '__tests__'];
 // Extensions de fichiers à scanner
 const SCAN_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
 
-// Pattern : sokar.com ou sokar.app (pas sokar.tech qui est valide)
+// Pattern : sokar.com ou sokar.app (pas suppernote.com qui est valide)
 const FORBIDDEN_DOMAIN = /sokar\.(com|app)\b/g;
 
 // Faux positifs explicites (chemin relatif depuis la racine du monorepo)
@@ -120,7 +120,7 @@ describe('domain-allowlist — anti-régression sokar.com / sokar.app', () => {
       const formatted = violations.map((v) => `  ${v.file}:${v.line} → ${v.content}`).join('\n');
       expect.fail(
         `Domaines interdits (sokar.com / sokar.app) trouvés dans le code source.\n` +
-          `Remplacer par sokar.tech (ou un sous-domaine : api.sokar.tech, app.sokar.tech, widget.sokar.tech).\n` +
+          `Remplacer par suppernote.com (ou un sous-domaine : api.suppernote.com, app.suppernote.com, widget.suppernote.com).\n` +
           `Faux positifs connus : docs/, seed.ts, apps/widget/README.md (déjà dans l'allowlist).\n\n` +
           `Occurrences trouvées :\n${formatted}`,
       );

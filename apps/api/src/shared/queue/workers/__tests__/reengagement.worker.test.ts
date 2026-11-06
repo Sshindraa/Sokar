@@ -46,7 +46,7 @@ const ALL: Task[] = [...ROOM, 'knowledge', 'phone', 'connect-identity', 'connect
 describe('processReengagement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.DASHBOARD_URL = 'https://sokar.tech';
+    process.env.DASHBOARD_URL = 'https://suppernote.com';
   });
 
   it('relance un restaurateur dont la salle est prête et qui a un numéro', async () => {
@@ -66,7 +66,7 @@ describe('processReengagement', () => {
     });
   });
 
-  it('ne relance pas un restaurant qui attend son numéro Sokar', async () => {
+  it('ne relance pas un restaurant qui attend son numéro Suppernote', async () => {
     vi.mocked(db.restaurant.findUnique).mockResolvedValue(
       restaurant(ROOM, { phoneNumber: '+000chez-sokar' }),
     );

@@ -1,31 +1,20 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import dynamic from 'next/dynamic';
-import { ArrowRight, Bot, CalendarCheck, Mic, PhoneCall, Sparkles, Utensils } from 'lucide-react';
+import { BRAND_SLOGAN } from '@suppernote/shared';
 import localFont from 'next/font/local';
 import PricingSection from '@/app/PricingSection';
 import FaqSection from '@/app/FaqSection';
 import MobileNav from '@/components/MobileNav';
 import AuthCTA from '@/components/AuthCTA';
-import HeroDashboardPreview from '@/components/HeroDashboardPreview';
+import FeaturesMenu from '@/app/FeaturesMenu';
+import HeroServiceDay from '@/app/HeroServiceDay';
+import ServiceDaySection from '@/app/ServiceDaySection';
+import HomeSmoothScroll from '@/app/HomeSmoothScroll';
 import SiteFooter from '@/components/footer/SiteFooter';
-import SectionSkeleton from '@/components/SectionSkeleton';
 import { HOME_METADATA } from '@/app/marketing-metadata';
 import './brand-palette.css';
-import { BRAND_TITLE } from '@sokar/shared';
 
 export const metadata = HOME_METADATA;
-
-// SSR les sections pour éviter le flash de skeleton sur 4G.
-// ScrollStoryboardSection : Framer Motion useScroll retourne progress=0 en SSR,
-//   l'état initial (1er story step) est rendu serveur, hydration client-side.
-// DemoSection : useState/useEffect seulement, pas de window/document direct.
-const ScrollStoryboardSection = dynamic(() => import('@/app/ScrollStoryboardSection'), {
-  loading: () => <SectionSkeleton variant="storyboard" />,
-});
-const DemoSection = dynamic(() => import('@/app/DemoSection'), {
-  loading: () => <SectionSkeleton variant="demo" />,
-});
 
 // Keep production builds independent from the Google Fonts network endpoint.
 const outfit = localFont({
@@ -33,6 +22,14 @@ const outfit = localFont({
   display: 'swap',
   variable: '--font-display',
   weight: '300 900',
+});
+
+// Police de marque : réservée au mot-symbole et au titre principal.
+const fraunces = localFont({
+  src: './fonts/fraunces-latin.woff2',
+  display: 'swap',
+  variable: '--font-brand',
+  weight: '400 700',
 });
 
 const jakarta = localFont({
@@ -45,57 +42,60 @@ const jakarta = localFont({
 export default function HomePage() {
   return (
     <div
-      className={`brand-palette relative min-h-screen w-full bg-background text-foreground flex flex-col justify-between items-center font-sans antialiased ${outfit.variable} ${jakarta.variable}`}
+      className={`brand-palette day-home relative min-h-screen w-full bg-background text-foreground flex flex-col justify-between items-center font-sans antialiased ${outfit.variable} ${fraunces.variable} ${jakarta.variable}`}
     >
-      {/* Liquid Field Background */}
-      <div className="liquid-field absolute inset-0 pointer-events-none z-0 overflow-hidden select-none" />
-
-      {/* Bandeau flou derrière le logo et le menu : le contenu défile dessous, flouté. */}
+      <HomeSmoothScroll />
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed inset-x-0 top-0 z-40 h-24 bg-black/40 backdrop-blur-xl [mask-image:linear-gradient(to_bottom,black_60%,transparent)]"
+        className="day-header-glass pointer-events-none fixed inset-x-0 top-0 z-40 h-24 backdrop-blur-md [mask-image:linear-gradient(to_bottom,black_25%,transparent)]"
       />
 
-      {/* Logo — top-left fixed */}
       <Link
         href="/"
-        className="fixed left-4 top-5 z-50 hidden md:flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-80 sm:left-6"
+        className="fixed left-4 top-5 z-50 hidden h-[52px] md:flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-80 sm:left-6"
       >
         <Image
           src="/logo-nav.png"
-          alt="Sokar"
+          alt=""
           width={36}
           height={36}
-          className="h-9 w-9 sm:h-11 sm:w-11"
+          className="h-9 w-9 brightness-0 invert sm:h-10 sm:w-10"
           priority
         />
-        <span className="hidden text-xl font-bold tracking-tight text-white font-display sm:inline">
-          Sokar
+        <span className="font-brand text-2xl font-medium tracking-tight text-[hsl(var(--day-ink))]">
+          Suppernote
         </span>
       </Link>
 
       {/* Floating navbar */}
       <div className="fixed left-1/2 top-5 z-50 -translate-x-1/2 flex items-center">
-        <nav className="flex items-center gap-2 rounded-full border border-white/10 bg-black/85 px-3 py-2 shadow-2xl">
+        <nav className="day-nav flex items-center gap-2 rounded-full border px-2 py-1.5 backdrop-blur-md">
           {/* Logo inside navbar on mobile */}
           <Link
             href="/"
             className="flex items-center gap-1.5 md:hidden pl-1 hover:opacity-80 transition-opacity"
           >
-            <Image src="/logo-nav.png" alt="Sokar" width={28} height={28} className="h-7 w-7" />
+            <Image
+              src="/logo-nav.png"
+              alt=""
+              width={28}
+              height={28}
+              className="h-7 w-7 brightness-0 invert"
+            />
+            <span className="font-brand text-sm">Suppernote</span>
           </Link>
-          <span className="h-4 w-px bg-white/10 md:hidden mx-1" />
+          <span className="h-4 w-px bg-current opacity-15 md:hidden mx-1" />
 
           <div className="hidden items-center gap-1 md:flex">
+            <FeaturesMenu />
             {[
-              { label: 'Services', href: '/#services' },
-              { label: "Cas d'usage", href: '/#demo' },
+              { label: 'La journée', href: '/#services' },
               { label: 'Tarifs', href: '/pricing' },
             ].map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className="rounded-full px-3 py-1.5 text-sm text-white/60 transition-colors hover:bg-white/5 hover:text-white"
+                className="rounded-full px-3 py-1.5 text-sm transition-all duration-200 hover:bg-foreground/5"
               >
                 {item.label}
               </Link>
@@ -110,61 +110,53 @@ export default function HomePage() {
 
       {/* Main Content */}
       <main className="relative z-10 flex w-full flex-col items-center">
-        {/* HERO — fully static, server-rendered */}
-        <section className="relative flex min-h-screen w-full items-stretch justify-center overflow-hidden px-0 pb-0 pt-0">
-          <div className="relative flex w-full overflow-hidden bg-black shadow-[0_40px_120px_rgba(0,0,0,0.75)]">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_68%_18%,rgba(160,182,212,0.34),transparent_30%),radial-gradient(circle_at_12%_82%,rgba(200,214,232,0.28),transparent_24%),radial-gradient(circle_at_86%_55%,rgba(255,255,255,0.16),transparent_22%)]" />
-            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[length:84px_84px] opacity-35" />
-
-            <div className="relative flex min-h-screen w-full overflow-hidden bg-black/70">
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_55%_24%,rgba(255,255,255,0.28),transparent_18%),radial-gradient(circle_at_72%_18%,rgba(160,182,212,0.28),transparent_22%),radial-gradient(circle_at_12%_78%,rgba(200,214,232,0.18),transparent_18%),linear-gradient(135deg,rgba(255,255,255,0.02),transparent_42%)]" />
-              <div className="pointer-events-none absolute inset-x-8 top-24 h-px bg-gradient-to-r from-transparent via-white/16 to-transparent" />
-
-              <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-5 pb-28 pt-36 text-center sm:px-8 lg:pb-24">
-                <Link
-                  href="/register"
-                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-4 py-2 text-[11px] font-semibold text-white/[0.76] shadow-2xl shadow-black/20 transition-all duration-200 hover:bg-white/12 hover:text-white"
-                >
-                  <Sparkles size={13} aria-hidden="true" />
-                  14 jours offerts, sans carte bancaire
-                  <ArrowRight size={12} aria-hidden="true" />
-                </Link>
-
-                <h1 className="mt-7 max-w-4xl text-[2.5rem] font-semibold leading-[0.98] tracking-tight text-white sm:text-6xl md:text-7xl lg:text-[5.5rem] font-display">
-                  {BRAND_TITLE}
-                </h1>
-
-                <div className="mt-8 flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row">
-                  <Link
-                    href="/demo"
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 active:scale-[0.98] sm:w-auto"
-                  >
-                    Demander une démonstration
-                    <ArrowRight size={14} />
-                  </Link>
-                  <Link
-                    href="/register"
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/8 px-6 py-3 text-sm font-semibold text-white shadow-2xl shadow-black/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 active:scale-[0.98] sm:w-auto"
-                  >
-                    Essayer 14 jours gratuits
-                    <ArrowRight size={14} />
-                  </Link>
-                </div>
-
-                <HeroDashboardPreview />
-              </div>
+        {/* HERO — rendu côté serveur ; la journée animée suit sur son propre écran */}
+        <section className="day-paper relative flex min-h-[88svh] w-full flex-col justify-center overflow-hidden px-5 pb-10 pt-28 text-center [word-spacing:0.06em] sm:px-8 lg:px-14 lg:pb-12 lg:pt-32">
+          {/* Une table vue du dessus, coupée par le coin : la signature de la page. */}
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 520 520"
+            fill="none"
+            className="pointer-events-none absolute -bottom-[13rem] -right-[9rem] hidden h-[40rem] w-[40rem] md:block"
+          >
+            <circle cx="260" cy="260" r="150" className="day-hero-emblem" />
+            <path d="M225 80h70M225 440h70M440 225v70" className="day-hero-emblem" />
+            <path d="M80 225v70" className="day-hero-emblem day-hero-emblem-lit" />
+          </svg>
+          <div className="relative mx-auto flex w-full max-w-[90rem] flex-col items-center">
+            <h1 className="max-w-[14em] text-balance font-brand text-[2.625rem] font-medium leading-[1.02] tracking-tight [word-spacing:0] lg:text-[clamp(3.5rem,6.2vw,6.75rem)]">
+              Le chef de rang digital de votre restaurant
+            </h1>
+            <p className="day-hero-muted mt-6 max-w-[34em] leading-relaxed lg:text-lg">
+              {BRAND_SLOGAN}
+            </p>
+            <div className="mt-9 flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
+              <Link
+                href="/demo"
+                className="day-cta inline-flex min-h-[3.25rem] items-center justify-center rounded-sm px-6 text-base font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]"
+              >
+                Demander une démonstration
+              </Link>
+              <Link
+                href="/register"
+                className="inline-flex min-h-11 items-center text-[0.9375rem] underline underline-offset-4 transition-all duration-200 hover:opacity-80"
+              >
+                ou essayer 14 jours
+              </Link>
             </div>
           </div>
+          <div
+            aria-hidden="true"
+            className="day-hero-fade pointer-events-none absolute inset-x-0 bottom-0 h-40"
+          />
         </section>
 
-        <div id="services" className="relative w-full scroll-mt-24 overflow-visible bg-black">
+        <HeroServiceDay />
+
+        <ServiceDaySection />
+
+        <div className="day-deep relative w-full overflow-visible">
           <div className="relative mx-auto flex w-full flex-col items-center">
-            {/* SCROLL STORYBOARD — Framer Motion cinematic transition inspired by the reference */}
-            <ScrollStoryboardSection />
-
-            {/* DEMO — client component with simulator chat */}
-            <DemoSection />
-
             {/* PRICING — client component for toggle interactivity */}
             <PricingSection />
 

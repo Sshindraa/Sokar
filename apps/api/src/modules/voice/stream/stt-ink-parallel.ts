@@ -28,7 +28,7 @@ export const INK_MIN_DEEPGRAM_WORDS = 2;
 const MAX_CALL_SECONDS = 600;
 /**
  * Seule la voix de l'appelant part chez Cartesia (facturé à la seconde reçue) : environ un quart d'un appel
- * d'après le banc du 22/10/2026 (12 min 45 s de parole sur 55 min). La détection est celle de Sokar
+ * d'après le banc du 22/10/2026 (12 min 45 s de parole sur 55 min). La détection est celle de Suppernote
  * (`trackCallerVoice`), locale et gratuite : il faut décider avant d'envoyer.
  */
 const SPEECH_HANGOVER_MS = 1000;
@@ -314,7 +314,7 @@ export function sendInkAudio(session: CallSession, telnyxAudio: Buffer, now = Da
   }
 }
 
-/** Un seul cycle en vol : les `flush_done` ne portent pas d'identifiant de tour Sokar. */
+/** Un seul cycle en vol : les `flush_done` ne portent pas d'identifiant de tour Suppernote. */
 function sendFinalize(state: InkParallelState): void {
   if (state.pendingFinalize) return;
   state.pendingFinalize = true;

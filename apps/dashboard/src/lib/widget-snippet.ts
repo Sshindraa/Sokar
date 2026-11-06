@@ -1,10 +1,10 @@
-const PROD_WIDGET_HOST = 'https://sokar.tech';
+const PROD_WIDGET_HOST = 'https://suppernote.com';
 
 export const WIDGET_HOST = process.env.NEXT_PUBLIC_SITE_URL ?? PROD_WIDGET_HOST;
 export const WIDGET_DEFAULT_PRIMARY = '#0f172a';
 export const WIDGET_DEFAULT_ACCENT = '#f97316';
 
-/** Code à coller dans un site web pour y afficher le bouton de réservation Sokar. */
+/** Code à coller dans un site web pour y afficher le bouton de réservation Suppernote. */
 export function buildWidgetSnippet(
   slug: string,
   primary: string = WIDGET_DEFAULT_PRIMARY,

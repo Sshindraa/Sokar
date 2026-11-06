@@ -1,5 +1,5 @@
 /**
- * Tests routes Sokar Connect — T2.
+ * Tests routes Suppernote Connect — T2.
  *
  * Couvre (acceptance criteria spec v1.1 §10 T2) :
  * - GET /public/r/:slug → 200 si publié
@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach, afterAll, vi, type Mock } 
 import type { FastifyInstance } from 'fastify';
 import type { PublicRestaurantDto } from '../connect.types';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { MARKETING_CONSENT_VERSION } from '@sokar/shared';
+import { MARKETING_CONSENT_VERSION } from '@suppernote/shared';
 
 /**
  * Copie volontaire de l'invariant de publication (cf. `PUBLIC_CONNECT_WHERE`).
@@ -119,7 +119,7 @@ const mockPublishedRestaurant: PublicRestaurantDto = {
     { day: 'monday', open: '12:00', close: '14:30' },
     { day: 'monday', open: '19:00', close: '22:30' },
   ],
-  reservationUrl: `https://sokar.tech/r/${SLUG}/book`,
+  reservationUrl: `https://suppernote.com/r/${SLUG}/book`,
   images: { cover: undefined, gallery: [] },
   acceptsReservations: true,
   publishedAt: '2026-06-24T00:00:00.000Z',
@@ -139,7 +139,7 @@ const mockExposureSettings = {
 
 let app: FastifyInstance;
 
-describe('Sokar Connect — Routes publiques', () => {
+describe('Suppernote Connect — Routes publiques', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     // Les créneaux de ces tests sont fixes (29 juin) : l'horloge est figée avant eux, sinon le hold
@@ -818,7 +818,7 @@ describe('Sokar Connect — Routes publiques', () => {
         vi.stubEnv('WHATSAPP_CONSENT_ENABLED', 'true');
         vi.stubEnv('RESERVATION_MANAGEMENT_ENABLED', 'true');
         vi.stubEnv('RESERVATION_MANAGEMENT_SECRET', randomBytes(32).toString('hex'));
-        vi.stubEnv('DASHBOARD_URL', 'https://sokar.tech');
+        vi.stubEnv('DASHBOARD_URL', 'https://suppernote.com');
         const reservationId = randomUUID();
         vi.mocked(db.reservation.findUnique).mockResolvedValue({
           id: reservationId,
@@ -901,7 +901,7 @@ describe('Sokar Connect — Routes publiques', () => {
             state: 'CONFIRMED',
             reused,
           });
-          expect(res.json().managementUrl).toMatch(/^https:\/\/sokar.tech\/r#[\w-]+\.[\w-]+$/);
+          expect(res.json().managementUrl).toMatch(/^https:\/\/suppernote.com\/r#[\w-]+\.[\w-]+$/);
           expect(createReservation).toHaveBeenCalledWith(
             expect.objectContaining({
               holdToken: CONFIRM_HOLD_TOKEN,
@@ -1441,7 +1441,7 @@ describe('Sokar Connect — Routes publiques', () => {
     it('confirm : crée une réservation test hors consentement, anti-spam et analytics', async () => {
       vi.stubEnv('RESERVATION_MANAGEMENT_ENABLED', 'true');
       vi.stubEnv('RESERVATION_MANAGEMENT_SECRET', randomBytes(32).toString('hex'));
-      vi.stubEnv('DASHBOARD_URL', 'https://sokar.tech');
+      vi.stubEnv('DASHBOARD_URL', 'https://suppernote.com');
       mockActiveHold();
       const reservationId = randomUUID();
       createReservation.mockResolvedValue({ reservationId, state: 'CONFIRMED', reused: false });
@@ -1457,7 +1457,7 @@ describe('Sokar Connect — Routes publiques', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json()).toMatchObject({ reservationId, status: 'confirmed', reused: false });
-      expect(res.json().managementUrl).toMatch(/^https:\/\/sokar.tech\/r#[\w-]+\.[\w-]+$/);
+      expect(res.json().managementUrl).toMatch(/^https:\/\/suppernote.com\/r#[\w-]+\.[\w-]+$/);
       expect(createReservation).toHaveBeenCalledTimes(1);
       const [input, idempotency] = createReservation.mock.calls[0] as [
         Record<string, unknown>,

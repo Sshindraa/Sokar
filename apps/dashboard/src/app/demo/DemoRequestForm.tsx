@@ -92,7 +92,7 @@ export default function DemoRequestForm() {
           </p>
         </div>
         <p className="text-sm text-muted-foreground">
-          Vous souhaitez déjà utiliser Sokar ?{' '}
+          Vous souhaitez déjà utiliser Suppernote ?{' '}
           <Link
             href={
               selection

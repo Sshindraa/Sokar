@@ -175,7 +175,7 @@ export default function ConnectPilotPage() {
 
       {!loading && forbidden && (
         <section className="rounded-xl border border-border bg-card p-6">
-          <h2 className="font-semibold">Page réservée à l’équipe Sokar</h2>
+          <h2 className="font-semibold">Page réservée à l’équipe Suppernote</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Vos statistiques de réservation sont sur la page Pilotage.
           </p>

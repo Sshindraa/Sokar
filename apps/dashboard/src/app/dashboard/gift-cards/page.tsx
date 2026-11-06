@@ -3,7 +3,7 @@ import { GiftCardTestJourney } from '@/components/gift-cards/gift-card-test-jour
 
 import { GiftCardOperationsPanel } from '@/components/gift-cards/gift-card-operations-panel';
 import { GiftCardCashier } from '@/components/gift-cards/gift-card-cashier';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Euro, Gift, Plus, Save, Search, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useGiftCardApi } from '@/lib/api/gift-cards';
 import { useApi } from '@/lib/api';
 import { getErrorMessage, type Restaurant } from '@/types/api';
-import { formatEuro } from '@sokar/shared';
+import { formatEuro } from '@suppernote/shared';
 import type { GiftCardListItem, GiftCardPack, GiftCardStats } from '@/lib/api/gift-cards';
 import GiftCardList from '@/components/gift-cards/gift-card-list';
 import { giftCardStatusLabel } from '@/components/gift-cards/gift-card-labels';
@@ -109,8 +109,14 @@ export default function GiftCardsPage() {
     settings.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   }, []);
 
+  // Seule la dernière requête écrit l'état : une réponse plus ancienne (un 403 reçu après
+  // un appel plus récent) ne doit pas remplacer les données chargées.
+  const latestFetchRef = useRef(0);
+
   const fetchAll = useCallback(async () => {
     if (!orgId) return;
+    const requestId = ++latestFetchRef.current;
+    const isLatest = () => requestId === latestFetchRef.current;
     setLoading(true);
     setError('');
     try {
@@ -126,6 +132,7 @@ export default function GiftCardsPage() {
         listGiftCardPacks(),
         get<Restaurant>(`restaurants/${orgId}`),
       ]);
+      if (!isLatest()) return;
       setCards(list.items);
       setTotal(list.total);
       setLoadedOnce(true);
@@ -138,9 +145,9 @@ export default function GiftCardsPage() {
           : 5,
       );
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de charger les cartes cadeaux'));
+      if (isLatest()) setError(getErrorMessage(err, 'Impossible de charger les cartes cadeaux'));
     } finally {
-      setLoading(false);
+      if (isLatest()) setLoading(false);
     }
   }, [
     orgId,
@@ -523,7 +530,7 @@ export default function GiftCardsPage() {
                     </div>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Commission Sokar</p>
+                    <p className="text-sm font-medium">Commission Suppernote</p>
                     <div className="mt-1.5 flex h-10 items-center justify-between rounded-lg border border-border bg-muted/30 px-3">
                       <span className="font-medium">
                         {new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(

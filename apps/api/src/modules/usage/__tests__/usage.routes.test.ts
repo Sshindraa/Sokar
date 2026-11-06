@@ -126,7 +126,7 @@ describe('usage routes', () => {
     expect(response.statusCode).toBe(503);
   });
 
-  it('expose la projection de marge uniquement à un opérateur Sokar', async () => {
+  it('expose la projection de marge uniquement à un opérateur Suppernote', async () => {
     vi.mocked(db.usageEvent.findMany).mockResolvedValue([]);
     const app = await getApp();
 

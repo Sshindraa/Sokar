@@ -11,7 +11,7 @@ import { snapshotCancellationPolicy } from '../../../shared/reservations/cancell
 
 import type { ReservationChannel } from './state-machine.js';
 import { HOURS_PER_DAY, HOURS_TO_MINUTES, HOUR_SECONDS } from '../../../shared/constants/time.js';
-import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { DEFAULT_MAX_PARTY_SIZE } from '@suppernote/config';
 import {
   DEFAULT_ONLINE_MIN_LEAD_TIME_MINUTES,
   INSUFFICIENT_LEAD_TIME,

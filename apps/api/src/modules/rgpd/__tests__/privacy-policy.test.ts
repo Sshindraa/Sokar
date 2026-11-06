@@ -3,7 +3,7 @@ import {
   PRIVACY_ANONYMIZATION_REFERENCE,
   PRIVACY_DOCUMENT,
   PRIVACY_PROVIDERS,
-} from '@sokar/shared';
+} from '@suppernote/shared';
 import { ANONYMIZATION_GRACE_DAYS, ANONYMIZATION_RETENTION_DAYS } from '../anonymization.service';
 import { PRIVACY_POLICY_SUMMARY, PRIVACY_POLICY_TEXT } from '../privacy-policy';
 
@@ -31,7 +31,7 @@ describe('privacy disclosure compatibility', () => {
       /Clerk|Cerebras|OpenRouter|Respan|Scribe|PostgreSQL|Redis|PKCE|AES-256/,
     );
     expect(PRIVACY_POLICY_TEXT).toContain('hors de l’Espace économique européen');
-    expect(PRIVACY_POLICY_TEXT).toContain('privacy@sokar.tech');
+    expect(PRIVACY_POLICY_TEXT).toContain('privacy@suppernote.com');
     expect(PRIVACY_POLICY_TEXT).toContain('sans purge automatique');
     expect(PRIVACY_POLICY_TEXT).toContain(PRIVACY_DOCUMENT.reservationProcessing);
     expect(PRIVACY_POLICY_TEXT).toContain('Demandes de démonstration : intérêt légitime');

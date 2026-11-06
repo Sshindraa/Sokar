@@ -13,9 +13,9 @@ export class SokarAgentRunner {
   /**
    * Lance une conversation multi-tours.
    *
-   * 1. Récupère les tools Sokar au format attendu par le LLM.
+   * 1. Récupère les tools Suppernote au format attendu par le LLM.
    * 2. Envoie le message utilisateur.
-   * 3. Tant que le LLM appelle des tools, ils sont exécutés sur Sokar et le
+   * 3. Tant que le LLM appelle des tools, ils sont exécutés sur Suppernote et le
    *    résultat est renvoyé au LLM.
    * 4. Retourne le message final quand le LLM répond sans appeler d'outil.
    */
