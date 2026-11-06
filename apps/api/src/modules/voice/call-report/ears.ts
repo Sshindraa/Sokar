@@ -52,6 +52,29 @@ function isUnitLetter(tokens: readonly string[], index: number): boolean {
   );
 }
 
+/** Mots français d'une seule lettre, et ce qui les annonce quand ils sont épelés (« deux a »). */
+const ONE_LETTER_WORDS = new Set(['à', 'a', 'y']);
+const LETTER_COUNTERS = new Set(['deux', 'double']);
+
+/**
+ * « à », « a » ou « y » hors épellation : un mot (« à votre écoute », « il y a »), pas une lettre
+ * isolée. Annoncé par « deux » ou « double », c'est une lettre épelée et il compte.
+ */
+function isOneLetterWord(tokens: readonly string[], index: number): boolean {
+  return (
+    ONE_LETTER_WORDS.has(tokens[index] ?? '') &&
+    !isSpelledAt(tokens, index) &&
+    !LETTER_COUNTERS.has(tokens[index - 1] ?? '')
+  );
+}
+
+/** Lettre isolée qui compte comme telle : ni unité d'un nombre, ni mot d'une lettre. */
+function isCountedLetter(tokens: readonly string[], index: number): boolean {
+  return (
+    isLetter(tokens[index] ?? '') && !isUnitLetter(tokens, index) && !isOneLetterWord(tokens, index)
+  );
+}
+
 /**
  * Le jeton fait-il partie d'une épellation ? Une suite de jetons d'un seul caractère qui compte
  * deux lettres voisines (« h o u e t », « a m ») ou au moins trois lettres. Une lettre seule
@@ -157,12 +180,8 @@ export function compareEars(input: {
       // Seuls les jetons qui diffèrent comptent (le contexte autour ne décide pas du genre d'écart).
       const core = divergenceRuns(liveTokens, slice.tokens, alignTokens(liveTokens, slice.tokens));
       for (const run of core) {
-        const refLetter = run.ref.some(
-          (token, i) => isLetter(token) && !isUnitLetter(liveTokens, run.refStart + i),
-        );
-        const hypLetter = run.hyp.some(
-          (token, i) => isLetter(token) && !isUnitLetter(slice.tokens, run.hypStart + i),
-        );
+        const refLetter = run.ref.some((_, i) => isCountedLetter(liveTokens, run.refStart + i));
+        const hypLetter = run.hyp.some((_, i) => isCountedLetter(slice.tokens, run.hypStart + i));
         if (refLetter || hypLetter) isolatedLetter = true;
         const liveDigits = run.ref.filter(hasDigit).join(' ');
         const otherDigits = run.hyp.filter(hasDigit).join(' ');
