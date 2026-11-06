@@ -256,7 +256,7 @@ export class GiftCardCrowdfundingService {
    * Clôture une cagnotte et transforme en carte cadeau utilisable.
    *
    * - Calcule le total des contributions
-   * - Déduit la commission Sokar (5% par défaut, configurable sur le restaurant)
+   * - Déduit la commission Suppernote (5% par défaut, configurable sur le restaurant)
    * - Met à jour la GiftCard : amount = total - commission, remainingAmount = amount,
    *   type = SINGLE, status = ACTIVE, closedAt = now
    * - Envoie email + WhatsApp au destinataire avec le code final

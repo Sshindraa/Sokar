@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Sokar Connect est servi par un Node Next standalone derrière Nginx
+  // Suppernote Connect est servi par un Node Next standalone derrière Nginx
   // (cf. spec connect-v1.1 §3.3 hébergement). PAS static export.
   output: 'standalone',
   // Le déploiement peut construire une release isolée avant de remplacer

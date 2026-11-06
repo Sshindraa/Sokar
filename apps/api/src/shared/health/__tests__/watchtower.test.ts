@@ -68,9 +68,9 @@ describe('checkPhoneLine', () => {
     const get = vi.fn(async (path: string) =>
       path.startsWith('/v2/phone_numbers/')
         ? ok({ status: 'active', connection_id: 'app_1' })
-        : ok({ active: true, webhook_event_url: 'https://api.sokar.tech/voice/telnyx' }),
+        : ok({ active: true, webhook_event_url: 'https://api.suppernote.com/voice/telnyx' }),
     );
-    await expect(checkPhoneLine('num_1', 'https://api.sokar.tech', get)).resolves.toEqual({
+    await expect(checkPhoneLine('num_1', 'https://api.suppernote.com', get)).resolves.toEqual({
       ok: true,
     });
   });
@@ -79,16 +79,19 @@ describe('checkPhoneLine', () => {
     const get = vi.fn(async (path: string) =>
       path.startsWith('/v2/phone_numbers/')
         ? ok({ status: 'active', connection_id: 'app_1' })
-        : ok({ active: true, webhook_event_url: 'https://api-staging.sokar.tech/voice/telnyx' }),
+        : ok({
+            active: true,
+            webhook_event_url: 'https://api-staging.suppernote.com/voice/telnyx',
+          }),
     );
-    const result = await checkPhoneLine('num_1', 'https://api.sokar.tech', get);
+    const result = await checkPhoneLine('num_1', 'https://api.suppernote.com', get);
     expect(result.ok).toBe(false);
   });
 
   it('signale un numéro suspendu ou sans application', async () => {
     const suspended = vi.fn(async () => ok({ status: 'suspended', connection_id: 'app_1' }));
-    expect((await checkPhoneLine('num_1', 'https://api.sokar.tech', suspended)).ok).toBe(false);
+    expect((await checkPhoneLine('num_1', 'https://api.suppernote.com', suspended)).ok).toBe(false);
     const orphan = vi.fn(async () => ok({ status: 'active', connection_id: null }));
-    expect((await checkPhoneLine('num_1', 'https://api.sokar.tech', orphan)).ok).toBe(false);
+    expect((await checkPhoneLine('num_1', 'https://api.suppernote.com', orphan)).ok).toBe(false);
   });
 });

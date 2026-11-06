@@ -15,12 +15,15 @@ vi.mock('@aws-sdk/client-s3', () => {
     },
     PutObjectCommand: Command,
     GetObjectCommand: Command,
+    GetBucketVersioningCommand: Command,
     DeleteObjectCommand: Command,
   };
 });
 
 import { db } from '../../../shared/db/client';
 import {
+  assertRecordingBucketUnversioned,
+  deleteTelnyxRecording,
   purgeExpiredRecordings,
   putPrivateObject,
   recoverPendingRecording,
@@ -39,6 +42,8 @@ const session = {
 describe('call recording service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(db.call.findFirst).mockResolvedValue({ id: 'call-1' } as never);
+    vi.mocked(db.call.updateMany).mockResolvedValue({ count: 1 });
     process.env.CALL_RECORDING_ENABLED = 'true';
     process.env.CALL_RECORDING_TEST_RESTAURANT_IDS = 'rest-1';
     process.env.CALL_RECORDINGS_BUCKET = 'private-recordings';
@@ -56,6 +61,64 @@ describe('call recording service', () => {
     delete process.env.CALL_RECORDINGS_MAX_BYTES;
   });
 
+  it('refuses to replace a different saved recording', async () => {
+    vi.mocked(db.call.findUnique).mockResolvedValue({
+      id: 'call-1',
+      restaurantId: 'rest-1',
+    } as never);
+    vi.mocked(db.call.findFirst).mockResolvedValue({
+      id: 'call-1',
+      recordingProviderId: 'previous-id',
+      recordingStorageKey: 'previous-key',
+    } as never);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(new Uint8Array([1]), { status: 200 })),
+    );
+    await expect(
+      storeSavedRecording({
+        callLegId: 'leg-1',
+        recordingId: 'new-id',
+        downloadUrl: 'https://recordings.invalid/audio',
+      }),
+    ).rejects.toThrow('CALL_RECORDING_REQUIRES_MANUAL_REVIEW');
+    expect(s3Send).not.toHaveBeenCalled();
+  });
+
+  it('refuses a new recording after deletion has started', async () => {
+    vi.mocked(db.call.updateMany).mockResolvedValueOnce({ count: 0 });
+    vi.stubGlobal('fetch', vi.fn());
+    await startTestCallRecording(session);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('deletes a Telnyx recording and treats a missing recording as already deleted', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 204 }))
+        .mockResolvedValueOnce(new Response(null, { status: 404 }))
+        .mockResolvedValueOnce(new Response(null, { status: 503 })),
+    );
+    await deleteTelnyxRecording('synthetic/id');
+    await deleteTelnyxRecording('synthetic/id');
+    await expect(deleteTelnyxRecording('synthetic/id')).rejects.toThrow(
+      'Telnyx recording deletion failed: 503',
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      'https://api.telnyx.com/v2/recordings/synthetic%2Fid',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
+  it('fails closed if the bucket retains object versions', async () => {
+    s3Send.mockResolvedValueOnce({ Status: 'Enabled' });
+    await expect(assertRecordingBucketUnversioned()).rejects.toThrow(
+      'CALL_RECORDING_BUCKET_VERSIONING_REQUIRES_MANUAL_REVIEW',
+    );
+  });
+
   it('starts a dual-channel MP3 recording and marks the call pending', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 200 })));
 
@@ -69,7 +132,7 @@ describe('call recording service', () => {
       }),
     );
     expect(db.call.updateMany).toHaveBeenCalledWith({
-      where: { callSid: 'leg-1' },
+      where: { callSid: 'leg-1', restaurantId: 'rest-1', recordingStatus: { not: 'DELETED' } },
       data: expect.objectContaining({ recordingStatus: 'PENDING' }),
     });
     expect(vi.mocked(db.call.updateMany).mock.calls[0]?.[0].data).not.toHaveProperty(

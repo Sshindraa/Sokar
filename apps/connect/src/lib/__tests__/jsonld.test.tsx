@@ -10,9 +10,9 @@ function makeJsonLd(overrides: Partial<RestaurantJsonLd> = {}): RestaurantJsonLd
   return {
     '@context': 'https://schema.org',
     '@type': 'Restaurant',
-    '@id': 'https://sokar.tech/restaurant/chez-sokar',
+    '@id': 'https://suppernote.com/restaurant/chez-sokar',
     name: 'Chez Sokar',
-    url: 'https://sokar.tech/restaurant/chez-sokar',
+    url: 'https://suppernote.com/restaurant/chez-sokar',
     telephone: '+33123456789',
     servesCuisine: ['Française'],
     acceptsReservations: true,

@@ -16,9 +16,9 @@ vendre et servir des cartes cadeaux en autonomie.
 - Revue du schéma Prisma, migrations, services et routes gift-cards, intégration réservations,
   outil vocal, Connect, dashboard, workers et tests.
 - Suite API existante exécutée : **300 fichiers réussis, 2 ignorés ; 3 121 tests réussis,
-  27 ignorés**. La commande `pnpm --filter @sokar/api test -- src/modules/gift-cards` a lancé
+  27 ignorés**. La commande `pnpm --filter @suppernote/api test -- src/modules/gift-cards` a lancé
   la suite API complète, le séparateur `--` n'ayant pas appliqué le filtre attendu.
-- Six sondes temporaires exécutées par `pnpm --filter @sokar/api exec vitest run
+- Six sondes temporaires exécutées par `pnpm --filter @suppernote/api exec vitest run
 src/modules/gift-cards/__tests__/gift-card-audit.probe.test.ts` : six reproductions réussies,
   Stripe et Prisma simulés. Les sondes constatent les comportements actuels défectueux,
   elles ne valident pas un correctif. Le fichier temporaire est supprimé après l'audit.

@@ -2,18 +2,18 @@
 export const PRIVACY_DOCUMENT = {
   revision: '2026-10-16',
   updatedLabel: '16 octobre 2026',
-  contact: 'privacy@sokar.tech',
+  contact: 'privacy@suppernote.com',
   hosting: 'OVHcloud',
   review:
     'Version en cours de finalisation : l’identification du responsable, certaines durées et les garanties de transfert restent à valider avant publication.',
   roles:
-    'Sokar détermine les finalités du traitement des demandes de démonstration, de la gestion de ses comptes et de la sécurité de son service. Pour la gestion des réservations et de la clientèle, le restaurant détermine les finalités et Sokar traite les données sur ses instructions.',
+    'Suppernote détermine les finalités du traitement des demandes de démonstration, de la gestion de ses comptes et de la sécurité de son service. Pour la gestion des réservations et de la clientèle, le restaurant détermine les finalités et Suppernote traite les données sur ses instructions.',
   reservationProcessing:
     'La prise et la gestion d’une réservation reposent sur l’exécution du contrat avec le restaurant. Les confirmations suivent les choix de communication recueillis lors de la réservation. Le marketing nécessite un consentement distinct : une réservation ne vaut pas inscription à une campagne.',
   transfers:
     'Selon les fonctionnalités utilisées, certains prestataires peuvent traiter des données hors de l’Espace économique européen. Les pays concernés et les garanties de transfert doivent être précisés dans la documentation applicable au service ; leur vérification est en cours.',
   supplierInformation:
-    'Pour connaître les prestataires concernés par votre utilisation du service, leurs pays de traitement et les garanties applicables, contactez privacy@sokar.tech. La liste nominative relève de la documentation de traitement des données destinée aux clients restaurateurs.',
+    'Pour connaître les prestataires concernés par votre utilisation du service, leurs pays de traitement et les garanties applicables, contactez privacy@suppernote.com. La liste nominative relève de la documentation de traitement des données destinée aux clients restaurateurs.',
   security:
     'Nous utilisons des connexions chiffrées, des contrôles d’accès et des mesures de surveillance pour protéger les données et limiter les accès non autorisés.',
   cookies:

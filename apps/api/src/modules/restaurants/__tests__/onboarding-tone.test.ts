@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
  * Convention guard : le copy user-facing de l'onboarding dashboard doit
  * utiliser le vouvoiement (`vous`), jamais le tutoiement (`tu/ton/ta/tes`).
  *
- * Sokar est un SaaS B2B — le `tu` sent le consumer/developer-tool.
+ * Suppernote est un SaaS B2B — le `tu` sent le consumer/developer-tool.
  * La convention est documentée dans AGENTS.md > "Dashboard UI rules".
  *
  * Ce test lit les fichiers .tsx du dossier onboarding du dashboard et
@@ -86,7 +86,7 @@ describe('onboarding tone convention (vous, jamais tu)', () => {
           .map((v) => `  ligne ${v.line}: « ${v.match} » (${v.label})`)
           .join('\n');
         throw new Error(
-          `Tutoiement détecté dans ${name} — la convention Sokar impose le vouvoiement.\n` +
+          `Tutoiement détecté dans ${name} — la convention Suppernote impose le vouvoiement.\n` +
             `Voir AGENTS.md > "Dashboard UI rules".\n${details}`,
         );
       }

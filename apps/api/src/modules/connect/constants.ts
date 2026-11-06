@@ -1,5 +1,5 @@
 /**
- * Constantes de rate limits et pagination pour Sokar Connect.
+ * Constantes de rate limits et pagination pour Suppernote Connect.
  *
  * Centralise les limites par endpoint public pour éviter
  * les magic numbers éparpillés dans connect.routes.ts.

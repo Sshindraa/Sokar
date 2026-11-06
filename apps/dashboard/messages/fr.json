@@ -5,7 +5,7 @@
     "note": "Source de vérité. Tout le copy user-facing de la dashboard doit finir ici. Convention : vous, jamais tu. Voir apps/dashboard/src/i18n/config.ts pour la migration vers d'autres locales."
   },
   "common": {
-    "appName": "Sokar",
+    "appName": "Suppernote",
     "tagline": "Assistant vocal intelligent pour votre restaurant",
     "loading": "Chargement…",
     "retry": "Réessayer",
@@ -20,8 +20,8 @@
     "reservations": "Réservations",
     "briefing": "Briefing",
     "floorPlan": "Salle",
-    "live": "Live",
-    "edition": "Édition",
+    "live": "Service en direct",
+    "edition": "Édition du plan",
     "liveService": "Live service",
     "floorPlanEdit": "Salle édition",
     "customers": "Clients",
@@ -32,7 +32,7 @@
     "events": "Événements",
     "distribution": "Distribution",
     "usage": "Consommation",
-    "margin": "Marge Sokar",
+    "margin": "Marge Suppernote",
     "reactivation": "Réactivation",
     "giftCards": "Cartes cadeaux",
     "giftCardPacks": "Packs cadeaux",
@@ -46,20 +46,20 @@
     "expand": "Afficher les rubriques",
     "collapse": "Réduire les rubriques",
     "close": "Fermer",
-    "admin": "Admin Sokar",
+    "admin": "Admin Suppernote",
     "provisioning": "Préparer un pilote",
     "settings": "Réglages",
     "health": "Santé"
   },
   "dashboard": {
-    "subdomain": "Sokar OS",
+    "subdomain": "Suppernote OS",
     "themeToggle": "Thème",
     "themeTooltipLight": "Passer en mode sombre",
     "themeTooltipDark": "Passer en mode clair"
   },
   "home": {
     "heroTitle": "L'IA qui prend vos appels quand vous ne pouvez pas",
-    "heroSubtitle": "Sokar répond à vos clients 24h/24, prend les réservations et note chaque appel. Vous gérez votre salle, Sokar gère le téléphone."
+    "heroSubtitle": "Suppernote répond à vos clients 24h/24, prend les réservations et note chaque appel. Vous gérez votre salle, Suppernote gère le téléphone."
   },
   "pricing": {
     "title": "Tarifs simples, sans engagement",
@@ -70,7 +70,7 @@
     "description": "Un bouton flottant que vos clients ajoutent en un clic. Aucune installation, aucun mot de passe."
   },
   "onboarding": {
-    "title": "Configurons Sokar ensemble",
+    "title": "Configurons Suppernote ensemble",
     "subtitle": "En quelques étapes, votre assistant sera prêt à prendre vos appels."
   },
   "errors": {
@@ -80,7 +80,7 @@
   },
   "companion": {
     "title": "Companion",
-    "greeting": "Je suis l'assistant IA de Sokar. Je lis les chiffres de votre restaurant, aucune donnée client.",
+    "greeting": "Je suis l'assistant IA de Suppernote. Je lis les chiffres de votre restaurant, aucune donnée client.",
     "suggestions": {
       "week": "Comment se présentent les 7 prochains jours ?",
       "noShows": "Où en sont mes no-shows ?",
@@ -124,7 +124,7 @@
   "languageSwitcher": {
     "label": "Langue",
     "settingsTitle": "Langue d’affichage",
-    "settingsDescription": "Choisissez la langue utilisée dans votre espace Sokar.",
+    "settingsDescription": "Choisissez la langue utilisée dans votre espace Suppernote.",
     "current": "Langue actuelle : {label}",
     "comingSoon": "Bientôt disponible",
     "comingSoonHint": "D'autres langues seront ajoutées progressivement."
@@ -194,6 +194,7 @@
     "bodyHelp": "Gardez '{reservationLink}' et '{unsubscribeUrl}' : ils sont obligatoires pour un envoi.",
     "create": "Créer la campagne",
     "creating": "Création…",
+    "today": "Aujourd’hui",
     "openFromQuietDay": "Remplir ce service",
     "report": {
       "title": "Service visé",

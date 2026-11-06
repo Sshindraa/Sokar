@@ -61,7 +61,7 @@ export type OnboardingRestaurant = {
     emotion?: string | null;
   } | null;
   practicalInfo?: PracticalInfo;
-  // Sokar Connect fields
+  // Suppernote Connect fields
   slug?: string;
   description?: string | null;
   formattedAddress?: string | null;

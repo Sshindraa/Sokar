@@ -6,7 +6,7 @@ import {
   VAT_MENTION,
   pricingTotalCents,
   formatMonthlyEquivalent,
-} from '@sokar/shared';
+} from '@suppernote/shared';
 import { useState } from 'react';
 import Link from 'next/link';
 import { PLANS, DISPLAY_PRICE, type PlanFeatureLine } from '@/app/constants';
@@ -109,9 +109,11 @@ export default function PricingPlans({
         </span>
       </div>
 
-      <p className="mb-10 text-center text-sm text-white/60">
-        {TRIAL_DAYS} jours offerts, sans carte bancaire · {VAT_MENTION}
-      </p>
+      {showComparison && (
+        <p className="mb-10 text-center text-sm text-white/60">
+          {TRIAL_DAYS} jours offerts, sans carte bancaire · {VAT_MENTION}
+        </p>
+      )}
       {/*
       Cards Grid. En md+, chaque carte est une sous-grille de 4 lignes
       (en-tête, prix, bouton, avantages) : les lignes sont

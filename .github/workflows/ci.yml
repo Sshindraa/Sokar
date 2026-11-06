@@ -46,6 +46,36 @@ jobs:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
 
   # ─────────────────────────────────────────────────────────────
+  # Analyse de sécurité du code. Remplace CodeQL, indisponible sur un dépôt privé
+  # sans licence GitHub Code Security. --metrics=off : le code n'est pas envoyé.
+  # Règles exclues, toutes en fausses alertes ou hors sujet sur ce dépôt (tri du 04/11/2026) :
+  # direct-response-write (règle Express, réponses JSON Fastify), raw-html-format (prend les
+  # génériques TS pour du HTML), request-host-used (nginx), mutable-action-tag (hygiène).
+  # ─────────────────────────────────────────────────────────────
+  sast:
+    name: Semgrep
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: semgrep/semgrep:1.183.0
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: |
+          semgrep scan --metrics=off --error \
+            --severity ERROR --severity WARNING \
+            --config p/javascript --config p/typescript --config p/nodejs \
+            --config p/react --config p/nextjs --config p/owasp-top-ten \
+            --exclude-rule generic.nginx.security.request-host-used.request-host-used \
+            --exclude-rule javascript.express.security.audit.xss.direct-response-write.direct-response-write \
+            --exclude-rule javascript.express.security.injection.raw-html-format.raw-html-format \
+            --exclude-rule yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag \
+            .
+
+  # ─────────────────────────────────────────────────────────────
   # Foundation: workspace packages typecheck + test first.
   # (prisma generate runs as part of `build`, which typecheck depends on
   #  via `^build`. tests in packages are stubs for now but the task exists
@@ -82,10 +112,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: pnpm turbo typecheck --filter=@sokar/shared --filter=@sokar/config --filter=@sokar/database
+        run: pnpm turbo typecheck --filter=@suppernote/shared --filter=@suppernote/config --filter=@suppernote/database
 
       - name: Test
-        run: pnpm turbo test --filter=@sokar/shared --filter=@sokar/config --filter=@sokar/database
+        run: pnpm turbo test --filter=@suppernote/shared --filter=@suppernote/config --filter=@suppernote/database
 
       - name: Quality guards self-test
         # Teste la logique des garde-fous de qualification (R1-5) : cible de
@@ -142,12 +172,15 @@ jobs:
       - name: Typecheck
         # turbo walks the dep graph and runs typecheck for api + all
         # workspace deps (prisma generate is triggered via ^build).
-        run: pnpm turbo typecheck --filter=@sokar/api...
+        run: pnpm turbo typecheck --filter=@suppernote/api...
 
       - name: Lint
         # Real ESLint (flat config, type-checked rules) — catches floating
         # promises, unused vars, and misused promises that tsc misses.
-        run: pnpm --filter @sokar/api lint
+        env:
+          # ESLint typé sur toute l'API dépasse le tas par défaut du runner (OOM, exit 134).
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm --filter @suppernote/api lint
 
       - name: Tenant scoping guard
         # Échoue si un appel Prisma non scopé apparaît sur un modèle porteur
@@ -157,13 +190,13 @@ jobs:
 
       - name: Test (workspace dependencies)
         # Tests des paquets dont dépend l'API (agent-client, database…), sans l'API elle-même.
-        run: pnpm turbo test --filter=@sokar/api^...
+        run: pnpm turbo test --filter=@suppernote/api^...
 
       - name: Test with coverage
         # Un seul passage des tests de l'API : vitest --coverage (provider v8). Les seuils de
         # vitest.config.ts (lines: 60, functions: 65, branches: 55, statements: 60) bloquent la CI
         # si la couverture baisse. Le rapport est publié en artefact.
-        run: pnpm turbo test:coverage --filter=@sokar/api
+        run: pnpm turbo test:coverage --filter=@suppernote/api
 
       - name: Upload coverage report
         if: always()
@@ -174,7 +207,7 @@ jobs:
           retention-days: 14
 
       - name: Build
-        run: pnpm --filter @sokar/api build
+        run: pnpm --filter @suppernote/api build
 
   # ─────────────────────────────────────────────────────────────
   # API integrity: disposable Postgres + Redis. This is intentionally
@@ -236,13 +269,33 @@ jobs:
       - name: Build API workspace dependencies
         # Ce job s'exécute sur une machine vierge : les packages workspace et
         # le client Prisma doivent être générés avant le chargement de Vitest.
-        run: pnpm turbo build --filter=@sokar/api...
+        run: pnpm turbo build --filter=@suppernote/api...
 
       - name: Apply disposable database migrations
-        run: pnpm --filter @sokar/database migrate:deploy
+        run: pnpm --filter @suppernote/database migrate:deploy
 
       - name: Run API integration suite
-        run: pnpm --filter @sokar/api test:int
+        run: pnpm --filter @suppernote/api test:int
+
+      - name: Run marketing opt-out PostgreSQL tests
+        env:
+          DATABASE_URL: postgresql://sokar:sokar@127.0.0.1:5432/sokar_optout_audit_ci
+          MARKETING_OPTOUT_TEST_DATABASE_URL: postgresql://sokar:sokar@127.0.0.1:5432/sokar_optout_audit_ci
+          PGPASSWORD: sokar
+        run: |
+          createdb -h 127.0.0.1 -U sokar sokar_optout_audit_ci
+          pnpm --filter @suppernote/database migrate:deploy
+          pnpm --filter @suppernote/api exec vitest run src/modules/marketing/__tests__/marketing-optout.postgres.integration.test.ts
+
+      - name: Run RGPD erasure PostgreSQL tests
+        env:
+          DATABASE_URL: postgresql://sokar:sokar@127.0.0.1:5432/sokar_rgpd_erasure_ci
+          RGPD_ERASURE_TEST_DATABASE_URL: postgresql://sokar:sokar@127.0.0.1:5432/sokar_rgpd_erasure_ci
+          PGPASSWORD: sokar
+        run: |
+          createdb -h 127.0.0.1 -U sokar sokar_rgpd_erasure_ci
+          pnpm --filter @suppernote/database migrate:deploy
+          pnpm --filter @suppernote/api exec vitest run src/modules/rgpd/__tests__/erasure.postgres.integration.test.ts src/modules/voice/__tests__/call-recording-lock.postgres.integration.test.ts src/modules/voice/__tests__/call-report-lock.postgres.integration.test.ts
 
       - name: Test inbound review deduplication on Redis
         env:
@@ -260,7 +313,7 @@ jobs:
     needs: packages
     permissions:
       contents: read
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       NEXT_TELEMETRY_DISABLED: 1
       # Baked par `next build` : active le mode démo pour les E2E Playwright.
@@ -287,10 +340,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: pnpm turbo typecheck --filter=@sokar/dashboard...
+        run: pnpm turbo typecheck --filter=@suppernote/dashboard...
 
       - name: Lint
-        run: pnpm --filter @sokar/dashboard lint
+        run: pnpm --filter @suppernote/dashboard lint
 
       - name: CSS lint (stylelint)
         # Garde-fou CSS : interdit les sélecteurs d'éléments bruts (header, main,
@@ -299,14 +352,14 @@ jobs:
         run: pnpm lint:css
 
       - name: Test
-        run: pnpm turbo test --filter=@sokar/dashboard...
+        run: pnpm turbo test --filter=@suppernote/dashboard...
 
       - name: Build
-        run: pnpm --filter @sokar/dashboard build
+        run: pnpm --filter @suppernote/dashboard build
 
       - name: Playwright version (dashboard)
         id: playwright-dashboard
-        run: echo "version=$(pnpm --filter @sokar/dashboard exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(pnpm --filter @suppernote/dashboard exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
       # Navigateur Playwright en cache (clé = version) : le téléchargement prenait jusqu'à 5 min et a déjà
       # dépassé le délai du job. Les dépendances système restent installées à chaque fois (rapide).
@@ -319,11 +372,11 @@ jobs:
 
       - name: Install Playwright browsers
         if: steps.playwright-cache-dashboard.outputs.cache-hit != 'true'
-        run: pnpm --filter @sokar/dashboard exec playwright install --with-deps chromium
+        run: pnpm --filter @suppernote/dashboard exec playwright install --with-deps chromium
 
       - name: Install Playwright system dependencies (dashboard)
         if: steps.playwright-cache-dashboard.outputs.cache-hit == 'true'
-        run: pnpm --filter @sokar/dashboard exec playwright install-deps chromium
+        run: pnpm --filter @suppernote/dashboard exec playwright install-deps chromium
 
       - name: E2E tests (dashboard)
         # Garde-fou non-régression : vérifie que /dashboard se charge sans erreur
@@ -398,16 +451,16 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: pnpm turbo typecheck --filter=@sokar/connect...
+        run: pnpm turbo typecheck --filter=@suppernote/connect...
 
       - name: Lint
-        run: pnpm --filter @sokar/connect lint
+        run: pnpm --filter @suppernote/connect lint
 
       - name: Test
-        run: pnpm turbo test --filter=@sokar/connect...
+        run: pnpm turbo test --filter=@suppernote/connect...
 
       - name: Build
-        run: pnpm --filter @sokar/connect build
+        run: pnpm --filter @suppernote/connect build
 
   # ─────────────────────────────────────────────────────────────
   # Sokar Connect E2E: real Fastify API + seeded Postgres + Redis.
@@ -479,22 +532,22 @@ jobs:
 
       - name: Build API workspace dependencies
         # Génère le client Prisma et compile l'API : `start` exécute dist/main.js.
-        run: pnpm turbo build --filter=@sokar/api...
+        run: pnpm turbo build --filter=@suppernote/api...
 
       - name: Apply disposable database migrations
-        run: pnpm --filter @sokar/database migrate:deploy
+        run: pnpm --filter @suppernote/database migrate:deploy
 
       - name: Seed demo restaurant and floor plan
         # Le seed publie `chez-sokar-demo` (Connect) ; le plan de salle fournit
         # les tables sans lesquelles l'endpoint de disponibilité ne renvoie
         # aucun créneau et le parcours de réservation ne serait pas exerçable.
         run: |
-          pnpm --filter @sokar/database seed
-          pnpm --filter @sokar/database seed:floor-plan
+          pnpm --filter @suppernote/database seed
+          pnpm --filter @suppernote/database seed:floor-plan
 
       - name: Start API
         run: |
-          nohup pnpm --filter @sokar/api start > /tmp/sokar-api.log 2>&1 &
+          nohup pnpm --filter @suppernote/api start > /tmp/sokar-api.log 2>&1 &
           for attempt in $(seq 1 30); do
             if curl -sf http://localhost:4000/health > /dev/null; then
               echo "API healthy after ${attempt} attempt(s)"
@@ -508,7 +561,7 @@ jobs:
 
       - name: Playwright version (connect)
         id: playwright-connect
-        run: echo "version=$(pnpm --filter @sokar/connect exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(pnpm --filter @suppernote/connect exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
       # Navigateur Playwright en cache (clé = version) : le téléchargement prenait jusqu'à 5 min et a déjà
       # dépassé le délai du job. Les dépendances système restent installées à chaque fois (rapide).
@@ -521,14 +574,14 @@ jobs:
 
       - name: Install Playwright browsers
         if: steps.playwright-cache-connect.outputs.cache-hit != 'true'
-        run: pnpm --filter @sokar/connect exec playwright install --with-deps chromium
+        run: pnpm --filter @suppernote/connect exec playwright install --with-deps chromium
 
       - name: Install Playwright system dependencies (connect)
         if: steps.playwright-cache-connect.outputs.cache-hit == 'true'
-        run: pnpm --filter @sokar/connect exec playwright install-deps chromium
+        run: pnpm --filter @suppernote/connect exec playwright install-deps chromium
 
       - name: E2E tests (Connect)
-        run: pnpm --filter @sokar/connect test:e2e
+        run: pnpm --filter @suppernote/connect test:e2e
 
       - name: API logs on failure
         if: failure()

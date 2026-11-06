@@ -64,7 +64,7 @@ describe('WidgetIntegrationPage', () => {
     expect(snippetInput.value).toContain('data-slug="chez-sokar-demo"');
     expect(snippetInput.value).toContain('/embed.js');
 
-    const iframe = screen.getByTitle('Aperçu du widget Sokar');
+    const iframe = screen.getByTitle('Aperçu du widget Suppernote');
     expect(iframe).toHaveAttribute(
       'src',
       expect.stringContaining('/widget/chez-sokar-demo?embedded=1'),

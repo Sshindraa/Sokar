@@ -650,7 +650,7 @@ describe('reservation.routes', () => {
   });
 
   describe('PATCH /reservations/:id', () => {
-    it('met à jour le statut avec une valeur valide (réservée via @sokar/shared)', async () => {
+    it('met à jour le statut avec une valeur valide (réservée via @suppernote/shared)', async () => {
       const app = await getApp();
       const updated = {
         id: 'res-1',
@@ -678,7 +678,7 @@ describe('reservation.routes', () => {
       expect(res.json().status).toBe('CANCELLED');
     });
 
-    it('rejette un statut invalide (non dans @sokar/shared) avec 400', async () => {
+    it('rejette un statut invalide (non dans @suppernote/shared) avec 400', async () => {
       const app = await getApp();
 
       const res = await app.inject({

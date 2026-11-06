@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, Check, LockKeyhole } from 'lucide-react';
-import { SokarLogo } from '@/components/SokarLogo';
+import { SuppernoteLogo } from '@/components/SuppernoteLogo';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ChoiceSelect } from './choice-select';
@@ -56,7 +56,7 @@ const COPY: Record<OnboardingTaskKey, { title: string; body: string; label: stri
   channels: {
     title: 'Présentez votre restaurant',
     body: 'Créez votre page de réservation.',
-    label: 'Sokar Connect',
+    label: 'Suppernote Connect',
   },
   'connect-identity': {
     title: 'Votre restaurant, en ligne',
@@ -298,8 +298,8 @@ export function OnboardingWizard({ footerControls }: { footerControls?: ReactNod
         aria-label="Votre parcours de mise en service"
       >
         <div className="flex items-center gap-2.5">
-          <SokarLogo className="size-8 text-foreground" />
-          <span className="text-lg font-semibold tracking-tight">Sokar</span>
+          <SuppernoteLogo className="size-8 text-foreground" />
+          <span className="text-lg font-semibold tracking-tight">Suppernote</span>
         </div>
         <p className="text-xs text-foreground/70 md:hidden">{copy.mobile}</p>
         <div className="relative hidden md:block">

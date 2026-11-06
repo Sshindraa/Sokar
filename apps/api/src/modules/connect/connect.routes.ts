@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Routes publiques Fastify.
+ * Suppernote Connect — Routes publiques Fastify.
  *
  * Préfixe : /public/r/:slug
  *
@@ -12,7 +12,7 @@
  * Pas de Clerk sur les routes publiques. La seule exception est la route
  * interne `/api/internal/connect-kpis`, qui exige une identité opérateur :
  * elle passe par le vhost public, donc « interne » ne protège rien.
- * CORS : origines sokar.tech (géré par plugins/cors.ts)
+ * CORS : origines suppernote.com (géré par plugins/cors.ts)
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -24,8 +24,8 @@ import {
   reservationManagementUrl,
 } from '../reservations/reservation-management';
 import { createWhatsAppReminderConsent, withdrawWhatsAppReminderConsent } from './whatsapp-consent';
-import { slugifyCity, slugifyCuisine } from '@sokar/shared';
-import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { slugifyCity, slugifyCuisine } from '@suppernote/shared';
+import { DEFAULT_MAX_PARTY_SIZE } from '@suppernote/config';
 import { db } from '../../shared/db/client';
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';
@@ -53,6 +53,7 @@ import {
 } from '../floor-plan/waiting-list.types';
 import { HoldConflictError, HoldService } from '../agentic-reservations/core/hold.service';
 import { ReservationService } from '../agentic-reservations/core/reservation.service';
+import { canHoldSlot } from '../agentic-reservations/core/hold-slot-limit';
 import { AuditLogService } from '../agentic-reservations/core/audit-log.service';
 import { IdempotencyService } from '../agentic-reservations/core/idempotency.service';
 import { PrismaIdempotencyStore } from '../agentic-reservations/core/prisma-store';
@@ -71,6 +72,7 @@ import {
 } from '../agentic-reservations/core/waiting-list.errors';
 import { ConsentService } from '../rgpd/consent.service';
 import { requireSokarOperator } from '../../plugins/clerk';
+import { publicReadMax } from '../../plugins/rate-limit';
 import {
   computeIdempotencyScope,
   hashPayload,
@@ -184,7 +186,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/public/r/:slug',
     {
-      config: { rateLimit: { max: RATE_LIMIT_PREVIEW_MAX, timeWindow: '1 minute' } },
+      config: { rateLimit: { max: publicReadMax(RATE_LIMIT_PREVIEW_MAX), timeWindow: '1 minute' } },
     },
     async (req, reply) => {
       const parse = SlugParamSchema.safeParse(req.params);
@@ -223,7 +225,10 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     '/public/resolve-custom-domain',
     {
       config: {
-        rateLimit: { max: RATE_LIMIT_RESOLVE_CUSTOM_DOMAIN_MAX, timeWindow: '1 minute' },
+        rateLimit: {
+          max: publicReadMax(RATE_LIMIT_RESOLVE_CUSTOM_DOMAIN_MAX),
+          timeWindow: '1 minute',
+        },
       },
     },
     async (req, reply) => {
@@ -259,7 +264,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/public/sitemap-data',
-    { config: { rateLimit: { max: RATE_LIMIT_SITEMAP_MAX, timeWindow: '1 minute' } } },
+    {
+      config: { rateLimit: { max: publicReadMax(RATE_LIMIT_SITEMAP_MAX), timeWindow: '1 minute' } },
+    },
     async (_req, reply) => {
       const rows = await db.restaurant.findMany({
         where: DISCOVERABLE_CONNECT_WHERE,
@@ -298,7 +305,11 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/public/restaurants',
-    { config: { rateLimit: { max: RATE_LIMIT_RESTAURANTS_MAX, timeWindow: '1 minute' } } },
+    {
+      config: {
+        rateLimit: { max: publicReadMax(RATE_LIMIT_RESTAURANTS_MAX), timeWindow: '1 minute' },
+      },
+    },
     async (req, reply) => {
       const query = RestaurantsQuerySchema.safeParse(req.query ?? {});
       if (!query.success) {
@@ -314,7 +325,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/public/cities',
-    { config: { rateLimit: { max: RATE_LIMIT_CITIES_MAX, timeWindow: '1 minute' } } },
+    {
+      config: { rateLimit: { max: publicReadMax(RATE_LIMIT_CITIES_MAX), timeWindow: '1 minute' } },
+    },
     async (_req, reply) => {
       const rows = await db.restaurant.findMany({
         where: {
@@ -359,7 +372,11 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/public/cities/:slug',
-    { config: { rateLimit: { max: RATE_LIMIT_CITY_DETAIL_MAX, timeWindow: '1 minute' } } },
+    {
+      config: {
+        rateLimit: { max: publicReadMax(RATE_LIMIT_CITY_DETAIL_MAX), timeWindow: '1 minute' },
+      },
+    },
     async (req, reply) => {
       const params = req.params as { slug: string };
       if (!isValidCitySlug(params.slug)) {
@@ -487,7 +504,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/public/r/:slug/availability',
     {
-      config: { rateLimit: { max: RATE_LIMIT_AVAILABILITY_MAX, timeWindow: '1 minute' } },
+      config: {
+        rateLimit: { max: publicReadMax(RATE_LIMIT_AVAILABILITY_MAX), timeWindow: '1 minute' },
+      },
     },
     async (req, reply) => {
       const slugParse = SlugParamSchema.safeParse(req.params);
@@ -617,6 +636,10 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
             (settings?.capacitySpecials as Record<string, unknown> | undefined)
               ?.waitingListEnabled === true,
         });
+      }
+
+      if (!(await canHoldSlot({ restaurantId: restaurant.id, slotStart, clientIp: req.ip }))) {
+        return reply.status(429).send({ error: 'hold_limit_reached' });
       }
 
       try {
@@ -1287,7 +1310,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // ─── KPIs pilote P1 (réservés aux opérateurs Sokar) ───────────
+  // ─── KPIs pilote P1 (réservés aux opérateurs Suppernote) ───────────
   // GET /api/internal/connect-kpis : agrège les 4 critères go/no-go P1.
   // Même garde que /api/internal/pilot-kpis : la route est joignable depuis
   // Internet, « interne » ne décrit que son audience.

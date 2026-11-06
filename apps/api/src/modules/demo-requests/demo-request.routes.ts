@@ -126,7 +126,7 @@ export async function demoRequestRoutes(app: FastifyInstance) {
     },
   );
 
-  // Suivi opérateur : liste et statut, réservés aux opérateurs Sokar (SOKAR_OPERATOR_USER_IDS).
+  // Suivi opérateur : liste et statut, réservés aux opérateurs Suppernote (SOKAR_OPERATOR_USER_IDS).
   app.get(
     '/admin/demo-requests',
     { preHandler: requireSokarOperator() },

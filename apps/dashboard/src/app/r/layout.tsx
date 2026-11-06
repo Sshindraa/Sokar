@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Ma réservation | Sokar',
+  title: 'Ma réservation | Suppernote',
   robots: { index: false, follow: false, nocache: true },
   referrer: 'no-referrer',
 };

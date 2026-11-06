@@ -8,7 +8,7 @@
 # Usage:
 #   bash scripts/ops/setup-cloudflare-saas.sh --env prod --token "cf-token-xxx" --zone-id "zone-xxx"
 #   bash scripts/ops/setup-cloudflare-saas.sh --env staging --token "..." --zone-id "..."
-#   bash scripts/ops/setup-cloudflare-saas.sh --env prod --token "..." --zone-id "..." --fallback-origin "sokar.tech"
+#   bash scripts/ops/setup-cloudflare-saas.sh --env prod --token "..." --zone-id "..." --fallback-origin "suppernote.com"
 #
 # Pré-requis:
 #   - SSH access au VPS (deploy@sokar)
@@ -27,7 +27,7 @@ source "$SCRIPT_DIR/logging.sh"
 ENV=""
 CF_TOKEN=""
 CF_ZONE_ID=""
-CF_FALLBACK_ORIGIN="sokar.tech"
+CF_FALLBACK_ORIGIN="suppernote.com"
 VPS_HOST="sokar"
 SSH_USER="deploy"
 
@@ -40,12 +40,12 @@ Arguments:
   --env             Environnement cible : prod | staging (requis)
   --token           Cloudflare API Token (requis, ne sera JAMAIS loggé en clair)
   --zone-id         Cloudflare Zone ID (requis)
-  --fallback-origin Origin qui reçoit le trafic des custom domains (défaut: sokar.tech)
+  --fallback-origin Origin qui reçoit le trafic des custom domains (défaut: suppernote.com)
   --help, -h        Affiche cette aide
 
 Exemples:
   bash scripts/ops/setup-cloudflare-saas.sh --env prod --token "cf-token-xxx" --zone-id "zone-xxx"
-  bash scripts/ops/setup-cloudflare-saas.sh --env staging --token "..." --zone-id "..." --fallback-origin "staging.sokar.tech"
+  bash scripts/ops/setup-cloudflare-saas.sh --env staging --token "..." --zone-id "..." --fallback-origin "staging.suppernote.com"
 EOF
 }
 

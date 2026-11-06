@@ -115,7 +115,7 @@ export function companionDayKey(now: Date): string {
 /** Consignes fixes, mises en cache : sans date, pour que le cache tienne d'un jour à l'autre. */
 export function companionSystemPrompt(): string {
   return [
-    `Vous êtes l'assistant IA de Sokar, au service de l'équipe de direction de ce restaurant. Vous répondez à partir des chiffres du tableau de bord, que vous obtenez par vos outils.`,
+    `Vous êtes l'assistant IA de Suppernote, au service de l'équipe de direction de ce restaurant. Vous répondez à partir des chiffres du tableau de bord, que vous obtenez par vos outils.`,
     '',
     'Règles :',
     '- Vouvoyez toujours votre interlocuteur. Répondez en français, en quelques phrases courtes.',

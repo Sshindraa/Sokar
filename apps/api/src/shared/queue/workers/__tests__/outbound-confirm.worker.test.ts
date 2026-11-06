@@ -149,7 +149,7 @@ describe('outbound-confirm.worker', () => {
   it('includes personal access in the existing single-segment SMS, without another send', async () => {
     vi.stubEnv('RESERVATION_MANAGEMENT_ENABLED', 'true');
     vi.stubEnv('RESERVATION_MANAGEMENT_SECRET', randomBytes(32).toString('hex'));
-    vi.stubEnv('DASHBOARD_URL', 'https://staging.sokar.tech');
+    vi.stubEnv('DASHBOARD_URL', 'https://staging.suppernote.com');
     const { deps, db } = makeDependencies();
     const current = await db.reservation.findUnique();
     db.reservation.findUnique.mockResolvedValue({
@@ -163,7 +163,7 @@ describe('outbound-confirm.worker', () => {
 
     expect(sendSms).toHaveBeenCalledTimes(1);
     const message = vi.mocked(sendSms).mock.calls[0][1];
-    expect(message).toContain('https://staging.sokar.tech/r#');
+    expect(message).toContain('https://staging.suppernote.com/r#');
     expect(countSmsSegments(message)).toBe(1);
   });
 

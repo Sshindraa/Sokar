@@ -19,7 +19,7 @@ export { parseReply, type ReplyIntent } from './reply-parser';
 export interface HandleReplyResult {
   intent: ReplyIntent;
   reservationId?: string;
-  action?: 'confirmed' | 'cancelled' | 'no_reservation';
+  action?: 'confirmed' | 'cancelled' | 'no_reservation' | 'uncorrelated';
 }
 
 /**
@@ -105,7 +105,8 @@ async function handleLockedReply(
   });
   // A shared sender cannot identify a restaurant; never guess when several match.
   if (matches.length !== 1) {
-    if (!saved) await redisCache.set(eventKey, 'ignored', 'EX', 7 * 24 * 60 * 60);
+    // Pas de cache « ignored » ici : si la file de relecture échoue, Telnyx réessaie et doit repasser par cette étape.
+    if (!saved) return { intent, action: 'uncorrelated' };
     return { intent, action: 'no_reservation' };
   }
   const reservation = matches[0];

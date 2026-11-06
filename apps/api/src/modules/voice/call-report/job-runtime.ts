@@ -3,6 +3,7 @@
  * et mise en file depuis le worker. Voir job.ts pour la logique.
  */
 import { db } from '../../../shared/db/client';
+import { LONG_TRANSACTION_OPTIONS } from '../../../shared/db/transaction-options';
 import { logger } from '../../../shared/logger/pino';
 import { buildTelnyxWebhookJobId } from '../../../shared/queue/job-options';
 import { redisQueue } from '../../../shared/redis/client';
@@ -87,7 +88,22 @@ export function createReportJobDeps(): ReportJobDeps {
       if (reportLimit() !== null) await redisQueue.decr(REPORT_COUNTER_KEY);
     },
     transcribe: (wav, engine) => deepgramTranscriber()(wav, engine),
-    store: putPrivateObject,
+    store: async (storageKey, body, contentType, call) => {
+      await db.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM calls WHERE id = ${call.id} AND restaurant_id = ${call.restaurantId} FOR UPDATE`;
+        const current = await tx.call.findFirst({
+          where: {
+            id: call.id,
+            restaurantId: call.restaurantId,
+            recordingStatus: 'AVAILABLE',
+            recordingStorageKey: call.recordingStorageKey,
+          },
+          select: { id: true },
+        });
+        if (!current) throw new Error('CALL_RECORDING_NO_LONGER_AVAILABLE');
+        await putPrivateObject(storageKey, body, contentType);
+      }, LONG_TRANSACTION_OPTIONS);
+    },
     log: logger,
   };
 }

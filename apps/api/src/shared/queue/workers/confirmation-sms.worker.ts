@@ -4,7 +4,7 @@ import { redisQueue } from '../../redis/client';
 import { db } from '../../db/client';
 import { sendReminder } from '../../messaging/sender';
 import { setupWorkerListeners, jobLogger } from './helper';
-import { formatDate } from '@sokar/shared';
+import { formatDate } from '@suppernote/shared';
 import { queues } from '../queues';
 import { CONFIRMATION_SMS_WORKER_CONCURRENCY } from '../constants';
 import { isConfirmedReservation } from '../../reservations/reservation-state';

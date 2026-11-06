@@ -14,7 +14,7 @@ const ParamsSchema = z.object({
 
 /**
  * Recalcul des chiffres d'un client (visites, couverts, no-show) depuis ses réservations,
- * réservé aux opérateurs Sokar : l'outil a quitté la fiche du restaurateur.
+ * réservé aux opérateurs Suppernote : l'outil a quitté la fiche du restaurateur.
  */
 export async function adminCustomerRepairRoutes(app: FastifyInstance) {
   app.get(

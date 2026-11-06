@@ -27,7 +27,7 @@ base jetable.
 
 ## Garde-fou `db:push`
 
-`pnpm db:push` et `pnpm --filter @sokar/database push` passent d'abord par
+`pnpm db:push` et `pnpm --filter @suppernote/database push` passent d'abord par
 `scripts/quality/check-db-push-target.mjs`, qui lit la cible réelle dans
 `packages/database/.env` (ou `DATABASE_URL` de l'environnement, qui prime) :
 
@@ -116,7 +116,7 @@ node scripts/quality/check-migration-safety.mjs --all
 7. Confirmer que la migration est appliquée :
 
    ```zsh
-   pnpm --filter @sokar/database migrate:status
+   pnpm --filter @suppernote/database migrate:status
    ```
 
    (avec `DATABASE_URL` de l'environnement visé).
@@ -125,8 +125,8 @@ node scripts/quality/check-migration-safety.mjs --all
    Exemple de la cadence de facturation :
 
    ```zsh
-   pnpm --filter @sokar/api ops:billing-interval-backfill
-   pnpm --filter @sokar/api ops:billing-interval-backfill -- --apply
+   pnpm --filter @suppernote/api ops:billing-interval-backfill
+   pnpm --filter @suppernote/api ops:billing-interval-backfill -- --apply
    ```
 
 9. Vérifier `/health` et un parcours métier réel (une réservation, un

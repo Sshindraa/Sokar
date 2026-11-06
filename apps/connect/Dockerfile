@@ -1,4 +1,4 @@
-# Sokar Connect — Dockerfile production
+# Suppernote Connect — Dockerfile production
 #
 # Build multi-stage pour limiter la taille de l'image finale.
 # Cf. spec connect-v1.1 §3 hébergement.
@@ -24,7 +24,7 @@ COPY apps/connect/package.json ./apps/connect/
 RUN corepack enable && corepack prepare pnpm@10.8.0 --activate
 
 # Install deps (cache layer : ne re-run que si package.json changent)
-RUN pnpm install --frozen-lockfile --filter @sokar/connect...
+RUN pnpm install --frozen-lockfile --filter @suppernote/connect...
 
 # ─── Stage 2: build ──────────────────────────────────────────
 FROM deps AS build

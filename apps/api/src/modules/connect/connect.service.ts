@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Service principal.
+ * Suppernote Connect — Service principal.
  *
  * Responsabilités :
  * - lookup restaurant par slug
@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { logger } from '../../shared/logger/pino';
 import { env } from '../../env';
-import { normalizeOpeningHours as normalizeSharedOpeningHours } from '@sokar/shared';
+import { normalizeOpeningHours as normalizeSharedOpeningHours } from '@suppernote/shared';
 import {
   type OpeningHoursDay,
   type OpeningHoursSpec,
@@ -172,7 +172,7 @@ export class ConnectService {
 
   /**
    * Invalide le cache d'un restaurant (à appeler sur update).
-   * Le nom de la méthode matche le pattern des autres services Sokar.
+   * Le nom de la méthode matche le pattern des autres services Suppernote.
    */
   async invalidateSlugCache(slug: string): Promise<void> {
     try {

@@ -132,8 +132,8 @@ describe('buildLiveDemoWsUrl', () => {
     expect(buildLiveDemoWsUrl('http://localhost:4000', 't')).toBe(
       'ws://localhost:4000/voice/demo-stream/t',
     );
-    expect(buildLiveDemoWsUrl('https://api.sokar.tech/', 't')).toBe(
-      'wss://api.sokar.tech/voice/demo-stream/t',
+    expect(buildLiveDemoWsUrl('https://api.suppernote.com/', 't')).toBe(
+      'wss://api.suppernote.com/voice/demo-stream/t',
     );
   });
 });

@@ -12,7 +12,7 @@ fi
 
 SOKAR_ROOT="${SOKAR_ROOT:-/opt/sokar}"
 CERT_NAME="${CERT_NAME:-sokar.tech}"
-EMAIL="${LETSENCRYPT_EMAIL:-contact@sokar.tech}"
+EMAIL="${LETSENCRYPT_EMAIL:-contact@suppernote.com}"
 WEBROOT="/var/www/certbot"
 
 if ! command -v certbot >/dev/null; then

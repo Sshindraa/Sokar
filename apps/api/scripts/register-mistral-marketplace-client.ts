@@ -16,7 +16,7 @@ function logError(message: string) {
 function getIssuer(): string {
   const url = process.env.OAUTH_ISSUER_URL || process.env.PUBLIC_URL;
   if (url) return url.replace(/\/$/, '');
-  return 'https://api-staging.sokar.tech';
+  return 'https://api-staging.suppernote.com';
 }
 
 function getRedirectUris(): string[] {
@@ -75,7 +75,7 @@ async function main() {
   const redirectUrisMd = redirectUris.map((u) => `  - ${u}`).join('\n');
 
   const templateLines = [
-    '# Dossier de soumission — Connector Mistral Marketplace (Sokar)',
+    '# Dossier de soumission — Connector Mistral Marketplace (Suppernote)',
     '',
     '> **Statut : DRAFT EXTERNE / NON VÉRIFIÉ.** Le serveur MCP/OAuth existe, mais ce dossier',
     "> n'est pas une preuve de soumission ni d'acceptation Marketplace. Revalider le client, les",
@@ -86,9 +86,9 @@ async function main() {
     '## 1. Informations generales',
     '',
     '- **Nom du connector** : `sokar` (ou `sokar-restaurant-reservations`)',
-    '- **Description** : Reservez une table dans un restaurant partenaire Sokar directement depuis Mistral Le Chat.',
+    '- **Description** : Reservez une table dans un restaurant partenaire Suppernote directement depuis Mistral Le Chat.',
     '- **Server URL** : `{{ISSUER}}/mcp`',
-    '- **Icon URL** : (a fournir, ex: https://staging.sokar.tech/favicon.ico)',
+    '- **Icon URL** : (a fournir, ex: https://staging.suppernote.com/favicon.ico)',
     '- **System prompt** : (optionnel — prompt injecte quand les outils sont utilises)',
     '',
     '## 2. Endpoints OAuth',
@@ -125,15 +125,15 @@ async function main() {
     '',
     '## 5. Notes pour Mistral',
     '',
-    '- Le MCP server Sokar implemente **StreamableHTTP** (POST /mcp) et refuse le GET /mcp (405), conformement a la spec MCP 2025-03-26.',
+    '- Le MCP server Suppernote implemente **StreamableHTTP** (POST /mcp) et refuse le GET /mcp (405), conformement a la spec MCP 2025-03-26.',
     "- L'authentification se fait via OAuth 2.0 Authorization Code avec PKCE.",
-    "- Le consentement est public (pas de login Clerk cote client final) : l'utilisateur approuve/deny sur une page Sokar.",
+    "- Le consentement est public (pas de login Clerk cote client final) : l'utilisateur approuve/deny sur une page Suppernote.",
     '- Le scoping se fait au niveau des tools : le token donne acces a tous les restaurants ayant active MCP dans leur dashboard.',
     '',
     '## 6. Contact',
     '',
-    '- **Email support** : support@sokar.tech (a remplacer)',
-    '- **Page produit** : https://staging.sokar.tech (a remplacer par prod)',
+    '- **Email support** : support@suppernote.com (a remplacer)',
+    '- **Page produit** : https://staging.suppernote.com (a remplacer par prod)',
   ];
 
   const doc = templateLines

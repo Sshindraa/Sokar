@@ -88,7 +88,7 @@ describe('requireSokarOperator', () => {
     await requireSokarOperator()(request, reply);
 
     expect(reply.status).toHaveBeenCalledWith(403);
-    expect(reply.send).toHaveBeenCalledWith({ error: 'Sokar operator access required' });
+    expect(reply.send).toHaveBeenCalledWith({ error: 'Suppernote operator access required' });
   });
 
   it('autorise uniquement un identifiant présent dans SOKAR_OPERATOR_USER_IDS', async () => {

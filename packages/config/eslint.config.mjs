@@ -1,4 +1,4 @@
-// Shared ESLint flat config for Sokar workspace packages
+// Shared ESLint flat config for Suppernote workspace packages
 // - TypeScript recommended (parser + base rules)
 // - Common bug-catching rules (no-void, eqeqeq, unused-vars)
 // - Prettier config object exported as a named export for consumers to append last

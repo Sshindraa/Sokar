@@ -35,14 +35,14 @@ describe('SMS adapter error boundary', () => {
   });
 
   it('isolates staging delivery callbacks from the shared production profile', async () => {
-    vi.stubEnv('TELNYX_SMS_WEBHOOK_URL', 'https://api-staging.sokar.tech/sms/telnyx/inbound');
+    vi.stubEnv('TELNYX_SMS_WEBHOOK_URL', 'https://api-staging.suppernote.com/sms/telnyx/inbound');
     const create = vi
       .spyOn(telnyx.messages, 'create')
       .mockResolvedValueOnce({ data: { id: 'receipt-3' } } as never);
     await sendSms('+33600000000', 'Fixture message');
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
-        webhook_url: 'https://api-staging.sokar.tech/sms/telnyx/inbound',
+        webhook_url: 'https://api-staging.suppernote.com/sms/telnyx/inbound',
         use_profile_webhooks: false,
       }),
     );

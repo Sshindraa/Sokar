@@ -177,7 +177,7 @@ export async function rgpdRoutes(app: FastifyInstance): Promise<void> {
     req: FastifyRequest,
     reply: FastifyReply,
     expectedIntent: 'erase' | 'export' | 'withdraw_marketing',
-  ): Promise<{ subject: string } | null> {
+  ): Promise<{ subject: string; jti?: string } | null> {
     const token = req.headers['x-identity-token'];
     if (!token || typeof token !== 'string') {
       reply.status(401).send({
@@ -187,11 +187,11 @@ export async function rgpdRoutes(app: FastifyInstance): Promise<void> {
       return null;
     }
     try {
-      const { subject } = await verificationService.verifyVerificationToken(
+      return await verificationService.verifyVerificationToken(
         token,
         expectedIntent === 'withdraw_marketing' ? 'export' : expectedIntent,
+        expectedIntent === 'erase',
       );
-      return { subject };
     } catch (err) {
       if (err instanceof IdentityVerificationError) {
         reply.status(401).send({ code: err.code, error: err.message });
@@ -213,6 +213,11 @@ export async function rgpdRoutes(app: FastifyInstance): Promise<void> {
       }
       const verified = await requireVerifiedIdentity(req, reply, 'erase');
       if (!verified) return;
+      if (!verified.jti) {
+        return reply
+          .status(401)
+          .send({ code: 'IDENTITY_REQUIRED', error: 'Invalid erasure token' });
+      }
       if (verified.subject !== parse.data.subject) {
         return reply.status(403).send({
           code: 'SUBJECT_MISMATCH',
@@ -224,6 +229,7 @@ export async function rgpdRoutes(app: FastifyInstance): Promise<void> {
           subject: parse.data.subject,
           reason: parse.data.reason ?? 'user_request',
           actor: 'rgpd:user',
+          verificationJti: verified.jti,
         });
         return reply.send({
           ok: true,
@@ -235,6 +241,9 @@ export async function rgpdRoutes(app: FastifyInstance): Promise<void> {
           erasedAt: result.erasedAt.toISOString(),
         });
       } catch (err) {
+        if (err instanceof IdentityVerificationError) {
+          return reply.status(401).send({ code: err.code, error: err.message });
+        }
         if (err instanceof ErasureSubjectNotFoundError) {
           return reply.status(404).send({ code: 'SUBJECT_NOT_FOUND', error: err.message });
         }

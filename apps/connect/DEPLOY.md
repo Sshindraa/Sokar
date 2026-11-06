@@ -1,4 +1,4 @@
-# Sokar Connect — Déploiement production
+# Suppernote Connect — Déploiement production
 
 > Guide de déploiement pour la nouvelle app `apps/connect` (Next.js
 > standalone port 4002) derrière Nginx + Cloudflare.
@@ -27,8 +27,8 @@ processus depuis `infra/ecosystem.config.js`.
 cd /opt/sokar/apps/connect
 
 # 1. Build
-pnpm install --frozen-lockfile --filter @sokar/connect...
-pnpm --filter @sokar/connect build
+pnpm install --frozen-lockfile --filter @suppernote/connect...
+pnpm --filter @suppernote/connect build
 bash scripts/copy-static.sh
 
 # 2. Démarrer (le wrapper source .env)
@@ -40,9 +40,9 @@ pm2 save
 ## Variables d'env (apps/connect/.env)
 
 ```bash
-SITE_URL=https://sokar.tech
+SITE_URL=https://suppernote.com
 API_URL=http://127.0.0.1:4000  # API Fastify, accès interne uniquement
-NEXT_PUBLIC_API_URL=https://api.sokar.tech  # URL publique pour le widget
+NEXT_PUBLIC_API_URL=https://api.suppernote.com  # URL publique pour le widget
 PORT=4002
 HOSTNAME=127.0.0.1
 NODE_ENV=production
@@ -69,15 +69,15 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:4002/
 # Attendu : 200
 
 # 3. Health check via Nginx (interne)
-curl -s -o /dev/null -w "%{http_code}\n" -H "Host: sokar.tech" http://127.0.0.1/sitemap.xml
+curl -s -o /dev/null -w "%{http_code}\n" -H "Host: suppernote.com" http://127.0.0.1/sitemap.xml
 # Attendu : 200
 
 # 4. Health check via Cloudflare (URL publique, ajouter le host)
-curl -s -o /dev/null -w "%{http_code}\n" -H "Host: sokar.tech" https://sokar.tech/r/chez-sokar-demo
+curl -s -o /dev/null -w "%{http_code}\n" -H "Host: suppernote.com" https://suppernote.com/r/chez-sokar-demo
 # Attendu : 200 (la page restaurant demo est seedée)
 
 # 5. JSON-LD présent (snippet de validation)
-curl -s https://sokar.tech/r/chez-sokar-demo | grep -o 'application/ld+json'
+curl -s https://suppernote.com/r/chez-sokar-demo | grep -o 'application/ld+json'
 # Attendu : 1 occurrence (Restaurant schema)
 ```
 
@@ -91,7 +91,7 @@ pnpm exec tsx scripts/post-deploy-smoke.ts  # à créer
 
 ## Rollback
 
-Si Sokar Connect crash, **Nginx sert un 502 aux clients**. Nginx ne fail
+Si Suppernote Connect crash, **Nginx sert un 502 aux clients**. Nginx ne fail
 pas : les autres routes (`/`, `/pricing`, `/api/*`) continuent de
 fonctionner.
 
@@ -99,7 +99,7 @@ Rollback simple :
 
 ```bash
 pm2 stop sokar-connect
-# Les pages /r/* renverront un 502 transparent. Le reste de sokar.tech est OK.
+# Les pages /r/* renverront un 502 transparent. Le reste de suppernote.com est OK.
 ```
 
 Rollback complet (restaurer le routage Nginx précédent) :
@@ -159,7 +159,7 @@ vide. C'est attendu en P0, le cache Cloudflare lisse ce problème.
 
 Vérifier :
 
-- `NEXT_PUBLIC_API_URL` est bien `https://api.sokar.tech` (URL publique)
+- `NEXT_PUBLIC_API_URL` est bien `https://api.suppernote.com` (URL publique)
 - `connectPublished=true` et `agenticOptIn=true` sur le restaurant
 - Le `holdTtlSeconds` n'est pas expiré (TTL 5 min par défaut)
 - La console navigateur montre un 409 (hold conflict) ou 410 (expired)

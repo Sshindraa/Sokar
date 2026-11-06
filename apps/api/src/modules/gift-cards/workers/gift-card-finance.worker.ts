@@ -66,7 +66,13 @@ export async function reconcileGiftCardFinance(prisma = db) {
       }
     } catch (error) {
       failures++;
-      if (error instanceof Error && error.message === 'CHECKOUT_RECOVERY_EXPIRED') {
+      // Compte connecté inaccessible pour la clé Stripe courante (révoqué, autre environnement) :
+      // permanent, donc on sort de OPEN au lieu de refaire échouer chaque scan.
+      const unreachableAccount = (error as { code?: string } | null)?.code === 'account_invalid';
+      if (
+        unreachableAccount ||
+        (error instanceof Error && error.message === 'CHECKOUT_RECOVERY_EXPIRED')
+      ) {
         await prisma.giftCardCheckout.update({
           where: { id: checkout.id, restaurantId: checkout.restaurantId },
           data: { status: 'RECOVERY_REQUIRED' },

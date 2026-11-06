@@ -4,7 +4,7 @@
  * format valide, sont plausibles, et qu'une action à effet réel repose sur
  * des faits vérifiés (disponibilité réelle, récapitulatif accepté).
  */
-import { normalizeOpeningHours } from '@sokar/shared';
+import { normalizeOpeningHours } from '@suppernote/shared';
 import { readbackInstruction } from './name-readback';
 import type { StructuredTurnDraft, StructuredTurnOutput } from './schema';
 import type { ReplyScope } from './reply-scope';

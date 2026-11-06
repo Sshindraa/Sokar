@@ -38,7 +38,7 @@ interface TelnyxWebhookBody {
  *
  * Configuration côté Telnyx Mission Control :
  * - Messaging → Profiles → ton profile → Webhooks → Add URL
- * - URL: https://api.sokar.tech/whatsapp/webhook
+ * - URL: https://api.suppernote.com/whatsapp/webhook
  * - Events: message.received
  */
 

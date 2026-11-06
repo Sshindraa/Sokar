@@ -28,6 +28,11 @@ import { AuditLogService } from '../agentic-reservations/core/audit-log.service'
 import { trackRgpdEvent } from '../analytics/events.service';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
 import { normalizeCustomerPhone } from '../customers/customer-crm.service';
+import { IdentityVerificationError } from './identity-verification.service';
+import {
+  isMarketingOptedOut,
+  registerMarketingOptOut,
+} from '../marketing/marketing-opt-out.service';
 
 export class ErasureSubjectNotFoundError extends Error {
   constructor(message: string) {
@@ -76,6 +81,7 @@ export class ErasureService {
     subject: string;
     reason: string;
     actor: string;
+    verificationJti?: string;
   }): Promise<ErasureResult> {
     const subjectHash = ConsentService.hashSubject(args.subject);
     const erasedAt = new Date();
@@ -85,6 +91,11 @@ export class ErasureService {
     // (le hash vit dans CustomerConsent).
     const sampleReservation = await this.prisma.reservation.findFirst({
       where: { customerPhone: args.subject },
+      select: { id: true },
+    });
+    // tenant-scoping: global — droit du sujet vérifié sur tous ses établissements.
+    const sampleCall = await this.prisma.call.findFirst({
+      where: { callerPhone: args.subject },
       select: { id: true },
     });
     const sampleConsent = await this.prisma.customerConsent.findFirst({
@@ -111,7 +122,7 @@ export class ErasureService {
       : [];
     const crmCustomerIds = crmCustomers.map((customer) => customer.id);
 
-    if (!sampleReservation && !sampleConsent && crmCustomers.length === 0) {
+    if (!sampleReservation && !sampleCall && !sampleConsent && crmCustomers.length === 0) {
       throw new ErasureSubjectNotFoundError(
         `No data found for subject hash ${subjectHash.slice(0, 8)}…`,
       );
@@ -137,10 +148,123 @@ export class ErasureService {
     let callsAnonymized = 0;
     let consentsRetained = 0;
     const reservationsAnonymized = await this.prisma.$transaction(async (tx) => {
+      if (args.verificationJti) {
+        try {
+          await tx.signedTokenUsage.create({
+            data: { jti: args.verificationJti, subject: args.subject, intent: 'erase' },
+          });
+        } catch (error) {
+          if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
+            throw new IdentityVerificationError('EXPIRED', 'Token already used (replay detected)');
+          }
+          throw error;
+        }
+      }
+      for (const customer of [...crmCustomers].sort((a, b) => a.id.localeCompare(b.id))) {
+        await tx.$queryRaw`SELECT id FROM customers WHERE id = ${customer.id} FOR UPDATE`;
+      }
+      if (crmCustomerIds.length > 0) {
+        const [contacts, complaints, withdrawals] = await Promise.all([
+          tx.customer.findMany({
+            where: { id: { in: crmCustomerIds } },
+            select: { id: true, restaurantId: true, phone: true, emailNormalized: true },
+          }),
+          // tenant-scoping: global — effacement d'un sujet sur tous ses restaurants.
+          tx.marketingSuppression.findMany({
+            where: { customerId: { in: crmCustomerIds }, reason: 'COMPLAINED' },
+            select: { customerId: true, channel: true, createdAt: true },
+          }),
+          // tenant-scoping: global — effacement d'un sujet sur tous ses restaurants.
+          tx.marketingPermission.findMany({
+            where: { customerId: { in: crmCustomerIds }, status: 'OPTED_OUT' },
+            select: { customerId: true, channel: true, withdrawnAt: true },
+          }),
+        ]);
+        for (const contact of contacts) {
+          const oppositions = [
+            ...complaints
+              .filter((item) => item.customerId === contact.id)
+              .map((item) => ({
+                channel: item.channel,
+                reason: 'COMPLAINT' as const,
+                occurredAt: item.createdAt,
+              })),
+            ...withdrawals
+              .filter((item) => item.customerId === contact.id)
+              .map((item) => ({
+                channel: item.channel,
+                reason: 'MANUAL' as const,
+                occurredAt: item.withdrawnAt ?? erasedAt,
+              })),
+          ];
+          for (const opposition of oppositions) {
+            if (!opposition.channel) throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+            const address =
+              opposition.channel === 'EMAIL' ? contact.emailNormalized : contact.phone;
+            if (
+              await isMarketingOptedOut(
+                { restaurantId: contact.restaurantId, channel: opposition.channel, address },
+                tx,
+              )
+            )
+              continue;
+            const outcome = await registerMarketingOptOut(
+              {
+                restaurantId: contact.restaurantId,
+                channel: opposition.channel,
+                address,
+                reason: opposition.reason,
+                source: 'RGPD_ERASURE',
+                occurredAt: opposition.occurredAt,
+              },
+              tx,
+            );
+            if (
+              outcome !== 'REGISTERED' &&
+              (outcome !== 'SKIPPED_NO_ADDRESS' || opposition.reason === 'COMPLAINT')
+            ) {
+              throw new Error('MARKETING_OPTOUT_REGISTER_UNAVAILABLE');
+            }
+          }
+        }
+      }
       const reservationWhere = crmCustomerIds.length
         ? { OR: [{ customerPhone: args.subject }, { customerId: { in: crmCustomerIds } }] }
         : { customerPhone: args.subject };
 
+      // tenant-scoping: global — appels du sujet vérifié et de ses réservations.
+      const callWhere = {
+        OR: [{ callerPhone: args.subject }, { reservation: { is: reservationWhere } }],
+      };
+      const candidates = await tx.call.findMany({ where: callWhere, select: { id: true } });
+      for (const id of candidates.map((call) => call.id).sort()) {
+        await tx.$queryRaw`SELECT id FROM calls WHERE id = ${id} FOR UPDATE`;
+      }
+      // tenant-scoping: global — mêmes appels, relus après verrouillage.
+      const calls = await tx.call.findMany({
+        where: callWhere,
+        select: {
+          id: true,
+          recordingStatus: true,
+          recordingStorageKey: true,
+          recordingProviderId: true,
+        },
+      });
+      const lockedCallIds = new Set(candidates.map((call) => call.id));
+      if (calls.some((call) => !lockedCallIds.has(call.id)))
+        throw new Error('RGPD_CALL_SET_CHANGED');
+      if (
+        calls.some(
+          (call) =>
+            call.recordingStorageKey ||
+            call.recordingProviderId ||
+            !['NOT_REQUESTED', 'DELETED'].includes(call.recordingStatus),
+        )
+      ) {
+        // shortcut: recorded calls require manual erasure until every historical copy can be found.
+        throw new Error('RGPD_RECORDING_ERASURE_REQUIRES_MANUAL_REVIEW');
+      }
+      const callIds = calls.map((call) => call.id);
       // Keep aggregate timeline/metrics rows for auditability, but remove every
       // direct identity and preference before archiving the customer profile.
       const txWithCrm = tx as typeof tx & {
@@ -158,8 +282,13 @@ export class ErasureService {
         marketingConversion?: { deleteMany: (args: unknown) => Promise<{ count: number }> };
         marketingFrequencyWindow?: { deleteMany: (args: unknown) => Promise<{ count: number }> };
         marketingAttributionLink?: { deleteMany: (args: unknown) => Promise<{ count: number }> };
-        marketingAutomationDispatch?: { deleteMany: (args: unknown) => Promise<{ count: number }> };
+        marketingAutomationDispatch?: {
+          deleteMany: (args: unknown) => Promise<{ count: number }>;
+        };
         experienceReservation?: {
+          updateMany: (args: unknown) => Promise<{ count: number }>;
+        };
+        waitingListEntry?: {
           updateMany: (args: unknown) => Promise<{ count: number }>;
         };
         eventOrder?: { updateMany: (args: unknown) => Promise<{ count: number }> };
@@ -176,14 +305,36 @@ export class ErasureService {
               : []),
             { customer: { phone: args.subject } },
             { reservation: { customerPhone: args.subject } },
+            { customerPhone: args.subject },
           ],
         };
         experienceReservationsDetached = (
           await txWithCrm.experienceReservation.updateMany({
             where: experienceReservationWhere,
-            data: { customerId: null, reservationId: null },
+            data: {
+              customerId: null,
+              reservationId: null,
+              customerName: 'ANON',
+              customerEmail: null,
+              customerPhone: null,
+            },
           })
         ).count;
+      }
+      if (txWithCrm.waitingListEntry) {
+        await txWithCrm.waitingListEntry.updateMany({
+          where: {
+            OR: [{ customerPhone: args.subject }, { customerPhoneNormalized: args.subject }],
+          },
+          data: {
+            customerFirstName: 'ANON',
+            customerLastName: null,
+            customerPhone: 'erased',
+            customerPhoneNormalized: `erased:${subjectHash.slice(0, 12)}`,
+            customerEmail: null,
+            consents: {},
+          },
+        });
       }
       const result = await tx.reservation.updateMany({
         where: reservationWhere,
@@ -317,15 +468,36 @@ export class ErasureService {
         ).count;
       }
       const messageResult = await tx.message.updateMany({
-        where: { customerPhone: args.subject },
-        data: { customerPhone: null, customerName: 'ANON' },
+        where: { OR: [{ customerPhone: args.subject }, { callId: { in: callIds } }] },
+        data: { customerPhone: null, customerName: 'ANON', content: '[effacé]' },
       });
-      // tenant-scoping: global — effacement RGPD d'un sujet sur tous les restaurants.
+      // tenant-scoping: global — identifiants issus des appels du sujet vérifié.
+      await tx.voiceDebugTurn.deleteMany({ where: { callId: { in: callIds } } });
+      // tenant-scoping: global — identifiants issus des appels du sujet vérifié.
       const callResult = await tx.call.updateMany({
-        where: { callerPhone: args.subject },
-        data: { callerPhone: null },
+        where: { id: { in: callIds } },
+        data: {
+          callerPhone: null,
+          transcript: null,
+          recordingStatus: 'DELETED',
+          recordingStorageKey: null,
+          recordingProviderId: null,
+          recordingError: null,
+          recordingContentType: null,
+          recordingSizeBytes: null,
+        },
       });
       callsAnonymized = messageResult.count + callResult.count;
+      // Les consentements restent comme preuve, mais ne doivent plus autoriser de marketing si une
+      // fiche est recréée à la même adresse : il faudra un nouvel accord explicite.
+      // tenant-scoping: global — effacement RGPD d'un sujet sur tous les restaurants.
+      await tx.customerConsent.updateMany({
+        where: {
+          OR: [{ subjectHash }, { customerId: { in: crmCustomerIds } }],
+          marketingOptIn: true,
+        },
+        data: { marketingOptIn: false },
+      });
       consentsRetained = await tx.customerConsent.count({ where: { subjectHash } });
       await this.audit.record(
         {

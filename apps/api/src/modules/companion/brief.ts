@@ -167,7 +167,7 @@ const LANGUAGE_NAMES: Record<BriefLanguage, string> = {
 
 export function briefSystemPrompt(language: BriefLanguage): string {
   return [
-    "Vous êtes l'assistant IA de Sokar. Vous rédigez le résumé de la carte « Ce soir » d'un restaurant, à partir des données fournies.",
+    "Vous êtes l'assistant IA de Suppernote. Vous rédigez le résumé de la carte « Ce soir » d'un restaurant, à partir des données fournies.",
     '',
     'Règles :',
     `- Rédigez les points en ${LANGUAGE_NAMES[language]}. Choisissez les trois points les plus utiles avant le service, du plus utile au moins utile, chacun en une phrase courte, un seul fait par point. Adressez-vous au lecteur avec la politesse de cette langue.`,

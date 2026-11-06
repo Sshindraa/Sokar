@@ -17,7 +17,7 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 /**
- * Les restaurants dont la salle est terminée et qui n'ont pas de numéro Sokar utilisable, le plus
+ * Les restaurants dont la salle est terminée et qui n'ont pas de numéro Suppernote utilisable, le plus
  * ancien en premier : ce sont eux qui sont bloqués hors de leur espace.
  */
 export function restaurantsAwaitingNumber<T extends PendingNumberCandidate>(

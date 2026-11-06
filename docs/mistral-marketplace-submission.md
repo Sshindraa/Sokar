@@ -11,18 +11,18 @@
 
 - **Nom du connector** : `sokar` (ou `sokar-restaurant-reservations`)
 - **Description** : Reservez une table dans un restaurant partenaire Sokar directement depuis Mistral Le Chat.
-- **Server URL** : `https://api-staging.sokar.tech/mcp`
-- **Icon URL** : (a fournir, ex: https://staging.sokar.tech/favicon.ico)
+- **Server URL** : `https://api-staging.suppernote.com/mcp`
+- **Icon URL** : (a fournir, ex: https://staging.suppernote.com/favicon.ico)
 - **System prompt** : (optionnel — prompt injecte quand les outils sont utilises)
 
 ## 2. Endpoints OAuth
 
-- **Issuer** : `https://api-staging.sokar.tech`
-- **Authorization endpoint** : `https://api-staging.sokar.tech/oauth/authorize`
-- **Token endpoint** : `https://api-staging.sokar.tech/oauth/token`
-- **Registration endpoint** (Dynamic Client Registration) : `https://api-staging.sokar.tech/oauth/register`
-- **Protected resource metadata** : `https://api-staging.sokar.tech/.well-known/oauth-protected-resource`
-- **Authorization server metadata** : `https://api-staging.sokar.tech/.well-known/oauth-authorization-server`
+- **Issuer** : `https://api-staging.suppernote.com`
+- **Authorization endpoint** : `https://api-staging.suppernote.com/oauth/authorize`
+- **Token endpoint** : `https://api-staging.suppernote.com/oauth/token`
+- **Registration endpoint** (Dynamic Client Registration) : `https://api-staging.suppernote.com/oauth/register`
+- **Protected resource metadata** : `https://api-staging.suppernote.com/.well-known/oauth-protected-resource`
+- **Authorization server metadata** : `https://api-staging.suppernote.com/.well-known/oauth-authorization-server`
 
 ## 3. Credentials OAuth
 
@@ -58,5 +58,5 @@
 
 ## 6. Contact
 
-- **Email support** : support@sokar.tech (a remplacer)
-- **Page produit** : https://staging.sokar.tech (a remplacer par prod)
+- **Email support** : support@suppernote.com (a remplacer)
+- **Page produit** : https://staging.suppernote.com (a remplacer par prod)

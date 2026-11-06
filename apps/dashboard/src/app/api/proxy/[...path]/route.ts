@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { authenticatedHeaders } from '../forwarded-headers';
+import { authenticatedHeaders, upstreamResponseHeaders } from '../forwarded-headers';
 
 const API_ORIGIN = process.env.API_URL || 'http://127.0.0.1:4000';
 const API_UNAVAILABLE_MESSAGE =
@@ -16,12 +16,14 @@ async function parseResponse(res: Response) {
   }
 }
 
-function proxyResponse(data: unknown, status: number) {
+function proxyResponse(data: unknown, res: Response) {
+  const { status } = res;
+  const headers = upstreamResponseHeaders(res);
   if (status === 204 || status === 304) {
-    return new Response(null, { status });
+    return new Response(null, { status, headers });
   }
 
-  return Response.json(data, { status });
+  return Response.json(data, { status, headers });
 }
 
 async function withProxyErrorHandling(handler: () => Promise<Response>): Promise<Response> {
@@ -77,7 +79,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     }
 
     const data = await parseResponse(res);
-    return proxyResponse(data, res.status);
+    return proxyResponse(data, res);
   });
 }
 
@@ -116,7 +118,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     }
 
     const data = await parseResponse(res);
-    return proxyResponse(data, res.status);
+    return proxyResponse(data, res);
   });
 }
 
@@ -138,7 +140,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
     });
 
     const data = await parseResponse(res);
-    return proxyResponse(data, res.status);
+    return proxyResponse(data, res);
   });
 }
 
@@ -160,7 +162,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
     });
 
     const data = await parseResponse(res);
-    return proxyResponse(data, res.status);
+    return proxyResponse(data, res);
   });
 }
 
@@ -179,6 +181,6 @@ export async function DELETE(
     });
 
     const data = await parseResponse(res);
-    return proxyResponse(data, res.status);
+    return proxyResponse(data, res);
   });
 }

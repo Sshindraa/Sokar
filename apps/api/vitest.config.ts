@@ -23,9 +23,9 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@sokar/config': path.resolve(__dirname, '../../packages/config/dist/constants.js'),
-      '@sokar/database': path.resolve(__dirname, '../../packages/database/src/index.ts'),
-      '@sokar/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
+      '@suppernote/config': path.resolve(__dirname, '../../packages/config/dist/constants.js'),
+      '@suppernote/database': path.resolve(__dirname, '../../packages/database/src/index.ts'),
+      '@suppernote/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
     },
   },
 });

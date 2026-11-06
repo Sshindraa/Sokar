@@ -23,7 +23,7 @@ Ce que la mesure **ne** couvre **pas** :
 ## Méthode
 
 ```zsh
-# depuis apps/api, après `pnpm --filter @sokar/api build`
+# depuis apps/api, après `pnpm --filter @suppernote/api build`
 node --import tsx scripts/voice-load-test.ts --sessions 100 --duration 15
 ```
 

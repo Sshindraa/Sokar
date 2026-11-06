@@ -13,7 +13,7 @@ import type {
   PendingInteraction,
   PendingInteractionKind,
 } from './types';
-import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { DEFAULT_MAX_PARTY_SIZE } from '@suppernote/config';
 import { effectiveVoiceLanguage, type VoiceLanguageCode } from './voice-language';
 import { recordVoiceReadbackForTurn } from './voice-quality';
 import type { VoiceQualityKind } from '../../../shared/observability/metrics';

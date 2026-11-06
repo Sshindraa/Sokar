@@ -67,7 +67,7 @@ function base64url(buf: Buffer): string {
   return buf.toString('base64url');
 }
 
-/** URL publique canonique utilisée par les pages OAuth Sokar. */
+/** URL publique canonique utilisée par les pages OAuth Suppernote. */
 function getPublicSiteUrl(): string {
   const configuredSiteUrl = process.env.SITE_URL?.trim();
 
@@ -82,10 +82,10 @@ function getPublicSiteUrl(): string {
     }
   }
 
-  return 'https://sokar.tech';
+  return 'https://suppernote.com';
 }
 
-/** URL de l'icône officielle utilisée par Sokar Connect. */
+/** URL de l'icône officielle utilisée par Suppernote Connect. */
 function getBrandIconUrl(): string {
   const siteUrl = getPublicSiteUrl();
   return siteUrl.endsWith('/icon.svg') ? siteUrl : `${siteUrl}/icon.svg`;
@@ -368,7 +368,7 @@ async function checkOauthRate(
 
 /**
  * Page publique d'usage du connecteur (installation, données, outils). Elle vit sur le site public
- * de l'environnement : api.sokar.tech → sokar.tech, api-staging.sokar.tech → staging.sokar.tech.
+ * de l'environnement : api.suppernote.com → suppernote.com, api-staging.suppernote.com → staging.suppernote.com.
  */
 export function mcpDocumentationUrl(
   issuer: string,
@@ -628,7 +628,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
           .send(
             renderError(
               'Aucun restaurant MCP',
-              "Aucun restaurant n'a MCP activé. Activez MCP dans le dashboard Sokar d'abord.",
+              "Aucun restaurant n'a MCP activé. Activez MCP dans le dashboard Suppernote d'abord.",
             ),
           );
       }
@@ -1084,7 +1084,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 // ─── HTML helpers ──────────────────────────────────────
 
 /**
- * Typographies officielles de Sokar Connect.
+ * Typographies officielles de Suppernote Connect.
  *
  * Les pages OAuth sont rendues directement par l'API, en dehors du bundle
  * Next.js qui charge normalement ces polices via `next/font`. On reprend donc
@@ -1122,7 +1122,7 @@ function renderConsentPage(params: {
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Sokar — Connexion MCP</title>
+  <title>Suppernote — Connexion MCP</title>
   ${SOKAR_FONT_HEAD}
   <style>
     :root { color-scheme: dark; --sokar-ink: #0f172a; --sokar-blue: #0284c7; }
@@ -1324,11 +1324,11 @@ function renderConsentPage(params: {
 </head>
 <body>
   <div class="card">
-    <div class="logo"><img src="${escapeAttr(getBrandIconUrl())}" alt="" /><span>Sokar</span></div>
+    <div class="logo"><img src="${escapeAttr(getBrandIconUrl())}" alt="" /><span>Suppernote</span></div>
     <div class="eyebrow">Connexion sécurisée</div>
     <div class="provider"><span class="provider-dot"></span><span>${escapeHtml(clientName)}</span></div>
-    <h1>Autoriser l’accès à Sokar&nbsp;?</h1>
-    <p class="lead"><strong>${escapeHtml(clientName)}</strong> demande l’accès à Sokar pour rechercher des restaurants et gérer vos réservations.</p>
+    <h1>Autoriser l’accès à Suppernote&nbsp;?</h1>
+    <p class="lead"><strong>${escapeHtml(clientName)}</strong> demande l’accès à Suppernote pour rechercher des restaurants et gérer vos réservations.</p>
     ${restaurantName ? `<p class="lead">Accès limité au restaurant <strong>${escapeHtml(restaurantName)}</strong>.</p>` : '<p class="lead">Accès aux restaurants qui ont activé MCP.</p>'}
 
     <div class="permissions">
@@ -1365,7 +1365,7 @@ function renderError(title: string, message: string): string {
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Sokar — Erreur</title>
+  <title>Suppernote — Erreur</title>
   ${SOKAR_FONT_HEAD}
   <style>
     :root { color-scheme: dark; --sokar-ink: #0f172a; --sokar-blue: #0284c7; }
@@ -1480,12 +1480,12 @@ function renderError(title: string, message: string): string {
 </head>
 <body>
   <div class="card">
-    <div class="logo"><img src="${escapeAttr(getBrandIconUrl())}" alt="" /><span>Sokar</span></div>
-    <div class="eyebrow">Sokar / Connexion</div>
+    <div class="logo"><img src="${escapeAttr(getBrandIconUrl())}" alt="" /><span>Suppernote</span></div>
+    <div class="eyebrow">Suppernote / Connexion</div>
     <div class="status" aria-hidden="true">!</div>
     <h1>${escapeHtml(title)}</h1>
     <p>${escapeHtml(message)}</p>
-    <div class="actions"><a class="btn" href="${escapeAttr(getPublicSiteUrl())}">Retourner sur Sokar</a></div>
+    <div class="actions"><a class="btn" href="${escapeAttr(getPublicSiteUrl())}">Retourner sur Suppernote</a></div>
     <div class="hint">Si vous êtes arrivé depuis un assistant, relancez la connexion depuis celui-ci.</div>
   </div>
 </body>

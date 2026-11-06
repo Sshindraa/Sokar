@@ -20,7 +20,7 @@ describe('sendEmail : liste de destinataires de test (EMAIL_TEST_ALLOWLIST)', ()
     getMock.mockClear();
     vi.mocked(waitForResendSlot).mockReset().mockResolvedValue(undefined);
     vi.stubEnv('RESEND_API_KEY', 'unit-test-placeholder');
-    vi.stubEnv('EMAIL_FROM', 'noreply@sokar.tech');
+    vi.stubEnv('EMAIL_FROM', 'noreply@suppernote.com');
     vi.stubEnv('EMAIL_TEST_ALLOWLIST', '');
   });
 
@@ -35,15 +35,15 @@ describe('sendEmail : liste de destinataires de test (EMAIL_TEST_ALLOWLIST)', ()
   });
 
   it('envoie au destinataire autorisé, sans tenir compte de la casse', async () => {
-    vi.stubEnv('EMAIL_TEST_ALLOWLIST', 'hamza@sokar.tech');
+    vi.stubEnv('EMAIL_TEST_ALLOWLIST', 'hamza@suppernote.com');
 
-    await sendEmail({ to: 'Hamza@Sokar.tech', ...MESSAGE });
+    await sendEmail({ to: 'Hamza@Suppernote.com', ...MESSAGE });
 
     expect(sendMock).toHaveBeenCalledTimes(1);
   });
 
   it('refuse tout autre destinataire sans appeler Resend', async () => {
-    vi.stubEnv('EMAIL_TEST_ALLOWLIST', 'hamza@sokar.tech');
+    vi.stubEnv('EMAIL_TEST_ALLOWLIST', 'hamza@suppernote.com');
 
     const result = await sendEmail({ to: 'client@example.com', ...MESSAGE });
 

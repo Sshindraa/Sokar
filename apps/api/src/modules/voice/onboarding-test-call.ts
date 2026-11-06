@@ -1,14 +1,14 @@
 import { telnyxFetch } from '../../shared/telnyx/http-agent';
 
 /**
- * Appel de test sortant du provisioning : Sokar appelle le gérant, lit un message court puis raccroche.
+ * Appel de test sortant du provisioning : Suppernote appelle le gérant, lit un message court puis raccroche.
  * Ses événements ne désignent pas un restaurant par le numéro appelé (c'est le numéro du gérant), donc
  * ils ne passent pas par la résolution de restaurant de l'appel entrant.
  */
 export const ONBOARDING_TEST_CALL_KIND = 'onboarding_test_call';
 
 export const ONBOARDING_TEST_CALL_MESSAGE =
-  'Bonjour. Ceci est un appel de test de Sokar. La liaison téléphonique fonctionne. Vous pouvez raccrocher.';
+  'Bonjour. Ceci est un appel de test de Suppernote. La liaison téléphonique fonctionne. Vous pouvez raccrocher.';
 
 export interface OnboardingTestCallActions {
   speak(callControlId: string, text: string): Promise<void>;

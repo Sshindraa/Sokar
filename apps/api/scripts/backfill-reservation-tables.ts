@@ -3,7 +3,7 @@
  * legacy qui n'ont pas encore été reliées au floor plan.
  *
  * Usage :
- *   pnpm --filter @sokar/api exec tsx apps/api/scripts/backfill-reservation-tables.ts [options]
+ *   pnpm --filter @suppernote/api exec tsx apps/api/scripts/backfill-reservation-tables.ts [options]
  *
  * Options :
  *   --dry-run                Prévisualise sans écrire en base.

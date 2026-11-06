@@ -42,7 +42,7 @@ export const STEP_COMPONENTS: Record<OnboardingTaskKey, (props: StepProps) => Re
   floor: FloorStep,
   knowledge: KnowledgeStep,
   phone: PhoneStep,
-  // Anciennes URL : la page intermédiaire est remplacée par l’entrée Sokar Connect.
+  // Anciennes URL : la page intermédiaire est remplacée par l’entrée Suppernote Connect.
   channels: ConnectIdentityStep,
   'connect-identity': ConnectIdentityStep,
   'connect-location': ConnectIdentityStep,

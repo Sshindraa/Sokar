@@ -1,7 +1,7 @@
-// ESLint 9 flat config for @sokar/api
-// Shared/base rules live in @sokar/config; this file adds API-specific type-aware rules
+// ESLint 9 flat config for @suppernote/api
+// Shared/base rules live in @suppernote/config; this file adds API-specific type-aware rules
 // and per-file overrides.
-import sokarBase, { prettier } from '@sokar/config/eslint.config.mjs';
+import sokarBase, { prettier } from '@suppernote/config/eslint.config.mjs';
 
 export default [
   ...sokarBase,

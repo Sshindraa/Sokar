@@ -10,7 +10,7 @@
  *   - redemandé : rien n'est retenu, la question sera reposée.
  * Pour une réponse hors sujet, « correct » veut dire : rien retenu, rien proposé.
  *
- * Usage : pnpm --filter @sokar/api exec tsx scripts/voice-stt-bench/evaluate.ts phrases.json transcripts.json
+ * Usage : pnpm --filter @suppernote/api exec tsx scripts/voice-stt-bench/evaluate.ts phrases.json transcripts.json
  * `BENCH_VERBOSE=1` liste les cas `wrong` et les faux positifs hors sujet (flag actif).
  */
 import { readFileSync } from 'node:fs';

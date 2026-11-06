@@ -15,11 +15,11 @@ describe('ConnectPilotPage', () => {
   });
 
   it('dit calmement que la page est réservée à l’équipe, sans « Réessayer » ni requête répétée', async () => {
-    mocks.get.mockRejectedValue(toApiError(403, { error: 'Sokar operator access required' }));
+    mocks.get.mockRejectedValue(toApiError(403, { error: 'Suppernote operator access required' }));
 
     render(<ConnectPilotPage />);
 
-    expect(await screen.findByText('Page réservée à l’équipe Sokar')).toBeInTheDocument();
+    expect(await screen.findByText('Page réservée à l’équipe Suppernote')).toBeInTheDocument();
     expect(screen.queryByText(/operator access/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /réessayer/i })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Aller au Pilotage' })).toHaveAttribute(

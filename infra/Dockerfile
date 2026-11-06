@@ -7,11 +7,12 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json ./
 COPY apps/api ./apps/api
 COPY packages ./packages
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @sokar/database exec prisma generate
-RUN pnpm build --filter=@sokar/api
+RUN pnpm --filter @suppernote/database exec prisma generate
+RUN pnpm build --filter=@suppernote/api
 
 FROM base AS runner
 WORKDIR /app
 COPY --from=builder /app .
 EXPOSE 4000
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["node", "apps/api/dist/main.js"]

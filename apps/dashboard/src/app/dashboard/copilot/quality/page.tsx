@@ -346,7 +346,7 @@ function CopilotQualityContent() {
               <div className="border-b border-border px-5 py-4">
                 <h2 className="font-bold text-foreground">À qualifier après le service</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Pour les décisions terrain que Sokar ne peut pas observer seul, indiquez le
+                  Pour les décisions terrain que Suppernote ne peut pas observer seul, indiquez le
                   résultat réel ici — jamais dans la Salle.
                 </p>
               </div>

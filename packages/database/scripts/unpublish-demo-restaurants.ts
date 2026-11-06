@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Unpublishes the Sokar Connect demo listings (`chez-sokar-*`).
+ * Unpublishes the Suppernote Connect demo listings (`chez-sokar-*`).
  *
  * `prisma/seed.ts` creates these listings so local/staging city pages
  * (`/restaurants/:city` requires at least 5 listings per city) have something to
@@ -16,8 +16,8 @@ import { PrismaClient } from '@prisma/client';
  * rows are kept, so republishing is a single boolean.
  *
  * Dry run by default, `--apply` to execute:
- *   pnpm --filter @sokar/database unpublish:demo-restaurants
- *   pnpm --filter @sokar/database unpublish:demo-restaurants -- --apply
+ *   pnpm --filter @suppernote/database unpublish:demo-restaurants
+ *   pnpm --filter @suppernote/database unpublish:demo-restaurants -- --apply
  */
 
 const DEMO_SLUGS = [

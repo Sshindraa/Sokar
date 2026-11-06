@@ -16,7 +16,7 @@
  *   active dans le banc (les autres réglages sont conservés).
  *
  * Écriture Prisma directe : aucune file BullMQ, aucun SMS, e-mail ni webhook.
- * Usage : pnpm --filter @sokar/database seed:companion (lit apps/api/.env, comme l'API en dev).
+ * Usage : pnpm --filter @suppernote/database seed:companion (lit apps/api/.env, comme l'API en dev).
  */
 import {
   PrismaClient,
@@ -31,7 +31,7 @@ import {
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { isLocalDatabaseUrl } from './seed-demo-guard';
-import { COMPANION_REFERENCE_NOW } from '@sokar/config';
+import { COMPANION_REFERENCE_NOW } from '@suppernote/config';
 
 const MARKER = 'seed-companion';
 const CALL_SID_PREFIX = 'seed-companion-';

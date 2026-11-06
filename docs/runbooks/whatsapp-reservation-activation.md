@@ -156,7 +156,7 @@ pour {{4}} personnes. Pour la modifier ou l'annuler, contactez le restaurant.`
 
 ## Verification Locale
 
-`pnpm --filter @sokar/api exec vitest run src/shared/messaging/__tests__/sender.test.ts src/shared/whatsapp/__tests__/client.test.ts src/shared/queue/workers/__tests__/confirmation-sms.worker.test.ts`
+`pnpm --filter @suppernote/api exec vitest run src/shared/messaging/__tests__/sender.test.ts src/shared/whatsapp/__tests__/client.test.ts src/shared/queue/workers/__tests__/confirmation-sms.worker.test.ts`
 
 Resultat : 29 tests passes. Ce resultat ne prouve pas la livraison WhatsApp reelle.
 

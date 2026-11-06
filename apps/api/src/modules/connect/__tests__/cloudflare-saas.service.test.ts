@@ -37,7 +37,7 @@ describe('cloudflare-saas.service', () => {
     // Set env vars for most tests (values are fake test fixtures, not real secrets)
     process.env.CLOUDFLARE_API_TOKEN = 'cf-test';
     process.env.CLOUDFLARE_ZONE_ID = 'zone-test';
-    process.env.CLOUDFLARE_SAAS_FALLBACK_ORIGIN = 'sokar.tech';
+    process.env.CLOUDFLARE_SAAS_FALLBACK_ORIGIN = 'suppernote.com';
   });
 
   afterEach(() => {
@@ -166,18 +166,18 @@ describe('cloudflare-saas.service', () => {
   });
 
   describe('verifyCname', () => {
-    it('returns valid when CNAME points to sokar.tech', async () => {
-      vi.mocked(execSync).mockReturnValue('sokar.tech.\n');
+    it('returns valid when CNAME points to suppernote.com', async () => {
+      vi.mocked(execSync).mockReturnValue('suppernote.com.\n');
 
       const result = await verifyCname('reserve.chezmario.fr');
 
       expect(result.valid).toBe(true);
-      expect(result.target).toBe('sokar.tech');
+      expect(result.target).toBe('suppernote.com');
       expect(result.message).toContain('correctement configuré');
     });
 
-    it('returns valid when CNAME points to a subdomain of sokar.tech', async () => {
-      vi.mocked(execSync).mockReturnValue('sokar.tech.\n');
+    it('returns valid when CNAME points to a subdomain of suppernote.com', async () => {
+      vi.mocked(execSync).mockReturnValue('suppernote.com.\n');
 
       const result = await verifyCname('reserve.chezmario.fr');
 

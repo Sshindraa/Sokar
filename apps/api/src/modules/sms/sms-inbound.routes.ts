@@ -6,6 +6,8 @@ import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
 import { telnyxMessagingEventsTotal } from '../../shared/observability/metrics';
 import { applyMarketingProviderEvent } from '../marketing/marketing-provider.service';
 import { queueInboundReplyReview } from './inbound-review';
+import { handleReply } from './reply-handler';
+import { applyMarketingSmsStop, isMarketingStopKeyword } from './sms-marketing-stop';
 
 const TelnyxFromSchema = z.union([z.string(), z.object({ phone_number: z.string() })]);
 
@@ -122,13 +124,43 @@ export async function smsInboundRoutes(app: FastifyInstance) {
       return reply.status(503).send({ result: 'temporarily_unavailable' });
     }
 
-    // A shared sender cannot identify the reservation; retain an opaque reference for review.
-    try {
-      await queueInboundReplyReview('sms', data.payload.id);
-    } catch {
-      req.log.error('sms inbound: review queue unavailable');
-      return reply.status(503).send({ result: 'temporarily_unavailable' });
+    const fromObj = data.payload.from;
+    const from = typeof fromObj === 'string' ? fromObj : fromObj?.phone_number;
+    const text = data.payload.text;
+
+    // Sans expéditeur ni texte, rien ne peut être rattaché à une réservation : relecture manuelle.
+    let uncorrelated = !from || !text;
+
+    if (from && text) {
+      req.log.info({ hasFrom: true, textLength: text.length }, 'sms inbound received');
+
+      // STOP d'un SMS marketing : désinscription seulement, jamais de réponse de réservation.
+      if (isMarketingStopKeyword(text)) {
+        try {
+          if (await applyMarketingSmsStop(from)) return reply.send({ result: 'ok' });
+        } catch (error) {
+          if (error instanceof Error && error.message === 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE') {
+            req.log.warn('sms stop: opt-out register unavailable, Telnyx should retry');
+            return reply.status(503).send({ error: 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE' });
+          }
+          throw error;
+        }
+      }
+
+      const outcome = await handleReply(from, text, 'sms', data.payload.id);
+      uncorrelated = outcome.action === 'uncorrelated';
     }
+
+    if (uncorrelated) {
+      // Réponse non rattachable à une seule réservation : relecture manuelle, référence opaque.
+      try {
+        await queueInboundReplyReview('sms', data.payload.id);
+      } catch {
+        req.log.error('sms inbound: review queue unavailable');
+        return reply.status(503).send({ result: 'temporarily_unavailable' });
+      }
+    }
+
     return reply.send({ result: 'ok' });
   });
 }

@@ -252,12 +252,12 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5 md:space-y-7">
-      <header className="flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+      <header className="flex items-end justify-between gap-3 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-y-2">
+        <div className="min-w-0 sm:contents">
+          <h1 className="sm:col-span-2 text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
             Pilotage
           </h1>
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap gap-2 sm:mt-0">
             <Button asChild variant="outline" size="sm">
               <Link href="/dashboard/calls">Voir les appels</Link>
             </Button>
@@ -339,7 +339,7 @@ export default function DashboardPage() {
               label="CA estimé"
               value={`${stats.estimatedRevenue.toLocaleString('fr-FR')} €`}
               caption={averageReservationRevenue}
-              description="Somme des montants associés aux réservations : montant confirmé s’il est renseigné, sinon estimation disponible. Les montants inconnus ne contribuent pas au total. Ce chiffre ne mesure ni les encaissements ni le revenu supplémentaire apporté par Sokar."
+              description="Somme des montants associés aux réservations : montant confirmé s’il est renseigné, sinon estimation disponible. Les montants inconnus ne contribuent pas au total. Ce chiffre ne mesure ni les encaissements ni le revenu supplémentaire apporté par Suppernote."
               historyHref={isDemo ? undefined : '/dashboard/reservations'}
             />
             <KpiCard
@@ -437,7 +437,7 @@ function KpiCard({
           </DialogContent>
         </Dialog>
       </div>
-      <p className="mt-3 break-words text-3xl font-semibold tabular-nums tracking-tight text-foreground md:text-4xl">
+      <p className="mt-1 break-words text-3xl font-semibold tabular-nums tracking-tight text-foreground md:text-4xl">
         {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
       </p>
       <p className="mt-2 text-xs leading-snug text-muted-foreground">{caption}</p>

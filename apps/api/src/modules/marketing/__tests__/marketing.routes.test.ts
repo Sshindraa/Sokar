@@ -1,8 +1,9 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarketingCampaignStatus, MarketingPermissionStatus } from '@prisma/client';
-import { MARKETING_CONSENT_VERSION } from '@sokar/shared';
+import { MARKETING_CONSENT_VERSION } from '@suppernote/shared';
 import { closeApp, getApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
+import { marketingOptOutHash } from '../marketing-opt-out.service';
 import { queues } from '../../../shared/queue/queues';
 import { createServiceFillDraft, previewServiceFill } from '../fill-service.service';
 import {
@@ -36,6 +37,9 @@ describe('marketing control plane routes', () => {
     vi.clearAllMocks();
     vi.setSystemTime(NOW);
     process.env.MARKETING_ATTRIBUTION_SECRET = 'a'.repeat(48);
+    process.env.MARKETING_OPTOUT_HASH_SECRET = 'o'.repeat(48);
+    vi.mocked(db.marketingOptOut.upsert).mockResolvedValue({} as never);
+    vi.mocked(db.marketingOptOut.deleteMany).mockResolvedValue({ count: 0 });
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'PRO' } as never);
     vi.mocked(db.customerConsent.findMany).mockResolvedValue([]);
     vi.mocked(db.marketingPermission.findMany).mockResolvedValue([]);
@@ -152,6 +156,36 @@ describe('marketing control plane routes', () => {
     expect(upsert?.create.proofHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it('refuses a consent recorded by the team when an opposition is registered', async () => {
+    const app = await getApp();
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'customer-1',
+      emailNormalized: 'alice@example.com',
+    } as never);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      plan: 'PRO',
+      name: 'Chez Sokar',
+    } as never);
+    vi.mocked(db.marketingPermission.upsert).mockResolvedValue({ id: 'permission-1' } as never);
+    vi.mocked(db.marketingPermissionEvent.create).mockResolvedValue({ id: 'event-1' } as never);
+    vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([
+      { addressHash: marketingOptOutHash('test-rest-1', 'EMAIL', 'alice@example.com') },
+    ] as never);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/crm/customers/customer-1/marketing-permissions/EMAIL/consent',
+      headers: AUTH,
+      payload: { method: 'IN_PERSON' },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: 'MARKETING_OPPOSITION_REGISTERED' });
+    vi.unstubAllEnvs();
+    vi.mocked(db.marketingOptOut.findMany).mockReset();
+  });
+
   it('rejects an oral consent without a method, on an unknown channel or without an e-mail', async () => {
     const app = await getApp();
     vi.mocked(db.customer.findFirst).mockResolvedValue({
@@ -191,7 +225,10 @@ describe('marketing control plane routes', () => {
 
   it('withdraws a consent from the dashboard under its own source', async () => {
     const app = await getApp();
-    vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'customer-1',
+      phone: '+33612345678',
+    } as never);
     vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: 'test-rest-1' } as never);
     vi.mocked(db.marketingPermission.upsert).mockResolvedValue({ id: 'permission-1' } as never);
     vi.mocked(db.marketingPermissionEvent.create).mockResolvedValue({ id: 'event-1' } as never);
@@ -758,7 +795,10 @@ describe('marketing control plane routes', () => {
     }
 
     function mockWithdrawal() {
-      vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+      vi.mocked(db.customer.findFirst).mockResolvedValue({
+        id: 'customer-1',
+        emailNormalized: 'client@example.test',
+      } as never);
       vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: 'test-rest-1' } as never);
       vi.mocked(db.marketingPermission.upsert).mockResolvedValue({
         id: 'permission-1',
@@ -768,6 +808,42 @@ describe('marketing control plane routes', () => {
       } as never);
       vi.mocked(db.marketingPermissionEvent.create).mockResolvedValue({ id: 'event-1' } as never);
     }
+
+    it('formulaire navigateur : 503 invitant à réessayer, sans confirmer, quand le registre échoue', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+      mockWithdrawal();
+      vi.mocked(db.marketingOptOut.upsert).mockRejectedValueOnce(new Error('database unavailable'));
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/unsubscribe',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'text/html' },
+        payload: `token=${encodeURIComponent(token)}`,
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.body).toContain('Veuillez réessayer');
+      expect(response.body).not.toContain('Vous êtes désinscrit');
+      expect(db.marketingPermission.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ status: MarketingPermissionStatus.OPTED_OUT }),
+        }),
+      );
+    });
+
+    it('client JSON : 503 MARKETING_OPTOUT_REGISTER_UNAVAILABLE quand le registre échoue', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+      mockWithdrawal();
+      vi.mocked(db.marketingOptOut.upsert).mockRejectedValueOnce(new Error('database unavailable'));
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/unsubscribe',
+        payload: { token },
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({ error: 'MARKETING_OPTOUT_REGISTER_UNAVAILABLE' });
+    });
 
     it('un GET affiche une confirmation sans désinscrire (anti-virus, aperçus de lien)', async () => {
       const app = await getApp();

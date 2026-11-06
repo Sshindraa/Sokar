@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { PrismaClient } from '@sokar/database';
+import { PrismaClient } from '@suppernote/database';
 import { env } from '../src/env.js';
 
 const MISTRAL_API_URL = 'https://api.mistral.ai/v1/connectors';
@@ -30,7 +30,7 @@ async function createMistralConnector(key: string) {
     return { created: false, error: 'MISTRAL_API_KEY manquante (connector à créer manuellement)' };
   }
 
-  const serverUrl = process.env.SOKAR_MCP_SERVER_URL ?? 'https://api-staging.sokar.tech/mcp';
+  const serverUrl = process.env.SOKAR_MCP_SERVER_URL ?? 'https://api-staging.suppernote.com/mcp';
   const name = process.env.MISTRAL_CONNECTOR_NAME ?? 'sokar-mistral';
 
   const visibility =
@@ -39,7 +39,7 @@ async function createMistralConnector(key: string) {
 
   const body = {
     name,
-    description: 'Connector Mistral pour réserver un restaurant via Sokar',
+    description: 'Connector Mistral pour réserver un restaurant via Suppernote',
     server: serverUrl,
     visibility,
     headers: {
@@ -109,7 +109,7 @@ async function main() {
     log(`Connector Mistral non créé via API : ${error}`);
     log('Vous pouvez créer le connector manuellement dans Mistral Studio :');
     log(
-      `  Server URL : ${process.env.SOKAR_MCP_SERVER_URL ?? 'https://api-staging.sokar.tech/mcp'}`,
+      `  Server URL : ${process.env.SOKAR_MCP_SERVER_URL ?? 'https://api-staging.suppernote.com/mcp'}`,
     );
     log(`  Header     : Authorization: Bearer ${key}`);
     process.exit(0);

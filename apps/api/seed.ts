@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { CARTESIA_MODEL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
+import { CARTESIA_MODEL, VOICE_LLM_MODEL_DEFAULT } from '@suppernote/config';
 
 const db = new PrismaClient();
 

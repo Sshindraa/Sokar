@@ -39,7 +39,7 @@ const webhookRouteOptions = {
   config: { rateLimit: RATE_LIMIT_PROVIDER_WEBHOOK },
 };
 import { MS_TO_SECONDS } from '../../shared/constants/time.js';
-import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { DEFAULT_MAX_PARTY_SIZE } from '@suppernote/config';
 import { recordPricedUsageEvent } from '../usage/usage-tariff.service';
 
 interface TelnyxCallPayload {
@@ -217,7 +217,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
 
         // Ended subscription (trial without a card, cancellation, unpaid): no voice session.
         // The restaurant may still forward its line here, so the caller hears a short message in
-        // the restaurant's name instead of silence, then Sokar hangs up.
+        // the restaurant's name instead of silence, then Suppernote hangs up.
         if (billingSuspended) {
           app.log.warn(
             { restaurantId: ctx.id, callId: payload.call_control_id },

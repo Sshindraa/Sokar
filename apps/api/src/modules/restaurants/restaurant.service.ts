@@ -8,13 +8,13 @@ import {
   DEFAULT_CARTESIA_VOICE_ID,
   INTERNAL_CALL_ALERT_THRESHOLD,
   REDIS_CTX_TTL_SECONDS,
-} from '@sokar/config';
+} from '@suppernote/config';
 import { voiceConfig } from '../../env';
 import { getRestaurantPlanOverride } from '../../shared/configcat';
 import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
 import { getVoiceLlmProvider, type VoiceLlmProvider } from '../voice/llm-provider';
 import { isPublicConnectPage } from '../connect/connect.types';
-import { normalizeOpeningHours, isConnectDemoSlug } from '@sokar/shared';
+import { normalizeOpeningHours, isConnectDemoSlug } from '@suppernote/shared';
 
 // Fixture synthétique de prisma/seed.ts : jamais une destination de transfert réelle.
 const DEMO_SEED_MANAGER_PHONE = '+33601020304';
@@ -233,7 +233,7 @@ export class RestaurantService {
       return context;
     }
 
-    // tenant-scoping: global — résolution du tenant lui-même par son numéro Sokar unique (routage
+    // tenant-scoping: global — résolution du tenant lui-même par son numéro Suppernote unique (routage
     // d'un appel entrant) : il n'existe pas encore de `restaurantId` à filtrer.
     const restaurant = await db.restaurant.findUniqueOrThrow({
       where: { phoneNumber: phoneNumberId },
@@ -253,7 +253,7 @@ export class RestaurantService {
 
   /**
    * Contexte vocal d'un restaurant identifié par son id, sans cache. Sert à la démonstration
-   * d'onboarding : le restaurant n'a pas encore de numéro Sokar, et la personnalité vient d'être
+   * d'onboarding : le restaurant n'a pas encore de numéro Suppernote, et la personnalité vient d'être
    * modifiée, donc un contexte en cache serait périmé.
    */
   static async loadContextById(restaurantId: string): Promise<CachedRestaurantContext> {

@@ -24,7 +24,7 @@ export interface CatalogFeature {
 export const CATALOG_FEATURES: readonly CatalogFeature[] = [
   {
     id: 'phone-assistant',
-    label: 'Sokar répond au téléphone et prend les réservations',
+    label: 'Suppernote répond au téléphone et prend les réservations',
     status: 'disponible',
     introducedIn: 'Essential',
   },

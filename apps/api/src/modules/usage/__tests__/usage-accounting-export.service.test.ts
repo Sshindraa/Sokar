@@ -113,7 +113,7 @@ describe('usage accounting export', () => {
           month: '2026-09',
           rowType: 'USAGE',
           restaurantId: 'r-1',
-          restaurantName: 'Chez, "Sokar"',
+          restaurantName: 'Chez, "Suppernote"',
           plan: 'PRO',
           category: 'EMAIL_MESSAGES',
           provider: 'resend',
@@ -135,7 +135,7 @@ describe('usage accounting export', () => {
     });
 
     expect(csv.split('\n')[0]).toContain('"schema_version","month","row_type"');
-    expect(csv).toContain('"Chez, ""Sokar"""');
+    expect(csv).toContain('"Chez, ""Suppernote"""');
     expect(csv.endsWith('\n')).toBe(true);
   });
 });

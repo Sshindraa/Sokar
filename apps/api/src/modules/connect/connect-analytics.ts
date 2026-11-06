@@ -1,5 +1,5 @@
 /**
- * Sokar Connect — Helper d'émission d'événements analytics.
+ * Suppernote Connect — Helper d'émission d'événements analytics.
  *
  * Centralise l'envoi d'events vers la queue BullMQ `connect-analytics`.
  * Best-effort : si la queue est down, on log un warning et on ne throw pas.

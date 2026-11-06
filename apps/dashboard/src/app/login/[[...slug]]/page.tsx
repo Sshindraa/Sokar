@@ -13,7 +13,7 @@ import LoginHeadline from '../login-headline';
 import '../login.css';
 import '../../brand-palette.css';
 
-// Composition inspired by Efferd's Auth Page, adapted to Sokar's identity.
+// Composition inspired by Efferd's Auth Page, adapted to Suppernote's identity.
 function LoginShell({ children }: { children: ReactNode }) {
   // Dans l'appli iOS, les liens de découverte ne servent pas : la coque se signale par son user-agent.
   const inShell = useSyncExternalStore(
@@ -24,10 +24,10 @@ function LoginShell({ children }: { children: ReactNode }) {
   return (
     <main className="sokar-login dark brand-palette" data-shell={inShell ? 'ios' : undefined}>
       <div className="sokar-login__frame">
-        <aside className="sokar-login__story" aria-label="Votre restaurant avec Sokar">
-          <Link href="/" className="sokar-login__brand" aria-label="Sokar, accueil">
-            <Image src="/logo-sokar-white.svg" alt="" width={36} height={36} priority />
-            <span>Sokar</span>
+        <aside className="sokar-login__story" aria-label="Votre restaurant avec Suppernote">
+          <Link href="/" className="sokar-login__brand" aria-label="Suppernote, accueil">
+            <Image src="/logo-suppernote-white.svg" alt="" width={36} height={36} priority />
+            <span>Suppernote</span>
           </Link>
 
           <div className="sokar-login__paths" aria-hidden="true">
@@ -57,21 +57,21 @@ function LoginShell({ children }: { children: ReactNode }) {
             <Link href="/" className="sokar-login__back">
               <ArrowLeft size={15} aria-hidden="true" /> Accueil
             </Link>
-            <Link href="/" className="sokar-login__mobile-brand" aria-label="Sokar, accueil">
-              <Image src="/logo-sokar-white.svg" alt="" width={28} height={28} />
-              <span>Sokar</span>
+            <Link href="/" className="sokar-login__mobile-brand" aria-label="Suppernote, accueil">
+              <Image src="/logo-suppernote-white.svg" alt="" width={28} height={28} />
+              <span>Suppernote</span>
             </Link>
           </header>
 
           <div className="sokar-login__form">
             <div className="sokar-login__intro">
-              <span className="sokar-login__eyebrow">VOTRE ESPACE SOKAR</span>
+              <span className="sokar-login__eyebrow">VOTRE ESPACE SUPPERNOTE</span>
               <h1 id="login-title">Ravis de vous revoir.</h1>
               <p>Tout est prêt pour votre prochain service.</p>
             </div>
             {children}
             <p className="sokar-login__signup">
-              Vous découvrez Sokar ?{' '}
+              Vous découvrez Suppernote ?{' '}
               <Link href="/register">
                 Créer votre compte <ArrowUpRight size={14} aria-hidden="true" />
               </Link>
@@ -79,7 +79,7 @@ function LoginShell({ children }: { children: ReactNode }) {
           </div>
 
           <footer className="sokar-login__footer">
-            <span>© {new Date().getFullYear()} Sokar</span>
+            <span>© {new Date().getFullYear()} Suppernote</span>
             <Link href="/privacy">Confidentialité</Link>
           </footer>
         </section>

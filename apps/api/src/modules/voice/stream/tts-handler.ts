@@ -7,7 +7,7 @@
  */
 
 import { WebSocket } from 'ws';
-import { CARTESIA_MODEL } from '@sokar/config';
+import { CARTESIA_MODEL } from '@suppernote/config';
 import type { CallSession } from './types';
 import {
   effectiveVoiceLanguage,

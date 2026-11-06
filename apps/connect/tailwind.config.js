@@ -16,10 +16,10 @@ module.exports = {
         'muted-foreground': 'hsl(var(--muted-foreground))',
         border: 'hsl(var(--border))',
         ring: 'hsl(var(--ring))',
-        // Sokar brand
+        // Suppernote brand
         ink: '#0F172A',
         ember: '#EA580C',
-        blue: '#0284C7', // hsl(207 92% 52%) — accent Sokar
+        blue: '#0284C7', // hsl(207 92% 52%) — accent Suppernote
         cream: '#FAF7F2',
       },
     },

@@ -3,11 +3,11 @@
  *
  * The package keeps the operator usage export (EUR) and vendor invoice lines
  * (original currency, for example a Telnyx MRC in USD) in separate files. It
- * is intentionally file-based until Sokar chooses an accounting provider and
+ * is intentionally file-based until Suppernote chooses an accounting provider and
  * supplies its credentials. No network request or database write is made.
  *
  * Example:
- *   pnpm --filter @sokar/api usage:accounting:package -- \
+ *   pnpm --filter @suppernote/api usage:accounting:package -- \
  *     --month 2026-08 \
  *     --usage-csv ./private/sokar-usage-accounting-2026-08.csv \
  *     --invoice ./private/telnyx-invoice-2026-08.json \
