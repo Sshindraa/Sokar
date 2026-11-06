@@ -9,3 +9,8 @@ bc21a68646da73ec3854e1a28cd8d66b632f6c3d:docs/runbooks/stripe-billing.md:generic
 # force-push). Empreintes exactes, aucune règle élargie.
 dda5201468b9dcfd04c350e4b5295e447595077d:scripts/ops/test-sync-env.sh:stripe-access-token:82
 dda5201468b9dcfd04c350e4b5295e447595077d:scripts/ops/test-sync-env.sh:stripe-access-token:83
+# Clés Stripe de TEST (préfixe sk_test_) dans l'historique : scripts/dashboard.sh et scripts/dev.sh,
+# supprimés de main. Masquage décidé par Hamza le 2026-11-06 sans révocation ; faire tourner ces clés
+# de test dans le tableau de bord Stripe reste recommandé. Empreintes exactes, aucune règle élargie.
+57ea48b4dfacd48aad99b6f21f3e7a8e5488316b:scripts/dashboard.sh:stripe-access-token:5
+57ea48b4dfacd48aad99b6f21f3e7a8e5488316b:scripts/dev.sh:stripe-access-token:12
