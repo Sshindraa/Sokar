@@ -53,6 +53,7 @@ import {
 } from '../floor-plan/waiting-list.types';
 import { HoldConflictError, HoldService } from '../agentic-reservations/core/hold.service';
 import { ReservationService } from '../agentic-reservations/core/reservation.service';
+import { canHoldSlot } from '../agentic-reservations/core/hold-slot-limit';
 import { AuditLogService } from '../agentic-reservations/core/audit-log.service';
 import { IdempotencyService } from '../agentic-reservations/core/idempotency.service';
 import { PrismaIdempotencyStore } from '../agentic-reservations/core/prisma-store';
@@ -635,6 +636,10 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
             (settings?.capacitySpecials as Record<string, unknown> | undefined)
               ?.waitingListEnabled === true,
         });
+      }
+
+      if (!(await canHoldSlot({ restaurantId: restaurant.id, slotStart, clientIp: req.ip }))) {
+        return reply.status(429).send({ error: 'hold_limit_reached' });
       }
 
       try {
