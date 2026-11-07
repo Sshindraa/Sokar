@@ -666,6 +666,8 @@ export interface CallSession {
   ttsPlayback: Promise<void>;
   /** Invalide définitivement les fragments TTS interrompus par un barge-in. */
   ttsGeneration: number;
+  /** Trames audio réellement envoyées à Telnyx pendant cet appel (voir outbound-audio.ts). */
+  audioOut?: { frames: number; bytes: number; dropped: number; lastDropReason?: string };
   /** Invalide une réponse en préparation dès que l'appelant reprend la parole. */
   responseGeneration: number;
   /** Texte agent récent conservé en mémoire uniquement pour filtrer l'écho STT. */

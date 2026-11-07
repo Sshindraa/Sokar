@@ -36,6 +36,7 @@ import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
 import { persistSttCall, persistLatencyTrace } from './session-persistence';
 import { speakTtsStreamed } from './tts-handler';
+import { logAudioOutSummary } from './outbound-audio';
 import { handleSttEvent, extractRestaurantName } from './llm-handler';
 import { redactPii } from './pii-redact';
 import { acknowledgeCallEnding } from './call-ending';
@@ -441,6 +442,7 @@ export function handleTelnyxMessage(
       logger.info({ callId }, '[stream] Telnyx stream stop');
       const session = mgr.get(callId);
       if (session) {
+        logAudioOutSummary(session);
         finishL16Endian(session);
         finishWideband(session);
         session.ended = true;
