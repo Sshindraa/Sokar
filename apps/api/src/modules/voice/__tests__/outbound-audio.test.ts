@@ -52,7 +52,7 @@ describe('outbound audio proof', () => {
     );
   });
 
-  it('names each reason and ignores empty drops', () => {
+  it('names each reason, including a cut before the first byte', () => {
     expect(inactiveReason(makeSession({ ended: true }))).toBe('ended');
     expect(
       inactiveReason(
@@ -61,7 +61,11 @@ describe('outbound audio proof', () => {
     ).toBe(`ws_readyState_${WebSocket.CLOSED}`);
     expect(inactiveReason(makeSession(), 2)).toBe('tts_generation_changed');
 
-    noteAudioDropped(makeSession(), 0);
-    expect(logger.info).not.toHaveBeenCalled();
+    // Accueil coupé avant le premier octet audio : 0 trame abandonnée, mais la raison doit rester visible.
+    noteAudioDropped(makeSession({ state: 'LISTENING' }), 0);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ droppedFrames: 0, reason: 'state_LISTENING' }),
+      '[audio-out] frames dropped before sending',
+    );
   });
 });

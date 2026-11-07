@@ -45,9 +45,8 @@ export function inactiveReason(session: CallSession, generation?: number): strin
   return 'unknown';
 }
 
-/** Audio prêt mais non envoyé parce que la session est devenue inactive. */
+/** Audio non envoyé parce que la session est devenue inactive (0 trame = coupé avant le premier octet). */
 export function noteAudioDropped(session: CallSession, frames: number, generation?: number): void {
-  if (frames <= 0) return;
   const s = stats(session);
   s.dropped += frames;
   s.lastDropReason = inactiveReason(session, generation);
