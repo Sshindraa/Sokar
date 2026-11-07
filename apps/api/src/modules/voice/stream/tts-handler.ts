@@ -45,6 +45,7 @@ import {
   TTS_PACE_PAUSE_MS,
 } from './constants';
 import { splitTelnyxAudioFrames } from './audio-frames';
+import { noteAudioDropped, noteAudioFrameSent } from './outbound-audio';
 import {
   encodeTelnyxFromPcm16,
   padTelnyxFrame,
@@ -105,13 +106,15 @@ async function sendPacedAudioFrames(
   let framesSent = 0;
 
   for (const frame of frames) {
-    if (!isSessionActiveForTts(session, generation)) break;
+    if (!isSessionActiveForTts(session, generation)) {
+      noteAudioDropped(session, frames.length - framesSent, generation);
+      break;
+    }
+    const encoded = encodeTelnyxFromPcm16(session.codec, frame);
     session.telnyxWs.send(
-      JSON.stringify({
-        event: 'media',
-        media: { payload: encodeTelnyxFromPcm16(session.codec, frame).toString('base64') },
-      }),
+      JSON.stringify({ event: 'media', media: { payload: encoded.toString('base64') } }),
     );
+    noteAudioFrameSent(session, encoded.length);
     framesSent++;
     if (tally) tally.frames++;
     persistFirstAudioFrame(session, turnId);
@@ -549,6 +552,7 @@ async function speakTtsFragment(
         while (true) {
           if (!isSessionActiveForTts(session, generation)) {
             writeDebugLog(`[speakTtsStreamed] Session inactive during stream playback, stopping`);
+            noteAudioDropped(session, playbackQueue.length, generation);
             break;
           }
 
@@ -571,12 +575,11 @@ async function speakTtsFragment(
           }
 
           const frame = playbackQueue.shift()!;
+          const encoded = encodeTelnyxFromPcm16(session.codec, frame);
           session.telnyxWs.send(
-            JSON.stringify({
-              event: 'media',
-              media: { payload: encodeTelnyxFromPcm16(session.codec, frame).toString('base64') },
-            }),
+            JSON.stringify({ event: 'media', media: { payload: encoded.toString('base64') } }),
           );
+          noteAudioFrameSent(session, encoded.length);
           framesSent++;
           tally.frames++;
           persistFirstAudioFrame(session, turnId);
