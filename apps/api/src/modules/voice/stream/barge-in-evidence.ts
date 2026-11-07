@@ -11,6 +11,10 @@
  * 0,914. Le seuil de 0,3 tombe dans l'écart entre 0,278 et 0,349. Pendant l'accueil, aucune prise de
  * parole réelle d'un mot n'a été observée sous 0,349 : on exige 0,6, au milieu de l'écart
  * 0,349 – 0,755.
+ *
+ * Appel a663cec3 (07/11) : « une escalec », deux mots dont le plus faible à 0,07 et 0,72 s de voix, ont
+ * coupé l'accueil 1 s après le décroché : l'appelant n'a rien entendu. Pendant l'accueil, deux mots
+ * subissent donc le seuil des mots seuls (0,3).
  */
 import type { SttWord } from './types';
 
@@ -52,19 +56,22 @@ export function describeInterruptionEvidence(
 }
 
 /**
- * Faux seulement pour un mot unique dont la confiance est connue et sous le seuil, sans voix
- * soutenue. Sans confiance (fournisseur qui n'en donne pas), on ne bloque rien : aucune donnée.
+ * Faux seulement pour un mot unique (ou deux mots pendant l'accueil) dont la confiance est connue
+ * et sous le seuil, sans voix soutenue. Sans confiance (fournisseur qui n'en donne pas), on ne bloque rien : aucune donnée.
  */
 export function hasInterruptionEvidence(
   evidence: InterruptionEvidence,
   options: { greeting: boolean },
 ): boolean {
-  if (evidence.wordCount !== 1) return true;
+  // Pendant l'accueil, deux mots sont aussi un souffle ou un « allô » mal transcrit (appel a663cec3).
+  const shortGreetingUtterance = options.greeting && evidence.wordCount === 2;
+  if (evidence.wordCount !== 1 && !shortGreetingUtterance) return true;
   if (evidence.minConfidence === null) return true;
   if (evidence.voiceMs !== null && evidence.voiceMs >= SUSTAINED_VOICE_MS) return true;
-  const threshold = options.greeting
-    ? GREETING_SINGLE_WORD_MIN_CONFIDENCE
-    : SINGLE_WORD_MIN_CONFIDENCE;
+  const threshold =
+    options.greeting && evidence.wordCount === 1
+      ? GREETING_SINGLE_WORD_MIN_CONFIDENCE
+      : SINGLE_WORD_MIN_CONFIDENCE;
   return evidence.minConfidence >= threshold;
 }
 
