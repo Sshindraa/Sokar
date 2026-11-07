@@ -11,7 +11,7 @@
  * Stratégie :
  * 1. Au boot, charger tous les restaurants actifs depuis la DB
  * 2. Pour chaque restaurant, appliquer le même pipeline que speakTtsStreamed
- *    (cleanTextForTts → addNaturalPauses → split en phrases)
+ *    (cleanTextForTts → ttsSegments, partagé)
  * 3. Pour chaque phrase, générer l'audio via Cartesia et cacher dans Redis
  *    via setTtsCached (même cache que le TTS runtime)
  * 4. Au runtime, speakTtsStreamed trouve un cache hit pour chaque phrase
@@ -24,7 +24,7 @@
 import { db } from '../../../shared/db/client';
 import { logger } from '../../../shared/logger/pino';
 import { getTtsCached, setTtsCached } from '../tts-cache';
-import { cleanTextForTts, addNaturalPauses } from './tts-handler';
+import { cleanTextForTts, ttsSegments } from './tts-handler';
 import { CARTESIA_MODEL, DEFAULT_CARTESIA_VOICE_ID } from '@suppernote/config';
 import { buildCartesiaCacheVariant, CARTESIA_NORMALIZATION } from './cartesia-config';
 import {
@@ -186,13 +186,8 @@ export async function initGreetingCache(restaurantNames?: string[]): Promise<voi
     const greetingText = buildGreetingText(name);
 
     // Reproduire le même pipeline que speakTtsStreamed :
-    // cleanTextForTts → addNaturalPauses → split en phrases
-    const cleaned = cleanTextForTts(greetingText);
-    const withPauses = addNaturalPauses(cleaned);
-    const sentences = withPauses
-      .split(/(?<=[.!?])\s+/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    // cleanTextForTts → ttsSegments (le même découpage, sinon aucune clé ne correspond)
+    const sentences = ttsSegments(cleanTextForTts(greetingText));
 
     for (const sentence of sentences) {
       // Vérifier si déjà en cache (évite de régénérer au restart)

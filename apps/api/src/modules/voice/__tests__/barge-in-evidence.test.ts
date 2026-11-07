@@ -86,6 +86,19 @@ describe('preuve minimale pour interrompre', () => {
     expect(isNoiseTurn(evidence)).toBe(false);
   });
 
+  it('refuse deux mots très peu sûrs pendant l’accueil, pas ailleurs (appel a663cec3)', () => {
+    const evidence = evidenceOf('une escalec', 0.07, [0, 0.72]);
+    expect(hasInterruptionEvidence(evidence, { greeting: true })).toBe(false);
+    expect(hasInterruptionEvidence(evidence, { greeting: false })).toBe(true);
+    // Deux mots sûrs, ou une voix soutenue, coupent toujours l'accueil.
+    expect(hasInterruptionEvidence(evidenceOf('bonjour madame', 0.8), { greeting: true })).toBe(
+      true,
+    );
+    expect(
+      hasInterruptionEvidence(evidenceOf('une escalec', 0.07, [0, 0.9]), { greeting: true }),
+    ).toBe(true);
+  });
+
   it('accepte une voix soutenue, même peu sûre', () => {
     expect(hasInterruptionEvidence(evidenceOf('allô', 0.2, [0, 0.9]), { greeting: true })).toBe(
       true,

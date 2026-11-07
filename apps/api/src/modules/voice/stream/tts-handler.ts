@@ -125,6 +125,15 @@ async function sendPacedAudioFrames(
 }
 
 /**
+ * Blocs envoyés au TTS pour un texte déjà nettoyé : un seul, pour garder l'intonation.
+ * Partagé avec le précache de l'accueil (greeting-cache.ts) : les clés de cache ne correspondent
+ * que si les deux découpent pareil. Un découpage différent rend l'accueil muet pendant la synthèse.
+ */
+export function ttsSegments(cleanedText: string): string[] {
+  return [addNaturalPauses(cleanedText)];
+}
+
+/**
  * Ajoute des pauses naturelles dans le texte en forçant la ponctuation.
  * Cartesia Sonic marque une pause sur les virgules et points.
  */
@@ -330,7 +339,7 @@ async function speakTtsFragment(
   // Synthétiser la réponse complète conserve l'intonation entre les phrases.
   // Le contexte WebSocket applique la même continuité aux fragments LLM ; ce
   // chemin HTTP reste un fallback sans reset de prosodie local.
-  const sentences = [addNaturalPauses(cleanedText)];
+  const sentences = ttsSegments(cleanedText);
 
   writeDebugLog('[speakTtsStreamed] Synthesizing one prosodic segment');
 
